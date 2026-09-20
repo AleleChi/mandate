@@ -109,8 +109,8 @@ export const VolunteerPendingReviewView: React.FC<VolunteerPendingReviewViewProp
         </div>
 
         <div className="space-y-1.5">
-          <h1 className="text-2xl font-bold font-serif-koinonia text-[#18181B] tracking-tight">Profile Under Review</h1>
-          <p className="text-xs font-mono font-bold text-[#C59B27] tracking-wider uppercase">
+          <h1 className="type-h1-app text-[#18181B]">Profile Under Review</h1>
+          <p className="text-xs font-sans font-bold text-[#C59B27] tracking-wider uppercase">
             APPROVED ACCESS REQUIRED
           </p>
         </div>

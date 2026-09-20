@@ -243,18 +243,18 @@ export const IncidentEditModal: React.FC<IncidentEditModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-[#18181B]/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-      <div className="bg-white w-full max-w-xl rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 bg-[#18181B]/40 dark:bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-[#21211E] border border-zinc-200 dark:border-[#302E29] w-full max-w-xl rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
         
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100 bg-[#FAF9F6]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100 dark:border-[#302E29] bg-[#FAF9F6] dark:bg-[#1D1D1A]">
           <div>
-            <h3 className="font-serif font-bold text-sm text-[#18181B]">
+            <h3 className="font-serif font-bold text-sm text-[#18181B] dark:text-[#F0EBE3]">
               {incidentId ? `Edit Incident Report (${status.toUpperCase()})` : 'Initialize Incident Report'}
             </h3>
-            <p className="text-[10px] text-zinc-400 mt-0.5">Enforcing "One-Alert-One-Incident" Safety Boundary</p>
+            <p className="text-[10px] text-zinc-400 dark:text-[#7A7570] mt-0.5">Enforcing "One-Alert-One-Incident" Safety Boundary</p>
           </div>
-          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600 bg-transparent border-none cursor-pointer">
+          <button onClick={onClose} className="text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#F0EBE3] bg-transparent border-none cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -264,19 +264,19 @@ export const IncidentEditModal: React.FC<IncidentEditModalProps> = ({
           {loading ? (
             <div className="flex flex-col items-center justify-center py-12 space-y-2">
               <Loader2 className="w-8 h-8 text-[#C59B27] animate-spin" />
-              <span className="text-xs text-zinc-400">Loading record metadata...</span>
+              <span className="text-xs text-zinc-400 dark:text-[#7A7570]">Loading record metadata...</span>
             </div>
           ) : (
             <>
               {/* Category selector */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Incident Category</label>
+                  <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Incident Category</label>
                   <select
                     disabled={!!incidentId && status !== 'draft'}
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
-                    className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                    className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27]"
                   >
                     <option value="medical">Medical / First Aid</option>
                     <option value="behavioral">Behavioral / Safeguarding</option>
@@ -287,33 +287,33 @@ export const IncidentEditModal: React.FC<IncidentEditModalProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Report Title</label>
+                  <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Report Title</label>
                   <input
                     type="text"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     placeholder="Brief descriptive title..."
-                    className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800 focus:outline-none focus:border-[#C59B27]"
+                    className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-none focus:border-[#C59B27]"
                   />
-                  {fieldErrors.title && <span className="text-[10px] text-red-500 font-semibold">{fieldErrors.title}</span>}
+                  {fieldErrors.title && <span className="text-[10px] text-red-500 dark:text-red-400 font-semibold">{fieldErrors.title}</span>}
                 </div>
               </div>
 
               {/* Description / Summary */}
               <div className="space-y-1">
-                <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Detailed Narrative</label>
+                <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Detailed Narrative</label>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Record precise narrative event log (exact observations, chronological staff actions)..."
-                  className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800 h-20 resize-none focus:outline-none focus:border-[#C59B27]"
+                  className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] h-20 resize-none focus:outline-none focus:border-[#C59B27]"
                 />
-                {fieldErrors.description && <span className="text-[10px] text-red-500 font-semibold">{fieldErrors.description}</span>}
+                {fieldErrors.description && <span className="text-[10px] text-red-500 dark:text-red-400 font-semibold">{fieldErrors.description}</span>}
               </div>
 
               {/* Dynamic Category Specific Fields */}
-              <div className="p-4 bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl space-y-4">
-                <h4 className="text-[10px] text-[#C59B27] font-bold uppercase tracking-wider border-b border-[#EAE8E1] pb-1.5">
+              <div className="p-4 bg-[#FAF9F6] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl space-y-4">
+                <h4 className="text-[10px] text-[#C59B27] font-bold uppercase tracking-wider border-b border-[#EAE8E1] dark:border-[#302E29] pb-1.5">
                   Category-Specific Protocol Fields
                 </h4>
 
@@ -321,40 +321,40 @@ export const IncidentEditModal: React.FC<IncidentEditModalProps> = ({
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Symptoms / Complaint</label>
+                        <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Symptoms / Complaint</label>
                         <input
                           type="text"
                           value={medSymptoms}
                           onChange={(e) => setMedSymptoms(e.target.value)}
                           placeholder="Fever, rash, scrape, allergy..."
-                          className="w-full bg-white border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                          className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570]"
                         />
-                        {fieldErrors.symptoms && <span className="text-[10px] text-red-500 font-semibold">{fieldErrors.symptoms}</span>}
+                        {fieldErrors.symptoms && <span className="text-[10px] text-red-500 dark:text-red-400 font-semibold">{fieldErrors.symptoms}</span>}
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Treatment Administered</label>
+                        <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Treatment Administered</label>
                         <input
                           type="text"
                           value={medTreatment}
                           onChange={(e) => setMedTreatment(e.target.value)}
                           placeholder="Ice pack, bandage, antiseptic..."
-                          className="w-full bg-white border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                          className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570]"
                         />
-                        {fieldErrors.treatment && <span className="text-[10px] text-red-500 font-semibold">{fieldErrors.treatment}</span>}
+                        {fieldErrors.treatment && <span className="text-[10px] text-red-500 dark:text-red-400 font-semibold">{fieldErrors.treatment}</span>}
                       </div>
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Vitals / Notes (Optional)</label>
+                      <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Vitals / Notes (Optional)</label>
                       <input
                         type="text"
                         value={medVitals}
                         onChange={(e) => setMedVitals(e.target.value)}
                         placeholder="Pulse, temperature, pupil responsiveness..."
-                        className="w-full bg-white border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                        className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570]"
                       />
                     </div>
                     <div className="flex gap-6 pt-1">
-                      <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-700 font-medium">
+                      <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-700 dark:text-[#B8B0A5] font-medium">
                         <input
                           type="checkbox"
                           checked={medDoctorNotified}
@@ -363,7 +363,7 @@ export const IncidentEditModal: React.FC<IncidentEditModalProps> = ({
                         />
                         Medical Doctor Notified
                       </label>
-                      <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-700 font-medium">
+                      <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-700 dark:text-[#B8B0A5] font-medium">
                         <input
                           type="checkbox"
                           checked={medHospitalVisit}
@@ -380,11 +380,11 @@ export const IncidentEditModal: React.FC<IncidentEditModalProps> = ({
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Behavior Severity</label>
+                        <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Behavior Severity</label>
                         <select
                           value={behSeverity}
                           onChange={(e) => setBehSeverity(e.target.value as any)}
-                          className="w-full bg-white border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                          className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3]"
                         >
                           <option value="low">Low (Disruption)</option>
                           <option value="medium">Medium (Aggression/Safety Risk)</option>
@@ -392,27 +392,27 @@ export const IncidentEditModal: React.FC<IncidentEditModalProps> = ({
                         </select>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Staff Members Present</label>
+                        <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Staff Members Present</label>
                         <input
                           type="text"
                           value={behStaff}
                           onChange={(e) => setBehStaff(e.target.value)}
                           placeholder="Names of supervising workers..."
-                          className="w-full bg-white border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                          className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570]"
                         />
                       </div>
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Behavioral Assessment Narrative</label>
+                      <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Behavioral Assessment Narrative</label>
                       <textarea
                         value={behNarrative}
                         onChange={(e) => setBehNarrative(e.target.value)}
                         placeholder="Detail the triggers, behavioral symptoms, and restorative actions..."
-                        className="w-full bg-white border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800 h-16 resize-none"
+                        className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] h-16 resize-none"
                       />
-                      {fieldErrors.narrative && <span className="text-[10px] text-red-500 font-semibold">{fieldErrors.narrative}</span>}
+                      {fieldErrors.narrative && <span className="text-[10px] text-red-500 dark:text-red-400 font-semibold">{fieldErrors.narrative}</span>}
                     </div>
-                    <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-700 font-medium pt-1">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-700 dark:text-[#B8B0A5] font-medium pt-1">
                       <input
                         type="checkbox"
                         checked={behSafeguarding}
@@ -428,45 +428,45 @@ export const IncidentEditModal: React.FC<IncidentEditModalProps> = ({
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Last Seen Time</label>
+                        <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Last Seen Time</label>
                         <input
                           type="text"
                           value={missTime}
                           onChange={(e) => setMissTime(e.target.value)}
                           placeholder="e.g., 10:15 AM"
-                          className="w-full bg-white border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                          className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570]"
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Last Seen Location</label>
+                        <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Last Seen Location</label>
                         <input
                           type="text"
                           value={missLocation}
                           onChange={(e) => setMissLocation(e.target.value)}
                           placeholder="e.g., Sports Field, Hall B..."
-                          className="w-full bg-white border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                          className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570]"
                         />
-                        {fieldErrors.lastSeenLocation && <span className="text-[10px] text-red-500 font-semibold">{fieldErrors.lastSeenLocation}</span>}
+                        {fieldErrors.lastSeenLocation && <span className="text-[10px] text-red-500 dark:text-red-400 font-semibold">{fieldErrors.lastSeenLocation}</span>}
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Child clothing details</label>
+                        <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Child clothing details</label>
                         <input
                           type="text"
                           value={missClothing}
                           onChange={(e) => setMissClothing(e.target.value)}
                           placeholder="Blue shirt, sneakers..."
-                          className="w-full bg-white border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                          className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570]"
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Search Duration (Minutes)</label>
+                        <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Search Duration (Minutes)</label>
                         <input
                           type="number"
                           value={missDuration}
                           onChange={(e) => setMissDuration(parseInt(e.target.value) || 0)}
-                          className="w-full bg-white border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                          className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3]"
                         />
                       </div>
                     </div>
@@ -476,18 +476,18 @@ export const IncidentEditModal: React.FC<IncidentEditModalProps> = ({
                 {category === 'security' && (
                   <div className="space-y-3">
                     <div className="space-y-1">
-                      <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Security Incident Type</label>
+                      <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Security Incident Type</label>
                       <input
                         type="text"
                         value={secType}
                         onChange={(e) => setSecType(e.target.value)}
                         placeholder="Unauthorized access, structural failure, dispute..."
-                        className="w-full bg-white border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                        className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570]"
                       />
-                      {fieldErrors.incidentType && <span className="text-[10px] text-red-500 font-semibold">{fieldErrors.incidentType}</span>}
+                      {fieldErrors.incidentType && <span className="text-[10px] text-red-500 dark:text-red-400 font-semibold">{fieldErrors.incidentType}</span>}
                     </div>
                     <div className="flex gap-6 pt-1">
-                      <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-700 font-medium">
+                      <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-700 dark:text-[#B8B0A5] font-medium">
                         <input
                           type="checkbox"
                           checked={secAuthorities}
@@ -496,7 +496,7 @@ export const IncidentEditModal: React.FC<IncidentEditModalProps> = ({
                         />
                         Authorities / Security Team Contacted
                       </label>
-                      <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-700 font-medium">
+                      <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-700 dark:text-[#B8B0A5] font-medium">
                         <input
                           type="checkbox"
                           checked={secDamage}
@@ -512,14 +512,14 @@ export const IncidentEditModal: React.FC<IncidentEditModalProps> = ({
                 {category === 'other' && (
                   <div className="space-y-3">
                     <div className="space-y-1">
-                      <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Additional Protocol Details</label>
+                      <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Additional Protocol Details</label>
                       <textarea
                         value={othDetails}
                         onChange={(e) => setOthDetails(e.target.value)}
                         placeholder="Record precise structural or protocol concerns here..."
-                        className="w-full bg-white border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800 h-20 resize-none"
+                        className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] h-20 resize-none"
                       />
-                      {fieldErrors.details && <span className="text-[10px] text-red-500 font-semibold">{fieldErrors.details}</span>}
+                      {fieldErrors.details && <span className="text-[10px] text-red-500 dark:text-red-400 font-semibold">{fieldErrors.details}</span>}
                     </div>
                   </div>
                 )}
@@ -527,10 +527,10 @@ export const IncidentEditModal: React.FC<IncidentEditModalProps> = ({
 
               {/* Secure Logs / Restrictive inputs (Admins or Creator only) */}
               {(currentUser.role === 'admin' || currentUser.role === 'superadmin' || !incidentId || status === 'draft') && (
-                <div className="space-y-4 pt-2 border-t border-zinc-100">
+                <div className="space-y-4 pt-2 border-t border-zinc-100 dark:border-[#302E29]">
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Parent Contact Logs</label>
+                      <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Parent Contact Logs</label>
                       <span className="text-[9px] text-[#C59B27] font-semibold">🔒 RESTRICTED CASE LOG</span>
                     </div>
                     <input
@@ -538,29 +538,29 @@ export const IncidentEditModal: React.FC<IncidentEditModalProps> = ({
                       value={parentContact}
                       onChange={(e) => setParentContact(e.target.value)}
                       placeholder="e.g. Called mother (+234 803 111 2222) at 10:20 AM. Verified pickup status."
-                      className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                      className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570]"
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
-                      <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">First Aid Logs</label>
+                      <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">First Aid Logs</label>
                       <input
                         type="text"
                         value={firstAid}
                         onChange={(e) => setFirstAid(e.target.value)}
                         placeholder="Medication, bandage application..."
-                        className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                        className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570]"
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Security Logs</label>
+                      <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Security Logs</label>
                       <input
                         type="text"
                         value={securityField}
                         onChange={(e) => setSecurityField(e.target.value)}
                         placeholder="Device lockout, cordon, area sweeps..."
-                        className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                        className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570]"
                       />
                     </div>
                   </div>
@@ -571,10 +571,10 @@ export const IncidentEditModal: React.FC<IncidentEditModalProps> = ({
         </div>
 
         {/* Footer actions */}
-        <div className="px-6 py-4 border-t border-zinc-100 bg-[#FAF9F6] flex items-center justify-between">
+        <div className="px-6 py-4 border-t border-zinc-100 dark:border-[#302E29] bg-[#FAF9F6] dark:bg-[#1D1D1A] flex items-center justify-between">
           <button
             onClick={onClose}
-            className="px-5 py-2.5 rounded-xl text-xs text-zinc-500 hover:text-zinc-700 bg-transparent border border-zinc-200 cursor-pointer font-semibold"
+            className="px-5 py-2.5 rounded-xl text-xs text-zinc-500 dark:text-[#B8B0A5] hover:text-zinc-700 dark:hover:text-[#F0EBE3] bg-transparent hover:bg-zinc-100 dark:hover:bg-[#262520] border border-zinc-200 dark:border-[#3A3835] cursor-pointer font-semibold transition-all"
           >
             Cancel
           </button>
@@ -585,7 +585,7 @@ export const IncidentEditModal: React.FC<IncidentEditModalProps> = ({
               <button
                 disabled={saving}
                 onClick={() => handleSave(false)}
-                className="flex items-center gap-1.5 bg-white hover:bg-zinc-50 text-zinc-700 border border-zinc-300 font-semibold py-2.5 px-4 rounded-xl text-xs transition-all cursor-pointer"
+                className="flex items-center gap-1.5 bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#F0EBE3] border border-zinc-300 dark:border-[#3A3835] font-semibold py-2.5 px-4 rounded-xl text-xs transition-all cursor-pointer"
               >
                 {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                 Save Draft
@@ -597,7 +597,7 @@ export const IncidentEditModal: React.FC<IncidentEditModalProps> = ({
               <button
                 disabled={saving}
                 onClick={() => handleSave(true)}
-                className="flex items-center gap-1.5 bg-[#C59B27] hover:bg-[#B08621] text-white font-bold py-2.5 px-5 rounded-xl text-xs transition-all border-none cursor-pointer"
+                className="flex items-center gap-1.5 bg-[#C59B27] hover:bg-[#B08621] text-white font-bold py-2.5 px-5 rounded-xl text-xs transition-all border-none cursor-pointer shadow-xs"
               >
                 {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                 Submit Report

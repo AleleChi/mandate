@@ -78,15 +78,15 @@ export const TrainingScenarioLibrary: React.FC<TrainingScenarioLibraryProps> = (
   return (
     <main 
       id="practice-scenarios-container"
-      className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 font-sans bg-[#FAF9F5] min-h-[calc(100vh-50px)]"
+      className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 font-sans bg-[#FAF9F5] dark:bg-[#19191A] min-h-[calc(100vh-50px)]"
     >
       {/* Header section */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-serif font-medium text-[#18181B] tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-serif font-medium text-[#18181B] dark:text-[#F0EBE3] tracking-tight">
             Practice scenarios
           </h1>
-          <p className="text-xs sm:text-sm text-zinc-500 mt-1">
+          <p className="text-xs sm:text-sm text-zinc-500 dark:text-[#7A7570] mt-1">
             Choose a situation for your team to practise.
           </p>
         </div>
@@ -102,13 +102,13 @@ export const TrainingScenarioLibrary: React.FC<TrainingScenarioLibraryProps> = (
       {/* Toolbar: Search & Filters */}
       <div className="mb-6 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
         <div className="relative flex-1">
-          <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <Search className="w-4 h-4 text-zinc-400 dark:text-[#7A7570] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
             placeholder="Search practice scenarios"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full min-h-[44px] bg-white border border-[#EAE8E1] rounded-xl pl-10 pr-3 text-xs sm:text-sm text-[#18181B] placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-colors"
+            className="w-full min-h-[44px] bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl pl-10 pr-3 text-xs sm:text-sm text-[#18181B] dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 focus:border-[#C59B27] dark:focus:border-amber-500/40 transition-colors"
           />
         </div>
 
@@ -116,25 +116,25 @@ export const TrainingScenarioLibrary: React.FC<TrainingScenarioLibraryProps> = (
           <select
             value={topicFilter}
             onChange={(e) => setTopicFilter(e.target.value)}
-            className="min-h-[44px] px-3.5 py-2 bg-white border border-[#EAE8E1] rounded-xl text-xs sm:text-sm text-[#18181B] font-medium focus:outline-none focus:ring-1 focus:ring-[#C59B27] cursor-pointer"
+            className="min-h-[44px] px-3.5 py-2 bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-xs sm:text-sm text-[#18181B] dark:text-[#F0EBE3] font-medium focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 cursor-pointer"
             aria-label="Filter by topic"
           >
-            <option value="all">All topics</option>
-            <option value="Check-in">Check-in</option>
-            <option value="Child safety">Child safety</option>
-            <option value="Pickup">Pickup</option>
+            <option value="all" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">All topics</option>
+            <option value="Check-in" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">Check-in</option>
+            <option value="Child safety" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">Child safety</option>
+            <option value="Pickup" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">Pickup</option>
           </select>
 
           <select
             value={levelFilter}
             onChange={(e) => setLevelFilter(e.target.value)}
-            className="min-h-[44px] px-3.5 py-2 bg-white border border-[#EAE8E1] rounded-xl text-xs sm:text-sm text-[#18181B] font-medium focus:outline-none focus:ring-1 focus:ring-[#C59B27] cursor-pointer"
+            className="min-h-[44px] px-3.5 py-2 bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-xs sm:text-sm text-[#18181B] dark:text-[#F0EBE3] font-medium focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 cursor-pointer"
             aria-label="Filter by level"
           >
-            <option value="all">All levels</option>
-            <option value="Starter">Starter</option>
-            <option value="Standard">Standard</option>
-            <option value="Advanced">Advanced</option>
+            <option value="all" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">All levels</option>
+            <option value="Starter" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">Starter</option>
+            <option value="Standard" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">Standard</option>
+            <option value="Advanced" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">Advanced</option>
           </select>
         </div>
       </div>
@@ -142,12 +142,12 @@ export const TrainingScenarioLibrary: React.FC<TrainingScenarioLibraryProps> = (
       {/* Content list / Cards */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
-          <div className="animate-spin rounded-full h-8 w-8 border-2 border-zinc-200 border-t-[#C59B27]"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-2 border-zinc-200 dark:border-[#302E29] border-t-[#C59B27] dark:border-t-amber-400"></div>
         </div>
       ) : scenarios.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-[#EAE8E1] p-12 text-center shadow-xs">
-          <h3 className="text-base font-semibold text-[#18181B]">No practice scenarios yet</h3>
-          <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto">
+        <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-12 text-center shadow-xs">
+          <h3 className="text-base font-semibold text-[#18181B] dark:text-[#F0EBE3]">No practice scenarios yet</h3>
+          <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1 max-w-sm mx-auto">
             Add a scenario when you are ready to prepare your team.
           </p>
           <button
@@ -159,9 +159,9 @@ export const TrainingScenarioLibrary: React.FC<TrainingScenarioLibraryProps> = (
           </button>
         </div>
       ) : filteredScenarios.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-[#EAE8E1] p-12 text-center shadow-xs">
-          <h3 className="text-base font-semibold text-[#18181B]">No matching scenarios</h3>
-          <p className="text-xs text-zinc-500 mt-1">
+        <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-12 text-center shadow-xs">
+          <h3 className="text-base font-semibold text-[#18181B] dark:text-[#F0EBE3]">No matching scenarios</h3>
+          <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">
             Try another search or change the filters.
           </p>
           <button
@@ -170,7 +170,7 @@ export const TrainingScenarioLibrary: React.FC<TrainingScenarioLibraryProps> = (
               setTopicFilter('all');
               setLevelFilter('all');
             }}
-            className="mt-4 text-xs font-medium text-[#C59B27] hover:underline cursor-pointer"
+            className="mt-4 text-xs font-medium text-[#C59B27] dark:text-amber-400 hover:underline cursor-pointer"
           >
             Clear all filters
           </button>
@@ -187,28 +187,28 @@ export const TrainingScenarioLibrary: React.FC<TrainingScenarioLibraryProps> = (
             return (
               <article
                 key={s.id}
-                className="bg-white rounded-2xl border border-[#EAE8E1] p-6 shadow-xs hover:border-[#C59B27]/40 hover:shadow-sm transition-all flex flex-col justify-between"
+                className="bg-white dark:bg-[#1D1D1A] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-6 shadow-xs hover:border-[#C59B27]/40 dark:hover:border-amber-500/40 hover:shadow-sm transition-all flex flex-col justify-between"
               >
                 <div>
-                  <div className="text-[11px] font-semibold text-[#967215] uppercase tracking-wider">
+                  <div className="text-[11px] font-semibold text-[#967215] dark:text-amber-400 uppercase tracking-wider">
                     {displayTopic}
                   </div>
-                  <h2 className="text-base font-semibold text-[#18181B] mt-1.5 tracking-tight">
+                  <h2 className="text-base font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-1.5 tracking-tight">
                     {displayTitle}
                   </h2>
-                  <p className="text-xs text-zinc-600 mt-2.5 leading-relaxed line-clamp-3">
+                  <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] mt-2.5 leading-relaxed line-clamp-3">
                     {displayDesc}
                   </p>
                 </div>
 
-                <div className="border-t border-[#EAE8E1] mt-6 pt-4 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-xs text-zinc-500">
+                <div className="border-t border-[#EAE8E1] dark:border-[#302E29] mt-6 pt-4 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-[#7A7570]">
                     <span className="flex items-center gap-1 font-medium">
-                      <Clock className="w-3.5 h-3.5 text-zinc-400" />
+                      <Clock className="w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570]" />
                       <span>{durationMinutes} minutes</span>
                     </span>
-                    <span className="text-zinc-300">•</span>
-                    <span className="px-2 py-0.5 rounded-md bg-[#FAF9F5] border border-[#EAE8E1] text-[11px] text-zinc-600 font-medium">
+                    <span className="text-zinc-300 dark:text-[#3A3835]">•</span>
+                    <span className="px-2 py-0.5 rounded-md bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] text-[11px] text-zinc-600 dark:text-[#B8B0A5] font-medium">
                       {displayLevel}
                     </span>
                   </div>

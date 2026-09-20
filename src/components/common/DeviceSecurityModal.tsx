@@ -343,18 +343,18 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 12 }}
           transition={{ duration: 0.2, ease: 'easeOut' }}
-          className="bg-white border border-[#EAE8E1] rounded-3xl max-w-sm w-full overflow-hidden shadow-2xl font-sans"
+          className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl max-w-sm w-full overflow-hidden shadow-2xl font-sans"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-[#FAF8F4]">
-            <h3 className="text-sm font-semibold text-zinc-900">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-[#FAF8F4] dark:border-[#302E29]">
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-[#F0EBE3]">
               {isRegistration ? 'Set up secure sign-in' : 'Device sign-in'}
             </h3>
             <button 
               type="button"
               onClick={onClose}
-              className="p-1.5 text-zinc-400 hover:text-zinc-700 rounded-full hover:bg-zinc-100 transition-colors cursor-pointer focus:outline-none"
+              className="p-1.5 text-zinc-400 dark:text-[#7A7570] hover:text-zinc-700 dark:hover:text-[#F0EBE3] rounded-full hover:bg-zinc-100 dark:hover:bg-[#262520] transition-colors cursor-pointer focus:outline-none"
               aria-label="Close"
             >
               <X className="w-4 h-4" />
@@ -365,13 +365,13 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
           <div className="p-6 flex flex-col items-center text-center font-sans">
             {mode === 'prompt' && (
               <>
-                <div className="p-4 bg-amber-500/10 text-[#C59B27] rounded-full mb-4">
+                <div className="p-4 bg-amber-500/10 dark:bg-amber-950/30 text-[#C59B27] dark:text-amber-400 rounded-full mb-4">
                   <Fingerprint className="w-10 h-10 stroke-[1.75]" />
                 </div>
-                <h4 className="text-base font-semibold text-zinc-900 mb-1.5">
+                <h4 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3] mb-1.5">
                   {isRegistration ? 'Set up secure sign-in' : 'Sign in with your device'}
                 </h4>
-                <p className="text-xs text-zinc-500 mb-5 leading-relaxed max-w-xs">
+                <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-5 leading-relaxed max-w-xs">
                   {isRegistration 
                     ? 'Use your fingerprint, face, screen lock or device PIN to sign in more quickly on this device.'
                     : 'Use your fingerprint, face, screen lock or device PIN.'}
@@ -379,7 +379,7 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
 
                 {isRegistration && (
                   <div className="w-full mb-5 text-left">
-                    <label className="block text-xs font-semibold text-zinc-700 mb-1.5">
+                    <label className="block text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] mb-1.5">
                       Device name
                     </label>
                     <input
@@ -387,7 +387,7 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
                       value={deviceName}
                       onChange={(e) => setDeviceName(e.target.value)}
                       placeholder="e.g. Android phone"
-                      className="w-full px-3.5 py-2.5 text-xs bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl focus:border-[#C59B27] focus:outline-none text-zinc-900 font-medium"
+                      className="w-full px-3.5 py-2.5 text-xs bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl focus:border-[#C59B27] dark:focus:border-amber-500 focus:outline-none text-zinc-900 dark:text-[#F0EBE3] font-medium"
                     />
                   </div>
                 )}
@@ -411,7 +411,7 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
                         setMode('password');
                       }
                     }}
-                    className="w-full py-2 text-xs font-medium text-zinc-500 hover:text-zinc-800 transition-colors focus:outline-none cursor-pointer"
+                    className="w-full py-2 text-xs font-medium text-zinc-500 dark:text-[#7A7570] hover:text-zinc-800 dark:hover:text-[#F0EBE3] transition-colors focus:outline-none cursor-pointer"
                   >
                     {isRegistration ? 'Cancel' : 'Use password instead'}
                   </button>
@@ -421,13 +421,13 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
 
             {mode === 'simulating' && (
               <>
-                <div className="p-4 bg-[#FAF6EB] rounded-full mb-4 flex items-center justify-center">
-                  <Loader2 className="w-10 h-10 text-[#C59B27] animate-spin" />
+                <div className="p-4 bg-[#FAF6EB] dark:bg-amber-950/30 rounded-full mb-4 flex items-center justify-center">
+                  <Loader2 className="w-10 h-10 text-[#C59B27] dark:text-amber-400 animate-spin" />
                 </div>
-                <h4 className="text-base font-semibold text-zinc-900 mb-1.5">
+                <h4 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3] mb-1.5">
                   {isRegistration ? 'Setting up secure sign-in…' : 'Signing in with your device…'}
                 </h4>
-                <p className="text-xs text-zinc-500 leading-relaxed max-w-xs">
+                <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] leading-relaxed max-w-xs">
                   Follow the prompt on your device to continue.
                 </p>
               </>
@@ -435,18 +435,18 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
 
             {mode === 'password' && (
               <form onSubmit={handlePasswordVerification} className="w-full text-left">
-                <div className="p-3 bg-zinc-100 text-zinc-500 rounded-full mb-4 w-fit mx-auto">
+                <div className="p-3 bg-zinc-100 dark:bg-[#262520] text-zinc-500 dark:text-[#B8B0A5] rounded-full mb-4 w-fit mx-auto">
                   <Lock className="w-6 h-6 stroke-[1.5]" />
                 </div>
-                <h4 className="text-base font-semibold text-zinc-900 mb-1.5 text-center">
+                <h4 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3] mb-1.5 text-center">
                   Account password
                 </h4>
-                <p className="text-xs text-zinc-500 leading-relaxed text-center mb-5">
+                <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] leading-relaxed text-center mb-5">
                   Enter your password to sign in.
                 </p>
 
                 <div className="mb-4">
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                  <label className="block text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] mb-1">
                     Password
                   </label>
                   <input
@@ -457,12 +457,12 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
                       setPasswordError('');
                     }}
                     placeholder="Enter account password"
-                    className="w-full px-3.5 py-2.5 text-xs bg-white border border-[#EAE8E1] rounded-xl focus:border-[#C59B27] focus:outline-none text-zinc-900"
+                    className="w-full px-3.5 py-2.5 text-xs bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl focus:border-[#C59B27] dark:focus:border-amber-500 focus:outline-none text-zinc-900 dark:text-[#F0EBE3]"
                     disabled={verifying}
                     autoFocus
                   />
                   {passwordError && (
-                    <p className="text-[11px] text-red-600 mt-1 flex items-center space-x-1 font-medium">
+                    <p className="text-[11px] text-red-600 dark:text-red-400 mt-1 flex items-center space-x-1 font-medium">
                       <ShieldAlert className="w-3.5 h-3.5 flex-shrink-0" />
                       <span>{passwordError}</span>
                     </p>
@@ -473,7 +473,7 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setMode('prompt')}
-                    className="flex-1 py-2.5 border border-[#EAE8E1] text-zinc-600 hover:bg-zinc-50 rounded-xl text-xs font-semibold transition-colors focus:outline-none cursor-pointer text-center"
+                    className="flex-1 py-2.5 border border-[#EAE8E1] dark:border-[#302E29] text-zinc-600 dark:text-[#B8B0A5] hover:bg-zinc-50 dark:hover:bg-[#262520] rounded-xl text-xs font-semibold transition-colors focus:outline-none cursor-pointer text-center"
                     disabled={verifying}
                   >
                     Back
@@ -492,13 +492,13 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
 
             {mode === 'success' && (
               <>
-                <div className="p-4 bg-emerald-50 text-emerald-600 rounded-full mb-4">
+                <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 rounded-full mb-4">
                   <ShieldCheck className="w-10 h-10 stroke-[1.75]" />
                 </div>
-                <h4 className="text-base font-semibold text-zinc-900 mb-1.5">
+                <h4 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3] mb-1.5">
                   {isRegistration ? 'Secure sign-in is ready' : 'Signed in securely'}
                 </h4>
-                <p className="text-xs text-zinc-600 leading-relaxed max-w-xs mb-5">
+                <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed max-w-xs mb-5">
                   {isRegistration 
                     ? 'You can now use this device to sign in without entering your password.' 
                     : 'Your identity has been verified.'}
@@ -510,7 +510,7 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
                       onSuccess();
                       onClose();
                     }}
-                    className="w-full bg-[#18181B] hover:bg-zinc-800 text-white py-2.5 rounded-xl text-xs font-semibold cursor-pointer"
+                    className="w-full bg-[#18181B] dark:bg-[#302E29] hover:bg-zinc-800 dark:hover:bg-[#3A3835] text-white py-2.5 rounded-xl text-xs font-semibold cursor-pointer"
                   >
                     Done
                   </Button>
@@ -520,13 +520,13 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
 
             {mode === 'error' && (
               <>
-                <div className="p-4 bg-red-50 text-red-600 rounded-full mb-4">
+                <div className="p-4 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 rounded-full mb-4">
                   <ShieldAlert className="w-10 h-10 stroke-[1.75]" />
                 </div>
-                <h4 className="text-base font-semibold text-zinc-900 mb-1.5">
+                <h4 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3] mb-1.5">
                   {isRegistration ? "We couldn't set up secure sign-in on this device." : "We couldn't sign in with this device."}
                 </h4>
-                <p className="text-xs text-zinc-600 mb-5 leading-relaxed max-w-xs">
+                <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] mb-5 leading-relaxed max-w-xs">
                   {errorMessage || (isRegistration ? "We couldn't set up secure sign-in on this device." : "We couldn't sign in with this device.")}
                 </p>
                 <div className="w-full space-y-2">
@@ -548,7 +548,7 @@ export const DeviceSecurityModal: React.FC<DeviceSecurityModalProps> = ({
                         setMode('password');
                       }
                     }}
-                    className="w-full py-2 text-xs font-medium text-zinc-500 hover:text-zinc-800 transition-colors focus:outline-none cursor-pointer"
+                    className="w-full py-2 text-xs font-medium text-zinc-500 dark:text-[#7A7570] hover:text-zinc-800 dark:hover:text-[#F0EBE3] transition-colors focus:outline-none cursor-pointer"
                   >
                     Use password instead
                   </button>

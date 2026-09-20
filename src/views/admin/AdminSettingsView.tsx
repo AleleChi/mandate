@@ -831,23 +831,23 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
   return (
     <div 
-      className="space-y-6 sm:space-y-8 max-w-7xl mx-auto px-4 sm:px-6 pb-12 text-[#18181B] bg-[#FAF9F6]"
+      className="space-y-6 sm:space-y-8 max-w-7xl mx-auto px-4 sm:px-6 pb-12 text-[#18181B] dark:text-[#F0EBE3] bg-[#FAF9F6] dark:bg-[#19191A]"
       data-view-version="admin-settings-v2-ui-refined"
     >
       {/* HEADER SECTION */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-[#EAE8E1] pb-5 gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-[#EAE8E1] dark:border-[#302E29] pb-5 gap-4">
         <div>
-          <h1 className="type-h1-app text-[#18181B]">
+          <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
             Settings
           </h1>
-          <p className="text-xs text-zinc-500 mt-1.5 max-w-xl leading-relaxed">
+          <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1.5 max-w-xl leading-relaxed">
             Configure parent access parameters, registration requirements, event team roles, and notification channels.
           </p>
         </div>
         {onBackToOverview && (
           <button 
             onClick={onBackToOverview}
-            className="self-start sm:self-center bg-white hover:bg-zinc-50 border border-[#EAE8E1] text-[#18181B] px-4 py-2 rounded-xl text-xs font-semibold transition-all shadow-xs shrink-0 cursor-pointer"
+            className="self-start sm:self-center bg-white dark:bg-[#21211E] hover:bg-zinc-50 dark:hover:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] text-[#18181B] dark:text-[#F0EBE3] px-4 py-2 rounded-xl text-xs font-semibold transition-all shadow-xs shrink-0 cursor-pointer"
           >
             Back to overview
           </button>
@@ -857,11 +857,11 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
       {/* FEEDBACK TOAST */}
       {feedbackMessage && (
         <div className={`fixed bottom-6 right-6 z-50 p-4 rounded-xl shadow-lg border animate-fade-in flex items-center space-x-3 text-xs font-medium max-w-md ${
-          feedbackMessage.type === 'success' 
-            ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
-            : 'bg-red-50 text-red-800 border-red-200'
+          feedbackMessage.type === 'success'
+            ? 'bg-emerald-50 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/40'
+            : 'bg-red-50 dark:bg-red-950/80 text-red-800 dark:text-red-300 border-red-200 dark:border-red-900/40'
         }`}>
-          <div className={`p-1.5 rounded-lg ${feedbackMessage.type === 'success' ? 'bg-emerald-100' : 'bg-red-100'}`}>
+          <div className={`p-1.5 rounded-lg ${feedbackMessage.type === 'success' ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-red-100 dark:bg-red-900/40'}`}>
             <Check className="w-4 h-4" />
           </div>
           <span>{feedbackMessage.text}</span>
@@ -878,15 +878,15 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
         ].map((item, idx) => (
           <div 
             key={idx} 
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 relative overflow-hidden shadow-xs"
+            className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 relative overflow-hidden shadow-xs"
           >
-            <span className="text-[10px] font-medium text-zinc-400 block">
+            <span className="text-[10px] font-medium text-zinc-400 dark:text-[#7A7570] block">
               {item.label}
             </span>
-            <span className="text-2xl sm:text-3xl font-bold font-sans text-[#18181B] dark:text-[#F7F4ED] mt-1.5 block">
+            <span className="text-2xl sm:text-3xl font-bold font-sans text-[#18181B] dark:text-[#F0EBE3] mt-1.5 block">
               {item.val}
             </span>
-            <span className="text-[10px] text-zinc-400 block mt-1">
+            <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block mt-1">
               {item.sub}
             </span>
             <div className="absolute top-0 right-0 h-full w-1.5 bg-[#C59B27]/10" />
@@ -896,7 +896,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
       {/* SETTINGS SUB-NAVIGATION TABS */}
       <div 
-        className="flex border-b border-[#EAE8E1] overflow-x-auto gap-2 scrollbar-none pb-0.5"
+        className="flex border-b border-[#EAE8E1] dark:border-[#302E29] overflow-x-auto gap-2 scrollbar-none pb-0.5"
         data-component-version="admin-settings-tabs-v2-refined"
       >
         {[
@@ -921,10 +921,10 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
               className={`flex items-center space-x-2 py-3 px-4 text-xs font-medium border-b-2 transition-all whitespace-nowrap focus:outline-none cursor-pointer ${
                 isActive 
                   ? 'border-[#C59B27] text-[#C59B27]' 
-                  : 'border-transparent text-zinc-500 hover:text-zinc-800 hover:border-zinc-300'
+                  : 'border-transparent text-zinc-500 dark:text-[#7A7570] hover:text-zinc-800 dark:hover:text-[#F0EBE3] hover:border-zinc-300 dark:hover:border-[#3A3835]'
               }`}
             >
-              <Icon className={`w-4 h-4 ${isActive ? 'text-[#C59B27]' : 'text-zinc-400'}`} />
+              <Icon className={`w-4 h-4 ${isActive ? 'text-[#C59B27]' : 'text-zinc-400 dark:text-[#7A7570]'}`} />
               <span>{tab.label}</span>
             </button>
           );
@@ -935,7 +935,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
       {loading ? (
         <div className="flex flex-col items-center justify-center py-24 space-y-4">
           <Loader2 className="w-8 h-8 text-[#C59B27] animate-spin" />
-          <p className="text-xs text-zinc-400 font-medium">Loading settings...</p>
+          <p className="text-xs text-zinc-400 dark:text-[#7A7570] font-medium">Loading settings...</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -949,20 +949,20 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                 
                 {/* Parent Access Toggles */}
                 <div 
-                  className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-5"
+                  className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-5"
                   data-component-version="admin-settings-parent-access-v2-refined"
                 >
-                  <div className="border-b border-[#EAE8E1] pb-3">
-                    <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-lg">Parent access</h3>
-                    <p className="text-xs text-zinc-500 mt-1">Choose how parents can register, sign in, and update child details.</p>
+                  <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-3">
+                    <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] text-lg">Parent access</h3>
+                    <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Choose how parents can register, sign in, and update child details.</p>
                   </div>
 
                   <div className="space-y-4">
                     {/* Toggle: New Registrations */}
                     <div className="flex items-center justify-between py-2">
                       <div className="space-y-1 pr-4">
-                        <span className="text-sm font-medium text-[#18181B] block">New parent registration</span>
-                        <p className="text-xs text-zinc-400 leading-normal max-w-md">
+                        <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3] block">New parent registration</span>
+                        <p className="text-xs text-zinc-400 dark:text-[#7A7570] leading-normal max-w-md">
                           Allow new parents to create accounts from the landing page.
                         </p>
                       </div>
@@ -970,11 +970,11 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         type="button"
                         onClick={() => setParentRegistrationEnabled(!parentRegistrationEnabled)}
                         className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                          parentRegistrationEnabled ? 'bg-[#C59B27]' : 'bg-zinc-200'
+                          parentRegistrationEnabled ? 'bg-[#C59B27]' : 'bg-zinc-200 dark:bg-[#3A3835]'
                         }`}
                       >
                         <span
-                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-[#F0EBE3] shadow-md ring-0 transition duration-200 ease-in-out ${
                             parentRegistrationEnabled ? 'translate-x-5' : 'translate-x-0'
                           }`}
                         />
@@ -982,10 +982,10 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                     </div>
 
                     {/* Toggle: Parent Login */}
-                    <div className="flex items-center justify-between py-4 border-t border-zinc-100">
+                    <div className="flex items-center justify-between py-4 border-t border-zinc-100 dark:border-[#302E29]">
                       <div className="space-y-1 pr-4">
-                        <span className="text-sm font-medium text-[#18181B] block">Parent sign in</span>
-                        <p className="text-xs text-zinc-400 leading-normal max-w-md">
+                        <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3] block">Parent sign in</span>
+                        <p className="text-xs text-zinc-400 dark:text-[#7A7570] leading-normal max-w-md">
                           Allow existing parents to sign in, view passes, and update allowed details.
                         </p>
                       </div>
@@ -993,11 +993,11 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         type="button"
                         onClick={() => setParentLoginEnabled(!parentLoginEnabled)}
                         className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                          parentLoginEnabled ? 'bg-[#C59B27]' : 'bg-zinc-200'
+                          parentLoginEnabled ? 'bg-[#C59B27]' : 'bg-zinc-200 dark:bg-[#3A3835]'
                         }`}
                       >
                         <span
-                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-[#F0EBE3] shadow-md ring-0 transition duration-200 ease-in-out ${
                             parentLoginEnabled ? 'translate-x-5' : 'translate-x-0'
                           }`}
                         />
@@ -1008,12 +1008,12 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
                 {/* Required Details Configuration */}
                 <div 
-                  className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-5" 
+                  className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-5"
                   data-component-version="admin-settings-required-details-v2-refined"
                 >
-                  <div className="border-b border-[#EAE8E1] pb-3">
-                    <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-lg">Required details</h3>
-                    <p className="text-xs text-zinc-500 mt-1">Choose the details parents must provide before an application can be reviewed.</p>
+                  <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-3">
+                    <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] text-lg">Required details</h3>
+                    <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Choose the details parents must provide before an application can be reviewed.</p>
                   </div>
 
                   <div className="space-y-4">
@@ -1024,8 +1024,8 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         onClick={() => setRequiredChildPhoto(!requiredChildPhoto)}
                         className={`flex items-start space-x-3.5 p-4 rounded-xl border text-left cursor-pointer transition-all duration-200 ${
                           requiredChildPhoto 
-                            ? 'border-[#C59B27]/40 bg-[#C59B27]/5' 
-                            : 'border-[#EAE8E1] bg-white hover:border-zinc-300'
+                            ? 'border-[#C59B27]/40 bg-[#C59B27]/5 dark:bg-amber-950/20 dark:border-amber-900/40'
+                            : 'border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#21211E] hover:border-zinc-300 dark:hover:border-[#3A3835]'
                         }`}
                       >
                         <div className="mt-0.5 shrink-0">
@@ -1034,12 +1034,12 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                               <Check className="w-3.5 h-3.5" />
                             </div>
                           ) : (
-                            <div className="w-5 h-5 rounded border border-zinc-300 bg-white" />
+                            <div className="w-5 h-5 rounded border border-zinc-300 dark:border-[#3A3835] bg-white dark:bg-[#262520]" />
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <span className="text-xs font-semibold text-[#18181B] block">Child photo</span>
-                          <span className="text-[11px] text-zinc-500 block mt-0.5 leading-normal">
+                          <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] block">Child photo</span>
+                          <span className="text-[11px] text-zinc-500 dark:text-[#7A7570] block mt-0.5 leading-normal">
                             Required for child identification.
                           </span>
                         </div>
@@ -1051,8 +1051,8 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         onClick={() => setRequiredParentPhoto(!requiredParentPhoto)}
                         className={`flex items-start space-x-3.5 p-4 rounded-xl border text-left cursor-pointer transition-all duration-200 ${
                           requiredParentPhoto 
-                            ? 'border-[#C59B27]/40 bg-[#C59B27]/5' 
-                            : 'border-[#EAE8E1] bg-white hover:border-zinc-300'
+                            ? 'border-[#C59B27]/40 bg-[#C59B27]/5 dark:bg-amber-950/20 dark:border-amber-900/40'
+                            : 'border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#21211E] hover:border-zinc-300 dark:hover:border-[#3A3835]'
                         }`}
                       >
                         <div className="mt-0.5 shrink-0">
@@ -1061,12 +1061,12 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                               <Check className="w-3.5 h-3.5" />
                             </div>
                           ) : (
-                            <div className="w-5 h-5 rounded border border-zinc-300 bg-white" />
+                            <div className="w-5 h-5 rounded border border-zinc-300 dark:border-[#3A3835] bg-white dark:bg-[#262520]" />
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <span className="text-xs font-semibold text-[#18181B] block">Parent photo</span>
-                          <span className="text-[11px] text-zinc-500 block mt-0.5 leading-normal">
+                          <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] block">Parent photo</span>
+                          <span className="text-[11px] text-zinc-500 dark:text-[#7A7570] block mt-0.5 leading-normal">
                             Required for parent profile checks.
                           </span>
                         </div>
@@ -1078,8 +1078,8 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         onClick={() => setRequiredPickupPerson(!requiredPickupPerson)}
                         className={`flex items-start space-x-3.5 p-4 rounded-xl border text-left cursor-pointer transition-all duration-200 ${
                           requiredPickupPerson 
-                            ? 'border-[#C59B27]/40 bg-[#C59B27]/5' 
-                            : 'border-[#EAE8E1] bg-white hover:border-zinc-300'
+                            ? 'border-[#C59B27]/40 bg-[#C59B27]/5 dark:bg-amber-950/20 dark:border-amber-900/40'
+                            : 'border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#21211E] hover:border-zinc-300 dark:hover:border-[#3A3835]'
                         }`}
                       >
                         <div className="mt-0.5 shrink-0">
@@ -1088,12 +1088,12 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                               <Check className="w-3.5 h-3.5" />
                             </div>
                           ) : (
-                            <div className="w-5 h-5 rounded border border-zinc-300 bg-white" />
+                            <div className="w-5 h-5 rounded border border-zinc-300 dark:border-[#3A3835] bg-white dark:bg-[#262520]" />
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <span className="text-xs font-semibold text-[#18181B] block">Pickup person photo</span>
-                          <span className="text-[11px] text-zinc-500 block mt-0.5 leading-normal">
+                          <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] block">Pickup person photo</span>
+                          <span className="text-[11px] text-zinc-500 dark:text-[#7A7570] block mt-0.5 leading-normal">
                             Required for safe pickup.
                           </span>
                         </div>
@@ -1105,8 +1105,8 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         onClick={() => setRequiredMedicalNotes(!requiredMedicalNotes)}
                         className={`flex items-start space-x-3.5 p-4 rounded-xl border text-left cursor-pointer transition-all duration-200 ${
                           requiredMedicalNotes 
-                            ? 'border-[#C59B27]/40 bg-[#C59B27]/5' 
-                            : 'border-[#EAE8E1] bg-white hover:border-zinc-300'
+                            ? 'border-[#C59B27]/40 bg-[#C59B27]/5 dark:bg-amber-950/20 dark:border-amber-900/40'
+                            : 'border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#21211E] hover:border-zinc-300 dark:hover:border-[#3A3835]'
                         }`}
                       >
                         <div className="mt-0.5 shrink-0">
@@ -1115,12 +1115,12 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                               <Check className="w-3.5 h-3.5" />
                             </div>
                           ) : (
-                            <div className="w-5 h-5 rounded border border-zinc-300 bg-white" />
+                            <div className="w-5 h-5 rounded border border-zinc-300 dark:border-[#3A3835] bg-white dark:bg-[#262520]" />
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <span className="text-xs font-semibold text-[#18181B] block">Care consent</span>
-                          <span className="text-[11px] text-zinc-500 block mt-0.5 leading-normal">
+                          <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] block">Care consent</span>
+                          <span className="text-[11px] text-zinc-500 dark:text-[#7A7570] block mt-0.5 leading-normal">
                             Required before review.
                           </span>
                         </div>
@@ -1128,40 +1128,40 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
                       {/* Checkbox: Home Address (Locked/Safety-critical) */}
                       <div 
-                        className="flex items-start space-x-3.5 p-4 rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] text-left select-none relative"
+                        className="flex items-start space-x-3.5 p-4 rounded-xl border border-[#EAE8E1] dark:border-[#302E29] bg-[#FAF9F6] dark:bg-[#21211E] text-left select-none relative"
                       >
                         <div className="mt-0.5 shrink-0">
-                          <div className="w-5 h-5 rounded bg-zinc-300 flex items-center justify-center text-white">
+                          <div className="w-5 h-5 rounded bg-zinc-300 dark:bg-[#3A3835] flex items-center justify-center text-white dark:text-[#B8B0A5]">
                             <Lock className="w-3 h-3" />
                           </div>
                         </div>
                         <div className="flex-1 min-w-0 pr-24">
-                          <span className="text-xs font-semibold text-zinc-500 block">Home address</span>
-                          <span className="text-[11px] text-zinc-400 block mt-0.5 leading-normal">
+                          <span className="text-xs font-semibold text-zinc-500 dark:text-[#B8B0A5] block">Home address</span>
+                          <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] block mt-0.5 leading-normal">
                             Required for parent records.
                           </span>
                         </div>
-                        <span className="absolute top-4 right-4 bg-zinc-100 text-zinc-500 text-[9px] font-medium px-2 py-0.5 rounded uppercase tracking-wider">
+                        <span className="absolute top-4 right-4 bg-zinc-100 dark:bg-[#262520] text-zinc-500 dark:text-[#7A7570] text-[9px] font-medium px-2 py-0.5 rounded uppercase tracking-wider">
                           Required for safety
                         </span>
                       </div>
 
                       {/* Checkbox: WhatsApp Number (Locked/Safety-critical) */}
                       <div 
-                        className="flex items-start space-x-3.5 p-4 rounded-xl border border-[#EAE8E1] bg-[#FAF9F6] text-left select-none relative"
+                        className="flex items-start space-x-3.5 p-4 rounded-xl border border-[#EAE8E1] dark:border-[#302E29] bg-[#FAF9F6] dark:bg-[#21211E] text-left select-none relative"
                       >
                         <div className="mt-0.5 shrink-0">
-                          <div className="w-5 h-5 rounded bg-zinc-300 flex items-center justify-center text-white">
+                          <div className="w-5 h-5 rounded bg-zinc-300 dark:bg-[#3A3835] flex items-center justify-center text-white dark:text-[#B8B0A5]">
                             <Lock className="w-3 h-3" />
                           </div>
                         </div>
                         <div className="flex-1 min-w-0 pr-24">
-                          <span className="text-xs font-semibold text-zinc-500 block">WhatsApp number</span>
-                          <span className="text-[11px] text-zinc-400 block mt-0.5 leading-normal">
+                          <span className="text-xs font-semibold text-zinc-500 dark:text-[#B8B0A5] block">WhatsApp number</span>
+                          <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] block mt-0.5 leading-normal">
                             Required for event updates.
                           </span>
                         </div>
-                        <span className="absolute top-4 right-4 bg-zinc-100 text-zinc-500 text-[9px] font-medium px-2 py-0.5 rounded uppercase tracking-wider">
+                        <span className="absolute top-4 right-4 bg-zinc-100 dark:bg-[#262520] text-zinc-500 dark:text-[#7A7570] text-[9px] font-medium px-2 py-0.5 rounded uppercase tracking-wider">
                           Required for safety
                         </span>
                       </div>
@@ -1191,11 +1191,11 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                   
                   {/* Left: Interactive Team Members Table (7 Columns) */}
-                  <div className="lg:col-span-8 bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-5">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-[#EAE8E1] gap-2">
+                  <div className="lg:col-span-8 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-5">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-[#EAE8E1] dark:border-[#302E29] gap-2">
                       <div>
-                        <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-lg">Team members</h3>
-                        <p className="text-xs text-zinc-500 mt-1">Manage authorized event staff and coordinators.</p>
+                        <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] text-lg">Team members</h3>
+                        <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Manage authorized event staff and coordinators.</p>
                       </div>
                       <button 
                         onClick={fetchTeamDirectory}
@@ -1211,24 +1211,24 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         <Loader2 className="w-6 h-6 text-[#C59B27] animate-spin" />
                       </div>
                     ) : teamMembers.length === 0 ? (
-                      <p className="text-xs text-zinc-400 text-center py-10">No active team records retrieved.</p>
+                      <p className="text-xs text-zinc-400 dark:text-[#7A7570] text-center py-10">No active team records retrieved.</p>
                     ) : (
                       <div className="overflow-x-auto">
                         <table className="w-full text-left text-xs min-w-[500px]">
                           <thead>
-                            <tr className="border-b border-[#EAE8E1] bg-[#FAF9F6] text-zinc-500 font-medium text-[10px]">
+                            <tr className="border-b border-[#EAE8E1] dark:border-[#302E29] bg-[#FAF9F6] dark:bg-[#21211E] text-zinc-500 dark:text-[#7A7570] font-medium text-[10px]">
                               <th className="py-3 px-4 font-medium">Member</th>
                               <th className="py-3 px-4 font-medium">Role</th>
                               <th className="py-3 px-4 font-medium">Status</th>
                               <th className="py-3 px-4 font-medium text-right">Actions</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-zinc-100">
+                          <tbody className="divide-y divide-zinc-100 dark:divide-[#302E29]">
                             {teamMembers.map((member) => (
                               <tr 
                                 key={member.id} 
-                                className={`hover:bg-[#FAF9F6]/50 transition-colors group cursor-pointer ${
-                                  selectedMember?.id === member.id ? 'bg-[#FAF9F6]' : ''
+                                className={`hover:bg-[#FAF9F6]/50 dark:hover:bg-[#262520]/50 transition-colors group cursor-pointer ${
+                                  selectedMember?.id === member.id ? 'bg-[#FAF9F6] dark:bg-[#262520]' : ''
                                 }`}
                                 onClick={() => handleSelectMember(member)}
                               >
@@ -1238,23 +1238,23 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                       {member.fullName?.substring(0, 2) || 'AD'}
                                     </div>
                                     <div>
-                                      <span className="font-semibold text-[#18181B] block">{member.fullName}</span>
-                                      <span className="text-[10px] text-zinc-400 block">{member.email}</span>
+                                      <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] block">{member.fullName}</span>
+                                      <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block">{member.email}</span>
                                     </div>
                                   </div>
                                 </td>
                                 <td className="py-3 px-4">
                                   <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium ${
-                                    member.role === 'super_admin' ? 'bg-red-50 text-red-700 border border-red-100' :
-                                    member.role === 'admin' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
-                                    'bg-zinc-50 text-zinc-600 border border-zinc-200'
+                                    member.role === 'super_admin' ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-100 dark:border-red-900/40' :
+                                    member.role === 'admin' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-900/40' :
+                                    'bg-zinc-50 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] border border-zinc-200 dark:border-[#3A3835]'
                                   }`}>
                                     {member.role === 'super_admin' ? 'Super admin' : member.role === 'admin' ? 'Admin' : 'Team member'}
                                   </span>
                                 </td>
                                 <td className="py-3 px-4">
                                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                                    member.status === 'active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-800 border border-amber-100'
+                                    member.status === 'active' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/40' : 'bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-100 dark:border-amber-900/40'
                                   }`}>
                                     {member.status}
                                   </span>
@@ -1265,7 +1265,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                       e.stopPropagation();
                                       handleSelectMember(member);
                                     }}
-                                    className="text-zinc-400 group-hover:text-[#C59B27] p-1 hover:bg-zinc-100 rounded-lg transition-colors inline-flex cursor-pointer"
+                                    className="text-zinc-400 dark:text-[#7A7570] group-hover:text-[#C59B27] p-1 hover:bg-zinc-100 dark:hover:bg-[#262520] rounded-lg transition-colors inline-flex cursor-pointer"
                                   >
                                     <Edit2 className="w-3.5 h-3.5" />
                                   </button>
@@ -1283,31 +1283,31 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                     
                     {/* Add Team Member Card (Only visible to Super Admin) */}
                     {isSuperAdmin && !selectedMember && (
-                      <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-5">
-                        <div className="flex items-center space-x-3 border-b border-[#EAE8E1] pb-3">
+                      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-5">
+                        <div className="flex items-center space-x-3 border-b border-[#EAE8E1] dark:border-[#302E29] pb-3">
                           <div className="p-1.5 bg-[#C59B27]/5 rounded-lg text-[#C59B27] border border-[#C59B27]/10">
                             <UserPlus className="w-4 h-4" />
                           </div>
                           <div>
-                            <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-base">Add team member</h3>
-                            <p className="text-xs text-zinc-500 mt-1">Invite a new staff or team member.</p>
+                            <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] text-base">Add team member</h3>
+                            <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Invite a new staff or team member.</p>
                           </div>
                         </div>
 
                         <form onSubmit={handleInviteSubmit} className="space-y-4">
                           {inviteSuccessMsg && (
-                            <div className="bg-emerald-50 text-emerald-800 text-[11px] p-2.5 rounded-xl border border-emerald-100 font-medium">
+                            <div className="bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 text-[11px] p-2.5 rounded-xl border border-emerald-100 dark:border-emerald-900/40 font-medium">
                               {inviteSuccessMsg}
                             </div>
                           )}
                           {inviteErrorMsg && (
-                            <div className="bg-red-50 text-red-800 text-[11px] p-2.5 rounded-xl border border-red-100 font-medium">
+                            <div className="bg-red-50 dark:bg-red-950/20 text-red-800 dark:text-red-300 text-[11px] p-2.5 rounded-xl border border-red-100 dark:border-red-900/40 font-medium">
                               {inviteErrorMsg}
                             </div>
                           )}
 
                           <div className="space-y-1.5">
-                            <label className="text-xs font-medium text-[#18181B] block">
+                            <label className="text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] block">
                               Email address
                             </label>
                             <input
@@ -1316,18 +1316,18 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                               value={inviteEmail}
                               onChange={(e) => setInviteEmail(e.target.value)}
                               placeholder="invited@koinonia.org"
-                              className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:outline-none focus:border-[#C59B27] transition-all"
+                              className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-[#18181B] dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:border-[#C59B27] transition-all"
                             />
                           </div>
 
                           <div className="space-y-1.5">
-                            <label className="text-xs font-medium text-[#18181B] block">
+                            <label className="text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] block">
                               Role
                             </label>
                             <select
                               value={inviteRole}
                               onChange={(e) => setInviteRole(e.target.value as any)}
-                              className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:outline-none focus:border-[#C59B27] transition-all cursor-pointer"
+                              className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-[#18181B] dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27] transition-all cursor-pointer"
                             >
                               <option value="team">Team member (gate check-in)</option>
                               <option value="admin">Admin (reviews & history)</option>
@@ -1350,20 +1350,20 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
                     {/* Selected Team Member Detail & Role Assignment (Edit Mode) */}
                     {selectedMember && (
-                      <div className="bg-[#FAF9F6] border border-[#C59B27]/30 rounded-2xl p-6 space-y-5 shadow-xs">
-                        <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-3">
+                      <div className="bg-[#FAF9F6] dark:bg-[#1D1D1A] border border-[#C59B27]/30 dark:border-[#C59B27]/40 rounded-2xl p-6 space-y-5 shadow-xs">
+                        <div className="flex items-center justify-between border-b border-[#EAE8E1] dark:border-[#302E29] pb-3">
                           <div className="flex items-center space-x-2.5">
                             <div className="p-1.5 bg-[#C59B27]/10 rounded-lg text-[#C59B27] border border-[#C59B27]/15">
                               <ShieldCheck className="w-4 h-4" />
                             </div>
                             <div>
-                              <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-base">Staff details</h3>
-                              <p className="text-xs text-zinc-500 mt-1">Configure role permissions for this member.</p>
+                              <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] text-base">Staff details</h3>
+                              <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Configure role permissions for this member.</p>
                             </div>
                           </div>
                           <button 
                             onClick={() => setSelectedMember(null)}
-                            className="text-zinc-400 hover:text-[#18181B] p-1 bg-zinc-100 rounded-lg transition-colors cursor-pointer"
+                            className="text-zinc-400 dark:text-[#7A7570] hover:text-[#18181B] dark:hover:text-[#F0EBE3] p-1 bg-zinc-100 dark:bg-[#262520] rounded-lg transition-colors cursor-pointer"
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>
@@ -1371,15 +1371,15 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
                         {/* Details */}
                         <div className="space-y-3.5 text-xs">
-                          <div className="bg-white border border-[#EAE8E1] p-3 rounded-xl space-y-1.5">
-                            <span className="text-[10px] text-zinc-400 block font-medium">Currently editing</span>
-                            <span className="font-semibold text-[#18181B] block text-sm">{selectedMember.fullName}</span>
-                            <span className="text-zinc-500 block">{selectedMember.email}</span>
+                          <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] p-3 rounded-xl space-y-1.5">
+                            <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block font-medium">Currently editing</span>
+                            <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] block text-sm">{selectedMember.fullName}</span>
+                            <span className="text-zinc-500 dark:text-[#B8B0A5] block">{selectedMember.email}</span>
                           </div>
 
                           {/* Role Select */}
                           <div className="space-y-1.5">
-                            <label className="text-xs font-medium text-[#18181B] block">
+                            <label className="text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] block">
                               Assigned role
                             </label>
                             {isSuperAdmin ? (
@@ -1395,7 +1395,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                     fullGovernance: val === 'super_admin'
                                   });
                                 }}
-                                className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27] transition-all font-semibold cursor-pointer"
+                                className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] text-[#18181B] dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27] transition-all font-semibold cursor-pointer"
                               >
                                 <option value="volunteer">Volunteer (gate team)</option>
                                 <option value="team">Team member (on-site staff)</option>
@@ -1403,7 +1403,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                 <option value="super_admin">Super admin (full permissions)</option>
                               </select>
                             ) : (
-                              <div className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-zinc-200 bg-zinc-100 text-zinc-500 font-medium">
+                              <div className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-zinc-200 dark:border-[#3A3835] bg-zinc-100 dark:bg-[#262520] text-zinc-500 dark:text-[#B8B0A5] font-medium">
                                 {selectedMember.role === 'super_admin' ? 'Super admin' : selectedMember.role === 'admin' ? 'Admin' : 'Team member'}
                               </div>
                             )}
@@ -1411,30 +1411,30 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
                           {/* Access Management Section (Part 9) */}
                           <div className="space-y-2">
-                            <label className="text-xs font-medium text-[#18181B] block">
+                            <label className="text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] block">
                               Access Status
                             </label>
-                            <div className="bg-white border border-[#EAE8E1] rounded-xl p-3.5 space-y-3">
+                            <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl p-3.5 space-y-3">
                               <div className="flex items-center justify-between">
-                                <span className="text-xs text-zinc-500 font-medium">Current Status:</span>
+                                <span className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium">Current Status:</span>
                                 <span className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
-                                  selectedMember.status === 'active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                                  selectedMember.status === 'suspended' ? 'bg-amber-50 text-amber-700 border border-amber-200 animate-pulse' :
-                                  selectedMember.status === 'revoked' ? 'bg-red-50 text-red-700 border border-red-200' :
-                                  'bg-zinc-100 text-zinc-600 border border-zinc-200'
+                                  selectedMember.status === 'active' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/40' :
+                                  selectedMember.status === 'suspended' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40 animate-pulse' :
+                                  selectedMember.status === 'revoked' ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-900/40' :
+                                  'bg-zinc-100 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] border border-zinc-200 dark:border-[#3A3835]'
                                 }`}>
                                   {selectedMember.status || 'active'}
                                 </span>
                               </div>
 
                               {isSuperAdmin && (
-                                <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-100">
+                                <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-100 dark:border-[#302E29]">
                                   {selectedMember.status !== 'suspended' && selectedMember.status !== 'revoked' ? (
                                     <button
                                       type="button"
                                       disabled={savingRole}
                                       onClick={() => handleSaveMemberStatus('suspended')}
-                                      className="flex-1 min-w-[100px] text-center px-3 py-1.5 text-[10px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors cursor-pointer"
+                                      className="flex-1 min-w-[100px] text-center px-3 py-1.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-200 dark:border-amber-900/40 rounded-lg transition-colors cursor-pointer"
                                     >
                                       Suspend Account
                                     </button>
@@ -1443,7 +1443,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                       type="button"
                                       disabled={savingRole}
                                       onClick={() => handleSaveMemberStatus('active')}
-                                      className="flex-1 min-w-[100px] text-center px-3 py-1.5 text-[10px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
+                                      className="flex-1 min-w-[100px] text-center px-3 py-1.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-900/40 rounded-lg transition-colors cursor-pointer"
                                     >
                                       Reactivate Account
                                     </button>
@@ -1458,7 +1458,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                           handleSaveMemberStatus('revoked');
                                         }
                                       }}
-                                      className="flex-1 min-w-[100px] text-center px-3 py-1.5 text-[10px] font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors cursor-pointer"
+                                      className="flex-1 min-w-[100px] text-center px-3 py-1.5 text-[10px] font-semibold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-200 dark:border-red-900/40 rounded-lg transition-colors cursor-pointer"
                                     >
                                       Revoke Access
                                     </button>
@@ -1470,11 +1470,11 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
                           {/* Interactive Permissions Overlay */}
                           <div className="space-y-2 pt-1">
-                            <label className="text-xs font-medium text-[#18181B] block">
+                            <label className="text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] block">
                               Permissions
                             </label>
                             
-                            <div className="bg-white border border-[#EAE8E1] rounded-xl p-3 space-y-2.5">
+                            <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl p-3 space-y-2.5">
                               {[
                                 { key: 'manageRegistrations', label: 'Manage registrations and review applications', checked: editPermissions.manageRegistrations },
                                 { key: 'gateOperations', label: 'Gate operations, checking in and out children', checked: editPermissions.gateOperations },
@@ -1485,9 +1485,9 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                   {perm.checked ? (
                                     <Check className="w-4 h-4 text-[#C59B27] shrink-0 mt-0.5" />
                                   ) : (
-                                    <div className="w-4 h-4 border border-zinc-300 rounded shrink-0 mt-0.5" />
+                                    <div className="w-4 h-4 border border-zinc-300 dark:border-[#3A3835] rounded shrink-0 mt-0.5" />
                                   )}
-                                  <span className="text-[11px] text-zinc-600 font-medium leading-normal">{perm.label}</span>
+                                  <span className="text-[11px] text-zinc-600 dark:text-[#B8B0A5] font-medium leading-normal">{perm.label}</span>
                                 </div>
                               ))}
                             </div>
@@ -1509,13 +1509,13 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                               <button
                                 type="button"
                                 onClick={() => setSelectedMember(null)}
-                                className="px-4 py-2.5 text-xs font-medium border border-zinc-300 hover:bg-zinc-50 bg-white rounded-xl text-zinc-700 transition-all shrink-0 cursor-pointer"
+                                className="px-4 py-2.5 text-xs font-medium border border-zinc-300 dark:border-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#262520] bg-white dark:bg-[#21211E] rounded-xl text-zinc-700 dark:text-[#B8B0A5] transition-all shrink-0 cursor-pointer"
                               >
                                 Cancel
                               </button>
                             </div>
                           ) : (
-                            <p className="text-[10px] text-zinc-400 text-center italic pt-2">
+                            <p className="text-[10px] text-zinc-400 dark:text-[#7A7570] text-center italic pt-2">
                               Only Super Administrators can edit role allocations.
                             </p>
                           )}
@@ -1527,9 +1527,9 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                               (selectedMember.email && adminUser.email && selectedMember.email.toLowerCase() === adminUser.email.toLowerCase())
                             )
                           ) && (
-                            <div className="pt-3 border-t border-[#EAE8E1] flex items-center justify-between">
+                            <div className="pt-3 border-t border-[#EAE8E1] dark:border-[#302E29] flex items-center justify-between">
                               {selectedMember.role === 'super_admin' && teamMembers.filter(m => m.role === 'super_admin' && (m.status === 'active' || !m.status)).length <= 1 ? (
-                                <span className="text-[11px] text-zinc-400 italic">
+                                <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] italic">
                                   Cannot remove the only active Super Administrator.
                                 </span>
                               ) : (
@@ -1537,7 +1537,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                   type="button"
                                   disabled={isRemovingAccess}
                                   onClick={() => setRemovingMember(selectedMember)}
-                                  className="text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50/80 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                                  className="text-xs font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50/80 dark:hover:bg-red-950/30 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1.5"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                   <span>Remove access</span>
@@ -1556,23 +1556,23 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
                 {/* Remove Access Confirmation Modal */}
                 {removingMember && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-xs animate-in fade-in duration-150">
-                    <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl border border-[#EAE8E1] space-y-4 animate-in zoom-in-95 duration-150 font-sans">
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 dark:bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+                    <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl max-w-sm w-full p-6 shadow-xl border border-[#EAE8E1] dark:border-[#302E29] space-y-4 animate-in zoom-in-95 duration-150 font-sans">
                       <div className="space-y-1.5">
-                        <h3 className="text-base font-semibold text-stone-900">
+                        <h3 className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">
                           Remove access?
                         </h3>
-                        <p className="text-xs text-stone-600 leading-relaxed">
-                          <strong className="text-stone-900">{removingMember.fullName || removingMember.email}</strong> will no longer be able to sign in to the admin area.
+                        <p className="text-xs text-stone-600 dark:text-[#B8B0A5] leading-relaxed">
+                          <strong className="text-stone-900 dark:text-[#F0EBE3]">{removingMember.fullName || removingMember.email}</strong> will no longer be able to sign in to the admin area.
                         </p>
                       </div>
 
-                      <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#EAE8E1]">
+                      <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#EAE8E1] dark:border-[#302E29]">
                         <button
                           type="button"
                           disabled={isRemovingAccess}
                           onClick={() => setRemovingMember(null)}
-                          className="px-3.5 py-2 text-xs font-medium rounded-lg text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
+                          className="px-3.5 py-2 text-xs font-medium rounded-lg text-stone-700 dark:text-[#B8B0A5] hover:bg-stone-100 dark:hover:bg-[#262520] transition-colors cursor-pointer"
                         >
                           Cancel
                         </button>
@@ -1599,60 +1599,60 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                 {/* Channel Provider Status Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* Email Channel status */}
-                  <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-3 relative overflow-hidden">
+                  <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-5 space-y-3 relative overflow-hidden">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
                         <Mail className="w-4.5 h-4.5 text-[#C59B27]" />
-                        <span className="text-xs font-semibold text-[#18181B]">Email channel</span>
+                        <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">Email channel</span>
                       </div>
                       <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
-                        emailEnabled ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-zinc-100 text-zinc-500'
+                        emailEnabled ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/40' : 'bg-zinc-100 dark:bg-[#262520] text-zinc-500 dark:text-[#7A7570]'
                       }`}>
                         {emailEnabled ? 'Active' : 'Unconfigured'}
                       </span>
                     </div>
-                    <div className="text-[11px] text-zinc-500 space-y-1">
-                      <p>Provider: <strong className="text-zinc-700 font-medium">{emailProvider || 'Resend'}</strong></p>
-                      <p>API key: <strong className="text-zinc-500 font-normal">••••••••••••••••</strong></p>
+                    <div className="text-[11px] text-zinc-500 dark:text-[#B8B0A5] space-y-1">
+                      <p>Provider: <strong className="text-zinc-700 dark:text-[#F0EBE3] font-medium">{emailProvider || 'Resend'}</strong></p>
+                      <p>API key: <strong className="text-zinc-500 dark:text-[#7A7570] font-normal">••••••••••••••••</strong></p>
                     </div>
-                    <p className="text-[11px] text-zinc-400 leading-normal border-t border-zinc-100 pt-2.5">
+                    <p className="text-[11px] text-zinc-400 dark:text-[#7A7570] leading-normal border-t border-zinc-100 dark:border-[#302E29] pt-2.5">
                       Used for issuing secure admin activation links and volunteer approval emails.
                     </p>
                   </div>
 
                   {/* WhatsApp/SMS channel status */}
-                  <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-3 relative overflow-hidden">
+                  <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-5 space-y-3 relative overflow-hidden">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
                         <MessageSquare className="w-4.5 h-4.5 text-[#C59B27]" />
-                        <span className="text-xs font-semibold text-[#18181B]">WhatsApp channel</span>
+                        <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">WhatsApp channel</span>
                       </div>
                       <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
-                        whatsappEnabled ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-zinc-100 text-zinc-500'
+                        whatsappEnabled ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/40' : 'bg-zinc-100 dark:bg-[#262520] text-zinc-500 dark:text-[#7A7570]'
                       }`}>
                         {whatsappEnabled ? 'Active' : 'Unconfigured'}
                       </span>
                     </div>
-                    <div className="text-[11px] text-zinc-500 space-y-1">
-                      <p>Provider: <strong className="text-zinc-700 font-medium">{whatsappProvider || 'Twilio WhatsApp'}</strong></p>
-                      <p>Sender ID: <strong className="text-zinc-500 font-normal">••••••••••••••••</strong></p>
+                    <div className="text-[11px] text-zinc-500 dark:text-[#B8B0A5] space-y-1">
+                      <p>Provider: <strong className="text-zinc-700 dark:text-[#F0EBE3] font-medium">{whatsappProvider || 'Twilio WhatsApp'}</strong></p>
+                      <p>Sender ID: <strong className="text-zinc-500 dark:text-[#7A7570] font-normal">••••••••••••••••</strong></p>
                     </div>
-                    <p className="text-[11px] text-zinc-400 leading-normal border-t border-zinc-100 pt-2.5">
+                    <p className="text-[11px] text-zinc-400 dark:text-[#7A7570] leading-normal border-t border-zinc-100 dark:border-[#302E29] pt-2.5">
                       Used for broadcasting attendance alerts and quick gate release notification receipts.
                     </p>
                   </div>
                 </div>
 
                 {/* Message Sender Defaults Settings */}
-                <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-5">
-                  <div className="border-b border-[#EAE8E1] pb-3">
-                    <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-lg">Message channels</h3>
-                    <p className="text-xs text-zinc-500 mt-1">Set default sender names and reply-to email signatures.</p>
+                <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-5">
+                  <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-3">
+                    <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] text-lg">Message channels</h3>
+                    <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Set default sender names and reply-to email signatures.</p>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-[#18181B] block">
+                      <label className="text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] block">
                         Sender name
                       </label>
                       <input
@@ -1661,13 +1661,13 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         value={senderName}
                         onChange={(e) => setSenderName(e.target.value)}
                         placeholder="Koinonia Children & Teens"
-                        className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:outline-none focus:border-[#C59B27] transition-all"
+                        className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-[#18181B] dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:border-[#C59B27] transition-all"
                       />
-                      <span className="text-[10px] text-zinc-400 block">Displays as sender signature.</span>
+                      <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block">Displays as sender signature.</span>
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-[#18181B] block">
+                      <label className="text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] block">
                         Reply-to email
                       </label>
                       <input
@@ -1676,13 +1676,13 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         value={replyToEmail}
                         onChange={(e) => setReplyToEmail(e.target.value)}
                         placeholder="helpdesk@koinoniaglobal.org"
-                        className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:outline-none focus:border-[#C59B27] transition-all"
+                        className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-[#18181B] dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:border-[#C59B27] transition-all"
                       />
-                      <span className="text-[10px] text-zinc-400 block">Replies will be routed here.</span>
+                      <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block">Replies will be routed here.</span>
                     </div>
                   </div>
 
-                  <div className="flex justify-end border-t border-zinc-100 pt-4">
+                  <div className="flex justify-end border-t border-zinc-100 dark:border-[#302E29] pt-4">
                     <Button
                       type="button"
                       variant="primary"
@@ -1706,17 +1706,17 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
             {/* SUB-TAB 5: APP MEDIA */}
             {activeSubTab === 'app-media' && (
               <div 
-                className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-6"
+                className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-6"
                 data-view-version="admin-settings-media-v1"
               >
-                <div className="border-b border-[#EAE8E1] pb-4 flex items-center justify-between">
+                <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-4 flex items-center justify-between">
                   <div className="flex items-center space-x-3">
                     <div className="p-2 bg-[#C59B27]/5 rounded-xl text-[#C59B27] border border-[#C59B27]/15">
                       <Image className="w-5 h-5" />
                     </div>
                     <div>
-                      <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-base">App media</h3>
-                      <p className="text-xs text-zinc-500 mt-1">Manage coverages and high-resolution images across parent and volunteer views.</p>
+                      <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] text-base">App media</h3>
+                      <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Manage coverages and high-resolution images across parent and volunteer views.</p>
                     </div>
                   </div>
                   <Button 
@@ -1734,16 +1734,16 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                 {mediaFeedback && (
                   <div 
                     data-feedback="media-saved-success"
-                    className="bg-emerald-50 text-emerald-800 text-xs p-3 rounded-xl border border-emerald-100 font-medium flex items-center space-x-2"
+                    className="bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 text-xs p-3 rounded-xl border border-emerald-100 dark:border-emerald-900/40 font-medium flex items-center space-x-2"
                   >
-                    <Check className="w-4 h-4 text-emerald-600" />
+                    <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                     <span>{mediaFeedback}</span>
                   </div>
                 )}
 
                 {mediaError && (
-                  <div className="bg-red-50 text-red-800 text-xs p-3 rounded-xl border border-red-100 font-medium flex items-center space-x-2">
-                    <X className="w-4 h-4 text-red-600" />
+                  <div className="bg-red-50 dark:bg-red-950/20 text-red-800 dark:text-red-300 text-xs p-3 rounded-xl border border-red-100 dark:border-red-900/40 font-medium flex items-center space-x-2">
+                    <X className="w-4 h-4 text-red-600 dark:text-red-400" />
                     <span>{mediaError}</span>
                   </div>
                 )}
@@ -1754,15 +1754,15 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                 >
                   {/* Parent Dashboard Hero Card */}
                   <div 
-                    className="border border-[#EAE8E1] rounded-xl overflow-hidden bg-zinc-50 flex flex-col"
+                    className="border border-[#EAE8E1] dark:border-[#302E29] rounded-xl overflow-hidden bg-zinc-50 dark:bg-[#21211E] flex flex-col"
                     data-slot-key="parent_dashboard_hero"
                     data-component-version="admin-media-parent-hero-v1"
                   >
-                    <div className="p-4 border-b border-[#EAE8E1] bg-white">
-                      <h4 className="text-xs font-semibold text-[#18181B]">Parent Hero Image</h4>
-                      <p className="text-[11px] text-zinc-500 mt-0.5">Shown on parent home screen.</p>
+                    <div className="p-4 border-b border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#1D1D1A]">
+                      <h4 className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">Parent Hero Image</h4>
+                      <p className="text-[11px] text-zinc-500 dark:text-[#7A7570] mt-0.5">Shown on parent home screen.</p>
                     </div>
-                    <div className="relative aspect-video bg-zinc-100 flex items-center justify-center border-b border-[#EAE8E1]">
+                    <div className="relative aspect-video bg-zinc-100 dark:bg-[#262520] flex items-center justify-center border-b border-[#EAE8E1] dark:border-[#302E29]">
                       {mediaUrls.parent_dashboard_hero ? (
                         <SafeImage 
                           src={mediaUrls.parent_dashboard_hero} 
@@ -1771,18 +1771,18 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                           containerClassName="w-full h-full"
                         />
                       ) : (
-                        <div className="flex flex-col items-center justify-center text-zinc-400 p-4 text-center">
-                          <Image className="w-8 h-8 text-zinc-300 mb-2" />
+                        <div className="flex flex-col items-center justify-center text-zinc-400 dark:text-[#7A7570] p-4 text-center">
+                          <Image className="w-8 h-8 text-zinc-300 dark:text-[#7A7570] mb-2" />
                           <span className="text-[11px] font-medium">Default Illustration</span>
                         </div>
                       )}
                       {uploadingSlot === 'parent_dashboard_hero' && (
-                        <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-10">
+                        <div className="absolute inset-0 bg-white/70 dark:bg-[#1D1D1A]/70 flex items-center justify-center z-10">
                           <Loader2 className="w-6 h-6 text-[#C59B27] animate-spin" />
                         </div>
                       )}
                     </div>
-                    <div className="p-4 flex items-center justify-between gap-2 mt-auto bg-white">
+                    <div className="p-4 flex items-center justify-between gap-2 mt-auto bg-white dark:bg-[#1D1D1A]">
                       <div className="relative">
                         <input
                           type="file"
@@ -1796,7 +1796,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         />
                         <label
                           htmlFor="file-parent-hero"
-                          className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 text-[#18181B] text-[11px] font-semibold rounded-lg cursor-pointer flex items-center space-x-1 transition-all"
+                          className="px-3 py-1.5 bg-zinc-100 dark:bg-[#262520] hover:bg-zinc-200 dark:hover:bg-[#2A2926] border border-zinc-200 dark:border-[#3A3835] text-[#18181B] dark:text-[#F0EBE3] text-[11px] font-semibold rounded-lg cursor-pointer flex items-center space-x-1 transition-all"
                         >
                           <Upload className="w-3 h-3" />
                           <span>Upload / Replace</span>
@@ -1805,7 +1805,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                       {mediaUrls.parent_dashboard_hero && (
                         <button
                           onClick={() => handleResetMedia('parent_dashboard_hero')}
-                          className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all border border-transparent hover:border-red-100"
+                          className="p-1.5 text-zinc-400 dark:text-[#7A7570] hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-all border border-transparent hover:border-red-100"
                           title="Reset to default image"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -1816,15 +1816,15 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
                   {/* Volunteer Dashboard Hero Card */}
                   <div 
-                    className="border border-[#EAE8E1] rounded-xl overflow-hidden bg-zinc-50 flex flex-col"
+                    className="border border-[#EAE8E1] dark:border-[#302E29] rounded-xl overflow-hidden bg-zinc-50 dark:bg-[#21211E] flex flex-col"
                     data-slot-key="volunteer_dashboard_hero"
                     data-component-version="admin-media-volunteer-hero-v1"
                   >
-                    <div className="p-4 border-b border-[#EAE8E1] bg-white">
-                      <h4 className="text-xs font-semibold text-[#18181B]">Volunteer Hero Image</h4>
-                      <p className="text-[11px] text-zinc-500 mt-0.5">Shown on volunteer dashboard screen.</p>
+                    <div className="p-4 border-b border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#1D1D1A]">
+                      <h4 className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">Volunteer Hero Image</h4>
+                      <p className="text-[11px] text-zinc-500 dark:text-[#7A7570] mt-0.5">Shown on volunteer dashboard screen.</p>
                     </div>
-                    <div className="relative aspect-video bg-zinc-100 flex items-center justify-center border-b border-[#EAE8E1]">
+                    <div className="relative aspect-video bg-zinc-100 dark:bg-[#262520] flex items-center justify-center border-b border-[#EAE8E1] dark:border-[#302E29]">
                       {mediaUrls.volunteer_dashboard_hero ? (
                         <SafeImage 
                           src={mediaUrls.volunteer_dashboard_hero} 
@@ -1833,18 +1833,18 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                           containerClassName="w-full h-full"
                         />
                       ) : (
-                        <div className="flex flex-col items-center justify-center text-zinc-400 p-4 text-center">
-                          <Image className="w-8 h-8 text-zinc-300 mb-2" />
+                        <div className="flex flex-col items-center justify-center text-zinc-400 dark:text-[#7A7570] p-4 text-center">
+                          <Image className="w-8 h-8 text-zinc-300 dark:text-[#7A7570] mb-2" />
                           <span className="text-[11px] font-medium">Default Illustration</span>
                         </div>
                       )}
                       {uploadingSlot === 'volunteer_dashboard_hero' && (
-                        <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-10">
+                        <div className="absolute inset-0 bg-white/70 dark:bg-[#1D1D1A]/70 flex items-center justify-center z-10">
                           <Loader2 className="w-6 h-6 text-[#C59B27] animate-spin" />
                         </div>
                       )}
                     </div>
-                    <div className="p-4 flex items-center justify-between gap-2 mt-auto bg-white">
+                    <div className="p-4 flex items-center justify-between gap-2 mt-auto bg-white dark:bg-[#1D1D1A]">
                       <div className="relative">
                         <input
                           type="file"
@@ -1858,7 +1858,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         />
                         <label
                           htmlFor="file-volunteer-hero"
-                          className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 text-[#18181B] text-[11px] font-semibold rounded-lg cursor-pointer flex items-center space-x-1 transition-all"
+                          className="px-3 py-1.5 bg-zinc-100 dark:bg-[#262520] hover:bg-zinc-200 dark:hover:bg-[#2A2926] border border-zinc-200 dark:border-[#3A3835] text-[#18181B] dark:text-[#F0EBE3] text-[11px] font-semibold rounded-lg cursor-pointer flex items-center space-x-1 transition-all"
                         >
                           <Upload className="w-3 h-3" />
                           <span>Upload / Replace</span>
@@ -1867,7 +1867,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                       {mediaUrls.volunteer_dashboard_hero && (
                         <button
                           onClick={() => handleResetMedia('volunteer_dashboard_hero')}
-                          className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all border border-transparent hover:border-red-100"
+                          className="p-1.5 text-zinc-400 dark:text-[#7A7570] hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-all border border-transparent hover:border-red-100"
                           title="Reset to default image"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -1878,15 +1878,15 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
                   {/* Default Event Cover Card */}
                   <div 
-                    className="border border-[#EAE8E1] rounded-xl overflow-hidden bg-zinc-50 flex flex-col"
+                    className="border border-[#EAE8E1] dark:border-[#302E29] rounded-xl overflow-hidden bg-zinc-50 dark:bg-[#21211E] flex flex-col"
                     data-slot-key="default_event_hero"
                     data-component-version="admin-media-default-event-v1"
                   >
-                    <div className="p-4 border-b border-[#EAE8E1] bg-white">
-                      <h4 className="text-xs font-semibold text-[#18181B]">Default Event Cover</h4>
-                      <p className="text-[11px] text-zinc-500 mt-0.5">Used as backup for events.</p>
+                    <div className="p-4 border-b border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#1D1D1A]">
+                      <h4 className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">Default Event Cover</h4>
+                      <p className="text-[11px] text-zinc-500 dark:text-[#7A7570] mt-0.5">Used as backup for events.</p>
                     </div>
-                    <div className="relative aspect-video bg-zinc-100 flex items-center justify-center border-b border-[#EAE8E1]">
+                    <div className="relative aspect-video bg-zinc-100 dark:bg-[#262520] flex items-center justify-center border-b border-[#EAE8E1] dark:border-[#302E29]">
                       {mediaUrls.default_event_hero ? (
                         <SafeImage 
                           src={mediaUrls.default_event_hero} 
@@ -1895,18 +1895,18 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                           containerClassName="w-full h-full"
                         />
                       ) : (
-                        <div className="flex flex-col items-center justify-center text-zinc-400 p-4 text-center">
-                          <Image className="w-8 h-8 text-zinc-300 mb-2" />
+                        <div className="flex flex-col items-center justify-center text-zinc-400 dark:text-[#7A7570] p-4 text-center">
+                          <Image className="w-8 h-8 text-zinc-300 dark:text-[#7A7570] mb-2" />
                           <span className="text-[11px] font-medium">Default Cover Image</span>
                         </div>
                       )}
                       {uploadingSlot === 'default_event_hero' && (
-                        <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-10">
+                        <div className="absolute inset-0 bg-white/70 dark:bg-[#1D1D1A]/70 flex items-center justify-center z-10">
                           <Loader2 className="w-6 h-6 text-[#C59B27] animate-spin" />
                         </div>
                       )}
                     </div>
-                    <div className="p-4 flex items-center justify-between gap-2 mt-auto bg-white">
+                    <div className="p-4 flex items-center justify-between gap-2 mt-auto bg-white dark:bg-[#1D1D1A]">
                       <div className="relative">
                         <input
                           type="file"
@@ -1920,7 +1920,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         />
                         <label
                           htmlFor="file-event-cover"
-                          className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 text-[#18181B] text-[11px] font-semibold rounded-lg cursor-pointer flex items-center space-x-1 transition-all"
+                          className="px-3 py-1.5 bg-zinc-100 dark:bg-[#262520] hover:bg-zinc-200 dark:hover:bg-[#2A2926] border border-zinc-200 dark:border-[#3A3835] text-[#18181B] dark:text-[#F0EBE3] text-[11px] font-semibold rounded-lg cursor-pointer flex items-center space-x-1 transition-all"
                         >
                           <Upload className="w-3 h-3" />
                           <span>Upload / Replace</span>
@@ -1929,7 +1929,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                       {mediaUrls.default_event_hero && (
                         <button
                           onClick={() => handleResetMedia('default_event_hero')}
-                          className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all border border-transparent hover:border-red-100"
+                          className="p-1.5 text-zinc-400 dark:text-[#7A7570] hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-all border border-transparent hover:border-red-100"
                           title="Reset to default image"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -1940,24 +1940,24 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
                   {/* Official Favicon / App Icon Card */}
                   <div 
-                    className="border border-[#EAE8E1] rounded-xl overflow-hidden bg-zinc-50 flex flex-col"
+                    className="border border-[#EAE8E1] dark:border-[#302E29] rounded-xl overflow-hidden bg-zinc-50 dark:bg-[#21211E] flex flex-col"
                     data-slot-key="site_favicon"
                     data-component-version="admin-media-favicon-v2"
                   >
-                    <div className="p-4 border-b border-[#EAE8E1] bg-white">
+                    <div className="p-4 border-b border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#1D1D1A]">
                       <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-semibold text-[#18181B]">Favicon and app icon</h4>
+                        <h4 className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">Favicon and app icon</h4>
                         <span className="px-1.5 py-0.5 bg-[#C59B27]/10 text-[#C59B27] text-[10px] font-bold rounded">Bird Mark Only</span>
                       </div>
-                      <p className="text-[11px] text-zinc-500 mt-0.5">Upload the bird mark used in browser tabs and installed app icons.</p>
+                      <p className="text-[11px] text-zinc-500 dark:text-[#7A7570] mt-0.5">Upload the bird mark used in browser tabs and installed app icons.</p>
                     </div>
-                    <div className="relative bg-zinc-100 border-b border-[#EAE8E1] p-4 flex flex-col items-center justify-center space-y-3">
+                    <div className="relative bg-zinc-100 dark:bg-[#262520] border-b border-[#EAE8E1] dark:border-[#302E29] p-4 flex flex-col items-center justify-center space-y-3">
                       {/* Realistic Sizes Preview: 16x16, 32x32, 48x48 */}
-                      <div className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Realistic Tab Previews</div>
+                      <div className="text-[10px] font-semibold text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider">Realistic Tab Previews</div>
                       <div className="flex items-end justify-center gap-6">
                         {/* 16x16 */}
                         <div className="flex flex-col items-center space-y-1">
-                          <div className="w-8 h-8 rounded-lg bg-white border border-zinc-200 flex items-center justify-center p-1 shadow-xs">
+                          <div className="w-8 h-8 rounded-lg bg-white dark:bg-[#1D1D1A] border border-zinc-200 dark:border-[#3A3835] flex items-center justify-center p-1 shadow-xs">
                             <img 
                               src={mediaUrls.site_favicon || '/favicon-16x16.png'} 
                               alt="16x16 Preview" 
@@ -1965,11 +1965,11 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                               onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.svg'; }}
                             />
                           </div>
-                          <span className="text-[9px] font-mono text-zinc-400">16px</span>
+                          <span className="text-[9px] font-mono text-zinc-400 dark:text-[#7A7570]">16px</span>
                         </div>
                         {/* 32x32 */}
                         <div className="flex flex-col items-center space-y-1">
-                          <div className="w-10 h-10 rounded-lg bg-white border border-zinc-200 flex items-center justify-center p-1 shadow-xs">
+                          <div className="w-10 h-10 rounded-lg bg-white dark:bg-[#1D1D1A] border border-zinc-200 dark:border-[#3A3835] flex items-center justify-center p-1 shadow-xs">
                             <img 
                               src={mediaUrls.site_favicon || '/favicon-32x32.png'} 
                               alt="32x32 Light Preview" 
@@ -1977,7 +1977,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                               onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.svg'; }}
                             />
                           </div>
-                          <span className="text-[9px] font-mono text-zinc-400">32px Light</span>
+                          <span className="text-[9px] font-mono text-zinc-400 dark:text-[#7A7570]">32px Light</span>
                         </div>
                         {/* 32x32 Dark Tab */}
                         <div className="flex flex-col items-center space-y-1">
@@ -1989,11 +1989,11 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                               onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.svg'; }}
                             />
                           </div>
-                          <span className="text-[9px] font-mono text-zinc-400">32px Dark</span>
+                          <span className="text-[9px] font-mono text-zinc-400 dark:text-[#7A7570]">32px Dark</span>
                         </div>
                         {/* 48x48 App Icon */}
                         <div className="flex flex-col items-center space-y-1">
-                          <div className="w-14 h-14 rounded-xl bg-white border border-zinc-200 flex items-center justify-center p-1.5 shadow-xs">
+                          <div className="w-14 h-14 rounded-xl bg-white dark:bg-[#1D1D1A] border border-zinc-200 dark:border-[#3A3835] flex items-center justify-center p-1.5 shadow-xs">
                             <img 
                               src={mediaUrls.site_favicon || '/apple-touch-icon.png'} 
                               alt="48x48 Preview" 
@@ -2001,16 +2001,16 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                               onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.svg'; }}
                             />
                           </div>
-                          <span className="text-[9px] font-mono text-zinc-400">48px App</span>
+                          <span className="text-[9px] font-mono text-zinc-400 dark:text-[#7A7570]">48px App</span>
                         </div>
                       </div>
                       {uploadingSlot === 'site_favicon' && (
-                        <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-10">
+                        <div className="absolute inset-0 bg-white/80 dark:bg-[#1D1D1A]/80 flex items-center justify-center z-10">
                           <Loader2 className="w-6 h-6 text-[#C59B27] animate-spin" />
                         </div>
                       )}
                     </div>
-                    <div className="p-4 flex items-center justify-between gap-2 mt-auto bg-white">
+                    <div className="p-4 flex items-center justify-between gap-2 mt-auto bg-white dark:bg-[#1D1D1A]">
                       <div className="relative">
                         <input
                           type="file"
@@ -2024,7 +2024,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         />
                         <label
                           htmlFor="file-site-favicon"
-                          className="px-3.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white text-[11px] font-semibold rounded-lg cursor-pointer flex items-center space-x-1.5 transition-all shadow-xs"
+                          className="px-3.5 py-1.5 bg-zinc-900 dark:bg-[#262520] hover:bg-zinc-800 dark:hover:bg-[#2A2926] text-white dark:text-[#F0EBE3] text-[11px] font-semibold rounded-lg cursor-pointer flex items-center space-x-1.5 transition-all shadow-xs border dark:border-[#3A3835]"
                         >
                           <Upload className="w-3.5 h-3.5 text-[#C59B27]" />
                           <span>{mediaUrls.site_favicon ? 'Replace icon' : 'Upload icon'}</span>
@@ -2033,7 +2033,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                       {mediaUrls.site_favicon && (
                         <button
                           onClick={() => handleResetMedia('site_favicon')}
-                          className="px-3 py-1.5 text-rose-600 hover:bg-rose-50 rounded-lg text-[11px] font-semibold transition-all border border-rose-200 flex items-center space-x-1 cursor-pointer"
+                          className="px-3 py-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg text-[11px] font-semibold transition-all border border-rose-200 dark:border-rose-900/40 flex items-center space-x-1 cursor-pointer"
                           title="Remove custom icon and revert to default bird mark"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -2056,26 +2056,26 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                 <div className="space-y-8">
                   {/* CARD 1: GLOBAL ALERT ROUTING RULES */}
                   <div 
-                    className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-6 flex flex-col justify-between"
+                    className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-6 flex flex-col justify-between"
                     data-component-version="admin-alert-delivery-rules-v1"
                   >
                     <div className="space-y-6">
-                      <div className="border-b border-[#EAE8E1] pb-4">
+                      <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-4">
                         <div className="flex items-center space-x-2.5">
                           <div className="p-2 bg-[#C59B27]/5 rounded-xl text-[#C59B27] border border-[#C59B27]/15">
                             <ShieldAlert className="w-5 h-5" />
                           </div>
                           <div>
-                            <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-base">Global alert routing rules</h3>
-                            <p className="text-xs text-zinc-500 mt-0.5">Control how volunteer safety alerts are escalated across the organization.</p>
+                            <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] text-base">Global alert routing rules</h3>
+                            <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-0.5">Control how volunteer safety alerts are escalated across the organization.</p>
                           </div>
                         </div>
                       </div>
 
                       {/* Section 1: Who Receives Urgent Alerts */}
                       <div className="space-y-3">
-                        <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">1. Recipient roles</h4>
-                        <p className="text-[11px] text-zinc-400 mt-1">Select the active management roles that should receive urgent escalated alerts.</p>
+                        <h4 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] tracking-wider uppercase">1. Recipient roles</h4>
+                        <p className="text-[11px] text-zinc-400 dark:text-[#7A7570] mt-1">Select the active management roles that should receive urgent escalated alerts.</p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
                           {Object.entries(recipientRoles).map(([role, checked]) => {
                             const labelMap: Record<string, string> = {
@@ -2090,16 +2090,16 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                 key={role}
                                 type="button"
                                 onClick={() => setRecipientRoles(prev => ({ ...prev, [role]: !checked }))}
-                                className="flex items-center space-x-3 p-3 rounded-xl border border-zinc-100 hover:border-[#C59B27]/30 hover:bg-zinc-50/50 transition-all text-left cursor-pointer"
+                                className="flex items-center space-x-3 p-3 rounded-xl border border-zinc-100 dark:border-[#302E29] bg-transparent dark:bg-[#21211E] hover:border-[#C59B27]/30 hover:bg-zinc-50/50 dark:hover:bg-[#262520] transition-all text-left cursor-pointer"
                               >
                                 <div className="text-zinc-500">
                                   {checked ? (
                                     <CheckSquare className="w-4.5 h-4.5 text-[#C59B27]" />
                                   ) : (
-                                    <Square className="w-4.5 h-4.5 text-zinc-300" />
+                                    <Square className="w-4.5 h-4.5 text-zinc-300 dark:text-[#7A7570]" />
                                   )}
                                 </div>
-                                <span className="text-xs font-medium text-zinc-700">{labelMap[role] || role}</span>
+                                <span className="text-xs font-medium text-zinc-700 dark:text-[#B8B0A5]">{labelMap[role] || role}</span>
                               </button>
                             );
                           })}
@@ -2108,8 +2108,8 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
                       {/* Section 2: Alert Categories */}
                       <div className="space-y-3 pt-2">
-                        <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">2. Routed categories</h4>
-                        <p className="text-[11px] text-zinc-400 mt-1">Active event concern classifications subject to this routing profile.</p>
+                        <h4 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] tracking-wider uppercase">2. Routed categories</h4>
+                        <p className="text-[11px] text-zinc-400 dark:text-[#7A7570] mt-1">Active event concern classifications subject to this routing profile.</p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
                           {Object.entries(alertCategories).map(([cat, checked]) => {
                             const labelMap: Record<string, string> = {
@@ -2125,16 +2125,16 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                 key={cat}
                                 type="button"
                                 onClick={() => setAlertCategories(prev => ({ ...prev, [cat]: !checked }))}
-                                className="flex items-center space-x-3 p-3 rounded-xl border border-zinc-100 hover:border-[#C59B27]/30 hover:bg-zinc-50/50 transition-all text-left cursor-pointer"
+                                className="flex items-center space-x-3 p-3 rounded-xl border border-zinc-100 dark:border-[#302E29] bg-transparent dark:bg-[#21211E] hover:border-[#C59B27]/30 hover:bg-zinc-50/50 dark:hover:bg-[#262520] transition-all text-left cursor-pointer"
                               >
                                 <div className="text-zinc-500">
                                   {checked ? (
                                     <CheckSquare className="w-4.5 h-4.5 text-[#C59B27]" />
                                   ) : (
-                                    <Square className="w-4.5 h-4.5 text-zinc-300" />
+                                    <Square className="w-4.5 h-4.5 text-zinc-300 dark:text-[#7A7570]" />
                                   )}
                                 </div>
-                                <span className="text-xs font-medium text-zinc-700">{labelMap[cat] || cat}</span>
+                                <span className="text-xs font-medium text-zinc-700 dark:text-[#B8B0A5]">{labelMap[cat] || cat}</span>
                               </button>
                             );
                           })}
@@ -2143,8 +2143,8 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
                       {/* Section 3: Delivery Methods */}
                       <div className="space-y-3 pt-2">
-                        <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">3. Delivery channels</h4>
-                        <p className="text-[11px] text-zinc-400 mt-1">Authorized channels for transmitting active real-time safety alerts.</p>
+                        <h4 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] tracking-wider uppercase">3. Delivery channels</h4>
+                        <p className="text-[11px] text-zinc-400 dark:text-[#7A7570] mt-1">Authorized channels for transmitting active real-time safety alerts.</p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
                           {Object.entries(deliveryMethods).map(([method, checked]) => {
                             const labelMap: Record<string, string> = {
@@ -2160,16 +2160,16 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                 key={method}
                                 type="button"
                                 onClick={() => setDeliveryMethods(prev => ({ ...prev, [method]: !checked }))}
-                                className="flex items-center space-x-3 p-3 rounded-xl border border-zinc-100 hover:border-[#C59B27]/30 hover:bg-zinc-50/50 transition-all text-left cursor-pointer"
+                                className="flex items-center space-x-3 p-3 rounded-xl border border-zinc-100 dark:border-[#302E29] bg-transparent dark:bg-[#21211E] hover:border-[#C59B27]/30 hover:bg-zinc-50/50 dark:hover:bg-[#262520] transition-all text-left cursor-pointer"
                               >
                                 <div className="text-zinc-500">
                                   {checked ? (
                                     <CheckSquare className="w-4.5 h-4.5 text-[#C59B27]" />
                                   ) : (
-                                    <Square className="w-4.5 h-4.5 text-zinc-300" />
+                                    <Square className="w-4.5 h-4.5 text-zinc-300 dark:text-[#7A7570]" />
                                   )}
                                 </div>
-                                <span className="text-xs font-medium text-zinc-700">{labelMap[method] || method}</span>
+                                <span className="text-xs font-medium text-zinc-700 dark:text-[#B8B0A5]">{labelMap[method] || method}</span>
                               </button>
                             );
                           })}
@@ -2178,39 +2178,39 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
                       {/* Section 4: Severity-based Routing Rules */}
                       <div className="space-y-3 pt-2">
-                        <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">4. Severity-based routing rules</h4>
-                        <div className="border border-zinc-100 rounded-xl overflow-hidden divide-y divide-zinc-50">
-                          <div className="p-3 bg-zinc-50/50 flex justify-between text-[11px] font-semibold text-zinc-500">
+                        <h4 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] tracking-wider uppercase">4. Severity-based routing rules</h4>
+                        <div className="border border-zinc-100 dark:border-[#302E29] rounded-xl overflow-hidden divide-y divide-zinc-50 dark:divide-[#302E29]">
+                          <div className="p-3 bg-zinc-50/50 dark:bg-[#21211E] flex justify-between text-[11px] font-semibold text-zinc-500 dark:text-[#7A7570]">
                             <span>SEVERITY LEVEL</span>
                             <span>ROUTING ACTION</span>
                           </div>
                           <div className="p-3 flex justify-between items-center text-xs">
-                            <span className="font-medium text-zinc-800">🟢 Normal</span>
-                            <span className="text-zinc-500 bg-zinc-100 px-2.5 py-1 rounded-lg text-[10px]">Bell notification only</span>
+                            <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">🟢 Normal</span>
+                            <span className="text-zinc-500 dark:text-[#7A7570] bg-zinc-100 dark:bg-[#262520] px-2.5 py-1 rounded-lg text-[10px]">Bell notification only</span>
                           </div>
                           <div className="p-3 flex justify-between items-center text-xs">
-                            <span className="font-medium text-amber-600">🟡 Important</span>
-                            <span className="text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg text-[10px] font-medium border border-amber-100/50">Bell + Sound Chime</span>
+                            <span className="font-medium text-amber-600 dark:text-amber-400">🟡 Important</span>
+                            <span className="text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-2.5 py-1 rounded-lg text-[10px] font-medium border border-amber-100/50 dark:border-amber-900/40">Bell + Sound Chime</span>
                           </div>
                           <div className="p-3 flex justify-between items-center text-xs">
-                            <span className="font-medium text-red-600">🔴 Urgent</span>
-                            <span className="text-red-600 bg-red-50 px-2.5 py-1 rounded-lg text-[10px] font-medium border border-red-100/50">Bell + Full Overlay + Sound + Vibe + Push</span>
+                            <span className="font-medium text-red-600 dark:text-red-400">🔴 Urgent</span>
+                            <span className="text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 px-2.5 py-1 rounded-lg text-[10px] font-medium border border-red-100/50 dark:border-red-900/40">Bell + Full Overlay + Sound + Vibe + Push</span>
                           </div>
                         </div>
                       </div>
 
                       {/* Section 5: Recipients & Delivery Panel */}
                       <div 
-                        className="space-y-4 pt-4 border-t border-zinc-100" 
+                        className="space-y-4 pt-4 border-t border-zinc-100 dark:border-[#302E29]"
                         data-component-version="alert-recipients-delivery-panel-v1"
                       >
-                        <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">
+                        <h4 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] tracking-wider uppercase">
                           5. Secure recipients & delivery details policy
                         </h4>
                         
                         {/* Channel preference */}
                         <div className="space-y-2">
-                          <span className="text-[11px] font-bold text-zinc-500 block uppercase">
+                          <span className="text-[11px] font-bold text-zinc-500 dark:text-[#7A7570] block uppercase">
                             Primary Transmission Channel
                           </span>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -2219,20 +2219,20 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                               onClick={() => setDeliveryChannelMode('app_only')}
                               className={`p-3 rounded-xl border text-left flex items-start space-x-3 transition-all cursor-pointer ${
                                 deliveryChannelMode === 'app_only'
-                                  ? 'border-[#C59B27] bg-[#C59B27]/5'
-                                  : 'border-zinc-100 hover:bg-zinc-50/50'
+                                  ? 'border-[#C59B27] bg-[#C59B27]/5 dark:bg-[#C59B27]/10'
+                                  : 'border-zinc-100 dark:border-[#302E29] bg-transparent dark:bg-[#21211E] hover:bg-zinc-50/50 dark:hover:bg-[#262520]'
                               }`}
                             >
                               <div className="mt-0.5">
                                 <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                                  deliveryChannelMode === 'app_only' ? 'border-[#C59B27]' : 'border-zinc-300'
+                                  deliveryChannelMode === 'app_only' ? 'border-[#C59B27]' : 'border-zinc-300 dark:border-[#3A3835]'
                                 }`}>
                                   {deliveryChannelMode === 'app_only' && <div className="w-2 h-2 rounded-full bg-[#C59B27]" />}
                                 </div>
                               </div>
                               <div>
-                                <span className="text-xs font-semibold text-zinc-700 block">Secure App-Only</span>
-                                <span className="text-[10px] text-zinc-400 font-sans mt-0.5">Restricted strictly within authenticated dashboards</span>
+                                <span className="text-xs font-semibold text-zinc-700 dark:text-[#F0EBE3] block">Secure App-Only</span>
+                                <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-sans mt-0.5">Restricted strictly within authenticated dashboards</span>
                               </div>
                             </button>
 
@@ -2241,20 +2241,20 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                               onClick={() => setDeliveryChannelMode('sms_push_fallback')}
                               className={`p-3 rounded-xl border text-left flex items-start space-x-3 transition-all cursor-pointer ${
                                 deliveryChannelMode === 'sms_push_fallback'
-                                  ? 'border-amber-500 bg-amber-50/40'
-                                  : 'border-zinc-100 hover:bg-zinc-50/50'
+                                  ? 'border-amber-500 bg-amber-50/40 dark:bg-amber-950/20'
+                                  : 'border-zinc-100 dark:border-[#302E29] bg-transparent dark:bg-[#21211E] hover:bg-zinc-50/50 dark:hover:bg-[#262520]'
                               }`}
                             >
                               <div className="mt-0.5">
                                 <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                                  deliveryChannelMode === 'sms_push_fallback' ? 'border-amber-500' : 'border-zinc-300'
+                                  deliveryChannelMode === 'sms_push_fallback' ? 'border-amber-500' : 'border-zinc-300 dark:border-[#3A3835]'
                                 }`}>
                                   {deliveryChannelMode === 'sms_push_fallback' && <div className="w-2 h-2 rounded-full bg-amber-500" />}
                                 </div>
                               </div>
                               <div>
-                                <span className="text-xs font-semibold text-zinc-700 block">SMS & Push Fallback</span>
-                                <span className="text-[10px] text-zinc-400 font-sans mt-0.5">Allows external SMS previews with zero child details</span>
+                                <span className="text-xs font-semibold text-zinc-700 dark:text-[#F0EBE3] block">SMS & Push Fallback</span>
+                                <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-sans mt-0.5">Allows external SMS previews with zero child details</span>
                               </div>
                             </button>
                           </div>
@@ -2262,7 +2262,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
                         {/* Child Details Inclusion Policy */}
                         <div className="space-y-2 pt-1">
-                          <span className="text-[11px] font-bold text-zinc-500 block uppercase">
+                          <span className="text-[11px] font-bold text-zinc-500 dark:text-[#7A7570] block uppercase">
                             Child Context Disclosure Policy
                           </span>
                           
@@ -2272,22 +2272,22 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                               onClick={() => setIncludeSecureInAppChildDetails(true)}
                               className={`w-full p-3.5 rounded-xl border text-left flex items-start space-x-3 transition-all cursor-pointer ${
                                 includeSecureInAppChildDetails
-                                  ? 'border-emerald-500 bg-emerald-50/10'
-                                  : 'border-zinc-100 hover:bg-zinc-50/50'
+                                  ? 'border-emerald-500 bg-emerald-50/10 dark:bg-emerald-950/20'
+                                  : 'border-zinc-100 dark:border-[#302E29] bg-transparent dark:bg-[#21211E] hover:bg-zinc-50/50 dark:hover:bg-[#262520]'
                               }`}
                             >
                               <div className="mt-0.5">
                                 <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                                  includeSecureInAppChildDetails ? 'border-emerald-500' : 'border-zinc-300'
+                                  includeSecureInAppChildDetails ? 'border-emerald-500' : 'border-zinc-300 dark:border-[#3A3835]'
                                 }`}>
                                   {includeSecureInAppChildDetails && <div className="w-2 h-2 rounded-full bg-emerald-500" />}
                                 </div>
                               </div>
                               <div>
-                                <span className="text-xs font-bold text-zinc-800 block">
+                                <span className="text-xs font-bold text-zinc-800 dark:text-[#F0EBE3] block">
                                   Include secure in-app child details/photo (Recommended)
                                 </span>
-                                <span className="text-[10px] text-zinc-500 leading-relaxed font-sans block mt-1">
+                                <span className="text-[10px] text-zinc-500 dark:text-[#7A7570] leading-relaxed font-sans block mt-1">
                                   Authorized users see names, photos, events, and medical/pickup flags securely inside the live app ONLY. Lock screen and SMS alerts remain anonymous.
                                 </span>
                               </div>
@@ -2298,22 +2298,22 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                               onClick={() => setIncludeSecureInAppChildDetails(false)}
                               className={`w-full p-3.5 rounded-xl border text-left flex items-start space-x-3 transition-all cursor-pointer ${
                                 !includeSecureInAppChildDetails
-                                  ? 'border-zinc-500 bg-zinc-50'
-                                  : 'border-zinc-100 hover:bg-zinc-50/50'
+                                  ? 'border-zinc-500 bg-zinc-50 dark:bg-[#262520] dark:border-[#3A3835]'
+                                  : 'border-zinc-100 dark:border-[#302E29] bg-transparent dark:bg-[#21211E] hover:bg-zinc-50/50 dark:hover:bg-[#262520]'
                               }`}
                             >
                               <div className="mt-0.5">
                                 <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                                  !includeSecureInAppChildDetails ? 'border-zinc-500' : 'border-zinc-300'
+                                  !includeSecureInAppChildDetails ? 'border-zinc-500' : 'border-zinc-300 dark:border-[#3A3835]'
                                 }`}>
                                   {!includeSecureInAppChildDetails && <div className="w-2 h-2 rounded-full bg-zinc-500" />}
                                 </div>
                               </div>
                               <div>
-                                <span className="text-xs font-bold text-zinc-800 block">
+                                <span className="text-xs font-bold text-zinc-800 dark:text-[#F0EBE3] block">
                                   Minimal alert only (No child details in push payload/lock screen)
                                 </span>
-                                <span className="text-[10px] text-zinc-500 leading-relaxed font-sans block mt-1">
+                                <span className="text-[10px] text-zinc-500 dark:text-[#7A7570] leading-relaxed font-sans block mt-1">
                                   Hides child identities completely across all views and alerts. Operators must query the register physically or reference pre-distributed manifests.
                                 </span>
                               </div>
@@ -2322,14 +2322,14 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         </div>
 
                         {/* Critical Safety Disclaimer */}
-                        <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-[10px] text-red-700/80 leading-relaxed font-sans">
-                          <strong className="font-bold text-red-800 block mb-0.5">⚠️ Secure Notification Compliance Notice</strong>
+                        <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/40 rounded-xl text-[10px] text-red-700/80 dark:text-red-300/80 leading-relaxed font-sans">
+                          <strong className="font-bold text-red-800 dark:text-red-300 block mb-0.5">⚠️ Secure Notification Compliance Notice</strong>
                           Full child profiles, primary guardians, photographs, and health/allergy flags are restricted strictly to authorized in-app views. SMS, WhatsApp, and external push notifications are completely masked for privacy compliance.
                         </div>
                       </div>
                     </div>
 
-                    <div className="border-t border-zinc-100 pt-5 flex justify-end">
+                    <div className="border-t border-zinc-100 dark:border-[#302E29] pt-5 flex justify-end">
                       <Button
                         type="button"
                         variant="primary"
@@ -2344,48 +2344,48 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
                   {/* CARD 4: FALLBACK ESCALATION RULE */}
                   <div 
-                    className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-6 flex flex-col justify-between"
+                    className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-6 flex flex-col justify-between"
                     data-component-version="urgent-alert-fallback-rule-v1"
                   >
                     <div className="space-y-6">
-                      <div className="border-b border-[#EAE8E1] pb-4">
+                      <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-4">
                         <div className="flex items-center space-x-2.5">
                           <div className="p-2 bg-[#C59B27]/5 rounded-xl text-[#C59B27] border border-[#C59B27]/15">
                             <TrendingUp className="w-5 h-5" />
                           </div>
                           <div>
-                            <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-base">Unresolved Escalation Fallback</h3>
-                            <p className="text-xs text-zinc-500 mt-0.5">Automatically escalate unresolved critical alerts if left unacknowledged.</p>
+                            <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] text-base">Unresolved Escalation Fallback</h3>
+                            <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-0.5">Automatically escalate unresolved critical alerts if left unacknowledged.</p>
                           </div>
                         </div>
                       </div>
 
                       <div className="space-y-4 text-xs">
                         <div className="space-y-1.5">
-                          <label className="text-xs font-semibold text-zinc-700 block">
+                          <label className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] block">
                             Escalate if urgent alert is not acknowledged after:
                           </label>
                           <select
                             value={fallbackRule}
                             onChange={(e) => handleFallbackRuleChange(e.target.value)}
-                            className="w-full bg-[#FAF9F6] border border-[#EAE8E1] hover:border-zinc-300 focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] rounded-xl p-3 text-xs outline-none transition-all cursor-pointer"
+                            className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] text-[#18181B] dark:text-[#F0EBE3] hover:border-zinc-300 dark:hover:border-[#302E29] focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] rounded-xl p-3 text-xs outline-none transition-all cursor-pointer"
                           >
                             <option value="Off">Off</option>
                             <option value="1 minute">1 minute</option>
                             <option value="2 minutes">2 minutes</option>
                             <option value="5 minutes">5 minutes</option>
                           </select>
-                          <p className="text-[10px] text-zinc-400 mt-1">
+                          <p className="text-[10px] text-zinc-400 dark:text-[#7A7570] mt-1">
                             If enabled, the safety tracking service monitors open urgent alerts and broadcasts a second-wave high priority notification to all active care channels if the initial dispatcher does not respond.
                           </p>
                         </div>
 
-                        <div className="p-4 bg-zinc-50 border border-zinc-100 rounded-xl space-y-1">
-                          <span className="text-[10px] text-zinc-400 font-semibold uppercase block">SMS & WhatsApp Fallback Channel</span>
-                          <p className="text-[11px] text-zinc-500 leading-relaxed">
+                        <div className="p-4 bg-zinc-50 dark:bg-[#21211E] border border-zinc-100 dark:border-[#302E29] rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-semibold uppercase block">SMS & WhatsApp Fallback Channel</span>
+                          <p className="text-[11px] text-zinc-500 dark:text-[#B8B0A5] leading-relaxed">
                             External fallback is not connected yet.
                           </p>
-                          <p className="text-[10px] text-zinc-400 leading-normal">
+                          <p className="text-[10px] text-zinc-400 dark:text-[#7A7570] leading-normal">
                             Secure SMS gateways must be registered via Settings &gt; Message Channels first.
                           </p>
                         </div>
@@ -2398,27 +2398,27 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                 <div className="space-y-8">
                   {/* CARD 2: DEVICE-SPECIFIC ALERT PREFERENCES */}
                   <div 
-                    className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-6 flex flex-col justify-between"
+                    className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-6 flex flex-col justify-between shadow-xs"
                     data-component-version="device-alert-preferences-v1"
                   >
                     <div className="space-y-6">
-                      <div className="border-b border-[#EAE8E1] pb-4">
+                      <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-4">
                         <div className="flex items-center space-x-2.5">
-                          <div className="p-2 bg-[#C59B27]/5 rounded-xl text-[#C59B27] border border-[#C59B27]/15">
+                          <div className="p-2 bg-[#C59B27]/5 dark:bg-amber-950/20 rounded-xl text-[#C59B27] dark:text-amber-400 border border-[#C59B27]/15 dark:border-amber-900/40">
                             <Bell className="w-5 h-5" />
                           </div>
                           <div>
                             <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-base">This device alert preferences</h3>
-                            <p className="text-xs text-zinc-500 mt-0.5">Configure individual alert behavior specifically on this browser and device.</p>
+                            <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-0.5">Configure individual alert behavior specifically on this browser and device.</p>
                           </div>
                         </div>
                       </div>
 
                       {/* Toggle: Receive alerts */}
-                      <div className="flex items-center justify-between p-4 bg-zinc-50/50 border border-zinc-100 rounded-xl">
+                      <div className="flex items-center justify-between p-4 bg-zinc-50/50 dark:bg-[#21211E] border border-zinc-100 dark:border-[#302E29] rounded-xl">
                         <div className="space-y-0.5 pr-4">
-                          <span className="text-xs font-semibold text-zinc-800">Receive safety alerts on this device</span>
-                          <p className="text-[10px] text-zinc-400">Enable or disable all real-time visual and audio alerts on this browser.</p>
+                          <span className="text-xs font-semibold text-zinc-800 dark:text-[#F0EBE3]">Receive safety alerts on this device</span>
+                          <p className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Enable or disable all real-time visual and audio alerts on this browser.</p>
                         </div>
                         <button
                           type="button"
@@ -2426,9 +2426,9 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                           className="focus:outline-none cursor-pointer"
                         >
                           {deviceReceiveUrgent ? (
-                            <ToggleRight className="w-10 h-10 text-[#C59B27]" />
+                            <ToggleRight className="w-10 h-10 text-[#C59B27] dark:text-amber-400" />
                           ) : (
-                            <ToggleLeft className="w-10 h-10 text-zinc-300" />
+                            <ToggleLeft className="w-10 h-10 text-zinc-300 dark:text-zinc-600" />
                           )}
                         </button>
                       </div>
@@ -2438,23 +2438,23 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         className={`space-y-4 transition-all ${deviceReceiveUrgent ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}
                         data-component-version="urgent-alert-sound-settings-v2"
                       >
-                        <h4 className="text-xs font-semibold text-zinc-700 tracking-wider uppercase">Device Delivery Preferences</h4>
+                        <h4 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] tracking-wider uppercase">Device Delivery Preferences</h4>
                         
                         {/* Sound Preference */}
-                        <div className="flex items-center justify-between py-2 border-b border-zinc-100">
+                        <div className="flex items-center justify-between py-2 border-b border-zinc-100 dark:border-[#302E29]">
                           <div className="space-y-0.5">
-                            <span className="text-xs font-medium text-zinc-800 flex items-center space-x-1.5">
-                              <Volume2 className="w-3.5 h-3.5 text-zinc-500" />
+                            <span className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3] flex items-center space-x-1.5">
+                              <Volume2 className="w-3.5 h-3.5 text-zinc-500 dark:text-[#7A7570]" />
                               <span>Play alert sound</span>
                             </span>
-                            <p className="text-[10px] text-zinc-400">Plays synthesized major chord chimes during critical alert events.</p>
+                            <p className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Plays synthesized major chord chimes during critical alert events.</p>
                             <button
                               type="button"
                               onClick={() => {
                                 resumeAudioContext();
                                 playSound('alert');
                               }}
-                              className="mt-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-[#C59B27] border border-[#C59B27]/30 rounded text-[10px] font-bold flex items-center space-x-1 transition-all cursor-pointer"
+                              className="mt-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 text-[#C59B27] dark:text-amber-400 border border-[#C59B27]/30 dark:border-amber-900/40 rounded text-[10px] font-bold flex items-center space-x-1 transition-all cursor-pointer"
                               title="Test alert sound trigger"
                             >
                               <Volume2 className="w-3 h-3" />
@@ -2468,22 +2468,22 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                             className="focus:outline-none cursor-pointer"
                           >
                             {deviceSound ? (
-                              <ToggleRight className="w-9 h-9 text-[#C59B27]" />
+                              <ToggleRight className="w-9 h-9 text-[#C59B27] dark:text-amber-400" />
                             ) : (
-                              <ToggleLeft className="w-9 h-9 text-zinc-300" />
+                              <ToggleLeft className="w-9 h-9 text-zinc-300 dark:text-zinc-600" />
                             )}
                           </button>
                         </div>
 
                         {/* Sound Profile Selection */}
-                        <div className={`space-y-1.5 py-2 border-b border-zinc-100 ${deviceSound ? '' : 'opacity-40 pointer-events-none'}`}>
+                        <div className={`space-y-1.5 py-2 border-b border-zinc-100 dark:border-[#302E29] ${deviceSound ? '' : 'opacity-40 pointer-events-none'}`}>
                           <div className="flex items-center justify-between">
-                            <label className="text-xs font-medium text-zinc-800 block">
+                            <label className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3] block">
                               Alert tone
                             </label>
-                            <span className="text-[10px] text-zinc-400">Tone urgency</span>
+                            <span className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Tone urgency</span>
                           </div>
-                          <div className="grid grid-cols-3 gap-1.5 bg-zinc-50 p-1.5 rounded-xl border border-zinc-100">
+                          <div className="grid grid-cols-3 gap-1.5 bg-zinc-50 dark:bg-[#21211E] p-1.5 rounded-xl border border-zinc-100 dark:border-[#302E29]">
                             {[
                               { id: 'normal', label: 'Soft' },
                               { id: 'important', label: 'Standard' },
@@ -2499,8 +2499,8 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                 }}
                                 className={`py-1.5 rounded-lg font-medium text-xs text-center transition-all cursor-pointer ${
                                   alertProfile === prof.id
-                                    ? 'bg-[#18181B] text-white shadow-xs'
-                                    : 'text-zinc-600 hover:text-zinc-900 bg-transparent'
+                                    ? 'bg-[#18181B] dark:bg-[#C59B27] text-white shadow-xs'
+                                    : 'text-zinc-600 dark:text-[#B8B0A5] hover:text-zinc-900 dark:hover:text-[#F0EBE3] bg-transparent'
                                 }`}
                               >
                                 {prof.label}
@@ -2510,14 +2510,14 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         </div>
 
                         {/* Volume Multiplier Controls */}
-                        <div className={`space-y-1.5 py-2 border-b border-zinc-100 ${deviceSound ? '' : 'opacity-40 pointer-events-none'}`}>
+                        <div className={`space-y-1.5 py-2 border-b border-zinc-100 dark:border-[#302E29] ${deviceSound ? '' : 'opacity-40 pointer-events-none'}`}>
                           <div className="flex items-center justify-between">
-                            <label className="text-xs font-medium text-zinc-800 block">
+                            <label className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3] block">
                               Alert volume
                             </label>
-                            <span className="text-[10px] text-zinc-400">Volume level</span>
+                            <span className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Volume level</span>
                           </div>
-                          <div className="grid grid-cols-3 gap-1.5 bg-zinc-50 p-1.5 rounded-xl border border-zinc-100">
+                          <div className="grid grid-cols-3 gap-1.5 bg-zinc-50 dark:bg-[#21211E] p-1.5 rounded-xl border border-zinc-100 dark:border-[#302E29]">
                             {[
                               { id: 'standard', label: 'Normal' },
                               { id: 'loud', label: 'Loud' },
@@ -2534,7 +2534,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                 className={`py-1.5 rounded-lg font-medium text-xs text-center transition-all cursor-pointer ${
                                   alertVolume === vol.id
                                     ? 'bg-[#C59B27] text-white shadow-xs'
-                                    : 'text-zinc-600 hover:text-zinc-900 bg-transparent'
+                                    : 'text-zinc-600 dark:text-[#B8B0A5] hover:text-zinc-900 dark:hover:text-[#F0EBE3] bg-transparent'
                                 }`}
                               >
                                 {vol.label}
@@ -2544,12 +2544,12 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         </div>
 
                         {/* Test sound controls */}
-                        <div className={`space-y-2 py-2.5 border-b border-zinc-100 ${deviceSound ? '' : 'opacity-40 pointer-events-none'}`}>
+                        <div className={`space-y-2 py-2.5 border-b border-zinc-100 dark:border-[#302E29] ${deviceSound ? '' : 'opacity-40 pointer-events-none'}`}>
                           <div className="flex items-center justify-between">
-                            <label className="text-xs font-medium text-zinc-800 block">
+                            <label className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3] block">
                               Test sound
                             </label>
-                            <span className="text-[10px] text-zinc-400">Preview alert tone</span>
+                            <span className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Preview alert tone</span>
                           </div>
                           <div className="flex gap-2">
                             <button
@@ -2559,9 +2559,9 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                 playSound('emergency', { volume: alertVolume, profile: alertProfile });
                                 showFeedback('Playing alert sound.');
                               }}
-                              className="flex-1 font-medium text-xs bg-white hover:bg-zinc-50 text-zinc-700 border border-zinc-200 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                              className="flex-1 font-medium text-xs bg-white dark:bg-[#21211E] hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#F0EBE3] border border-zinc-200 dark:border-[#302E29] py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                             >
-                              <Volume2 className="w-3.5 h-3.5 text-[#C59B27]" />
+                              <Volume2 className="w-3.5 h-3.5 text-[#C59B27] dark:text-amber-400" />
                               <span>Test sound</span>
                             </button>
                             <button
@@ -2572,21 +2572,21 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                   showFeedback('Sound stopped.');
                                 } catch (_) {}
                               }}
-                              className="font-medium text-xs bg-zinc-100 hover:bg-zinc-200 text-zinc-700 px-3.5 py-2 rounded-xl transition-all cursor-pointer"
+                              className="font-medium text-xs bg-zinc-100 dark:bg-[#262520] hover:bg-zinc-200 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#F0EBE3] px-3.5 py-2 rounded-xl transition-all cursor-pointer"
                             >
                               Stop sound
                             </button>
                           </div>
-                          <p className="text-[11px] text-zinc-500">
+                          <p className="text-[11px] text-zinc-500 dark:text-[#7A7570]">
                             Keep your device volume turned on so urgent alerts can be heard.
                           </p>
                         </div>
 
                         {/* Urgent Alerts Only Toggle */}
-                        <div className="flex items-center justify-between py-2 border-b border-zinc-100">
+                        <div className="flex items-center justify-between py-2 border-b border-zinc-100 dark:border-[#302E29]">
                           <div className="space-y-0.5">
-                            <span className="text-xs font-medium text-zinc-800">Urgent alerts only</span>
-                            <p className="text-[10px] text-zinc-400">Filter out normal/important concern alerts; only notify for absolute urgent status items.</p>
+                            <span className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">Urgent alerts only</span>
+                            <p className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Filter out normal/important concern alerts; only notify for absolute urgent status items.</p>
                           </div>
                           <button
                             type="button"
@@ -2595,20 +2595,20 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                             className="focus:outline-none cursor-pointer"
                           >
                             {deviceUrgentOnly ? (
-                              <ToggleRight className="w-9 h-9 text-[#C59B27]" />
+                              <ToggleRight className="w-9 h-9 text-[#C59B27] dark:text-amber-400" />
                             ) : (
-                              <ToggleLeft className="w-9 h-9 text-zinc-300" />
+                              <ToggleLeft className="w-9 h-9 text-zinc-300 dark:text-zinc-600" />
                             )}
                           </button>
                         </div>
 
                         {/* Vibration Preference */}
-                        <div className="flex items-center justify-between py-2 border-b border-zinc-100">
+                        <div className="flex items-center justify-between py-2 border-b border-zinc-100 dark:border-[#302E29]">
                           <div className="space-y-0.5">
-                            <span className="text-xs font-medium text-zinc-800">Vibration physical feedback</span>
-                            <p className="text-[10px] text-zinc-400">Fires the physical device vibration motor for incoming events.</p>
+                            <span className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">Vibration physical feedback</span>
+                            <p className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Fires the physical device vibration motor for incoming events.</p>
                             {!(typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') && (
-                              <p className="text-[9px] text-amber-600 font-medium bg-amber-50 px-2 py-0.5 rounded border border-amber-100/30 w-fit mt-1">
+                              <p className="text-[9px] text-amber-600 dark:text-amber-400 font-medium bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 rounded border border-amber-100/30 dark:border-amber-900/40 w-fit mt-1">
                                 Vibration is not supported on this device.
                               </p>
                             )}
@@ -2620,18 +2620,18 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                             className={`focus:outline-none cursor-pointer ${!(typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') ? 'opacity-30' : ''}`}
                           >
                             {deviceVibration && (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') ? (
-                              <ToggleRight className="w-9 h-9 text-[#C59B27]" />
+                              <ToggleRight className="w-9 h-9 text-[#C59B27] dark:text-amber-400" />
                             ) : (
-                              <ToggleLeft className="w-9 h-9 text-zinc-300" />
+                              <ToggleLeft className="w-9 h-9 text-zinc-300 dark:text-zinc-600" />
                             )}
                           </button>
                         </div>
 
                         {/* Urgent overlay Preference */}
-                        <div className="flex items-center justify-between py-2 border-b border-zinc-100">
+                        <div className="flex items-center justify-between py-2 border-b border-zinc-100 dark:border-[#302E29]">
                           <div className="space-y-0.5">
-                            <span className="text-xs font-medium text-zinc-800">Show urgent pop-up overlay</span>
-                            <p className="text-[10px] text-zinc-400">Triggers a persistent critical takeover modal requiring manual clearance.</p>
+                            <span className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">Show urgent pop-up overlay</span>
+                            <p className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Triggers a persistent critical takeover modal requiring manual clearance.</p>
                           </div>
                           <button
                             type="button"
@@ -2640,18 +2640,18 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                             className="focus:outline-none cursor-pointer"
                           >
                             {deviceShowPopup ? (
-                              <ToggleRight className="w-9 h-9 text-[#C59B27]" />
+                              <ToggleRight className="w-9 h-9 text-[#C59B27] dark:text-amber-400" />
                             ) : (
-                              <ToggleLeft className="w-9 h-9 text-zinc-300" />
+                              <ToggleLeft className="w-9 h-9 text-zinc-300 dark:text-zinc-600" />
                             )}
                           </button>
                         </div>
 
                         {/* Repeat urgent alarm Preference */}
-                        <div className="flex items-center justify-between py-2 border-b border-zinc-100">
+                        <div className="flex items-center justify-between py-2 border-b border-zinc-100 dark:border-[#302E29]">
                           <div className="space-y-0.5">
-                            <span className="text-xs font-medium text-zinc-800">Repeat urgent alert until acknowledged</span>
-                            <p className="text-[10px] text-zinc-400">Continuously repeats synthesized sound and pulse alerts until cleared.</p>
+                            <span className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">Repeat urgent alert until acknowledged</span>
+                            <p className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Continuously repeats synthesized sound and pulse alerts until cleared.</p>
                           </div>
                           <button
                             type="button"
@@ -2660,9 +2660,9 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                             className="focus:outline-none cursor-pointer"
                           >
                             {deviceRepeatUrgent ? (
-                              <ToggleRight className="w-9 h-9 text-[#C59B27]" />
+                              <ToggleRight className="w-9 h-9 text-[#C59B27] dark:text-amber-400" />
                             ) : (
-                              <ToggleLeft className="w-9 h-9 text-zinc-300" />
+                              <ToggleLeft className="w-9 h-9 text-zinc-300 dark:text-zinc-600" />
                             )}
                           </button>
                         </div>
@@ -2670,8 +2670,8 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         {/* Push & SMS alerts Preference */}
                         <div className="flex items-center justify-between py-2">
                           <div className="space-y-0.5">
-                            <span className="text-xs font-medium text-zinc-800">Browser push notifications</span>
-                            <p className="text-[10px] text-zinc-400">Fires web push alerts to your background notification center.</p>
+                            <span className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">Browser push notifications</span>
+                            <p className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Fires web push alerts to your background notification center.</p>
                           </div>
                           <button
                             type="button"
@@ -2680,16 +2680,16 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                             className="focus:outline-none cursor-pointer"
                           >
                             {devicePush ? (
-                              <ToggleRight className="w-9 h-9 text-[#C59B27]" />
+                              <ToggleRight className="w-9 h-9 text-[#C59B27] dark:text-amber-400" />
                             ) : (
-                              <ToggleLeft className="w-9 h-9 text-zinc-300" />
+                              <ToggleLeft className="w-9 h-9 text-zinc-300 dark:text-zinc-600" />
                             )}
                           </button>
                         </div>
                       </div>
                     </div>
 
-                    <div className="border-t border-zinc-100 pt-5 flex justify-end">
+                    <div className="border-t border-zinc-100 dark:border-[#302E29] pt-5 flex justify-end">
                       <Button
                         type="button"
                         variant="primary"
@@ -2704,117 +2704,117 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
                   {/* CARD 3: DEVICE ALERT READINESS CHECK */}
                   <div 
-                    className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-6 flex flex-col justify-between"
+                    className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-6 flex flex-col justify-between shadow-xs"
                     data-component-version="device-alert-readiness-v2-laptop"
                   >
                     <div className="space-y-6">
-                      <div className="border-b border-[#EAE8E1] pb-4">
+                      <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-4">
                         <div className="flex items-center space-x-2.5">
-                          <div className="p-2 bg-[#C59B27]/5 rounded-xl text-[#C59B27] border border-[#C59B27]/15">
+                          <div className="p-2 bg-[#C59B27]/5 dark:bg-amber-950/20 rounded-xl text-[#C59B27] dark:text-amber-400 border border-[#C59B27]/15 dark:border-amber-900/40">
                             <Activity className="w-5 h-5" />
                           </div>
                           <div>
                             <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-base">Device alert status</h3>
-                            <p className="text-xs text-zinc-500 mt-0.5">Check that alert notifications can reach this device.</p>
+                            <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-0.5">Check that alert notifications can reach this device.</p>
                           </div>
                         </div>
                       </div>
 
                       {/* Explainer with practical guidance */}
                       <div 
-                        className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-4 text-xs text-zinc-600 space-y-2 leading-relaxed"
+                        className="bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl p-4 text-xs text-zinc-600 dark:text-[#B8B0A5] space-y-2 leading-relaxed"
                         data-component-version="admin-alert-delivery-explainer-v2"
                       >
-                        <p className="font-semibold text-zinc-800">Alert delivery advice</p>
+                        <p className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">Alert delivery advice</p>
                         <p>
                           Keep your device volume turned on so urgent alerts can be heard. For the most reliable alert delivery, keep this application open on your duty device during active event hours.
                         </p>
-                        <p className="text-[#C59B27] font-medium flex items-center gap-1">
-                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#C59B27] animate-pulse"></span>
+                        <p className="text-[#C59B27] dark:text-amber-400 font-medium flex items-center gap-1">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#C59B27] dark:bg-amber-400 animate-pulse"></span>
                           Recommended: Keep this tab open during event duty.
                         </p>
                       </div>
 
                       {/* Device Readiness Grid */}
                       <div className="grid grid-cols-2 gap-3 text-xs">
-                        <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-xl space-y-1">
-                          <span className="text-[10px] text-zinc-400 font-medium block">IN-APP OVERLAY</span>
+                        <div className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1]/60 dark:border-[#302E29] rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-medium block">IN-APP OVERLAY</span>
                           {deviceReceiveUrgent ? (
-                            <span className="font-semibold text-emerald-600 flex items-center gap-1.5">
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                               Ready
                             </span>
                           ) : (
-                            <span className="font-semibold text-amber-600 flex items-center gap-1.5">
+                            <span className="font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
                               Needs app open
                             </span>
                           )}
                         </div>
 
-                        <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-xl space-y-1">
-                          <span className="text-[10px] text-zinc-400 font-medium block">PREMIUM SOUND</span>
+                        <div className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1]/60 dark:border-[#302E29] rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-medium block">PREMIUM SOUND</span>
                           {!deviceSound ? (
-                            <span className="font-semibold text-zinc-400">Disabled</span>
+                            <span className="font-semibold text-zinc-400 dark:text-zinc-500">Disabled</span>
                           ) : (
-                            <span className="font-semibold text-emerald-600">Enabled</span>
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">Enabled</span>
                           )}
                         </div>
 
-                        <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-xl space-y-1">
-                          <span className="text-[10px] text-zinc-400 font-medium block">VIBRATION ENGINE</span>
+                        <div className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1]/60 dark:border-[#302E29] rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-medium block">VIBRATION ENGINE</span>
                           {!(typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') ? (
-                            <span className="font-semibold text-zinc-400">Vibration is not supported on this device.</span>
+                            <span className="font-semibold text-zinc-400 dark:text-zinc-500">Vibration is not supported on this device.</span>
                           ) : deviceVibration ? (
-                            <span className="font-semibold text-emerald-600">Supported & Active</span>
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">Supported & Active</span>
                           ) : (
-                            <span className="font-semibold text-zinc-500">Supported (Off)</span>
+                            <span className="font-semibold text-zinc-500 dark:text-[#7A7570]">Supported (Off)</span>
                           )}
                         </div>
 
-                        <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-xl space-y-1">
-                          <span className="text-[10px] text-zinc-400 font-medium block">BROWSER NOTIFICATIONS</span>
+                        <div className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1]/60 dark:border-[#302E29] rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-medium block">BROWSER NOTIFICATIONS</span>
                           {typeof Notification === 'undefined' ? (
-                            <span className="font-semibold text-zinc-400">Not supported</span>
+                            <span className="font-semibold text-zinc-400 dark:text-zinc-500">Not supported</span>
                           ) : pushPermission === 'default' ? (
-                            <span className="font-semibold text-amber-600">Permission not requested</span>
+                            <span className="font-semibold text-amber-600 dark:text-amber-400">Permission not requested</span>
                           ) : pushPermission === 'denied' ? (
-                            <span className="font-semibold text-red-500">Permission blocked</span>
+                            <span className="font-semibold text-red-500 dark:text-red-400">Permission blocked</span>
                           ) : (
-                            <span className="font-semibold text-emerald-600">Permission granted</span>
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">Permission granted</span>
                           )}
                         </div>
 
-                        <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-xl space-y-1">
-                          <span className="text-[10px] text-zinc-400 font-medium block">PUSH SUBSCRIPTION</span>
+                        <div className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1]/60 dark:border-[#302E29] rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-medium block">PUSH SUBSCRIPTION</span>
                           {pushConnected ? (
-                            <span className="font-semibold text-emerald-600">Connected</span>
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">Connected</span>
                           ) : (
-                            <span className="font-semibold text-amber-600">Not connected</span>
+                            <span className="font-semibold text-amber-600 dark:text-amber-400">Not connected</span>
                           )}
                         </div>
 
-                        <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-xl space-y-1">
-                          <span className="text-[10px] text-zinc-400 font-medium block">PUSH READY</span>
+                        <div className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1]/60 dark:border-[#302E29] rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-medium block">PUSH READY</span>
                           {isVapidConfigured === false ? (
-                            <span className="font-semibold text-amber-600">Push setup incomplete</span>
+                            <span className="font-semibold text-amber-600 dark:text-amber-400">Push setup incomplete</span>
                           ) : isVapidConfigured === true ? (
-                            <span className="font-semibold text-emerald-600">Setup complete</span>
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">Setup complete</span>
                           ) : (
-                            <span className="font-semibold text-zinc-400">Checking...</span>
+                            <span className="font-semibold text-zinc-400 dark:text-zinc-500">Checking...</span>
                           )}
                         </div>
                       </div>
 
                       {/* Enable Browser Notifications Button (Phase 3) */}
                       <div 
-                        className="bg-zinc-50 border border-zinc-100 rounded-xl p-4 space-y-3"
+                        className="bg-zinc-50 dark:bg-[#21211E] border border-zinc-100 dark:border-[#302E29] rounded-xl p-4 space-y-3"
                         data-component-version="browser-notification-permission-v1"
                       >
                         <div className="flex items-center justify-between">
                           <div className="space-y-0.5">
-                            <span className="text-xs font-semibold text-zinc-800">Browser notification permission</span>
-                            <p className="text-[10px] text-zinc-400">Requested only on clicking Enable</p>
+                            <span className="text-xs font-semibold text-zinc-800 dark:text-[#F0EBE3]">Browser notification permission</span>
+                            <p className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Requested only on clicking Enable</p>
                           </div>
                           {!pushConnected && (
                             <Button
@@ -2822,7 +2822,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                               variant="outline"
                               onClick={handleEnablePushNotifications}
                               disabled={isSubscribingPush || typeof Notification === 'undefined' || (typeof Notification !== 'undefined' && Notification.permission === 'denied')}
-                              className="px-3 py-1.5 text-[11px] font-medium border-[#C59B27]/40 hover:bg-[#C59B27]/5 text-[#C59B27] cursor-pointer"
+                              className="px-3 py-1.5 text-[11px] font-medium border-[#C59B27]/40 dark:border-amber-900/40 hover:bg-[#C59B27]/5 dark:hover:bg-amber-950/20 text-[#C59B27] dark:text-amber-400 cursor-pointer"
                             >
                               {isSubscribingPush ? 'Enabling...' : 'Enable browser notifications'}
                             </Button>
@@ -2831,16 +2831,16 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
                         {/* Direct detailed feedbacks */}
                         {typeof Notification === 'undefined' && (
-                          <p className="text-[10px] text-red-500">Browser notifications are not supported on this device.</p>
+                          <p className="text-[10px] text-red-500 dark:text-red-400">Browser notifications are not supported on this device.</p>
                         )}
                         {typeof Notification !== 'undefined' && Notification.permission === 'denied' && (
-                          <p className="text-[10px] text-red-500">Notifications are blocked for this browser. Please allow notifications in your browser settings.</p>
+                          <p className="text-[10px] text-red-500 dark:text-red-400">Notifications are blocked for this browser. Please allow notifications in your browser settings.</p>
                         )}
                         {pushFeedback && (
-                          <p className="text-[10px] text-amber-600">{pushFeedback}</p>
+                          <p className="text-[10px] text-amber-600 dark:text-amber-400">{pushFeedback}</p>
                         )}
                         {pushConnected && (
-                          <p className="text-[10px] text-emerald-600 flex items-center gap-1 font-medium">
+                          <p className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium">
                             <Check className="w-3.5 h-3.5" />
                             Notifications are active and connected on this device.
                           </p>
@@ -2849,51 +2849,51 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
                       {/* Detailed Push Alert Status Panel (Phase 4 & 5) */}
                       <div 
-                        className="bg-zinc-50/50 border border-zinc-100 rounded-xl p-4 space-y-3"
+                        className="bg-zinc-50/50 dark:bg-[#21211E] border border-zinc-100 dark:border-[#302E29] rounded-xl p-4 space-y-3"
                         data-component-version="push-alert-status-panel-v1"
                       >
-                        <span className="text-xs font-bold text-zinc-800 block">Detailed Push Alert Status</span>
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[11px] text-zinc-600">
-                          <div className="flex justify-between border-b border-zinc-100/50 pb-1">
+                        <span className="text-xs font-bold text-zinc-800 dark:text-[#F0EBE3] block">Detailed Push Alert Status</span>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[11px] text-zinc-600 dark:text-[#B8B0A5]">
+                          <div className="flex justify-between border-b border-zinc-100/50 dark:border-[#302E29] pb-1">
                             <span>Service worker support:</span>
-                            <strong className={('serviceWorker' in navigator) ? 'text-emerald-600' : 'text-zinc-400'}>
+                            <strong className={('serviceWorker' in navigator) ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 dark:text-[#7A7570]'}>
                               {('serviceWorker' in navigator) ? 'Supported' : 'Unsupported'}
                             </strong>
                           </div>
-                          <div className="flex justify-between border-b border-zinc-100/50 pb-1">
+                          <div className="flex justify-between border-b border-zinc-100/50 dark:border-[#302E29] pb-1">
                             <span>Push manager support:</span>
-                            <strong className={('PushManager' in window) ? 'text-emerald-600' : 'text-zinc-400'}>
+                            <strong className={('PushManager' in window) ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 dark:text-[#7A7570]'}>
                               {('PushManager' in window) ? 'Supported' : 'Unsupported'}
                             </strong>
                           </div>
-                          <div className="flex justify-between border-b border-zinc-100/50 pb-1">
+                          <div className="flex justify-between border-b border-zinc-100/50 dark:border-[#302E29] pb-1">
                             <span>Notification permission:</span>
-                            <strong className={pushPermission === 'granted' ? 'text-emerald-600' : pushPermission === 'denied' ? 'text-red-500' : 'text-amber-500'}>
+                            <strong className={pushPermission === 'granted' ? 'text-emerald-600 dark:text-emerald-400' : pushPermission === 'denied' ? 'text-red-500 dark:text-red-400' : 'text-amber-500 dark:text-amber-400'}>
                               {pushPermission}
                             </strong>
                           </div>
-                          <div className="flex justify-between border-b border-zinc-100/50 pb-1">
+                          <div className="flex justify-between border-b border-zinc-100/50 dark:border-[#302E29] pb-1">
                             <span>Service worker registered:</span>
-                            <strong className={isSwRegistered ? 'text-emerald-600' : 'text-amber-500'}>
+                            <strong className={isSwRegistered ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-500 dark:text-amber-400'}>
                               {isSwRegistered ? 'Yes' : 'No'}
                             </strong>
                           </div>
-                          <div className="flex justify-between border-b border-zinc-100/50 pb-1 col-span-2">
+                          <div className="flex justify-between border-b border-zinc-100/50 dark:border-[#302E29] pb-1 col-span-2">
                             <span>Server push subscription:</span>
-                            <strong className={pushConnected ? 'text-emerald-600' : 'text-amber-500'}>
+                            <strong className={pushConnected ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-500 dark:text-amber-400'}>
                               {pushConnected ? 'Connected & Registered' : 'Not Connected'}
                             </strong>
                           </div>
-                          <div className="flex justify-between border-b border-zinc-100/50 pb-1 col-span-2">
+                          <div className="flex justify-between border-b border-zinc-100/50 dark:border-[#302E29] pb-1 col-span-2">
                             <span>VAPID Setup Configured:</span>
                             {isVapidConfigured === null ? (
-                              <strong className="text-zinc-400">Checking...</strong>
+                              <strong className="text-zinc-400 dark:text-[#7A7570]">Checking...</strong>
                             ) : isVapidConfigured ? (
-                              <strong className="text-emerald-600">Fully Configured</strong>
+                              <strong className="text-emerald-600 dark:text-emerald-400">Fully Configured</strong>
                             ) : (
                               <div className="text-right">
-                                <strong className="text-amber-600 block">Push setup is not complete yet.</strong>
-                                <span className="text-[9px] text-zinc-400 block leading-tight mt-0.5 max-w-[220px]">
+                                <strong className="text-amber-600 dark:text-amber-400 block">Push setup is not complete yet.</strong>
+                                <span className="text-[9px] text-zinc-400 dark:text-[#7A7570] block leading-tight mt-0.5 max-w-[220px]">
                                   Please set env variables: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT on server.
                                 </span>
                               </div>
@@ -2902,29 +2902,29 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         </div>
                       </div>
 
-                      <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-xl space-y-1">
+                      <div className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1]/60 dark:border-[#302E29] rounded-xl space-y-1">
                         <div className="flex justify-between items-center">
-                          <span className="text-[10px] text-zinc-400 font-medium">LAST READINESS TEST</span>
+                          <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-medium">LAST READINESS TEST</span>
                           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                            lastTestStatus.includes('Success') || lastTestStatus.includes('test sent') || lastTestStatus.includes('worked') ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-100 text-zinc-500'
+                            lastTestStatus.includes('Success') || lastTestStatus.includes('test sent') || lastTestStatus.includes('worked') ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/40' : 'bg-zinc-100 dark:bg-[#262520] text-zinc-500 dark:text-[#B8B0A5]'
                           }`}>
                             {lastTestStatus}
                           </span>
                         </div>
-                        <span className="text-zinc-600 font-medium block text-[11px] mt-1">
-                          Last Run: <strong className="text-zinc-800">{lastTestTime}</strong>
+                        <span className="text-zinc-600 dark:text-[#B8B0A5] font-medium block text-[11px] mt-1">
+                          Last Run: <strong className="text-zinc-800 dark:text-[#F0EBE3]">{lastTestTime}</strong>
                         </span>
                       </div>
                     </div>
 
-                    <div className="border-t border-zinc-100 pt-5 flex justify-end">
+                    <div className="border-t border-zinc-100 dark:border-[#302E29] pt-5 flex justify-end">
                       <Button
                         type="button"
                         variant="outline"
                         onClick={handleSendTestAlert}
                         disabled={isTestingDevice}
                         data-component-version="admin-test-device-alert-action-v1"
-                        className="px-6 py-2.5 text-xs font-semibold flex items-center space-x-1.5 border-[#C59B27]/45 hover:bg-[#C59B27]/5 text-[#C59B27] cursor-pointer"
+                        className="px-6 py-2.5 text-xs font-semibold flex items-center space-x-1.5 border-[#C59B27]/45 dark:border-amber-900/40 hover:bg-[#C59B27]/5 dark:hover:bg-amber-950/20 text-[#C59B27] dark:text-amber-400 cursor-pointer"
                       >
                         {isTestingDevice ? (
                           <>
@@ -2957,16 +2957,16 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
             {/* SUB-TAB: FOOTER SETTINGS */}
             {activeSubTab === 'footer-settings' && (
-              <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-6">
-                <div className="border-b border-[#EAE8E1] pb-4">
+              <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-6 shadow-xs">
+                <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-4">
                   <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-lg">Footer & copyright settings</h3>
-                  <p className="text-xs text-zinc-500 mt-1">Configure the global copyright year and branding text displayed across all platform footers.</p>
+                  <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Configure the global copyright year and branding text displayed across all platform footers.</p>
                 </div>
 
                 <form onSubmit={handleSaveFooterSettings} className="space-y-5 max-w-2xl">
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                     <div className="space-y-1.5 sm:col-span-1">
-                      <label className="text-xs font-semibold text-[#18181B] block">
+                      <label className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] block">
                         Copyright year
                       </label>
                       <input
@@ -2974,12 +2974,12 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         required
                         value={copyrightYear}
                         onChange={(e) => setCopyrightYear(parseInt(e.target.value, 10) || new Date().getFullYear())}
-                        className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                        className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] dark:focus:border-amber-500 transition-all"
                       />
                     </div>
 
                     <div className="space-y-1.5 sm:col-span-3">
-                      <label className="text-xs font-semibold text-[#18181B] block">
+                      <label className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] block">
                         Copyright branding text
                       </label>
                       <input
@@ -2988,12 +2988,12 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         value={copyrightText}
                         onChange={(e) => setCopyrightText(e.target.value)}
                         placeholder="e.g., Koinonia Children and Teens. All rights reserved."
-                        className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                        className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] dark:focus:border-amber-500 transition-all"
                       />
                     </div>
                   </div>
 
-                  <p className="text-[11px] text-zinc-400 leading-normal">
+                  <p className="text-[11px] text-zinc-400 dark:text-[#7A7570] leading-normal">
                     Updating these values will immediately synchronize the footer displayed on the landing page, parent access portals, and administrative views across all active user sessions.
                   </p>
 
@@ -3019,33 +3019,33 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
               
               {/* Profile Security Update Password */}
               <div 
-                className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-6"
+                className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-6 shadow-xs"
                 data-component-version="admin-settings-profile-security-v2-refined"
               >
-                <div className="border-b border-[#EAE8E1] pb-4 flex items-center space-x-3">
-                  <div className="p-2 bg-[#C59B27]/5 rounded-xl text-[#C59B27] border border-[#C59B27]/15">
+                <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-4 flex items-center space-x-3">
+                  <div className="p-2 bg-[#C59B27]/5 dark:bg-amber-950/20 rounded-xl text-[#C59B27] dark:text-amber-400 border border-[#C59B27]/15 dark:border-amber-900/40">
                     <Lock className="w-5 h-5" />
                   </div>
                   <div>
                     <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-base">Profile security</h3>
-                    <p className="text-xs text-zinc-500 mt-1">Change your admin password.</p>
+                    <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Change your admin password.</p>
                   </div>
                 </div>
 
                 <form onSubmit={handleChangePasswordSubmit} className="space-y-4">
                   {passwordSuccess && (
-                    <div className="bg-emerald-50 text-emerald-800 text-[11px] p-2.5 rounded-xl border border-emerald-100 font-medium">
+                    <div className="bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 text-[11px] p-2.5 rounded-xl border border-emerald-100 dark:border-emerald-900/40 font-medium">
                       {passwordSuccess}
                     </div>
                   )}
                   {passwordError && (
-                    <div className="bg-red-50 text-red-800 text-[11px] p-2.5 rounded-xl border border-red-100 font-medium">
+                    <div className="bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-300 text-[11px] p-2.5 rounded-xl border border-red-100 dark:border-red-900/40 font-medium">
                       {passwordError}
                     </div>
                   )}
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[#18181B] block">
+                    <label className="text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] block">
                       Current password
                     </label>
                     <input
@@ -3054,12 +3054,12 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                       value={currentPassword}
                       onChange={(e) => setCurrentPassword(e.target.value)}
                       placeholder="Enter your current password"
-                      className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                      className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] dark:focus:border-amber-500 transition-all"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[#18181B] block">
+                    <label className="text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] block">
                       New password
                     </label>
                     <input
@@ -3068,12 +3068,12 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder="Enter new password"
-                      className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                      className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] dark:focus:border-amber-500 transition-all"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[#18181B] block">
+                    <label className="text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] block">
                       Confirm new password
                     </label>
                     <input
@@ -3082,11 +3082,11 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                       value={confirmNewPassword}
                       onChange={(e) => setConfirmNewPassword(e.target.value)}
                       placeholder="Verify new password"
-                      className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                      className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] dark:focus:border-amber-500 transition-all"
                     />
                   </div>
 
-                  <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  <p className="text-[11px] text-zinc-400 dark:text-[#7A7570] leading-relaxed">
                     Use at least 8 characters with a letter and a number.
                   </p>
 

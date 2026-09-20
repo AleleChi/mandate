@@ -567,11 +567,11 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
             data-component-version="operations-priority-attention-v1"
           >
             <div className="flex items-center justify-between border-b border-stone-100 dark:border-[#272522] pb-4 mb-4">
-              <h2 className="text-base font-semibold text-stone-900">
+              <h2 className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">
                 Needs attention
               </h2>
               {priorityItems.length > 0 && (
-                <span className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200/60 px-2.5 py-0.5 rounded-full">
+                <span className="text-xs font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/40 px-2.5 py-0.5 rounded-full">
                   {priorityItems.length} {priorityItems.length === 1 ? 'item' : 'items'}
                 </span>
               )}
@@ -579,7 +579,7 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
 
             {priorityItems.length === 0 ? (
               <div className="py-6 text-center">
-                <p className="text-sm text-stone-600">Nothing needs attention right now.</p>
+                <p className="text-sm text-stone-600 dark:text-[#7A7570]">Nothing needs attention right now.</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -595,10 +595,10 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
                     <div>
                       <div className="flex items-center gap-2 mb-1">
                         <span className={`w-1.5 h-1.5 rounded-full ${item.urgency === 'high' ? 'bg-rose-600' : 'bg-amber-600'}`} />
-                        <h4 className="font-semibold text-stone-900 text-sm">{item.title}</h4>
+                        <h4 className="font-semibold text-stone-900 dark:text-[#F0EBE3] text-sm">{item.title}</h4>
                       </div>
-                      <p className="text-stone-600 text-xs mb-1.5">{item.description}</p>
-                      <div className="flex items-center gap-3 text-[11px] text-stone-500">
+                      <p className="text-stone-600 dark:text-[#B8B0A5] text-xs mb-1.5">{item.description}</p>
+                      <div className="flex items-center gap-3 text-[11px] text-stone-500 dark:text-[#7A7570]">
                         <span>Location: {item.location}</span>
                         {item.timestamp && (
                           <>
@@ -612,7 +612,7 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
                       variant="outline" 
                       size="sm"
                       onClick={() => handleQuickAction(item.actionRoute)}
-                      className="whitespace-nowrap bg-white dark:bg-[#252420] border-stone-200 dark:border-[#3A3835] text-xs font-medium dark:text-[#C0B9AD]"
+                      className="whitespace-nowrap bg-white dark:bg-[#252420] border-stone-200 dark:border-[#3A3835] text-xs font-medium text-stone-700 dark:text-[#C0B9AD] hover:bg-stone-50 dark:hover:bg-[#2A2926]"
                     >
                       {item.action}
                       <ChevronRight className="w-3.5 h-3.5 ml-1 text-stone-400" />
@@ -642,7 +642,7 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="border-b border-stone-100 text-xs font-medium text-stone-500">
+                    <tr className="border-b border-stone-100 dark:border-[#272522] text-xs font-medium text-stone-500 dark:text-[#7A7570]">
                       <th className="py-2.5 px-2">Severity</th>
                       <th className="py-2.5 px-2">Issue</th>
                       <th className="py-2.5 px-2">Location</th>
@@ -653,24 +653,24 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
                   </thead>
                   <tbody>
                     {alertSummary.map((alert: any) => (
-                      <tr key={alert.id} className="border-b border-stone-50 hover:bg-stone-50/50 transition-colors text-sm">
+                      <tr key={alert.id} className="border-b border-stone-50 dark:border-[#272522]/60 hover:bg-stone-50/50 dark:hover:bg-[#252420]/40 transition-colors text-sm">
                         <td className="py-3 px-2">
                           <span className={`px-2 py-0.5 rounded text-xs font-medium border ${
                             alert.severity === 'urgent' 
-                              ? 'bg-rose-50 text-rose-700 border-rose-200' 
+                              ? 'bg-rose-50 dark:bg-red-950/30 text-rose-700 dark:text-red-400 border-rose-200 dark:border-red-900/40'
                               : alert.severity === 'important'
-                              ? 'bg-amber-50 text-amber-700 border-amber-200'
-                              : 'bg-stone-50 text-stone-600 border-stone-200'
+                              ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-900/40'
+                              : 'bg-stone-50 dark:bg-[#252420] text-stone-600 dark:text-[#B8B0A5] border-stone-200 dark:border-[#3A3835]'
                           }`}>
                             {alert.severity === 'urgent' ? 'Urgent' : alert.severity === 'important' ? 'Important' : 'Standard'}
                           </span>
                         </td>
-                        <td className="py-3 px-2 font-medium text-stone-900 text-xs">{alert.title}</td>
-                        <td className="py-3 px-2 text-stone-500 text-xs">{alert.location}</td>
-                        <td className="py-3 px-2 text-stone-600 text-xs">{alert.ownerName}</td>
+                        <td className="py-3 px-2 font-medium text-stone-900 dark:text-[#F0EBE3] text-xs">{alert.title}</td>
+                        <td className="py-3 px-2 text-stone-500 dark:text-[#7A7570] text-xs">{alert.location}</td>
+                        <td className="py-3 px-2 text-stone-600 dark:text-[#B8B0A5] text-xs">{alert.ownerName}</td>
                         <td className="py-3 px-2">
                           <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium ${
-                            alert.status === 'open' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'
+                            alert.status === 'open' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400' : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400'
                           }`}>
                             {alert.status === 'open' ? 'Needs review' : 'In progress'}
                           </span>
@@ -747,20 +747,20 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
 
               {/* Activity Summary */}
               <div className="space-y-4">
-                <h3 className="text-xs font-medium text-stone-700">Activity summary</h3>
-                <p className="text-stone-500 text-xs leading-relaxed">
+                <h3 className="text-xs font-medium text-stone-700 dark:text-[#B8B0A5]">Activity summary</h3>
+                <p className="text-stone-500 dark:text-[#7A7570] text-xs leading-relaxed">
                   Check-in activity was highest between 9:15 AM and 9:45 AM. Pickups are continuing steadily.
                 </p>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-stone-50/70 dark:bg-[#252420] p-3.5 rounded-xl border border-stone-100 dark:border-[#3A3835]">
-                    <span className="text-xs text-stone-500 font-medium block">Check-in progress</span>
-                    <p className="text-xl font-semibold text-stone-900 mt-1">
+                    <span className="text-xs text-stone-500 dark:text-[#7A7570] font-medium block">Check-in progress</span>
+                    <p className="text-xl font-semibold text-stone-900 dark:text-[#F0EBE3] mt-1">
                       {attSummary.registered > 0 ? Math.round((attSummary.checkedIn / attSummary.registered) * 100) : 0}%
                     </p>
                   </div>
-                  <div className="bg-stone-50/70 p-3.5 rounded-xl border border-stone-100">
-                    <span className="text-xs text-stone-500 font-medium block">Pickup progress</span>
-                    <p className="text-xl font-semibold text-stone-900 mt-1">
+                  <div className="bg-stone-50/70 dark:bg-[#252420] p-3.5 rounded-xl border border-stone-100 dark:border-[#3A3835]">
+                    <span className="text-xs text-stone-500 dark:text-[#7A7570] font-medium block">Pickup progress</span>
+                    <p className="text-xl font-semibold text-stone-900 dark:text-[#F0EBE3] mt-1">
                       {attSummary.checkedIn > 0 ? Math.round((attSummary.released / attSummary.checkedIn) * 100) : 0}%
                     </p>
                   </div>
@@ -775,23 +775,23 @@ export const AdminOperationsDashboardView: React.FC<AdminOperationsDashboardView
             data-component-version="operations-attendance-summary-v1"
           >
             <div className="flex items-center justify-between border-b border-stone-100 dark:border-[#272522] pb-4 mb-4">
-              <h2 className="text-base font-semibold text-stone-900">
+              <h2 className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">
                 Attendance
               </h2>
             </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
               <div className="p-4 bg-stone-50/60 dark:bg-[#252420] rounded-xl border border-stone-100 dark:border-[#3A3835]">
-                <span className="text-stone-500 text-xs font-medium block">Registered</span>
-                <p className="text-2xl font-semibold text-stone-900 mt-1">{attSummary.registered}</p>
+                <span className="text-stone-500 dark:text-[#7A7570] text-xs font-medium block">Registered</span>
+                <p className="text-2xl font-semibold text-stone-900 dark:text-[#F0EBE3] mt-1">{attSummary.registered}</p>
               </div>
               <div className="p-4 bg-stone-50/60 dark:bg-[#252420] rounded-xl border border-stone-100 dark:border-[#3A3835]">
-                <span className="text-stone-500 text-xs font-medium block">Not checked in</span>
-                <p className="text-2xl font-semibold text-stone-700 mt-1">{attSummary.notCheckedIn}</p>
+                <span className="text-stone-500 dark:text-[#7A7570] text-xs font-medium block">Not checked in</span>
+                <p className="text-2xl font-semibold text-stone-700 dark:text-[#B8B0A5] mt-1">{attSummary.notCheckedIn}</p>
               </div>
               <div className="p-4 bg-stone-50/60 dark:bg-[#252420] rounded-xl border border-stone-100 dark:border-[#3A3835]">
-                <span className="text-stone-500 text-xs font-medium block">Needs confirmation</span>
-                <p className={`text-2xl font-semibold mt-1 ${attSummary.statusNeedingConfirmation > 0 ? 'text-amber-600' : 'text-stone-900'}`}>
+                <span className="text-stone-500 dark:text-[#7A7570] text-xs font-medium block">Needs confirmation</span>
+                <p className={`text-2xl font-semibold mt-1 ${attSummary.statusNeedingConfirmation > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-stone-900 dark:text-[#F0EBE3]'}`}>
                   {attSummary.statusNeedingConfirmation}
                 </p>
               </div>

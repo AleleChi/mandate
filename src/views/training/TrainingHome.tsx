@@ -250,41 +250,41 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
     >
       {/* Messages */}
       {errorMsg && (
-        <div className="mb-4 p-3.5 bg-amber-50/80 border border-amber-200/90 rounded-xl text-xs text-amber-900 font-medium">
+        <div className="mb-4 p-3.5 bg-amber-50/80 dark:bg-amber-950/20 border border-amber-200/90 dark:border-amber-900/40 rounded-xl text-xs text-amber-900 dark:text-amber-200 font-medium">
           {errorMsg}
         </div>
       )}
       {successMsg && (
-        <div className="mb-4 p-3.5 bg-emerald-50/80 border border-emerald-200/90 rounded-xl text-xs text-emerald-900 font-medium">
+        <div className="mb-4 p-3.5 bg-emerald-50/80 dark:bg-emerald-950/20 border border-emerald-200/90 dark:border-emerald-900/40 rounded-xl text-xs text-emerald-900 dark:text-emerald-200 font-medium">
           {successMsg}
         </div>
       )}
 
       {/* In-Practice Context Header */}
-      <div className="bg-white rounded-2xl border border-[#EAE8E1] p-4 sm:p-5 mb-6 shadow-2xs">
+      <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-4 sm:p-5 mb-6 shadow-2xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="bg-[#C59B27]/10 text-[#8C6D1F] border border-[#C59B27]/20 font-semibold px-2 py-0.5 rounded text-[11px]">
+              <span className="bg-[#C59B27]/10 dark:bg-amber-950/40 text-[#8C6D1F] dark:text-amber-400 border border-[#C59B27]/20 dark:border-amber-900/40 font-semibold px-2 py-0.5 rounded text-[11px]">
                 Practice mode
               </span>
-              <span className="text-zinc-300">•</span>
-              <span className="text-xs text-zinc-500">
+              <span className="text-zinc-300 dark:text-[#3A3835]">•</span>
+              <span className="text-xs text-zinc-500 dark:text-[#7A7570]">
                 {scenarioTopic}
               </span>
             </div>
-            <h1 className="text-xl sm:text-2xl font-serif text-zinc-900 tracking-tight">
+            <h1 className="text-xl sm:text-2xl font-serif text-zinc-900 dark:text-[#F0EBE3] tracking-tight">
               {scenarioTitle}
             </h1>
-            <div className="flex items-center gap-2 mt-1 text-xs text-zinc-600">
-              <span>Practising as: <strong className="text-zinc-900">{currentRole}</strong></span>
-              <span className="text-zinc-300">•</span>
-              <span className="inline-flex items-center gap-1 text-zinc-500">
-                <Clock className="w-3.5 h-3.5 text-zinc-400" />
+            <div className="flex items-center gap-2 mt-1 text-xs text-zinc-600 dark:text-[#B8B0A5]">
+              <span>Practising as: <strong className="text-zinc-900 dark:text-[#F0EBE3]">{currentRole}</strong></span>
+              <span className="text-zinc-300 dark:text-[#3A3835]">•</span>
+              <span className="inline-flex items-center gap-1 text-zinc-500 dark:text-[#7A7570]">
+                <Clock className="w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570]" />
                 {formatElapsed(elapsedSeconds)} elapsed
               </span>
-              <span className="text-zinc-300 hidden md:inline">•</span>
-              <span className="text-zinc-500 hidden md:inline">No live event changes</span>
+              <span className="text-zinc-300 dark:text-[#3A3835] hidden md:inline">•</span>
+              <span className="text-zinc-500 dark:text-[#7A7570] hidden md:inline">No live event changes</span>
             </div>
           </div>
 
@@ -301,8 +301,8 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
       </div>
 
       {/* Safety stoppage notification - calm, reassuring */}
-      <div className="bg-[#FFFDF7] rounded-xl border border-amber-200/60 p-3.5 mb-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2.5 text-amber-950">
+      <div className="bg-[#FFFDF7] dark:bg-[#1D1D1A] rounded-xl border border-amber-200/60 dark:border-amber-900/40 p-3.5 mb-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2.5 text-amber-950 dark:text-amber-200">
           <span className="text-base">⚠️</span>
           <span>
             <strong>Safety notice:</strong> If an actual emergency occurs during practice, stop practice immediately and follow standard church procedures.
@@ -311,7 +311,7 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
         <button
           type="button"
           onClick={handleRealConcern}
-          className="shrink-0 px-3 py-1.5 rounded-lg border border-red-200 bg-white hover:bg-red-50 text-red-700 text-[11px] font-semibold transition-colors cursor-pointer"
+          className="shrink-0 px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-900/40 bg-white dark:bg-[#21211E] hover:bg-red-50 dark:hover:bg-red-950/30 text-red-700 dark:text-red-400 text-[11px] font-semibold transition-colors cursor-pointer"
         >
           Stop practice for real emergency
         </button>
@@ -322,8 +322,8 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
         {/* Left Column: Role selector & session links */}
         <div className="space-y-6">
           {/* Switch Role */}
-          <div className="bg-white rounded-2xl border border-[#EAE8E1] p-5 shadow-2xs">
-            <h2 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-3">
+          <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-5 shadow-2xs">
+            <h2 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider mb-3">
               Practice as
             </h2>
             <div className="space-y-1.5">
@@ -341,8 +341,8 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
                     onClick={() => handleSelectRole(r.id)}
                     className={`w-full py-2 px-3 rounded-xl border text-xs text-left transition-all cursor-pointer flex items-center justify-between ${
                       isCurrent
-                        ? 'border-[#C59B27] bg-[#FAF8F2] text-[#8C6D1F] font-semibold ring-1 ring-[#C59B27]'
-                        : 'border-[#EAE8E1] bg-white text-zinc-700 hover:bg-zinc-50'
+                        ? 'border-[#C59B27] dark:border-amber-500/50 bg-[#FAF8F2] dark:bg-amber-950/20 text-[#8C6D1F] dark:text-amber-400 font-semibold ring-1 ring-[#C59B27] dark:ring-amber-500/30'
+                        : 'border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#21211E] text-zinc-700 dark:text-[#B8B0A5] hover:bg-zinc-50 dark:hover:bg-[#262520]'
                     }`}
                   >
                     <span>{r.label}</span>
@@ -354,8 +354,8 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
           </div>
 
           {/* Practice Checklist */}
-          <div className="bg-white rounded-2xl border border-[#EAE8E1] p-5 shadow-2xs">
-            <h2 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-3">
+          <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-5 shadow-2xs">
+            <h2 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider mb-3">
               Checklist for this practice
             </h2>
             <div className="space-y-2.5 text-xs">
@@ -366,16 +366,16 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
                   return (
                     <div
                       key={obj.id}
-                      className="p-3 rounded-xl bg-zinc-50/80 border border-[#EAE8E1] flex items-start gap-2.5"
+                      className="p-3 rounded-xl bg-zinc-50/80 dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] flex items-start gap-2.5"
                     >
-                      <span className={`text-sm mt-0.5 ${isDone ? 'text-emerald-600' : 'text-zinc-400'}`}>
+                      <span className={`text-sm mt-0.5 ${isDone ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 dark:text-[#7A7570]'}`}>
                         {isDone ? '✓' : '○'}
                       </span>
                       <div>
-                        <p className={`font-medium ${isDone ? 'text-zinc-900 line-through' : 'text-zinc-800'}`}>
+                        <p className={`font-medium ${isDone ? 'text-zinc-900 dark:text-[#F0EBE3] line-through' : 'text-zinc-800 dark:text-[#F0EBE3]'}`}>
                           {obj.title}
                         </p>
-                        <p className="text-[11px] text-zinc-500 mt-0.5">
+                        <p className="text-[11px] text-zinc-500 dark:text-[#7A7570] mt-0.5">
                           {obj.description}
                         </p>
                       </div>
@@ -383,7 +383,7 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
                   );
                 })
               ) : (
-                <div className="p-3 rounded-xl bg-zinc-50/80 border border-[#EAE8E1] text-zinc-500 text-xs">
+                <div className="p-3 rounded-xl bg-zinc-50/80 dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] text-zinc-500 dark:text-[#7A7570] text-xs">
                   Practise the agreed workflow calmly with your team.
                 </div>
               )}
@@ -394,17 +394,17 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
         {/* Right 2 Columns: Role Action Playground */}
         <div className="lg:col-span-2 space-y-6">
           {/* Main practice workspace */}
-          <div className="bg-white rounded-2xl border border-[#EAE8E1] p-6 shadow-2xs">
-            <div className="flex items-center justify-between border-b border-[#F4F3ED] pb-4 mb-5">
+          <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-6 shadow-2xs">
+            <div className="flex items-center justify-between border-b border-[#F4F3ED] dark:border-[#302E29] pb-4 mb-5">
               <div>
-                <h2 className="text-base font-semibold text-zinc-900">
+                <h2 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3]">
                   {currentRole} workspace
                 </h2>
-                <p className="text-xs text-zinc-500 mt-0.5">
+                <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-0.5">
                   Practise the real steps used on event day. All records remain practice-only.
                 </p>
               </div>
-              <span className="text-xs text-zinc-500 font-medium">
+              <span className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium">
                 Simulated attendance
               </span>
             </div>
@@ -414,7 +414,7 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
               <div className="space-y-5">
                 {/* Manual or Scanned code input */}
                 <div>
-                  <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
+                  <label className="block text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider mb-2">
                     Enter or scan pass code
                   </label>
                   <div className="flex gap-2">
@@ -429,7 +429,7 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
                         }
                       }}
                       placeholder="e.g. TPASS-LIAM-819"
-                      className="flex-1 bg-white border border-[#EAE8E1] rounded-xl px-3.5 py-2.5 text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                      className="flex-1 bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl px-3.5 py-2.5 text-xs text-zinc-900 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40"
                     />
                     <button
                       type="button"
@@ -444,10 +444,10 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
                 {/* Queue of practice children */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-zinc-700 uppercase tracking-wider">
+                    <span className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider">
                       Children arriving at check-in
                     </span>
-                    <span className="text-[11px] text-zinc-500">
+                    <span className="text-[11px] text-zinc-500 dark:text-[#7A7570]">
                       Click to practise scanning
                     </span>
                   </div>
@@ -456,28 +456,28 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
                     {sessionData?.personas?.map((p: any) => (
                       <div
                         key={p.id}
-                        className="p-3 bg-zinc-50/60 rounded-xl border border-[#EAE8E1] flex items-center justify-between gap-3 text-xs"
+                        className="p-3 bg-zinc-50/60 dark:bg-[#21211E] rounded-xl border border-[#EAE8E1] dark:border-[#302E29] flex items-center justify-between gap-3 text-xs"
                       >
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="font-semibold text-zinc-900">{p.display_name}</span>
-                            <span className="text-[11px] text-zinc-500">
+                            <span className="font-semibold text-zinc-900 dark:text-[#F0EBE3]">{p.display_name}</span>
+                            <span className="text-[11px] text-zinc-500 dark:text-[#7A7570]">
                               ({p.safe_profile?.calculatedAge || 7} yrs, {p.safe_profile?.ageGroup || 'Primary'})
                             </span>
                           </div>
-                          <div className="text-[11px] text-zinc-500 mt-0.5">
+                          <div className="text-[11px] text-zinc-500 dark:text-[#7A7570] mt-0.5">
                             Guardian: {p.safe_profile?.guardianName || 'Parent'}
                           </div>
                         </div>
 
                         <div className="flex items-center gap-2">
-                          <code className="text-[11px] bg-white border border-[#EAE8E1] px-2 py-1 rounded text-[#8C6D1F] font-mono">
+                          <code className="text-[11px] bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] px-2 py-1 rounded text-[#8C6D1F] dark:text-amber-400 font-mono">
                             {p.safe_profile?.passCode || 'PASS-001'}
                           </code>
                           <button
                             type="button"
                             onClick={() => handleCheckInSubmit(p.safe_profile?.passCode)}
-                            className="px-3 py-1.5 rounded-lg border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-zinc-700 text-xs font-medium cursor-pointer transition-colors"
+                            className="px-3 py-1.5 rounded-lg border border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#F0EBE3] text-xs font-medium cursor-pointer transition-colors"
                           >
                             Check in
                           </button>
@@ -492,34 +492,34 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
             {/* Room Lead / Care Lead Safety Alert */}
             {(role.toLowerCase().includes('room') || role.toLowerCase().includes('care') || role.toLowerCase().includes('responder')) && (
               <div className="space-y-5">
-                <div className="p-4 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs">
-                  <h3 className="font-semibold text-zinc-900 mb-1">
+                <div className="p-4 bg-[#FAF9F5] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl text-xs">
+                  <h3 className="font-semibold text-zinc-900 dark:text-[#F0EBE3] mb-1">
                     Practise team safety alert
                   </h3>
-                  <p className="text-zinc-600">
+                  <p className="text-zinc-600 dark:text-[#B8B0A5]">
                     Practise the steps to inform the team when an urgent matter arises. This alert is kept within practice mode and does not send actual SMS, WhatsApp, or emergency alarms.
                   </p>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-1.5">
+                    <label className="block text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider mb-1.5">
                       Situation type
                     </label>
                     <select
                       value={alertCategory}
                       onChange={(e) => setAlertCategory(e.target.value)}
-                      className="w-full bg-white border border-[#EAE8E1] rounded-xl px-3.5 py-2.5 text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] cursor-pointer"
+                      className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl px-3.5 py-2.5 text-xs text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 cursor-pointer"
                     >
-                      <option value="Child not at assigned area">Child not at assigned area</option>
-                      <option value="Medical assistance">Medical assistance</option>
-                      <option value="Safeguarding hold">Safeguarding hold</option>
-                      <option value="Unauthorised collector">Unauthorised collector</option>
+                      <option value="Child not at assigned area" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">Child not at assigned area</option>
+                      <option value="Medical assistance" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">Medical assistance</option>
+                      <option value="Safeguarding hold" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">Safeguarding hold</option>
+                      <option value="Unauthorised collector" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">Unauthorised collector</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-1.5">
+                    <label className="block text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider mb-1.5">
                       Factual note
                     </label>
                     <input
@@ -527,7 +527,7 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
                       value={alertMessage}
                       onChange={(e) => setAlertMessage(e.target.value)}
                       placeholder="e.g. Liam Smith not at primary room"
-                      className="w-full bg-white border border-[#EAE8E1] rounded-xl px-3.5 py-2.5 text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                      className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl px-3.5 py-2.5 text-xs text-zinc-900 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40"
                     />
                   </div>
                 </div>
@@ -541,30 +541,30 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
                 </button>
 
                 {/* Incident record section for care lead */}
-                <div className="border-t border-[#F4F3ED] pt-5 mt-5">
-                  <h3 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-3">
+                <div className="border-t border-[#F4F3ED] dark:border-[#302E29] pt-5 mt-5">
+                  <h3 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider mb-3">
                     Record practice incident note
                   </h3>
 
                   <div className="space-y-3">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs font-medium text-zinc-700 mb-1">
+                        <label className="block text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] mb-1">
                           Category
                         </label>
                         <select
                           value={incidentCategory}
                           onChange={(e) => setIncidentCategory(e.target.value)}
-                          className="w-full bg-white border border-[#EAE8E1] rounded-xl px-3.5 py-2 text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                          className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl px-3.5 py-2 text-xs text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40"
                         >
-                          <option value="Medical assistance">Medical assistance</option>
-                          <option value="Unregistered collector check">Unregistered collector check</option>
-                          <option value="Duplicate pass check">Duplicate pass check</option>
+                          <option value="Medical assistance" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">Medical assistance</option>
+                          <option value="Unregistered collector check" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">Unregistered collector check</option>
+                          <option value="Duplicate pass check" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">Duplicate pass check</option>
                         </select>
                       </div>
 
                       <div>
-                        <label className="block text-xs font-medium text-zinc-700 mb-1">
+                        <label className="block text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] mb-1">
                           Summary
                         </label>
                         <input
@@ -572,13 +572,13 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
                           value={incidentSummary}
                           onChange={(e) => setIncidentSummary(e.target.value)}
                           placeholder="e.g. Liam was with lead teacher"
-                          className="w-full bg-white border border-[#EAE8E1] rounded-xl px-3.5 py-2 text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                          className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl px-3.5 py-2 text-xs text-zinc-900 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40"
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-xs font-medium text-zinc-700 mb-1">
+                      <label className="block text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] mb-1">
                         Action taken
                       </label>
                       <textarea
@@ -586,7 +586,7 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
                         onChange={(e) => setIncidentDetails(e.target.value)}
                         placeholder="Factual summary of steps taken by the team."
                         rows={2}
-                        className="w-full bg-white border border-[#EAE8E1] rounded-xl px-3.5 py-2 text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27] resize-none"
+                        className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl px-3.5 py-2 text-xs text-zinc-900 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 resize-none"
                       />
                     </div>
 
@@ -605,7 +605,7 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
             {/* Pickup Team UI */}
             {role.toLowerCase().includes('pickup') && (
               <div className="space-y-4">
-                <p className="text-xs text-zinc-600">
+                <p className="text-xs text-zinc-600 dark:text-[#B8B0A5]">
                   Practise checking guardians and releasing children at the end of the session.
                 </p>
 
@@ -613,12 +613,12 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
                   {sessionData?.personas?.map((p: any) => (
                     <div
                       key={p.id}
-                      className="p-3.5 bg-zinc-50/70 rounded-xl border border-[#EAE8E1] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                      className="p-3.5 bg-zinc-50/70 dark:bg-[#21211E] rounded-xl border border-[#EAE8E1] dark:border-[#302E29] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
                     >
                       <div>
-                        <span className="font-semibold text-zinc-900">{p.display_name}</span>
-                        <div className="text-[11px] text-zinc-500 mt-0.5">
-                          Registered collector: <strong className="text-zinc-700">{p.safe_profile?.guardianName || 'Parent'}</strong> ({p.safe_profile?.guardianPhone || '07000 000000'})
+                        <span className="font-semibold text-zinc-900 dark:text-[#F0EBE3]">{p.display_name}</span>
+                        <div className="text-[11px] text-zinc-500 dark:text-[#7A7570] mt-0.5">
+                          Registered collector: <strong className="text-zinc-700 dark:text-[#F0EBE3]">{p.safe_profile?.guardianName || 'Parent'}</strong> ({p.safe_profile?.guardianPhone || '07000 000000'})
                         </div>
                       </div>
 
@@ -637,26 +637,26 @@ export const TrainingHome: React.FC<TrainingHomeProps> = ({
           </div>
 
           {/* Activity Timeline */}
-          <div className="bg-white rounded-2xl border border-[#EAE8E1] p-6 shadow-2xs">
-            <h2 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-3">
+          <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-6 shadow-2xs">
+            <h2 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider mb-3">
               Practice activity
             </h2>
 
             <div className="space-y-2 max-h-56 overflow-y-auto">
               {activity.length === 0 ? (
-                <p className="text-xs text-zinc-500 italic py-2">
+                <p className="text-xs text-zinc-500 dark:text-[#7A7570] italic py-2">
                   No actions taken in this practice session yet.
                 </p>
               ) : (
                 activity.map((act) => (
                   <div
                     key={act.id}
-                    className="p-2.5 bg-zinc-50/80 rounded-xl border border-[#F4F3ED] flex items-center justify-between gap-4 text-xs"
+                    className="p-2.5 bg-zinc-50/80 dark:bg-[#21211E] rounded-xl border border-[#F4F3ED] dark:border-[#302E29] flex items-center justify-between gap-4 text-xs"
                   >
-                    <span className="text-zinc-700 leading-relaxed">
+                    <span className="text-zinc-700 dark:text-[#B8B0A5] leading-relaxed">
                       {act.safe_summary}
                     </span>
-                    <span className="text-[10px] text-zinc-400 font-mono shrink-0">
+                    <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-mono shrink-0">
                       {new Date(act.real_created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>

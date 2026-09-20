@@ -7,6 +7,7 @@ import { BrandLogo } from '../components/common/BrandLogo';
 import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell, ArrowLeft, Check, AlertCircle, Menu, Fingerprint, MapPin, RefreshCw, CheckCircle2, Phone } from 'lucide-react';
 import { REAL_ASSETS } from '../config/assets';
 import { useNotification } from '../context/NotificationContext';
+import { ThemeSwitcher } from '../components/common/ThemeSwitcher';
 import { api } from '../services/api';
 import { soundUtility } from '../utils/sound';
 import { subscribeUserToPush, getPushNotificationStatus, GranularPushStatus } from '../utils/pushSubscription';
@@ -420,6 +421,9 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             <p className="text-xs sm:text-sm text-[#3F3F46] mt-1">
               Here is where things stand for your children.
             </p>
+          </div>
+          <div className="shrink-0 pt-0.5">
+            <ThemeSwitcher />
           </div>
         </div>
 
@@ -1411,6 +1415,15 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             </button>
           </div>
 
+          {/* Appearance / Theme Preference */}
+          <div className="flex items-center justify-between pt-3.5">
+            <div className="flex flex-col text-left">
+              <span className="font-semibold text-zinc-800">Theme</span>
+              <span className="text-[10px] text-[#6B7280]">Switch between light and dark theme</span>
+            </div>
+            <ThemeSwitcher showLabel />
+          </div>
+
           {/* Push Notification Preference */}
           <div className="flex items-center justify-between pt-3.5">
             <div className="flex flex-col text-left">
@@ -2076,7 +2089,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                   <HelpCircle className="w-5 h-5 stroke-[1.75]" />
                 </div>
                 <div className="text-left">
-                  <h3 className="text-lg font-serif-koinonia font-bold text-[#8C6D23]">
+                  <h3 className="text-lg font-sans font-bold text-[#8C6D23]">
                     Help and questions
                   </h3>
                   <p className="text-[11px] text-[#6B7280] font-medium leading-tight mt-0.5">
@@ -2132,10 +2145,10 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                   className="bg-white rounded-2xl border border-[#EAE8E1]/80 p-4.5 shadow-2xs space-y-2 text-left"
                 >
                   <div className="flex items-start space-x-2.5">
-                    <span className="text-xs font-serif-koinonia font-semibold text-[#C59B27] mt-0.5">
+                    <span className="text-xs font-sans font-bold text-[#C59B27] mt-0.5">
                       {idx + 1}.
                     </span>
-                    <h4 className="text-sm font-serif-koinonia font-bold text-[#18181B] leading-snug">
+                    <h4 className="text-sm font-sans font-bold text-[#18181B] leading-snug">
                       {faq.title}
                     </h4>
                   </div>
@@ -2234,10 +2247,10 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                   className="bg-white rounded-2xl border border-[#EAE8E1]/80 p-4.5 shadow-2xs space-y-2 text-left"
                 >
                   <div className="flex items-start space-x-2.5">
-                    <span className="text-xs font-serif-koinonia font-semibold text-[#C59B27] mt-0.5">
+                    <span className="text-xs font-sans font-bold text-[#C59B27] mt-0.5">
                       {idx + 1}.
                     </span>
-                    <h4 className="text-sm font-serif-koinonia font-bold text-[#18181B] leading-snug">
+                    <h4 className="text-sm font-sans font-bold text-[#18181B] leading-snug">
                       {safety.title}
                     </h4>
                   </div>

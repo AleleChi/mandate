@@ -740,12 +740,12 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
   return (
     <div className="space-y-8 font-sans" id="admin-landing-manager">
       {/* Editorial Page Header */}
-      <div className="border-b border-[#EAE8E1]/80 pb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="border-b border-[#EAE8E1]/80 dark:border-[#302E29] pb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="type-h1-app text-[#18181B]">
+          <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
             Landing Page
           </h1>
-          <p className="text-xs sm:text-sm text-stone-500 mt-1">
+          <p className="text-xs sm:text-sm text-stone-500 dark:text-[#7A7570] mt-1">
             Manage the images shown on your public landing page.
           </p>
         </div>
@@ -755,26 +755,26 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
             fetchSettings();
             fetchGalleryItems();
           }}
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-600 bg-white border border-[#EAE8E1] hover:bg-stone-50 hover:text-stone-900 px-3 py-2 rounded-lg transition-colors cursor-pointer shadow-2xs"
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-600 dark:text-[#B8B0A5] bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#3A3835] hover:bg-stone-50 dark:hover:bg-[#262520] hover:text-stone-900 dark:hover:text-[#F0EBE3] px-3 py-2 rounded-lg transition-colors cursor-pointer shadow-2xs"
           title="Refresh current data"
         >
-          <RefreshCw className="w-3.5 h-3.5 text-stone-400" />
+          <RefreshCw className="w-3.5 h-3.5 text-stone-400 dark:text-[#7A7570]" />
           <span>Refresh</span>
         </button>
       </div>
 
       {/* Understated Main Tabs */}
-      <div className="flex border-b border-[#EAE8E1] gap-6 text-xs font-sans">
+      <div className="flex border-b border-[#EAE8E1] dark:border-[#302E29] gap-6 text-xs font-sans">
         <button
           onClick={() => setMainTab('gallery')}
           className={`pb-3 font-medium transition-colors cursor-pointer border-b-2 flex items-center gap-2 font-sans ${
             mainTab === 'gallery'
-              ? 'border-[#C59B27] text-stone-950 font-semibold'
-              : 'border-transparent text-stone-500 hover:text-stone-800'
+              ? 'border-[#C59B27] text-stone-950 dark:text-[#F0EBE3] font-semibold'
+              : 'border-transparent text-stone-500 dark:text-[#7A7570] hover:text-stone-800 dark:hover:text-[#B8B0A5]'
           }`}
         >
           <span>Photo Gallery</span>
-          <span className="text-[11px] font-sans font-medium text-stone-400">
+          <span className="text-[11px] font-sans font-medium text-stone-400 dark:text-[#7A7570]">
             {galleryItems.length}
           </span>
         </button>
@@ -783,12 +783,12 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
           onClick={() => setMainTab('slots')}
           className={`pb-3 font-medium transition-colors cursor-pointer border-b-2 flex items-center gap-2 font-sans ${
             mainTab === 'slots'
-              ? 'border-[#C59B27] text-stone-950 font-semibold'
-              : 'border-transparent text-stone-500 hover:text-stone-800'
+              ? 'border-[#C59B27] text-stone-950 dark:text-[#F0EBE3] font-semibold'
+              : 'border-transparent text-stone-500 dark:text-[#7A7570] hover:text-stone-800 dark:hover:text-[#B8B0A5]'
           }`}
         >
           <span>Featured Images</span>
-          <span className="text-[11px] font-sans font-medium text-stone-400">
+          <span className="text-[11px] font-sans font-medium text-stone-400 dark:text-[#7A7570]">
             {MEDIA_SLOTS.length}
           </span>
         </button>
@@ -797,8 +797,8 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
           onClick={() => setMainTab('contact-footer')}
           className={`pb-3 font-medium transition-colors cursor-pointer border-b-2 flex items-center gap-2 font-sans ${
             mainTab === 'contact-footer'
-              ? 'border-[#C59B27] text-stone-950 font-semibold'
-              : 'border-transparent text-stone-500 hover:text-stone-800'
+              ? 'border-[#C59B27] text-stone-950 dark:text-[#F0EBE3] font-semibold'
+              : 'border-transparent text-stone-500 dark:text-[#7A7570] hover:text-stone-800 dark:hover:text-[#B8B0A5]'
           }`}
         >
           <span>Contact &amp; Footer</span>
@@ -814,14 +814,14 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2.5">
-                <h3 className="text-base font-semibold text-stone-900">
+                <h3 className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">
                   Photo Gallery
                 </h3>
-                <span className="text-xs text-stone-500 font-normal">
+                <span className="text-xs text-stone-500 dark:text-[#7A7570] font-normal">
                   {activeGalleryCount} published{hiddenGalleryCount > 0 ? `, ${hiddenGalleryCount} hidden` : ''}
                 </span>
               </div>
-              <p className="text-xs text-stone-500 mt-0.5">
+              <p className="text-xs text-stone-500 dark:text-[#7A7570] mt-0.5">
                 Manage the photos shown in the gallery on the landing page.
               </p>
             </div>
@@ -829,9 +829,9 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
             <div className="flex items-center gap-2.5 w-full sm:w-auto">
               <button
                 onClick={() => setShowLivePreview(true)}
-                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 border border-[#EAE8E1] px-3.5 py-2 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 text-xs font-medium text-stone-700 dark:text-[#F0EBE3] bg-white dark:bg-[#21211E] hover:bg-stone-50 dark:hover:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] px-3.5 py-2 rounded-lg transition-colors cursor-pointer shadow-2xs"
               >
-                <Eye className="w-3.5 h-3.5 text-stone-400" />
+                <Eye className="w-3.5 h-3.5 text-stone-400 dark:text-[#7A7570]" />
                 <span>Preview on homepage</span>
               </button>
 
@@ -859,7 +859,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
               {/* Search & Status Filters */}
               <div className="flex flex-wrap items-center gap-3 flex-1">
                 <div className="relative flex-1 min-w-[200px] max-w-sm">
-                  <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <Search className="w-3.5 h-3.5 text-stone-400 dark:text-[#7A7570] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="text"
                     value={gallerySearch}
@@ -868,7 +868,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                       setGalleryPage(1);
                     }}
                     placeholder="Search caption or description..."
-                    className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-[#EAE8E1] rounded-lg text-stone-900 placeholder:text-stone-400 focus:outline-none focus:border-[#C59B27]"
+                    className="w-full pl-8 pr-7 py-1.5 text-xs bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-lg text-stone-900 dark:text-[#F0EBE3] placeholder:text-stone-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:border-[#C59B27]"
                   />
                   {gallerySearch && (
                     <button
@@ -876,7 +876,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                         setGallerySearch('');
                         setGalleryPage(1);
                       }}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 dark:text-[#7A7570] hover:text-stone-600 dark:hover:text-[#F0EBE3] cursor-pointer"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -893,8 +893,8 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                       }}
                       className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
                         galleryStatusFilter === tab
-                          ? 'bg-stone-900 text-white'
-                          : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+                          ? 'bg-stone-900 dark:bg-amber-500/20 text-white dark:text-amber-400 border border-transparent dark:border-amber-900/40'
+                          : 'text-stone-600 dark:text-[#7A7570] hover:text-stone-900 dark:hover:text-[#F0EBE3] hover:bg-stone-100 dark:hover:bg-[#262520]'
                       }`}
                     >
                       {tab === 'all' ? `All (${galleryItems.length})` : tab === 'active' ? `Published (${activeGalleryCount})` : `Hidden (${hiddenGalleryCount})`}
@@ -905,11 +905,11 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
 
               {/* View Mode & Page Size */}
               <div className="flex items-center gap-2 self-end sm:self-auto">
-                <div className="flex items-center border border-[#EAE8E1] rounded-lg bg-white p-0.5">
+                <div className="flex items-center border border-[#EAE8E1] dark:border-[#3A3835] rounded-lg bg-white dark:bg-[#21211E] p-0.5">
                   <button
                     onClick={() => setGalleryViewMode('cards')}
                     className={`p-1.5 rounded text-xs transition-colors cursor-pointer ${
-                      galleryViewMode === 'cards' ? 'bg-stone-100 text-stone-900 font-medium' : 'text-stone-400 hover:text-stone-600'
+                      galleryViewMode === 'cards' ? 'bg-stone-100 dark:bg-[#262520] text-stone-900 dark:text-[#F0EBE3] font-medium' : 'text-stone-400 dark:text-[#7A7570] hover:text-stone-600 dark:hover:text-[#F0EBE3]'
                     }`}
                     title="Grid view"
                   >
@@ -918,7 +918,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                   <button
                     onClick={() => setGalleryViewMode('compact')}
                     className={`p-1.5 rounded text-xs transition-colors cursor-pointer ${
-                      galleryViewMode === 'compact' ? 'bg-stone-100 text-stone-900 font-medium' : 'text-stone-400 hover:text-stone-600'
+                      galleryViewMode === 'compact' ? 'bg-stone-100 dark:bg-[#262520] text-stone-900 dark:text-[#F0EBE3] font-medium' : 'text-stone-400 dark:text-[#7A7570] hover:text-stone-600 dark:hover:text-[#F0EBE3]'
                     }`}
                     title="List view"
                   >
@@ -932,7 +932,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                     setGalleryPageSize(Number(e.target.value));
                     setGalleryPage(1);
                   }}
-                  className="text-xs bg-white border border-[#EAE8E1] rounded-lg px-2.5 py-1.5 text-stone-600 focus:outline-none focus:border-[#C59B27] cursor-pointer"
+                  className="text-xs bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-lg px-2.5 py-1.5 text-stone-600 dark:text-[#B8B0A5] focus:outline-none focus:border-[#C59B27] cursor-pointer"
                 >
                   <option value={12}>12 per page</option>
                   <option value={24}>24 per page</option>
@@ -944,15 +944,15 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
 
           {/* GALLERY CONTENT: CARDS OR LIST */}
           {galleryItems.length === 0 ? (
-            <div className="border border-dashed border-[#EAE8E1] rounded-2xl p-12 text-center space-y-4 bg-white">
-              <div className="w-10 h-10 rounded-full bg-stone-100 text-stone-500 flex items-center justify-center mx-auto">
+            <div className="border border-dashed border-[#EAE8E1] dark:border-[#3A3835] rounded-2xl p-12 text-center space-y-4 bg-white dark:bg-[#1D1D1A]">
+              <div className="w-10 h-10 rounded-full bg-stone-100 dark:bg-[#262520] text-stone-500 dark:text-[#7A7570] flex items-center justify-center mx-auto">
                 <Camera className="w-5 h-5" />
               </div>
               <div className="space-y-1">
-                <h4 className="text-sm font-semibold text-stone-900">
+                <h4 className="text-sm font-semibold text-stone-900 dark:text-[#F0EBE3]">
                   No photos uploaded yet
                 </h4>
-                <p className="text-xs text-stone-500 max-w-sm mx-auto">
+                <p className="text-xs text-stone-500 dark:text-[#7A7570] max-w-sm mx-auto">
                   Upload photos of children, teens, and fellowship gatherings to display in the landing page gallery.
                 </p>
               </div>
@@ -965,14 +965,14 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
               </button>
             </div>
           ) : filteredGalleryItems.length === 0 ? (
-            <div className="border border-[#EAE8E1] rounded-xl p-8 text-center space-y-2 bg-white">
-              <p className="text-xs text-stone-500">No photos matched your filter criteria.</p>
+            <div className="border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-8 text-center space-y-2 bg-white dark:bg-[#1D1D1A]">
+              <p className="text-xs text-stone-500 dark:text-[#7A7570]">No photos matched your filter criteria.</p>
               <button
                 onClick={() => {
                   setGallerySearch('');
                   setGalleryStatusFilter('all');
                 }}
-                className="text-xs font-medium text-[#9A7326] hover:underline cursor-pointer"
+                className="text-xs font-medium text-[#9A7326] dark:text-amber-400 hover:underline cursor-pointer"
               >
                 Reset filters
               </button>
@@ -991,13 +991,13 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                     onDragStart={(e) => handleDragStart(e, trueIdx)}
                     onDragOver={handleDragOver}
                     onDrop={(e) => handleDrop(e, trueIdx)}
-                    className={`bg-white border rounded-xl overflow-hidden shadow-2xs hover:border-[#C59B27]/40 transition-all flex flex-col justify-between group ${
-                      item.is_active === 1 ? 'border-[#EAE8E1]' : 'border-stone-200 opacity-80'
+                    className={`bg-white dark:bg-[#1D1D1A] border rounded-xl overflow-hidden shadow-2xs hover:border-[#C59B27]/40 dark:hover:border-amber-500/40 transition-all flex flex-col justify-between group ${
+                      item.is_active === 1 ? 'border-[#EAE8E1] dark:border-[#302E29]' : 'border-stone-200 dark:border-[#302E29] opacity-80'
                     }`}
                   >
                     <div>
                       {/* Photo Viewport */}
-                      <div className="relative aspect-[4/3] w-full overflow-hidden bg-stone-100">
+                      <div className="relative aspect-[4/3] w-full overflow-hidden bg-stone-100 dark:bg-[#21211E]">
                         <AssetImage
                           src={item.image_url}
                           alt={item.alt_text}
@@ -1008,8 +1008,8 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
 
                         {/* Top Overlay Badges: Order & Status */}
                         <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none">
-                          <span className="font-mono text-[10px] text-stone-700 bg-white/95 backdrop-blur-xs px-2 py-0.5 rounded border border-stone-200/80 shadow-2xs flex items-center gap-1 pointer-events-auto cursor-grab" title="Drag to reorder">
-                            <GripVertical className="w-2.5 h-2.5 text-stone-400" />
+                          <span className="font-mono text-[10px] text-stone-700 dark:text-[#F0EBE3] bg-white/95 dark:bg-[#1D1D1A]/95 backdrop-blur-xs px-2 py-0.5 rounded border border-stone-200/80 dark:border-[#3A3835] shadow-2xs flex items-center gap-1 pointer-events-auto cursor-grab" title="Drag to reorder">
+                            <GripVertical className="w-2.5 h-2.5 text-stone-400 dark:text-[#7A7570]" />
                             <span>{trueIdx + 1}</span>
                           </span>
 
@@ -1020,8 +1020,8 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                             }}
                             className={`pointer-events-auto px-2 py-0.5 rounded text-[10px] font-medium border shadow-2xs transition-colors cursor-pointer ${
                               item.is_active === 1
-                                ? 'bg-emerald-50/80 text-emerald-800 border-emerald-200/80'
-                                : 'bg-stone-50 text-stone-600 border-stone-200'
+                                ? 'bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-400 border-emerald-200/80 dark:border-emerald-800/40'
+                                : 'bg-stone-50 dark:bg-[#262520] text-stone-600 dark:text-[#B8B0A5] border-stone-200 dark:border-[#3A3835]'
                             }`}
                             title="Click to toggle publication status"
                           >
@@ -1032,22 +1032,22 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
 
                       {/* Content Area */}
                       <div className="p-3.5 space-y-1">
-                        <h4 className="text-sm font-medium text-stone-900 truncate">
-                          {item.caption ? item.caption : <span className="text-stone-400 italic font-normal">No caption</span>}
+                        <h4 className="text-sm font-medium text-stone-900 dark:text-[#F0EBE3] truncate">
+                          {item.caption ? item.caption : <span className="text-stone-400 dark:text-[#7A7570] italic font-normal">No caption</span>}
                         </h4>
-                        <p className="text-xs text-stone-500 line-clamp-1">
+                        <p className="text-xs text-stone-500 dark:text-[#7A7570] line-clamp-1">
                           {item.alt_text}
                         </p>
                       </div>
                     </div>
 
                     {/* Card Actions Footer */}
-                    <div className="px-3.5 py-2.5 border-t border-[#EAE8E1]/80 flex items-center justify-between bg-stone-50/40 text-xs relative" data-card-menu>
+                    <div className="px-3.5 py-2.5 border-t border-[#EAE8E1]/80 dark:border-[#302E29] flex items-center justify-between bg-stone-50/40 dark:bg-[#21211E] text-xs relative" data-card-menu>
                       <button
                         onClick={() => setEditingItem(item)}
-                        className="text-stone-600 hover:text-stone-900 font-medium inline-flex items-center gap-1 transition-colors cursor-pointer"
+                        className="text-stone-600 dark:text-[#B8B0A5] hover:text-stone-900 dark:hover:text-[#F0EBE3] font-medium inline-flex items-center gap-1 transition-colors cursor-pointer"
                       >
-                        <Pencil className="w-3 h-3 text-stone-400" />
+                        <Pencil className="w-3 h-3 text-stone-400 dark:text-[#7A7570]" />
                         <span>Edit</span>
                       </button>
 
@@ -1058,37 +1058,37 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                             e.stopPropagation();
                             setOpenMenuId(isMenuOpen ? null : item.id);
                           }}
-                          className="w-7 h-7 rounded hover:bg-stone-200/60 text-stone-500 hover:text-stone-800 flex items-center justify-center transition-colors cursor-pointer"
+                          className="w-7 h-7 rounded hover:bg-stone-200/60 dark:hover:bg-[#262520] text-stone-500 dark:text-[#7A7570] hover:text-stone-800 dark:hover:text-[#F0EBE3] flex items-center justify-center transition-colors cursor-pointer"
                           title="Actions"
                         >
                           <MoreHorizontal className="w-4 h-4" />
                         </button>
 
                         {isMenuOpen && (
-                          <div className="absolute right-0 bottom-full mb-1 w-44 bg-white border border-[#EAE8E1] rounded-xl shadow-lg p-1 z-30 space-y-0.5 animate-in fade-in zoom-in-95 duration-100">
+                          <div className="absolute right-0 bottom-full mb-1 w-44 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl shadow-lg p-1 z-30 space-y-0.5 animate-in fade-in zoom-in-95 duration-100">
                             <button
                               onClick={() => {
                                 setEditingItem(item);
                                 setOpenMenuId(null);
                               }}
-                              className="w-full text-left px-2.5 py-1.5 text-xs text-stone-700 hover:text-stone-900 hover:bg-stone-50 rounded-lg flex items-center gap-2 cursor-pointer"
+                              className="w-full text-left px-2.5 py-1.5 text-xs text-stone-700 dark:text-[#B8B0A5] hover:text-stone-900 dark:hover:text-[#F0EBE3] hover:bg-stone-50 dark:hover:bg-[#262520] rounded-lg flex items-center gap-2 cursor-pointer"
                             >
-                              <Pencil className="w-3 h-3 text-stone-400" />
+                              <Pencil className="w-3 h-3 text-stone-400 dark:text-[#7A7570]" />
                               <span>Edit details</span>
                             </button>
 
                             <button
                               onClick={() => handleToggleGalleryActive(item)}
-                              className="w-full text-left px-2.5 py-1.5 text-xs text-stone-700 hover:text-stone-900 hover:bg-stone-50 rounded-lg flex items-center gap-2 cursor-pointer"
+                              className="w-full text-left px-2.5 py-1.5 text-xs text-stone-700 dark:text-[#B8B0A5] hover:text-stone-900 dark:hover:text-[#F0EBE3] hover:bg-stone-50 dark:hover:bg-[#262520] rounded-lg flex items-center gap-2 cursor-pointer"
                             >
                               {item.is_active === 1 ? (
                                 <>
-                                  <EyeOff className="w-3 h-3 text-stone-400" />
+                                  <EyeOff className="w-3 h-3 text-stone-400 dark:text-[#7A7570]" />
                                   <span>Hide from homepage</span>
                                 </>
                               ) : (
                                 <>
-                                  <Eye className="w-3 h-3 text-stone-400" />
+                                  <Eye className="w-3 h-3 text-stone-400 dark:text-[#7A7570]" />
                                   <span>Publish to homepage</span>
                                 </>
                               )}
@@ -1097,28 +1097,28 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                             <button
                               onClick={() => handleMoveGalleryItem(trueIdx, 'up')}
                               disabled={trueIdx === 0}
-                              className="w-full text-left px-2.5 py-1.5 text-xs text-stone-700 hover:text-stone-900 hover:bg-stone-50 rounded-lg flex items-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                              className="w-full text-left px-2.5 py-1.5 text-xs text-stone-700 dark:text-[#B8B0A5] hover:text-stone-900 dark:hover:text-[#F0EBE3] hover:bg-stone-50 dark:hover:bg-[#262520] rounded-lg flex items-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                             >
-                              <ArrowUp className="w-3 h-3 text-stone-400" />
+                              <ArrowUp className="w-3 h-3 text-stone-400 dark:text-[#7A7570]" />
                               <span>Move earlier</span>
                             </button>
 
                             <button
                               onClick={() => handleMoveGalleryItem(trueIdx, 'down')}
                               disabled={trueIdx === galleryItems.length - 1}
-                              className="w-full text-left px-2.5 py-1.5 text-xs text-stone-700 hover:text-stone-900 hover:bg-stone-50 rounded-lg flex items-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                              className="w-full text-left px-2.5 py-1.5 text-xs text-stone-700 dark:text-[#B8B0A5] hover:text-stone-900 dark:hover:text-[#F0EBE3] hover:bg-stone-50 dark:hover:bg-[#262520] rounded-lg flex items-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                             >
-                              <ArrowDown className="w-3 h-3 text-stone-400" />
+                              <ArrowDown className="w-3 h-3 text-stone-400 dark:text-[#7A7570]" />
                               <span>Move later</span>
                             </button>
 
-                            <div className="border-t border-[#EAE8E1] my-1" />
+                            <div className="border-t border-[#EAE8E1] dark:border-[#302E29] my-1" />
 
                             <button
                               onClick={() => handleDeleteGalleryItem(item.id)}
-                              className="w-full text-left px-2.5 py-1.5 text-xs text-rose-600 hover:bg-rose-50 rounded-lg flex items-center gap-2 cursor-pointer"
+                              className="w-full text-left px-2.5 py-1.5 text-xs text-rose-600 dark:text-red-400 hover:bg-rose-50 dark:hover:bg-red-950/30 rounded-lg flex items-center gap-2 cursor-pointer"
                             >
-                              <Trash2 className="w-3 h-3 text-rose-500" />
+                              <Trash2 className="w-3 h-3 text-rose-500 dark:text-red-400" />
                               <span>Delete photo</span>
                             </button>
                           </div>
@@ -1131,22 +1131,22 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
             </div>
           ) : (
             /* COMPACT TABLE / LIST VIEW */
-            <div className="bg-white border border-[#EAE8E1] rounded-xl overflow-hidden shadow-2xs">
-              <div className="divide-y divide-[#EAE8E1]">
+            <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl overflow-hidden shadow-2xs">
+              <div className="divide-y divide-[#EAE8E1] dark:divide-[#302E29]">
                 {paginatedGalleryItems.map((item) => {
                   const trueIdx = galleryItems.findIndex(i => i.id === item.id);
                   return (
                     <div
                       key={item.id}
-                      className="p-3 sm:p-4 flex items-center justify-between gap-4 hover:bg-stone-50/60 transition-colors"
+                      className="p-3 sm:p-4 flex items-center justify-between gap-4 hover:bg-stone-50/60 dark:hover:bg-[#21211E]/80 transition-colors"
                     >
                       {/* Left: Thumbnail & Info */}
                       <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <span className="font-mono text-xs text-stone-400 w-5 shrink-0 text-center">
+                        <span className="font-mono text-xs text-stone-400 dark:text-[#7A7570] w-5 shrink-0 text-center">
                           {trueIdx + 1}
                         </span>
 
-                        <div className="w-12 h-12 rounded-lg overflow-hidden bg-stone-100 border border-[#EAE8E1] shrink-0">
+                        <div className="w-12 h-12 rounded-lg overflow-hidden bg-stone-100 dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#3A3835] shrink-0">
                           <AssetImage
                             src={item.image_url}
                             alt={item.alt_text}
@@ -1157,10 +1157,10 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                         </div>
 
                         <div className="min-w-0 flex-1">
-                          <h4 className="text-xs font-medium text-stone-900 truncate">
-                            {item.caption ? item.caption : <span className="text-stone-400 italic font-normal">No caption</span>}
+                          <h4 className="text-xs font-medium text-stone-900 dark:text-[#F0EBE3] truncate">
+                            {item.caption ? item.caption : <span className="text-stone-400 dark:text-[#7A7570] italic font-normal">No caption</span>}
                           </h4>
-                          <p className="text-[11px] text-stone-500 truncate mt-0.5">
+                          <p className="text-[11px] text-stone-500 dark:text-[#7A7570] truncate mt-0.5">
                             {item.alt_text}
                           </p>
                         </div>
@@ -1172,8 +1172,8 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                           onClick={() => handleToggleGalleryActive(item)}
                           className={`px-2.5 py-0.5 rounded border text-[11px] font-medium transition-colors cursor-pointer ${
                             item.is_active === 1
-                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                              : 'bg-stone-100 text-stone-600 border-stone-200'
+                              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/40'
+                              : 'bg-stone-100 dark:bg-[#262520] text-stone-600 dark:text-[#B8B0A5] border-stone-200 dark:border-[#3A3835]'
                           }`}
                         >
                           <span className="hidden sm:inline">{item.is_active === 1 ? 'Published' : 'Hidden'}</span>
@@ -1183,7 +1183,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                           <button
                             onClick={() => handleMoveGalleryItem(trueIdx, 'up')}
                             disabled={trueIdx === 0}
-                            className="w-7 h-7 rounded border border-[#EAE8E1] hover:bg-stone-50 text-stone-500 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-colors cursor-pointer"
+                            className="w-7 h-7 rounded border border-[#EAE8E1] dark:border-[#3A3835] hover:bg-stone-50 dark:hover:bg-[#262520] text-stone-500 dark:text-[#7A7570] hover:text-stone-800 dark:hover:text-[#F0EBE3] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-colors cursor-pointer"
                             title="Move earlier"
                           >
                             <ArrowUp className="w-3 h-3" />
@@ -1191,7 +1191,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                           <button
                             onClick={() => handleMoveGalleryItem(trueIdx, 'down')}
                             disabled={trueIdx === galleryItems.length - 1}
-                            className="w-7 h-7 rounded border border-[#EAE8E1] hover:bg-stone-50 text-stone-500 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-colors cursor-pointer"
+                            className="w-7 h-7 rounded border border-[#EAE8E1] dark:border-[#3A3835] hover:bg-stone-50 dark:hover:bg-[#262520] text-stone-500 dark:text-[#7A7570] hover:text-stone-800 dark:hover:text-[#F0EBE3] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-colors cursor-pointer"
                             title="Move later"
                           >
                             <ArrowDown className="w-3 h-3" />
@@ -1200,15 +1200,15 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
 
                         <button
                           onClick={() => setEditingItem(item)}
-                          className="w-7 h-7 rounded border border-[#EAE8E1] hover:bg-stone-50 text-stone-600 flex items-center justify-center transition-colors cursor-pointer"
+                          className="w-7 h-7 rounded border border-[#EAE8E1] dark:border-[#3A3835] hover:bg-stone-50 dark:hover:bg-[#262520] text-stone-600 dark:text-[#B8B0A5] hover:text-stone-900 dark:hover:text-[#F0EBE3] flex items-center justify-center transition-colors cursor-pointer"
                           title="Edit"
                         >
-                          <Pencil className="w-3 h-3 text-stone-500" />
+                          <Pencil className="w-3 h-3 text-stone-500 dark:text-[#7A7570]" />
                         </button>
 
                         <button
                           onClick={() => handleDeleteGalleryItem(item.id)}
-                          className="w-7 h-7 rounded hover:bg-rose-50 text-stone-400 hover:text-rose-600 flex items-center justify-center transition-colors cursor-pointer"
+                          className="w-7 h-7 rounded hover:bg-rose-50 dark:hover:bg-red-950/30 text-stone-400 dark:text-[#7A7570] hover:text-rose-600 dark:hover:text-red-400 flex items-center justify-center transition-colors cursor-pointer"
                           title="Delete"
                         >
                           <Trash2 className="w-3 h-3" />
@@ -1223,7 +1223,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
 
           {/* PAGINATION */}
           {filteredGalleryItems.length > 0 && totalPages > 1 && (
-            <div className="flex items-center justify-between border-t border-[#EAE8E1]/80 pt-4 text-xs text-stone-500">
+            <div className="flex items-center justify-between border-t border-[#EAE8E1]/80 dark:border-[#302E29] pt-4 text-xs text-stone-500 dark:text-[#7A7570]">
               <span>
                 Showing {((galleryPage - 1) * galleryPageSize) + 1} to {Math.min(galleryPage * galleryPageSize, filteredGalleryItems.length)} of {filteredGalleryItems.length} photos
               </span>
@@ -1231,18 +1231,18 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                 <button
                   onClick={() => setGalleryPage(prev => Math.max(1, prev - 1))}
                   disabled={galleryPage === 1}
-                  className="px-2.5 py-1 rounded border border-[#EAE8E1] hover:bg-stone-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1"
+                  className="px-2.5 py-1 rounded border border-[#EAE8E1] dark:border-[#3A3835] hover:bg-stone-50 dark:hover:bg-[#262520] text-stone-600 dark:text-[#B8B0A5] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                   <span>Prev</span>
                 </button>
-                <span className="font-mono px-2 text-stone-700">
+                <span className="font-mono px-2 text-stone-700 dark:text-[#F0EBE3]">
                   {galleryPage} of {totalPages}
                 </span>
                 <button
                   onClick={() => setGalleryPage(prev => Math.min(totalPages, prev + 1))}
                   disabled={galleryPage === totalPages}
-                  className="px-2.5 py-1 rounded border border-[#EAE8E1] hover:bg-stone-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1"
+                  className="px-2.5 py-1 rounded border border-[#EAE8E1] dark:border-[#3A3835] hover:bg-stone-50 dark:hover:bg-[#262520] text-stone-600 dark:text-[#B8B0A5] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1"
                 >
                   <span>Next</span>
                   <ChevronRight className="w-3.5 h-3.5" />
@@ -1263,29 +1263,29 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                 if (e.target === e.currentTarget) setShowLivePreview(false);
               }}
             >
-              <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl max-w-5xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+              <div className="bg-[#FAF9F6] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl max-w-5xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
                 {/* Modal Header */}
-                <div className="px-6 py-4 border-b border-[#EAE8E1] flex items-center justify-between bg-white">
+                <div className="px-6 py-4 border-b border-[#EAE8E1] dark:border-[#302E29] flex items-center justify-between bg-white dark:bg-[#1D1D1A]">
                   <div>
-                    <h3 className="text-sm font-semibold text-stone-900 font-sans">
+                    <h3 className="text-sm font-semibold text-stone-900 dark:text-[#F0EBE3] font-sans">
                       Homepage preview
                     </h3>
-                    <p className="text-xs text-stone-500 mt-0.5">
+                    <p className="text-xs text-stone-500 dark:text-[#7A7570] mt-0.5">
                       See how your published photos appear on the landing page.
                     </p>
                   </div>
                   <button
                     onClick={() => setShowLivePreview(false)}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-stone-600 hover:text-stone-900 px-3 py-1.5 rounded-lg border border-[#EAE8E1] hover:bg-stone-50 transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-stone-600 dark:text-[#B8B0A5] hover:text-stone-900 dark:hover:text-[#F0EBE3] px-3 py-1.5 rounded-lg border border-[#EAE8E1] dark:border-[#3A3835] hover:bg-stone-50 dark:hover:bg-[#262520] transition-colors cursor-pointer"
                   >
                     <X className="w-3.5 h-3.5" />
                     <span>Close preview</span>
                   </button>
                 </div>
 
-                {/* Modal Body: CurvedPhotoGallery with actual published items */}
-                <div className="p-4 sm:p-6 overflow-y-auto bg-[#FAF9F6]">
-                  <div className="rounded-xl overflow-hidden border border-[#EAE8E1] bg-white">
+                {/* Modal Body: CurvedPhotoGallery with actual published items inside intentional preview frame */}
+                <div className="p-4 sm:p-6 overflow-y-auto bg-stone-100 dark:bg-[#141415]">
+                  <div className="rounded-xl overflow-hidden border border-[#EAE8E1] dark:border-[#302E29] bg-white shadow-sm">
                     <CurvedPhotoGallery
                       customItems={galleryItems.filter(i => i.is_active === 1)}
                       className="!py-10"
@@ -1305,19 +1305,19 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
               role="dialog"
               aria-modal="true"
             >
-              <div className="bg-white border border-[#EAE8E1] rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-5 animate-in zoom-in-95 duration-150">
-                <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
+              <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-5 animate-in zoom-in-95 duration-150">
+                <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1] dark:border-[#302E29]">
                   <div>
-                    <h3 className="text-sm font-semibold text-stone-900 font-sans">
+                    <h3 className="text-sm font-semibold text-stone-900 dark:text-[#F0EBE3] font-sans">
                       Add photo
                     </h3>
-                    <p className="text-xs text-stone-500 mt-0.5">
+                    <p className="text-xs text-stone-500 dark:text-[#7A7570] mt-0.5">
                       Upload a photo for the landing page gallery.
                     </p>
                   </div>
                   <button
                     onClick={() => setIsAddModalOpen(false)}
-                    className="w-7 h-7 rounded hover:bg-stone-100 text-stone-400 hover:text-stone-600 flex items-center justify-center cursor-pointer"
+                    className="w-7 h-7 rounded hover:bg-stone-100 dark:hover:bg-[#262520] text-stone-400 dark:text-[#7A7570] hover:text-stone-600 dark:hover:text-[#F0EBE3] flex items-center justify-center cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -1326,7 +1326,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                 <form onSubmit={handleSaveNewGalleryItem} className="space-y-4">
                   {/* File Upload Zone */}
                   <div>
-                    <label className="text-xs font-medium text-stone-700 block mb-1.5">
+                    <label className="text-xs font-medium text-stone-700 dark:text-[#F0EBE3] block mb-1.5">
                       Photo file (JPG, PNG, or WebP &bull; Max 10MB) *
                     </label>
                     <input
@@ -1338,7 +1338,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                     />
 
                     {modalPreview ? (
-                      <div className="relative h-44 rounded-xl overflow-hidden border border-[#EAE8E1] bg-stone-50 group">
+                      <div className="relative h-44 rounded-xl overflow-hidden border border-[#EAE8E1] dark:border-[#3A3835] bg-stone-50 dark:bg-[#21211E] group">
                         <img 
                           src={modalPreview} 
                           alt="Upload Preview" 
@@ -1355,18 +1355,18 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                     ) : (
                       <div
                         onClick={() => fileInputRef.current?.click()}
-                        className="h-36 rounded-xl border border-dashed border-stone-300 hover:border-[#C59B27] bg-stone-50/50 flex flex-col items-center justify-center p-4 text-center cursor-pointer transition-colors"
+                        className="h-36 rounded-xl border border-dashed border-stone-300 dark:border-[#3A3835] hover:border-[#C59B27] dark:hover:border-amber-500/60 bg-stone-50/50 dark:bg-[#262520]/50 flex flex-col items-center justify-center p-4 text-center cursor-pointer transition-colors"
                       >
-                        <Upload className="w-5 h-5 text-stone-400 mb-1.5" />
-                        <span className="text-xs font-medium text-stone-800">Click to browse photo file</span>
-                        <span className="text-[11px] text-stone-400 mt-0.5">High-resolution portrait or landscape</span>
+                        <Upload className="w-5 h-5 text-stone-400 dark:text-[#7A7570] mb-1.5" />
+                        <span className="text-xs font-medium text-stone-800 dark:text-[#F0EBE3]">Click to browse photo file</span>
+                        <span className="text-[11px] text-stone-400 dark:text-[#7A7570] mt-0.5">High-resolution portrait or landscape</span>
                       </div>
                     )}
                   </div>
 
                   {/* Alt Text (Required) */}
                   <div>
-                    <label className="text-xs font-medium text-stone-700 block mb-1">
+                    <label className="text-xs font-medium text-stone-700 dark:text-[#F0EBE3] block mb-1">
                       Accessible description *
                     </label>
                     <input
@@ -1374,17 +1374,17 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                       value={modalAltText}
                       onChange={(e) => setModalAltText(e.target.value)}
                       placeholder="e.g. Children smiling and singing during morning praise session"
-                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27]"
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] text-stone-900 dark:text-[#F0EBE3] placeholder:text-stone-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:border-[#C59B27]"
                       required
                     />
-                    <span className="text-[11px] text-stone-400 mt-1 block">
+                    <span className="text-[11px] text-stone-400 dark:text-[#7A7570] mt-1 block">
                       Read by assistive tools for parents with visual impairments.
                     </span>
                   </div>
 
                   {/* Caption (Optional) */}
                   <div>
-                    <label className="text-xs font-medium text-stone-700 block mb-1">
+                    <label className="text-xs font-medium text-stone-700 dark:text-[#F0EBE3] block mb-1">
                       Caption (optional)
                     </label>
                     <input
@@ -1392,15 +1392,15 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                       value={modalCaption}
                       onChange={(e) => setModalCaption(e.target.value)}
                       placeholder="e.g. Worship & Praise in Fellowship"
-                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27]"
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] text-stone-900 dark:text-[#F0EBE3] placeholder:text-stone-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:border-[#C59B27]"
                     />
                   </div>
 
                   {/* Publish Switch */}
-                  <div className="flex items-center justify-between p-3 rounded-lg border border-[#EAE8E1] bg-stone-50/40">
+                  <div className="flex items-center justify-between p-3 rounded-lg border border-[#EAE8E1] dark:border-[#302E29] bg-stone-50/40 dark:bg-[#21211E]">
                     <div>
-                      <span className="text-xs font-medium text-stone-900 block">Publish on homepage</span>
-                      <span className="text-[11px] text-stone-400">Make visible in the landing page gallery immediately</span>
+                      <span className="text-xs font-medium text-stone-900 dark:text-[#F0EBE3] block">Publish on homepage</span>
+                      <span className="text-[11px] text-stone-400 dark:text-[#7A7570]">Make visible in the landing page gallery immediately</span>
                     </div>
                     <input
                       type="checkbox"
@@ -1411,16 +1411,16 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                   </div>
 
                   {modalError && (
-                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700">
+                    <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 rounded-lg text-xs text-rose-700 dark:text-rose-400">
                       {modalError}
                     </div>
                   )}
 
-                  <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-[#EAE8E1]">
+                  <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-[#EAE8E1] dark:border-[#302E29]">
                     <button
                       type="button"
                       onClick={() => setIsAddModalOpen(false)}
-                      className="text-xs font-medium px-3.5 py-2 rounded-lg border border-[#EAE8E1] bg-white text-stone-600 hover:bg-stone-50 cursor-pointer"
+                      className="text-xs font-medium px-3.5 py-2 rounded-lg border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#21211E] text-stone-600 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#262520] cursor-pointer"
                     >
                       Cancel
                     </button>
@@ -1456,19 +1456,19 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
               role="dialog"
               aria-modal="true"
             >
-              <div className="bg-white border border-[#EAE8E1] rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-5 animate-in zoom-in-95 duration-150">
-                <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
+              <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-5 animate-in zoom-in-95 duration-150">
+                <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1] dark:border-[#302E29]">
                   <div>
-                    <h3 className="text-sm font-semibold text-stone-900 font-sans">
+                    <h3 className="text-sm font-semibold text-stone-900 dark:text-[#F0EBE3] font-sans">
                       Edit photo
                     </h3>
-                    <p className="text-xs text-stone-500 mt-0.5">
+                    <p className="text-xs text-stone-500 dark:text-[#7A7570] mt-0.5">
                       Update caption, description, or publication status.
                     </p>
                   </div>
                   <button
                     onClick={() => setEditingItem(null)}
-                    className="w-7 h-7 rounded hover:bg-stone-100 text-stone-400 hover:text-stone-600 flex items-center justify-center cursor-pointer"
+                    className="w-7 h-7 rounded hover:bg-stone-100 dark:hover:bg-[#262520] text-stone-400 dark:text-[#7A7570] hover:text-stone-600 dark:hover:text-[#F0EBE3] flex items-center justify-center cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -1476,7 +1476,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
 
                 <form onSubmit={handleSaveEditGalleryItem} className="space-y-4">
                   {/* Photo Preview */}
-                  <div className="h-32 rounded-xl overflow-hidden border border-[#EAE8E1] bg-stone-100">
+                  <div className="h-32 rounded-xl overflow-hidden border border-[#EAE8E1] dark:border-[#3A3835] bg-stone-100 dark:bg-[#21211E]">
                     <AssetImage
                       src={editingItem.image_url}
                       alt={editingItem.alt_text}
@@ -1486,21 +1486,21 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
 
                   {/* Alt Text */}
                   <div>
-                    <label className="text-xs font-medium text-stone-700 block mb-1">
+                    <label className="text-xs font-medium text-stone-700 dark:text-[#F0EBE3] block mb-1">
                       Accessible description *
                     </label>
                     <input
                       type="text"
                       value={editingItem.alt_text}
                       onChange={(e) => setEditingItem({ ...editingItem, alt_text: e.target.value })}
-                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27]"
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] text-stone-900 dark:text-[#F0EBE3] placeholder:text-stone-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:border-[#C59B27]"
                       required
                     />
                   </div>
 
                   {/* Caption */}
                   <div>
-                    <label className="text-xs font-medium text-stone-700 block mb-1">
+                    <label className="text-xs font-medium text-stone-700 dark:text-[#F0EBE3] block mb-1">
                       Caption (optional)
                     </label>
                     <input
@@ -1508,15 +1508,15 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                       value={editingItem.caption || ''}
                       onChange={(e) => setEditingItem({ ...editingItem, caption: e.target.value })}
                       placeholder="e.g. Worship & Praise in Fellowship"
-                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27]"
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] text-stone-900 dark:text-[#F0EBE3] placeholder:text-stone-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:border-[#C59B27]"
                     />
                   </div>
 
                   {/* Publish Switch */}
-                  <div className="flex items-center justify-between p-3 rounded-lg border border-[#EAE8E1] bg-stone-50/40">
+                  <div className="flex items-center justify-between p-3 rounded-lg border border-[#EAE8E1] dark:border-[#302E29] bg-stone-50/40 dark:bg-[#21211E]">
                     <div>
-                      <span className="text-xs font-medium text-stone-900 block">Publish on homepage</span>
-                      <span className="text-[11px] text-stone-400">Make visible in the landing page gallery</span>
+                      <span className="text-xs font-medium text-stone-900 dark:text-[#F0EBE3] block">Publish on homepage</span>
+                      <span className="text-[11px] text-stone-400 dark:text-[#7A7570]">Make visible in the landing page gallery</span>
                     </div>
                     <input
                       type="checkbox"
@@ -1526,11 +1526,11 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                     />
                   </div>
 
-                  <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-[#EAE8E1]">
+                  <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-[#EAE8E1] dark:border-[#302E29]">
                     <button
                       type="button"
                       onClick={() => setEditingItem(null)}
-                      className="text-xs font-medium px-3.5 py-2 rounded-lg border border-[#EAE8E1] bg-white text-stone-600 hover:bg-stone-50 cursor-pointer"
+                      className="text-xs font-medium px-3.5 py-2 rounded-lg border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#21211E] text-stone-600 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#262520] cursor-pointer"
                     >
                       Cancel
                     </button>
@@ -1566,16 +1566,16 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
         <div className="space-y-6 font-sans">
           {/* Header */}
           <div>
-            <h3 className="text-lg font-semibold text-stone-900 font-sans tracking-tight">
+            <h3 className="text-lg font-semibold text-stone-900 dark:text-[#F0EBE3] font-sans tracking-tight">
               Featured Images
             </h3>
-            <p className="text-sm text-stone-500 mt-1 font-sans">
+            <p className="text-sm text-stone-500 dark:text-[#7A7570] mt-1 font-sans">
               Manage the fixed images used across the landing page.
             </p>
           </div>
 
           {/* Categories Toolbar */}
-          <div className="flex border-b border-[#EAE8E1] overflow-x-auto gap-1 sm:gap-2 pb-px">
+          <div className="flex border-b border-[#EAE8E1] dark:border-[#302E29] overflow-x-auto gap-1 sm:gap-2 pb-px">
             {[
               { id: 'all', label: 'All images' },
               { id: 'brand', label: 'Brand & header' },
@@ -1588,8 +1588,8 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                 onClick={() => setActiveCategory(cat.id as any)}
                 className={`py-2 px-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap focus:outline-none cursor-pointer font-sans ${
                   activeCategory === cat.id 
-                    ? 'border-[#C59B27] text-stone-950 font-semibold' 
-                    : 'border-transparent text-stone-500 hover:text-stone-800'
+                    ? 'border-[#C59B27] text-stone-950 dark:text-[#F0EBE3] font-semibold'
+                    : 'border-transparent text-stone-500 dark:text-[#7A7570] hover:text-stone-800 dark:hover:text-[#B8B0A5]'
                 }`}
               >
                 {cat.label}
@@ -1609,21 +1609,21 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
               return (
                 <div 
                   key={slot.key}
-                  className="bg-white border border-[#EAE8E1] rounded-xl p-4 sm:p-5 transition-colors"
+                  className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl p-4 sm:p-5 transition-colors"
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-6">
                     {/* Left Zone: Info & Specs */}
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex items-center gap-2">
                         {getSlotIcon(slot.icon)}
-                        <h4 className="text-sm sm:text-base font-semibold text-stone-900 font-sans tracking-tight">
+                        <h4 className="text-sm sm:text-base font-semibold text-stone-900 dark:text-[#F0EBE3] font-sans tracking-tight">
                           {slot.label}
                         </h4>
                       </div>
-                      <p className="text-xs sm:text-sm text-stone-500 font-sans leading-relaxed">
+                      <p className="text-xs sm:text-sm text-stone-500 dark:text-[#7A7570] font-sans leading-relaxed">
                         {slot.description}
                       </p>
-                      <p className="text-xs text-stone-400 font-sans pt-0.5">
+                      <p className="text-xs text-stone-400 dark:text-[#7A7570] font-sans pt-0.5">
                         Recommended: {slot.dimensions}
                       </p>
                       {(() => {
@@ -1639,18 +1639,18 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                         return (
                           <div className="pt-1.5 space-y-0.5">
                             {displayName && (
-                              <p className="text-xs text-stone-700 font-medium">
+                              <p className="text-xs text-stone-700 dark:text-[#F0EBE3] font-medium">
                                 {displayName}{' '}
                                 {displaySize && (
-                                  <span className="text-stone-400 font-normal">
+                                  <span className="text-stone-400 dark:text-[#7A7570] font-normal">
                                     ({displaySize})
                                   </span>
                                 )}
                               </p>
                             )}
                             {isUploading && slot.type === 'video' && (
-                              <p className="text-xs text-[#9A7326] font-medium animate-pulse flex items-center gap-1.5 pt-0.5">
-                                <Loader2 className="w-3 h-3 animate-spin text-[#C59B27]" />
+                              <p className="text-xs text-[#9A7326] dark:text-amber-400 font-medium animate-pulse flex items-center gap-1.5 pt-0.5">
+                                <Loader2 className="w-3 h-3 animate-spin text-[#C59B27] dark:text-amber-400" />
                                 <span>Preparing video for the website…</span>
                               </p>
                             )}
@@ -1663,13 +1663,13 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 sm:gap-5 shrink-0">
                       {/* Thumbnail Preview frame with slot aspect ratio */}
                       <div className="flex items-center justify-center w-[120px] shrink-0 self-start sm:self-center">
-                        <div className={`${slot.previewClass} rounded-lg overflow-hidden border border-[#EAE8E1] bg-stone-50 relative shrink-0 flex items-center justify-center`}>
+                        <div className={`${slot.previewClass} rounded-lg overflow-hidden border border-[#EAE8E1] dark:border-[#3A3835] bg-stone-50 dark:bg-[#21211E] relative shrink-0 flex items-center justify-center`}>
                           {slot.type === 'video' ? (
                             currentVal ? (
                               videoPreviewError[slot.key] ? (
-                                <div className="w-full h-full flex flex-col items-center justify-center text-stone-400 p-2 gap-1 select-none">
-                                  <Video className="w-4 h-4 text-stone-400" />
-                                  <span className="text-[10px] font-sans text-stone-400 text-center leading-tight">Preview unavailable</span>
+                                <div className="w-full h-full flex flex-col items-center justify-center text-stone-400 dark:text-[#7A7570] p-2 gap-1 select-none">
+                                  <Video className="w-4 h-4 text-stone-400 dark:text-[#7A7570]" />
+                                  <span className="text-[10px] font-sans text-stone-400 dark:text-[#7A7570] text-center leading-tight">Preview unavailable</span>
                                 </div>
                               ) : (
                                 <AdminVideoSlotPreview
@@ -1679,9 +1679,9 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                                 />
                               )
                             ) : (
-                              <div className="w-full h-full flex flex-col items-center justify-center text-stone-400 p-2 gap-1 select-none">
-                                <Video className="w-4 h-4 text-stone-400" />
-                                <span className="text-[11px] font-sans font-medium text-stone-400">No video</span>
+                              <div className="w-full h-full flex flex-col items-center justify-center text-stone-400 dark:text-[#7A7570] p-2 gap-1 select-none">
+                                <Video className="w-4 h-4 text-stone-400 dark:text-[#7A7570]" />
+                                <span className="text-[11px] font-sans font-medium text-stone-400 dark:text-[#7A7570]">No video</span>
                               </div>
                             )
                           ) : (
@@ -1692,9 +1692,9 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                                 className="w-full h-full object-cover object-center"
                               />
                             ) : (
-                              <div className="w-full h-full flex flex-col items-center justify-center text-stone-400 p-2 gap-1 select-none">
-                                <ImageIcon className="w-4 h-4 text-stone-400" />
-                                <span className="text-[11px] font-sans font-medium text-stone-400">No image</span>
+                              <div className="w-full h-full flex flex-col items-center justify-center text-stone-400 dark:text-[#7A7570] p-2 gap-1 select-none">
+                                <ImageIcon className="w-4 h-4 text-stone-400 dark:text-[#7A7570]" />
+                                <span className="text-[11px] font-sans font-medium text-stone-400 dark:text-[#7A7570]">No image</span>
                               </div>
                             )
                           )}
@@ -1703,15 +1703,15 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
 
                       {/* Action buttons */}
                       <div className="w-full sm:w-[150px] shrink-0 flex flex-col items-stretch sm:items-end">
-                        <label className="inline-flex items-center justify-center gap-1.5 text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 border border-[#EAE8E1] px-3.5 py-2 rounded-lg transition-colors cursor-pointer shadow-2xs font-sans w-full text-center select-none">
+                        <label className="inline-flex items-center justify-center gap-1.5 text-xs font-medium text-stone-700 dark:text-[#F0EBE3] bg-white dark:bg-[#21211E] hover:bg-stone-50 dark:hover:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] px-3.5 py-2 rounded-lg transition-colors cursor-pointer shadow-2xs font-sans w-full text-center select-none">
                           {isUploading ? (
                             <>
-                              <Loader2 className="w-3.5 h-3.5 animate-spin text-stone-500" />
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-stone-500 dark:text-[#7A7570]" />
                               <span>{slot.type === 'video' ? 'Preparing video…' : 'Uploading…'}</span>
                             </>
                           ) : (
                             <>
-                              <Upload className="w-3.5 h-3.5 text-stone-400" />
+                              <Upload className="w-3.5 h-3.5 text-stone-400 dark:text-[#7A7570]" />
                               <span>
                                 {currentVal 
                                   ? (slot.type === 'video' ? 'Replace video' : 'Replace image') 
@@ -1736,7 +1736,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                           <button
                             onClick={() => handleResetSlot(slot.key)}
                             disabled={isResetting || isUploading}
-                            className="text-[11px] font-sans text-stone-400 hover:text-stone-700 transition-colors text-center w-full mt-1.5 cursor-pointer disabled:opacity-40"
+                            className="text-[11px] font-sans text-stone-400 dark:text-[#7A7570] hover:text-stone-700 dark:hover:text-[#F0EBE3] transition-colors text-center w-full mt-1.5 cursor-pointer disabled:opacity-40"
                           >
                             Restore default
                           </button>
@@ -1746,12 +1746,12 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                   </div>
 
                   {slotError && (
-                    <p className="text-xs font-sans text-rose-600 mt-3 pt-3 border-t border-rose-100">
+                    <p className="text-xs font-sans text-rose-600 dark:text-rose-400 mt-3 pt-3 border-t border-rose-100 dark:border-rose-900/40">
                       {slotError}
                     </p>
                   )}
                   {slotSuccess && (
-                    <p className="text-xs font-sans text-emerald-600 mt-3 pt-3 border-t border-emerald-100">
+                    <p className="text-xs font-sans text-emerald-600 dark:text-emerald-400 mt-3 pt-3 border-t border-emerald-100 dark:border-emerald-900/40">
                       {slotSuccess}
                     </p>
                   )}
@@ -1766,12 +1766,12 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
       {/* 3. CONTACT & FOOTER SETTINGS VIEW */}
       {/* ========================================================================= */}
       {mainTab === 'contact-footer' && (
-        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 sm:p-8 space-y-6 max-w-3xl">
-          <div className="border-b border-[#EAE8E1] pb-4">
-            <h3 className="text-base sm:text-lg font-sans font-bold text-stone-900 dark:text-[#F7F4ED]">
+        <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 sm:p-8 space-y-6 max-w-3xl">
+          <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-4">
+            <h3 className="text-base sm:text-lg font-sans font-bold text-stone-900 dark:text-[#F0EBE3]">
               Contact &amp; Footer Settings
             </h3>
-            <p className="text-xs text-stone-500 mt-1">
+            <p className="text-xs text-stone-500 dark:text-[#7A7570] mt-1">
               Configure public contact channels, physical address, copyright year, and organization branding.
             </p>
           </div>
@@ -1779,8 +1779,8 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
           {contactFooterFeedback && (
             <div className={`p-4 rounded-xl text-xs font-medium ${
               contactFooterFeedback.type === 'success'
-                ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
-                : 'bg-rose-50 border border-rose-200 text-rose-800'
+                ? 'bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 text-emerald-800 dark:text-emerald-400'
+                : 'bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 text-rose-800 dark:text-rose-400'
             }`}>
               {contactFooterFeedback.message}
             </div>
@@ -1788,16 +1788,16 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
 
           <form onSubmit={handleSaveContactFooter} className="space-y-6">
             <div className="space-y-4">
-              <h4 className="text-xs font-semibold text-stone-900 uppercase tracking-wider font-sans">
+              <h4 className="text-xs font-semibold text-stone-900 dark:text-[#F0EBE3] uppercase tracking-wider font-sans">
                 Public Contact Information
               </h4>
-              <p className="text-[11px] text-stone-400">
+              <p className="text-[11px] text-stone-400 dark:text-[#7A7570]">
                 Configured values will appear on the landing page footer and Contact Us page. Empty fields are hidden cleanly.
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-stone-800 block">
+                  <label className="text-xs font-semibold text-stone-800 dark:text-[#F0EBE3] block">
                     Email address
                   </label>
                   <input
@@ -1805,12 +1805,12 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                     value={contactEmail}
                     onChange={(e) => setContactEmail(e.target.value)}
                     placeholder="e.g. care@koinoniachildren.org"
-                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-stone-50/50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-stone-50/50 dark:bg-[#262520] text-stone-900 dark:text-[#F0EBE3] placeholder:text-stone-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-stone-800 block">
+                  <label className="text-xs font-semibold text-stone-800 dark:text-[#F0EBE3] block">
                     Phone number
                   </label>
                   <input
@@ -1818,12 +1818,12 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                     value={contactPhone}
                     onChange={(e) => setContactPhone(e.target.value)}
                     placeholder="e.g. +234 (0) 900 123 4567"
-                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-stone-50/50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-stone-50/50 dark:bg-[#262520] text-stone-900 dark:text-[#F0EBE3] placeholder:text-stone-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-stone-800 block">
+                  <label className="text-xs font-semibold text-stone-800 dark:text-[#F0EBE3] block">
                     WhatsApp contact
                   </label>
                   <input
@@ -1831,12 +1831,12 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                     value={contactWhatsApp}
                     onChange={(e) => setContactWhatsApp(e.target.value)}
                     placeholder="e.g. +234 800 000 0000"
-                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-stone-50/50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-stone-50/50 dark:bg-[#262520] text-stone-900 dark:text-[#F0EBE3] placeholder:text-stone-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
                   />
                 </div>
 
                 <div className="space-y-1.5 sm:col-span-2">
-                  <label className="text-xs font-semibold text-stone-800 block">
+                  <label className="text-xs font-semibold text-stone-800 dark:text-[#F0EBE3] block">
                     Auditorium / Ministry address
                   </label>
                   <textarea
@@ -1844,20 +1844,20 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                     value={contactAddress}
                     onChange={(e) => setContactAddress(e.target.value)}
                     placeholder="e.g. Koinonia Global Auditorium & Children Pavilion, Abuja, Nigeria."
-                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-stone-50/50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-stone-50/50 dark:bg-[#262520] text-stone-900 dark:text-[#F0EBE3] placeholder:text-stone-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
                   />
                 </div>
               </div>
             </div>
 
-            <div className="border-t border-[#EAE8E1] pt-6 space-y-4">
-              <h4 className="text-xs font-semibold text-stone-900 uppercase tracking-wider font-sans">
+            <div className="border-t border-[#EAE8E1] dark:border-[#302E29] pt-6 space-y-4">
+              <h4 className="text-xs font-semibold text-stone-900 dark:text-[#F0EBE3] uppercase tracking-wider font-sans">
                 Footer &amp; Copyright Details
               </h4>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5 sm:col-span-1">
-                  <label className="text-xs font-semibold text-stone-800 block">
+                  <label className="text-xs font-semibold text-stone-800 dark:text-[#F0EBE3] block">
                     Footer year
                   </label>
                   <input
@@ -1865,12 +1865,12 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                     value={footerYear}
                     onChange={(e) => setFooterYear(e.target.value)}
                     placeholder={String(new Date().getFullYear())}
-                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-stone-50/50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all font-mono"
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-stone-50/50 dark:bg-[#262520] text-stone-900 dark:text-[#F0EBE3] placeholder:text-stone-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all font-mono"
                   />
                 </div>
 
                 <div className="space-y-1.5 sm:col-span-2">
-                  <label className="text-xs font-semibold text-stone-800 block">
+                  <label className="text-xs font-semibold text-stone-800 dark:text-[#F0EBE3] block">
                     Copyright / Organisation name
                   </label>
                   <input
@@ -1878,7 +1878,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
                     value={footerCopyrightName}
                     onChange={(e) => setFooterCopyrightName(e.target.value)}
                     placeholder="The Koinonia General Assembly"
-                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-stone-50/50 focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-stone-50/50 dark:bg-[#262520] text-stone-900 dark:text-[#F0EBE3] placeholder:text-stone-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
                   />
                 </div>
               </div>
@@ -1888,16 +1888,16 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
               <button
                 type="submit"
                 disabled={isSavingContactFooter}
-                className="inline-flex items-center gap-2 bg-[#18181B] text-white hover:bg-stone-800 px-5 py-2.5 rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                className="inline-flex items-center gap-2 bg-[#18181B] dark:bg-amber-600 text-white hover:bg-stone-800 dark:hover:bg-amber-700 px-5 py-2.5 rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
               >
                 {isSavingContactFooter ? (
                   <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C59B27]" />
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C59B27] dark:text-amber-200" />
                     <span>Saving...</span>
                   </>
                 ) : (
                   <>
-                    <Check className="w-3.5 h-3.5 text-[#C59B27]" />
+                    <Check className="w-3.5 h-3.5 text-[#C59B27] dark:text-amber-200" />
                     <span>Save changes</span>
                   </>
                 )}

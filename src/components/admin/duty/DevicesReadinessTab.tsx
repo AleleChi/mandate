@@ -311,17 +311,17 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
       )}
 
       {/* 1. Header Row */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EAE8E1] pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EAE8E1] dark:border-[#302E29] pb-4">
         <div>
-          <h2 className="text-xl font-bold text-[#18181B] tracking-tight">
+          <h2 className="text-xl font-bold text-[#18181B] dark:text-[#F0EBE3] tracking-tight">
             Devices
           </h2>
-          <p className="text-xs text-zinc-500 mt-0.5 font-normal">
+          <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mt-0.5 font-normal">
             View the devices being used by the event team and whether they can receive alerts.
           </p>
         </div>
         <div className="flex items-center space-x-3">
-          <span className="text-xs text-zinc-500 font-medium">
+          <span className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium">
             {devicePagination.total} {devicePagination.total === 1 ? 'device' : 'devices'}
           </span>
           <button
@@ -329,7 +329,7 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
             disabled={loading || refreshingDevices}
             aria-label="Refresh devices"
             id="btn-refresh-devices"
-            className="flex items-center space-x-2 px-3 py-1.5 bg-white hover:bg-zinc-50 border border-[#EAE8E1] text-xs font-medium text-[#18181B] rounded-lg transition-all shadow-2xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center space-x-2 px-3 py-1.5 bg-white dark:bg-[#21211E] hover:bg-zinc-50 dark:hover:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] rounded-lg transition-all shadow-2xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-[#C59B27] ${refreshingDevices ? 'animate-spin' : ''}`} />
             <span>{refreshingDevices ? 'Refreshing…' : 'Refresh'}</span>
@@ -338,18 +338,17 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
       </div>
 
       {/* 2. Compact Search & Human Filter Bar */}
-      <div className="p-3 bg-white border border-[#EAE8E1] rounded-xl flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 shadow-2xs">
+      <div className="p-3 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 shadow-2xs">
         {/* Search */}
         <div className="relative flex-1 min-w-[220px]">
-          <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search people or devices"
-            className="w-full text-xs pl-8 pr-3 py-1.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] text-zinc-900 placeholder:text-zinc-400 font-normal"
-          >
-          </input>
+            className="w-full text-xs pl-8 pr-3 py-1.5 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 text-zinc-900 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] font-normal"
+          />
         </div>
 
         {/* Human Filters */}
@@ -358,7 +357,7 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
             value={filterRole}
             onChange={(e) => setFilterRole(e.target.value)}
             aria-label="Filter by role"
-            className="text-xs px-2.5 py-1.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] text-zinc-700 font-medium cursor-pointer"
+            className="text-xs px-2.5 py-1.5 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 text-zinc-700 dark:text-[#F0EBE3] font-medium cursor-pointer"
           >
             <option value="">All roles</option>
             <option value="super_admin">Super Admin</option>
@@ -374,7 +373,7 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
             value={filterDuty}
             onChange={(e) => setFilterDuty(e.target.value)}
             aria-label="Filter by duty status"
-            className="text-xs px-2.5 py-1.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] text-zinc-700 font-medium cursor-pointer"
+            className="text-xs px-2.5 py-1.5 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 text-zinc-700 dark:text-[#F0EBE3] font-medium cursor-pointer"
           >
             <option value="">All statuses</option>
             <option value="on_duty">Active</option>
@@ -386,7 +385,7 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
             value={filterAlerts}
             onChange={(e) => setFilterAlerts(e.target.value)}
             aria-label="Filter by alert readiness"
-            className="text-xs px-2.5 py-1.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] text-zinc-700 font-medium cursor-pointer"
+            className="text-xs px-2.5 py-1.5 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 text-zinc-700 dark:text-[#F0EBE3] font-medium cursor-pointer"
           >
             <option value="">All alert states</option>
             <option value="ready">Ready for alerts</option>
@@ -397,7 +396,7 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
             value={filterConnection}
             onChange={(e) => setFilterConnection(e.target.value)}
             aria-label="Filter by connection status"
-            className="text-xs px-2.5 py-1.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] text-zinc-700 font-medium cursor-pointer"
+            className="text-xs px-2.5 py-1.5 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 text-zinc-700 dark:text-[#F0EBE3] font-medium cursor-pointer"
           >
             <option value="">All connection states</option>
             <option value="online">Online</option>
@@ -408,17 +407,17 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
 
       {/* 3. List / Table Content */}
       {loading && deviceItems.length === 0 ? (
-        <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl">
+        <div className="p-12 text-center text-xs text-zinc-500 dark:text-[#7A7570] bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl">
           <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-[#C59B27]" />
           <span>Loading devices…</span>
         </div>
       ) : error && deviceItems.length === 0 ? (
-        <div className="p-10 text-center text-xs bg-white border border-[#EAE8E1] rounded-2xl space-y-3">
-          <XCircle className="w-6 h-6 mx-auto text-rose-600" />
-          <div className="text-zinc-800 font-medium">We couldn’t load the devices.</div>
+        <div className="p-10 text-center text-xs bg-white dark:bg-[#21211E] border border-rose-200 dark:border-red-900/40 rounded-2xl space-y-3">
+          <XCircle className="w-6 h-6 mx-auto text-rose-600 dark:text-red-400" />
+          <div className="text-zinc-800 dark:text-[#F0EBE3] font-medium">We couldn’t load the devices.</div>
           <button
             onClick={() => fetchDevices(1)}
-            className="px-3.5 py-1.5 bg-[#18181B] text-white rounded-xl font-medium text-xs hover:bg-zinc-800 cursor-pointer"
+            className="px-3.5 py-1.5 bg-[#18181B] dark:bg-[#262520] hover:bg-zinc-800 dark:hover:bg-[#2A2926] text-white dark:text-[#F0EBE3] border dark:border-[#3A3835] rounded-xl font-medium text-xs cursor-pointer"
           >
             Try again
           </button>
@@ -426,14 +425,14 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
       ) : deviceItems.length === 0 ? (
         hasActiveFilters ? (
           /* State B: Filtered zero-result state */
-          <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl space-y-2">
-            <Smartphone className="w-6 h-6 mx-auto text-zinc-400" />
-            <h3 className="font-semibold text-zinc-800 text-sm">No matching devices</h3>
-            <p className="text-zinc-500 text-xs">Try changing your filters or search.</p>
+          <div className="p-12 text-center text-xs text-zinc-500 dark:text-[#B8B0A5] bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl space-y-2">
+            <Smartphone className="w-6 h-6 mx-auto text-zinc-400 dark:text-[#7A7570]" />
+            <h3 className="font-semibold text-zinc-800 dark:text-[#F0EBE3] text-sm">No matching devices</h3>
+            <p className="text-zinc-500 dark:text-[#B8B0A5] text-xs">Try changing your filters or search.</p>
             <div className="pt-2">
               <button
                 onClick={clearAllFilters}
-                className="px-3.5 py-1.5 bg-white border border-[#EAE8E1] rounded-xl text-zinc-700 text-xs font-medium hover:bg-zinc-50 cursor-pointer"
+                className="px-3.5 py-1.5 bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-zinc-700 dark:text-[#B8B0A5] text-xs font-medium cursor-pointer"
               >
                 Clear filters
               </button>
@@ -441,21 +440,21 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
           </div>
         ) : (
           /* State A: True zero-data state */
-          <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl space-y-2">
-            <Smartphone className="w-6 h-6 mx-auto text-zinc-400" />
-            <h3 className="font-semibold text-zinc-800 text-sm">No devices connected yet</h3>
-            <p className="text-zinc-500 text-xs max-w-sm mx-auto">
+          <div className="p-12 text-center text-xs text-zinc-500 dark:text-[#B8B0A5] bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl space-y-2">
+            <Smartphone className="w-6 h-6 mx-auto text-zinc-400 dark:text-[#7A7570]" />
+            <h3 className="font-semibold text-zinc-800 dark:text-[#F0EBE3] text-sm">No devices connected yet</h3>
+            <p className="text-zinc-500 dark:text-[#B8B0A5] text-xs max-w-sm mx-auto">
               Devices used by event team members will appear here once they sign in.
             </p>
           </div>
         )
       ) : (
-        <div className="bg-white border border-[#EAE8E1] rounded-xl overflow-hidden shadow-2xs">
+        <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl overflow-hidden shadow-2xs">
           {/* Desktop & Tablet Table View */}
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="bg-[#FAF9F5] border-b border-[#EAE8E1] text-zinc-500 font-medium text-[11px]">
+                <tr className="bg-[#FAF9F5] dark:bg-[#1D1D1A] border-b border-[#EAE8E1] dark:border-[#302E29] text-zinc-500 dark:text-[#7A7570] font-medium text-[11px]">
                   <th className="p-3.5 pl-4 font-medium w-[220px]">Team member</th>
                   <th className="p-3.5 font-medium w-[140px]">Role</th>
                   <th className="p-3.5 font-medium min-w-[180px]">Device</th>
@@ -464,7 +463,7 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
                   <th className="p-3.5 pr-4 font-medium text-right w-[110px]">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-100 text-zinc-700">
+              <tbody className="divide-y divide-zinc-100 dark:divide-[#302E29] text-zinc-700 dark:text-[#B8B0A5]">
                 {deviceItems.map((item) => {
                   const isSendingAlert = sendingAlertDeviceId === item.id;
                   const isRemoving = removingDeviceId === item.id;
@@ -473,7 +472,7 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
                   const alertStatusText = isAlertReady ? 'Ready for alerts' : 'Needs attention';
 
                   return (
-                    <tr key={item.id} className="hover:bg-zinc-50/60 transition-colors">
+                    <tr key={item.id} className="hover:bg-zinc-50/60 dark:hover:bg-[#262520] transition-colors">
                       {/* Team Member */}
                       <td className="p-3.5 pl-4">
                         <div className="flex items-center space-x-3">
@@ -481,11 +480,11 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
                             {getInitials(item.displayName)}
                           </div>
                           <div className="min-w-0">
-                            <div className="font-semibold text-zinc-900 text-xs truncate">
+                            <div className="font-semibold text-zinc-900 dark:text-[#F0EBE3] text-xs truncate">
                               {item.displayName}
                             </div>
                             {item.email && (
-                              <div className="text-[11px] text-zinc-400 font-normal truncate">
+                              <div className="text-[11px] text-zinc-400 dark:text-[#7A7570] font-normal truncate">
                                 {item.email}
                               </div>
                             )}
@@ -494,20 +493,20 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
                       </td>
 
                       {/* Role */}
-                      <td className="p-3.5 text-zinc-700 font-medium">
+                      <td className="p-3.5 text-zinc-700 dark:text-[#B8B0A5] font-medium">
                         {item.roleLabel}
                       </td>
 
                       {/* Device */}
                       <td className="p-3.5">
                         <div className="flex items-center space-x-2">
-                          <Smartphone className="w-4 h-4 text-zinc-400 shrink-0" />
+                          <Smartphone className="w-4 h-4 text-zinc-400 dark:text-[#7A7570] shrink-0" />
                           <div>
-                            <div className="font-medium text-zinc-900 text-xs">
+                            <div className="font-medium text-zinc-900 dark:text-[#F0EBE3] text-xs">
                               {item.deviceLabel}
                             </div>
                             {item.assignedArea && (
-                              <div className="text-[11px] text-zinc-400">
+                              <div className="text-[11px] text-zinc-400 dark:text-[#7A7570]">
                                 {item.assignedArea}
                               </div>
                             )}
@@ -525,7 +524,7 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
                           />
                           <span
                             className={`text-xs font-medium ${
-                              isAlertReady ? 'text-emerald-700' : 'text-amber-700'
+                              isAlertReady ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'
                             }`}
                           >
                             {alertStatusText}
@@ -534,7 +533,7 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
                       </td>
 
                       {/* Last Active */}
-                      <td className="p-3.5 text-[11px] text-zinc-500 font-normal">
+                      <td className="p-3.5 text-[11px] text-zinc-500 dark:text-[#7A7570] font-normal">
                         {formatLastActive(item.lastActiveAt)}
                       </td>
 
@@ -546,7 +545,7 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
                             disabled={isSendingAlert || isRemoving}
                             title="Send test alert"
                             aria-label={`Send test alert to ${item.deviceLabel}`}
-                            className="p-1.5 text-zinc-500 hover:text-[#C59B27] hover:bg-[#C59B27]/10 rounded-lg transition-all cursor-pointer disabled:opacity-40"
+                            className="p-1.5 text-zinc-500 dark:text-[#7A7570] hover:text-[#C59B27] dark:hover:text-amber-400 hover:bg-[#C59B27]/10 dark:hover:bg-amber-950/20 rounded-lg transition-all cursor-pointer disabled:opacity-40"
                           >
                             {isSendingAlert ? (
                               <RefreshCw className="w-4 h-4 animate-spin text-[#C59B27]" />
@@ -559,7 +558,7 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
                             onClick={() => setSelectedDeviceForDetails(item)}
                             title="View details"
                             aria-label={`View details for ${item.deviceLabel}`}
-                            className="p-1.5 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-lg transition-all cursor-pointer"
+                            className="p-1.5 text-zinc-500 hover:text-zinc-900 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] hover:bg-zinc-100 dark:hover:bg-[#262520] rounded-lg transition-all cursor-pointer"
                           >
                             <Sliders className="w-4 h-4" />
                           </button>
@@ -569,10 +568,10 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
                             disabled={isSendingAlert || isRemoving}
                             title="Remove device"
                             aria-label={`Remove device ${item.deviceLabel}`}
-                            className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer disabled:opacity-40"
+                            className="p-1.5 text-zinc-400 hover:text-rose-600 dark:text-[#7A7570] dark:hover:text-red-400 hover:bg-rose-50 dark:hover:bg-red-950/20 rounded-lg transition-all cursor-pointer disabled:opacity-40"
                           >
                             {isRemoving ? (
-                              <RefreshCw className="w-4 h-4 animate-spin text-rose-600" />
+                              <RefreshCw className="w-4 h-4 animate-spin text-rose-600 dark:text-red-400" />
                             ) : (
                               <Trash2 className="w-4 h-4" />
                             )}
@@ -587,7 +586,7 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
           </div>
 
           {/* Mobile Cards View */}
-          <div className="block md:hidden divide-y divide-zinc-100">
+          <div className="block md:hidden divide-y divide-zinc-100 dark:divide-[#302E29]">
             {deviceItems.map((item) => {
               const isSendingAlert = sendingAlertDeviceId === item.id;
               const isRemoving = removingDeviceId === item.id;
@@ -601,22 +600,22 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
                         {getInitials(item.displayName)}
                       </div>
                       <div>
-                        <div className="font-semibold text-zinc-900 text-xs">{item.displayName}</div>
-                        <div className="text-[11px] text-zinc-500">{item.roleLabel}</div>
+                        <div className="font-semibold text-zinc-900 dark:text-[#F0EBE3] text-xs">{item.displayName}</div>
+                        <div className="text-[11px] text-zinc-500 dark:text-[#B8B0A5]">{item.roleLabel}</div>
                       </div>
                     </div>
-                    <span className="text-[11px] font-medium text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded-md">
+                    <span className="text-[11px] font-medium text-zinc-600 dark:text-[#B8B0A5] bg-zinc-100 dark:bg-[#262520] px-2 py-0.5 rounded-md">
                       {item.dutyStatusLabel}
                     </span>
                   </div>
 
-                  <div className="p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-lg text-xs space-y-1">
+                  <div className="p-2.5 bg-[#FAF9F5] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-lg text-xs space-y-1">
                     <div className="flex items-center space-x-2">
-                      <Smartphone className="w-3.5 h-3.5 text-zinc-400" />
-                      <span className="font-medium text-zinc-900">{item.deviceLabel}</span>
+                      <Smartphone className="w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570]" />
+                      <span className="font-medium text-zinc-900 dark:text-[#F0EBE3]">{item.deviceLabel}</span>
                     </div>
                     {item.assignedArea && (
-                      <div className="text-[11px] text-zinc-500 pl-5.5">
+                      <div className="text-[11px] text-zinc-500 dark:text-[#7A7570] pl-5.5">
                         {item.assignedArea}
                       </div>
                     )}
@@ -625,20 +624,20 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
                   <div className="flex items-center justify-between text-xs pt-0.5">
                     <div className="flex items-center space-x-1.5">
                       <span className={`w-1.5 h-1.5 rounded-full ${isAlertReady ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                      <span className={`text-xs font-medium ${isAlertReady ? 'text-emerald-700' : 'text-amber-700'}`}>
+                      <span className={`text-xs font-medium ${isAlertReady ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}>
                         {isAlertReady ? 'Ready for alerts' : 'Needs attention'}
                       </span>
                     </div>
-                    <span className="text-[11px] text-zinc-400">
+                    <span className="text-[11px] text-zinc-400 dark:text-[#7A7570]">
                       {formatLastActive(item.lastActiveAt)}
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-end space-x-2 pt-2 border-t border-zinc-100">
+                  <div className="flex items-center justify-end space-x-2 pt-2 border-t border-zinc-100 dark:border-[#302E29]">
                     <button
                       onClick={() => handleSendTestAlert(item)}
                       disabled={isSendingAlert || isRemoving}
-                      className="px-3 py-1.5 bg-[#C59B27]/10 hover:bg-[#C59B27]/20 text-[#C59B27] font-medium text-xs rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                      className="px-3 py-1.5 bg-[#C59B27]/10 hover:bg-[#C59B27]/20 text-[#C59B27] dark:text-amber-400 font-medium text-xs rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
                     >
                       {isSendingAlert ? (
                         <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -650,7 +649,7 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
 
                     <button
                       onClick={() => setSelectedDeviceForDetails(item)}
-                      className="px-3 py-1.5 bg-white border border-[#EAE8E1] text-zinc-700 font-medium text-xs rounded-xl hover:bg-zinc-50 cursor-pointer"
+                      className="px-3 py-1.5 bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] text-zinc-700 dark:text-[#B8B0A5] font-medium text-xs rounded-xl cursor-pointer"
                     >
                       Details
                     </button>
@@ -658,7 +657,7 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
                     <button
                       onClick={() => setSelectedDeviceForRemoval(item)}
                       disabled={isSendingAlert || isRemoving}
-                      className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer disabled:opacity-50"
+                      className="p-1.5 text-zinc-400 hover:text-rose-600 dark:text-[#7A7570] dark:hover:text-red-400 hover:bg-rose-50 dark:hover:bg-red-950/20 rounded-lg cursor-pointer disabled:opacity-50"
                       title="Remove device"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -670,8 +669,8 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
           </div>
 
           {/* Pagination Footer */}
-          <div className="p-3.5 border-t border-[#EAE8E1] bg-[#FAF9F5] flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
-            <div className="text-zinc-500 text-xs">
+          <div className="p-3.5 border-t border-[#EAE8E1] dark:border-[#302E29] bg-[#FAF9F5] dark:bg-[#1D1D1A] flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
+            <div className="text-zinc-500 dark:text-[#7A7570] text-xs">
               Showing {deviceItems.length} of {devicePagination.total} devices
             </div>
             {devicePagination.totalPages > 1 && (
@@ -679,17 +678,17 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
                 <button
                   onClick={() => fetchDevices(devicePagination.page - 1)}
                   disabled={!devicePagination.hasPreviousPage || loading || refreshingDevices}
-                  className="px-2.5 py-1 bg-white border border-[#EAE8E1] rounded-lg hover:bg-zinc-50 disabled:opacity-40 cursor-pointer font-medium text-xs"
+                  className="px-2.5 py-1 bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] rounded-lg disabled:opacity-40 cursor-pointer font-medium text-xs text-zinc-700 dark:text-[#B8B0A5]"
                 >
                   Previous
                 </button>
-                <span className="text-zinc-600 font-medium text-xs px-1">
+                <span className="text-zinc-600 dark:text-[#B8B0A5] font-medium text-xs px-1">
                   Page {devicePagination.page} of {devicePagination.totalPages}
                 </span>
                 <button
                   onClick={() => fetchDevices(devicePagination.page + 1)}
                   disabled={!devicePagination.hasNextPage || loading || refreshingDevices}
-                  className="px-2.5 py-1 bg-white border border-[#EAE8E1] rounded-lg hover:bg-zinc-50 disabled:opacity-40 cursor-pointer font-medium text-xs"
+                  className="px-2.5 py-1 bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] rounded-lg disabled:opacity-40 cursor-pointer font-medium text-xs text-zinc-700 dark:text-[#B8B0A5]"
                 >
                   Next
                 </button>
@@ -702,43 +701,43 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
       {/* 4. Device Details Modal */}
       {selectedDeviceForDetails && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white rounded-2xl border border-[#EAE8E1] shadow-xl max-w-md w-full p-5 space-y-4">
-            <div className="flex items-start justify-between border-b border-[#EAE8E1] pb-3">
+          <div className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] shadow-xl max-w-md w-full p-5 space-y-4">
+            <div className="flex items-start justify-between border-b border-[#EAE8E1] dark:border-[#302E29] pb-3">
               <div>
-                <h3 className="text-base font-bold text-[#18181B]">Device Details</h3>
-                <p className="text-xs text-zinc-500 mt-0.5">
+                <h3 className="text-base font-bold text-[#18181B] dark:text-[#F0EBE3]">Device Details</h3>
+                <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mt-0.5">
                   {selectedDeviceForDetails.displayName} • {selectedDeviceForDetails.roleLabel}
                 </p>
               </div>
               <button
                 onClick={() => setSelectedDeviceForDetails(null)}
-                className="text-zinc-400 hover:text-zinc-600 p-1 cursor-pointer"
+                className="text-zinc-400 hover:text-zinc-600 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="space-y-2.5 text-xs">
-              <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl flex items-center justify-between">
-                <div className="flex items-center space-x-2 text-zinc-700 font-medium">
+              <div className="p-3 bg-[#FAF9F5] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl flex items-center justify-between">
+                <div className="flex items-center space-x-2 text-zinc-700 dark:text-[#B8B0A5] font-medium">
                   <Smartphone className="w-4 h-4 text-[#C59B27]" />
                   <span>Device</span>
                 </div>
-                <span className="font-medium text-zinc-900">
+                <span className="font-medium text-zinc-900 dark:text-[#F0EBE3]">
                   {selectedDeviceForDetails.deviceLabel}
                 </span>
               </div>
 
-              <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl flex items-center justify-between">
-                <div className="flex items-center space-x-2 text-zinc-700 font-medium">
+              <div className="p-3 bg-[#FAF9F5] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl flex items-center justify-between">
+                <div className="flex items-center space-x-2 text-zinc-700 dark:text-[#B8B0A5] font-medium">
                   <Bell className="w-4 h-4 text-[#C59B27]" />
                   <span>Alert status</span>
                 </div>
                 <span
                   className={`font-medium ${
                     selectedDeviceForDetails.notificationReadiness === 'ready'
-                      ? 'text-emerald-700'
-                      : 'text-amber-700'
+                      ? 'text-emerald-700 dark:text-emerald-400'
+                      : 'text-amber-700 dark:text-amber-400'
                   }`}
                 >
                   {selectedDeviceForDetails.notificationReadiness === 'ready'
@@ -747,46 +746,46 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
                 </span>
               </div>
 
-              <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl flex items-center justify-between">
-                <div className="flex items-center space-x-2 text-zinc-700 font-medium">
+              <div className="p-3 bg-[#FAF9F5] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl flex items-center justify-between">
+                <div className="flex items-center space-x-2 text-zinc-700 dark:text-[#B8B0A5] font-medium">
                   {selectedDeviceForDetails.capabilities.alertSound ? (
                     <Volume2 className="w-4 h-4 text-[#C59B27]" />
                   ) : (
-                    <VolumeX className="w-4 h-4 text-zinc-400" />
+                    <VolumeX className="w-4 h-4 text-zinc-400 dark:text-[#7A7570]" />
                   )}
                   <span>Sound</span>
                 </div>
-                <span className="font-medium text-zinc-800">
+                <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">
                   {selectedDeviceForDetails.capabilities.alertSound ? 'Ready' : 'Sound is off'}
                 </span>
               </div>
 
-              <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl flex items-center justify-between">
-                <div className="flex items-center space-x-2 text-zinc-700 font-medium">
+              <div className="p-3 bg-[#FAF9F5] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl flex items-center justify-between">
+                <div className="flex items-center space-x-2 text-zinc-700 dark:text-[#B8B0A5] font-medium">
                   <Vibrate className="w-4 h-4 text-[#C59B27]" />
                   <span>Vibration</span>
                 </div>
-                <span className="font-medium text-zinc-800">
+                <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">
                   {selectedDeviceForDetails.capabilities.vibration ? 'Supported' : 'Not supported'}
                 </span>
               </div>
 
-              <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl flex items-center justify-between">
-                <div className="flex items-center space-x-2 text-zinc-700 font-medium">
+              <div className="p-3 bg-[#FAF9F5] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl flex items-center justify-between">
+                <div className="flex items-center space-x-2 text-zinc-700 dark:text-[#B8B0A5] font-medium">
                   <Wifi className="w-4 h-4 text-[#C59B27]" />
                   <span>Last active</span>
                 </div>
-                <span className="text-zinc-600 font-medium">
+                <span className="text-zinc-600 dark:text-[#B8B0A5] font-medium">
                   {formatLastActive(selectedDeviceForDetails.lastActiveAt)}
                 </span>
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-2 border-t border-[#EAE8E1]">
+            <div className="flex items-center justify-between pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
               <button
                 type="button"
                 onClick={() => setSelectedDeviceForDetails(null)}
-                className="px-3.5 py-2 bg-white hover:bg-zinc-100 border border-[#EAE8E1] text-zinc-700 font-medium text-xs rounded-xl cursor-pointer"
+                className="px-3.5 py-2 bg-white dark:bg-[#262520] hover:bg-zinc-100 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] text-zinc-700 dark:text-[#B8B0A5] font-medium text-xs rounded-xl cursor-pointer"
               >
                 Close
               </button>
@@ -810,45 +809,45 @@ export function DevicesReadinessTab({ eventId }: DevicesReadinessTabProps) {
       {/* 5. Device Removal Confirmation Modal */}
       {selectedDeviceForRemoval && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white rounded-2xl border border-[#EAE8E1] shadow-xl max-w-md w-full p-5 space-y-4">
+          <div className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] shadow-xl max-w-md w-full p-5 space-y-4">
             <div className="flex items-start space-x-3">
-              <div className="w-9 h-9 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl flex items-center justify-center shrink-0">
+              <div className="w-9 h-9 bg-rose-50 dark:bg-red-950/20 border border-rose-200 dark:border-red-900/40 text-rose-600 dark:text-red-400 rounded-xl flex items-center justify-center shrink-0">
                 <AlertTriangle className="w-4 h-4" />
               </div>
               <div className="space-y-0.5 pr-4">
-                <h3 className="text-base font-bold text-[#18181B]">Remove this device?</h3>
-                <p className="text-xs text-zinc-500">
+                <h3 className="text-base font-bold text-[#18181B] dark:text-[#F0EBE3]">Remove this device?</h3>
+                <p className="text-xs text-zinc-500 dark:text-[#B8B0A5]">
                   This team member will no longer receive alerts on this device until they sign in again.
                 </p>
               </div>
               <button
                 onClick={() => setSelectedDeviceForRemoval(null)}
                 disabled={removingDeviceId !== null}
-                className="text-zinc-400 hover:text-zinc-600 p-1 cursor-pointer"
+                className="text-zinc-400 hover:text-zinc-600 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl space-y-1.5 text-xs">
+            <div className="p-3 bg-[#FAF9F5] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl space-y-1.5 text-xs">
               <div className="flex justify-between items-center">
-                <span className="text-zinc-500 font-medium">Device</span>
-                <span className="font-medium text-zinc-900">{selectedDeviceForRemoval.deviceLabel}</span>
+                <span className="text-zinc-500 dark:text-[#7A7570] font-medium">Device</span>
+                <span className="font-medium text-zinc-900 dark:text-[#F0EBE3]">{selectedDeviceForRemoval.deviceLabel}</span>
               </div>
-              <div className="flex justify-between items-center pt-1 border-t border-[#EAE8E1]">
-                <span className="text-zinc-500 font-medium">Team member</span>
-                <span className="font-medium text-zinc-800">
+              <div className="flex justify-between items-center pt-1 border-t border-[#EAE8E1] dark:border-[#302E29]">
+                <span className="text-zinc-500 dark:text-[#7A7570] font-medium">Team member</span>
+                <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">
                   {selectedDeviceForRemoval.displayName} ({selectedDeviceForRemoval.roleLabel})
                 </span>
               </div>
             </div>
 
-            <div className="flex items-center justify-end space-x-2.5 pt-2 border-t border-[#EAE8E1]">
+            <div className="flex items-center justify-end space-x-2.5 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
               <button
                 type="button"
                 onClick={() => setSelectedDeviceForRemoval(null)}
                 disabled={removingDeviceId !== null}
-                className="px-3.5 py-2 bg-white hover:bg-zinc-100 border border-[#EAE8E1] text-zinc-700 font-medium text-xs rounded-xl cursor-pointer disabled:opacity-50"
+                className="px-3.5 py-2 bg-white dark:bg-[#262520] hover:bg-zinc-100 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] text-zinc-700 dark:text-[#B8B0A5] font-medium text-xs rounded-xl cursor-pointer disabled:opacity-50"
               >
                 Cancel
               </button>

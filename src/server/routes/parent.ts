@@ -32,8 +32,11 @@ function calculateAgeAndGroup(dobStr: string) {
   }
   let ageGroup = 'Ages 4 to 6';
   let needsAgeReview = false;
-  if (age < 4) {
-    ageGroup = 'Under 4 (Review Needed)';
+  if (age < 1) {
+    ageGroup = 'Below 1';
+    needsAgeReview = true;
+  } else if (age < 4) {
+    ageGroup = 'Ages 1 to 3';
     needsAgeReview = true;
   } else if (age >= 4 && age <= 6) {
     ageGroup = 'Ages 4 to 6';
@@ -270,7 +273,10 @@ async function mapChildToFrontend(
   };
 
   const { calculatedAge, ageGroup: calcAgeGroup } = calculateAgeAndGroup(childRow.date_of_birth);
-  const effectiveAgeGroup = childRow.age_group || calcAgeGroup;
+  const rawChildGroup = (childRow.age_group || '').replace(/\s*\(Review Needed\)/gi, '').trim();
+  const effectiveAgeGroup = rawChildGroup === 'Under 4'
+    ? (calculatedAge < 1 ? 'Below 1' : 'Ages 1 to 3')
+    : (rawChildGroup || calcAgeGroup);
   const effectiveAge = childRow.calculated_age !== null && childRow.calculated_age !== undefined ? childRow.calculated_age : calculatedAge;
 
   return {

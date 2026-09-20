@@ -244,7 +244,7 @@ export const VolunteerSignInView: React.FC<VolunteerSignInViewProps> = ({
       </div>
 
       <div className="text-center space-y-2">
-        <h1 className="text-3xl font-serif-koinonia font-bold text-[#18181B]">
+        <h1 className="type-h1-app text-[#18181B]">
           Volunteer Access
         </h1>
         <p id="volunteer-signin-subtitle" className="text-sm text-[#52525B] leading-relaxed max-w-sm mx-auto">

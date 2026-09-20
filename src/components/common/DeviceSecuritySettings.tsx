@@ -137,33 +137,33 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
 
   return (
     <div className="space-y-4 font-sans text-left" data-component-version="device-security-v3-real">
-      <div className="bg-white rounded-2xl border border-[#EAE8E1] p-5 shadow-xs">
+      <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-5 shadow-xs">
         {/* Header */}
         <div className="flex items-start gap-3.5">
-          <div className="p-2.5 bg-[#FAF6EB] text-[#9A7326] rounded-xl shrink-0">
+          <div className="p-2.5 bg-[#FAF6EB] dark:bg-amber-950/30 text-[#9A7326] dark:text-amber-400 rounded-xl shrink-0">
             <Fingerprint className="w-5 h-5 stroke-[1.5]" />
           </div>
           <div className="space-y-1">
-            <h3 className="text-sm font-semibold text-zinc-900">
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-[#F0EBE3]">
               Device security
             </h3>
-            <p className="text-xs text-zinc-600 leading-relaxed">
+            <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
               Use your fingerprint, face, screen lock or device PIN for quick, passwordless access.
             </p>
           </div>
         </div>
 
         {/* Security Status Box */}
-        <div className="mt-4 p-3.5 rounded-xl border border-zinc-100 bg-[#FAF9F6]">
+        <div className="mt-4 p-3.5 rounded-xl border border-zinc-100 dark:border-[#302E29] bg-[#FAF9F6] dark:bg-[#262520]">
           {checkingPlatform ? (
-            <div className="flex items-center gap-2 text-xs text-zinc-400 py-1">
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#9A7326]" />
+            <div className="flex items-center gap-2 text-xs text-zinc-400 dark:text-[#7A7570] py-1">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#9A7326] dark:text-amber-400" />
               <span>Checking device capability...</span>
             </div>
           ) : !isSupported || !isPlatformAvailable ? (
             /* State 2: Unsupported */
             <div>
-              <p className="text-xs font-medium text-zinc-700">
+              <p className="text-xs font-medium text-zinc-700 dark:text-[#B8B0A5]">
                 Secure sign-in isn't available on this browser.
               </p>
             </div>
@@ -171,8 +171,8 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
             /* State 3: Available but not set up */
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold text-zinc-900">Secure sign-in is available</p>
-                <p className="text-[11px] text-zinc-500 mt-0.5">Use your fingerprint, face, screen lock or device PIN.</p>
+                <p className="text-xs font-semibold text-zinc-900 dark:text-[#F0EBE3]">Secure sign-in is available</p>
+                <p className="text-[11px] text-zinc-500 dark:text-[#7A7570] mt-0.5">Use your fingerprint, face, screen lock or device PIN.</p>
               </div>
               <button
                 type="button"
@@ -180,7 +180,7 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
                   setModalAction('register');
                   setModalOpen(true);
                 }}
-                className="px-3.5 py-2 bg-[#9A7326] hover:bg-[#7D5B18] text-white text-xs font-medium rounded-xl transition-colors shrink-0 cursor-pointer"
+                className="px-3.5 py-2 bg-[#9A7326] hover:bg-[#7D5B18] text-white text-xs font-medium rounded-xl transition-colors shrink-0 cursor-pointer shadow-xs"
               >
                 Set up secure sign-in
               </button>
@@ -189,8 +189,8 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
             /* State 4: Set up / registered */
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-600" />
-                <p className="text-xs font-semibold text-zinc-900">Secure sign-in is on</p>
+                <span className="w-2 h-2 rounded-full bg-emerald-600 dark:bg-emerald-400" />
+                <p className="text-xs font-semibold text-zinc-900 dark:text-[#F0EBE3]">Secure sign-in is on</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -199,7 +199,7 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
                     setModalAction('test');
                     setModalOpen(true);
                   }}
-                  className="px-3 py-1.5 text-xs font-medium text-zinc-700 hover:text-zinc-900 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer"
+                  className="px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] hover:text-zinc-900 dark:hover:text-[#F0EBE3] hover:bg-zinc-100 dark:hover:bg-[#302E29] rounded-lg transition-colors cursor-pointer"
                 >
                   Test unlock
                 </button>
@@ -209,7 +209,7 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
                     setModalAction('register');
                     setModalOpen(true);
                   }}
-                  className="px-3 py-1.5 text-xs font-medium text-[#9A7326] hover:text-[#7D5B18] hover:bg-[#FAF6EB] rounded-lg transition-colors cursor-pointer"
+                  className="px-3 py-1.5 text-xs font-medium text-[#9A7326] dark:text-amber-400 hover:text-[#7D5B18] dark:hover:text-amber-300 hover:bg-[#FAF6EB] dark:hover:bg-amber-950/30 rounded-lg transition-colors cursor-pointer"
                 >
                   Add another device
                 </button>
@@ -220,32 +220,32 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
 
         {/* Registered Devices List */}
         {isConfigured && (
-          <div className="mt-5 pt-4 border-t border-zinc-100 space-y-3">
-            <h4 className="text-xs font-medium text-zinc-500">
+          <div className="mt-5 pt-4 border-t border-zinc-100 dark:border-[#302E29] space-y-3">
+            <h4 className="text-xs font-medium text-zinc-500 dark:text-[#7A7570]">
               Your devices
             </h4>
 
             {loading ? (
-              <div className="flex items-center gap-2 text-xs text-zinc-400 py-2">
+              <div className="flex items-center gap-2 text-xs text-zinc-400 dark:text-[#7A7570] py-2">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 <span>Loading devices...</span>
               </div>
             ) : (
-              <div className="divide-y divide-zinc-100 rounded-xl border border-zinc-100 overflow-hidden bg-white">
+              <div className="divide-y divide-zinc-100 dark:divide-[#302E29] rounded-xl border border-zinc-100 dark:border-[#302E29] overflow-hidden bg-white dark:bg-[#21211E]">
                 {passkeys.map((pk) => (
                   <div key={pk.id} className="p-3.5 flex items-center justify-between">
                     <div>
-                      <p className="text-xs font-medium text-zinc-900">
+                      <p className="text-xs font-medium text-zinc-900 dark:text-[#F0EBE3]">
                         {humanizeDeviceName(pk.deviceName)}
                       </p>
-                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                      <p className="text-[11px] text-zinc-400 dark:text-[#7A7570] mt-0.5">
                         Added {formatAddedDate(pk.createdAt)}
                       </p>
                     </div>
                     <button
                       type="button"
                       onClick={() => setConfirmRevokeItem(pk)}
-                      className="text-xs text-zinc-400 hover:text-rose-600 px-2 py-1 rounded transition-colors cursor-pointer"
+                      className="text-xs text-zinc-400 dark:text-[#7A7570] hover:text-rose-600 dark:hover:text-rose-400 px-2 py-1 rounded transition-colors cursor-pointer"
                     >
                       Remove
                     </button>
@@ -258,12 +258,12 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
 
         {/* Optional secure unlock for parent passes */}
         {!isAdmin && isConfigured && (
-          <div className="mt-4 pt-4 border-t border-zinc-100 flex items-center justify-between">
+          <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-[#302E29] flex items-center justify-between">
             <div className="space-y-0.5 max-w-[80%]">
-              <p className="text-xs font-medium text-zinc-900">
+              <p className="text-xs font-medium text-zinc-900 dark:text-[#F0EBE3]">
                 Require secure confirmation before showing pass
               </p>
-              <p className="text-[11px] text-zinc-500 leading-relaxed">
+              <p className="text-[11px] text-zinc-500 dark:text-[#7A7570] leading-relaxed">
                 Confirm your identity using this device before opening passes.
               </p>
             </div>
@@ -273,7 +273,7 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
               className="focus:outline-none cursor-pointer"
               aria-label="Toggle secure unlock for pass"
             >
-              <div className={`w-10 h-5.5 rounded-full transition-colors relative ${passUnlockEnabled ? 'bg-[#9A7326]' : 'bg-zinc-200'}`}>
+              <div className={`w-10 h-5.5 rounded-full transition-colors relative ${passUnlockEnabled ? 'bg-[#9A7326]' : 'bg-zinc-200 dark:bg-[#302E29]'}`}>
                 <div className={`w-4.5 h-4.5 rounded-full bg-white absolute top-0.5 transition-transform shadow-xs ${passUnlockEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
               </div>
             </button>
@@ -284,16 +284,16 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
       {/* Confirmation Modal for Removing Device */}
       {confirmRevokeItem && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 dark:bg-black/70 backdrop-blur-xs"
           role="dialog"
           aria-modal="true"
         >
-          <div className="w-full max-w-sm bg-white rounded-2xl p-5 shadow-xl border border-zinc-100 space-y-4 font-sans animate-in fade-in zoom-in-95 duration-150">
+          <div className="w-full max-w-sm bg-white dark:bg-[#1D1D1A] rounded-2xl p-5 shadow-xl border border-zinc-100 dark:border-[#302E29] space-y-4 font-sans animate-in fade-in zoom-in-95 duration-150">
             <div className="space-y-1.5">
-              <h3 className="text-sm font-semibold text-zinc-900">
+              <h3 className="text-sm font-semibold text-zinc-900 dark:text-[#F0EBE3]">
                 Remove this device?
               </h3>
-              <p className="text-xs text-zinc-600 leading-relaxed">
+              <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
                 You won't be able to use secure unlock on this device until you set it up again.
               </p>
             </div>
@@ -303,7 +303,7 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
                 type="button"
                 onClick={() => setConfirmRevokeItem(null)}
                 disabled={Boolean(revokingId)}
-                className="px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-100 rounded-xl transition-colors cursor-pointer"
+                className="px-3 py-2 text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] hover:bg-zinc-100 dark:hover:bg-[#262520] dark:hover:text-[#F0EBE3] rounded-xl transition-colors cursor-pointer"
               >
                 Cancel
               </button>

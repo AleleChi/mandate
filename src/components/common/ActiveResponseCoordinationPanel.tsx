@@ -304,7 +304,7 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
 
   return (
     <div 
-      className="bg-[#FAF9F6] border border-zinc-200/80 rounded-2xl p-5 sm:p-6 shadow-md space-y-5 max-w-xl mx-auto w-full text-left overflow-y-auto max-h-[85vh]"
+      className="bg-[#FAF9F6] dark:bg-[#1D1D1A] border border-zinc-200/80 dark:border-[#302E29] rounded-2xl p-5 sm:p-6 shadow-md space-y-5 max-w-xl mx-auto w-full text-left overflow-y-auto max-h-[85vh]"
       data-view-version="active-alert-response-coordination-v2-premium"
       id={`panel-${alertId}`}
     >
@@ -326,14 +326,14 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
       {/* CONFLICT ERROR DISPLAY */}
       {conflictError && (
         <div 
-          className="bg-red-50 border border-red-200 rounded-xl p-3.5 text-xs text-red-800 font-sans space-y-1 flex items-start space-x-2"
+          className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40 rounded-xl p-3.5 text-xs text-red-800 dark:text-red-300 font-sans space-y-1 flex items-start space-x-2"
           data-component-version="response-ownership-conflict-ui-v1"
         >
-          <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+          <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
           <div className="flex-1">
             <p className="font-semibold">Conflict Notice</p>
-            <p className="text-[11px] text-red-700">{conflictError}</p>
-            <button onClick={() => setConflictError(null)} className="text-zinc-500 hover:text-zinc-800 underline text-[10px] mt-1 bg-transparent border-none cursor-pointer">
+            <p className="text-[11px] text-red-700 dark:text-red-400">{conflictError}</p>
+            <button onClick={() => setConflictError(null)} className="text-zinc-500 dark:text-[#7A7570] hover:text-zinc-800 dark:hover:text-[#F0EBE3] underline text-[10px] mt-1 bg-transparent border-none cursor-pointer">
               Dismiss
             </button>
           </div>
@@ -346,20 +346,20 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
       {isResolved && (
         <div className="space-y-4" data-component-version="resolved-incident-summary-v2-premium">
           {/* Header */}
-          <div className="flex items-center justify-between pb-3 border-b border-zinc-200/80">
+          <div className="flex items-center justify-between pb-3 border-b border-zinc-200/80 dark:border-[#302E29]">
             <div className="space-y-0.5">
-              <h2 className="font-serif font-bold text-lg text-zinc-900 tracking-tight">Incident resolved</h2>
-              <p className="text-xs text-zinc-500 font-sans">Closed care request summary</p>
+              <h2 className="font-serif font-bold text-lg text-zinc-900 dark:text-[#F0EBE3] tracking-tight">Incident resolved</h2>
+              <p className="text-xs text-zinc-500 dark:text-[#7A7570] font-sans">Closed care request summary</p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+              <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/40 px-2.5 py-0.5 rounded-full">
                 Resolved
               </span>
               {onClose && (
                 <button
                   type="button"
                   onClick={onClose}
-                  className="text-zinc-400 hover:text-zinc-700 p-1 rounded-lg hover:bg-zinc-100 transition-colors cursor-pointer"
+                  className="text-zinc-400 dark:text-[#7A7570] hover:text-zinc-700 dark:hover:text-[#F0EBE3] p-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-[#262520] transition-colors cursor-pointer"
                   title="Close"
                   aria-label="Close"
                 >
@@ -371,18 +371,18 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
 
           {/* Incident title and location */}
           <div className="space-y-1">
-            <h3 className="font-serif font-bold text-base text-zinc-950">
+            <h3 className="font-serif font-bold text-base text-zinc-950 dark:text-[#F0EBE3]">
               {alert?.title || 'Safety Concern'}
             </h3>
-            <p className="text-xs text-zinc-600 font-sans">
+            <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] font-sans">
               {locationLabel}
             </p>
-            <p className="text-xs text-zinc-600 font-sans pt-1">
-              Resolved by <strong className="text-zinc-800">{resolvedByName}</strong>
+            <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] font-sans pt-1">
+              Resolved by <strong className="text-zinc-800 dark:text-[#F0EBE3]">{resolvedByName}</strong>
               {resolvedAt && <span> · {formatDateTime(resolvedAt)}</span>}
             </p>
             {acknowledgedByName && acknowledgedAt && (
-              <p className="text-[11px] text-zinc-400 font-sans">
+              <p className="text-[11px] text-zinc-400 dark:text-[#7A7570] font-sans">
                 Response taken by {acknowledgedByName} · {formatTime(acknowledgedAt)}
               </p>
             )}
@@ -390,16 +390,16 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
 
           {/* Child & Parent info if present */}
           {childName && (
-            <div className="py-2.5 px-3.5 bg-white border border-zinc-200/80 rounded-xl flex items-center justify-between gap-3 text-xs">
+            <div className="py-2.5 px-3.5 bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-xl flex items-center justify-between gap-3 text-xs">
               <div>
-                <span className="font-medium text-zinc-900">{childName}</span>
-                {childAgeGroup && <span className="text-zinc-500"> ({childAgeGroup})</span>}
-                {parentName && <span className="text-zinc-500 block text-[11px]">Parent: {parentName}</span>}
+                <span className="font-medium text-zinc-900 dark:text-[#F0EBE3]">{childName}</span>
+                {childAgeGroup && <span className="text-zinc-500 dark:text-[#7A7570]"> ({childAgeGroup})</span>}
+                {parentName && <span className="text-zinc-500 dark:text-[#7A7570] block text-[11px]">Parent: {parentName}</span>}
               </div>
               {parentPhone && (
                 <a
                   href={`tel:${parentPhone}`}
-                  className="text-[11px] text-zinc-600 hover:text-zinc-900 border border-zinc-200 px-2.5 py-1 rounded-lg bg-zinc-50"
+                  className="text-[11px] text-zinc-600 dark:text-[#B8B0A5] hover:text-zinc-900 dark:hover:text-[#F0EBE3] border border-zinc-200 dark:border-[#3A3835] px-2.5 py-1 rounded-lg bg-zinc-50 dark:bg-[#262520]"
                 >
                   {parentPhone}
                 </a>
@@ -409,8 +409,8 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
 
           {/* Distress message with subtle left rule */}
           {alert?.message && (
-            <div className="pl-3.5 border-l-2 border-[#C59B27]/40 py-1 text-left">
-              <p className="text-xs text-zinc-800 leading-relaxed font-sans">
+            <div className="pl-3.5 border-l-2 border-[#C59B27]/40 dark:border-amber-500/40 py-1 text-left">
+              <p className="text-xs text-zinc-800 dark:text-[#F0EBE3] leading-relaxed font-sans">
                 “{alert.message}”
               </p>
             </div>
@@ -418,48 +418,48 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
 
           {/* Resolution Note */}
           <div className="space-y-1.5 pt-1">
-            <h4 className="text-xs font-semibold text-zinc-900 font-sans">Resolution</h4>
+            <h4 className="text-xs font-semibold text-zinc-900 dark:text-[#F0EBE3] font-sans">Resolution</h4>
             {resolutionNote ? (
-              <div className="pl-3.5 border-l-2 border-emerald-600/60 py-1.5 text-left bg-emerald-50/40 rounded-r-lg">
-                <p className="text-xs text-zinc-800 leading-relaxed font-sans">
+              <div className="pl-3.5 border-l-2 border-emerald-600/60 dark:border-emerald-500/40 py-1.5 text-left bg-emerald-50/40 dark:bg-emerald-950/30 rounded-r-lg">
+                <p className="text-xs text-zinc-800 dark:text-[#F0EBE3] leading-relaxed font-sans">
                   “{resolutionNote}”
                 </p>
               </div>
             ) : (
-              <p className="text-xs text-zinc-400 font-sans">No resolution note was added.</p>
+              <p className="text-xs text-zinc-400 dark:text-[#7A7570] font-sans">No resolution note was added.</p>
             )}
           </div>
 
           {/* Response History */}
-          <div className="space-y-2 pt-2 border-t border-zinc-100">
-            <h4 className="text-xs font-semibold text-zinc-900 font-sans">Response history</h4>
+          <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-[#302E29]">
+            <h4 className="text-xs font-semibold text-zinc-900 dark:text-[#F0EBE3] font-sans">Response history</h4>
             {timeline.length > 0 ? (
               <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
                 {timeline.map((item: any, idx: number) => (
-                  <div key={item.id || idx} className="text-xs flex items-start gap-2.5 text-zinc-600">
-                    <span className="text-[11px] text-zinc-400 shrink-0 font-mono pt-0.5">
+                  <div key={item.id || idx} className="text-xs flex items-start gap-2.5 text-zinc-600 dark:text-[#B8B0A5]">
+                    <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] shrink-0 font-mono pt-0.5">
                       {formatTime(item.createdAt || item.timestamp || item.created_at)}
                     </span>
                     <div className="min-w-0">
-                      <span className="font-medium text-zinc-800">{item.actionName || item.action}</span>
-                      {item.actorName && <span className="text-zinc-400"> · {item.actorName}</span>}
-                      {item.note && <p className="text-[11px] text-zinc-500 italic mt-0.5">"{item.note}"</p>}
+                      <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">{item.actionName || item.action}</span>
+                      {item.actorName && <span className="text-zinc-400 dark:text-[#7A7570]"> · {item.actorName}</span>}
+                      {item.note && <p className="text-[11px] text-zinc-500 dark:text-[#B8B0A5] italic mt-0.5">"{item.note}"</p>}
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-zinc-400 font-sans">No additional response notes.</p>
+              <p className="text-xs text-zinc-400 dark:text-[#7A7570] font-sans">No additional response notes.</p>
             )}
           </div>
 
           {/* Footer Actions */}
-          <div className="pt-4 border-t border-zinc-200/80 flex items-center justify-between gap-3">
+          <div className="pt-4 border-t border-zinc-200/80 dark:border-[#302E29] flex items-center justify-between gap-3">
             {onClose ? (
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-700 text-xs font-medium rounded-lg transition-colors cursor-pointer"
+                className="px-4 py-2 bg-white dark:bg-[#21211E] hover:bg-zinc-50 dark:hover:bg-[#262520] border border-zinc-200 dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] text-xs font-medium rounded-lg transition-colors cursor-pointer"
               >
                 Close
               </button>
@@ -469,7 +469,7 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
                 <button
                   type="button"
                   onClick={() => setShowReopenSheet(true)}
-                  className="px-3.5 py-2 text-zinc-600 hover:text-zinc-900 text-xs font-medium transition-colors cursor-pointer"
+                  className="px-3.5 py-2 text-zinc-600 dark:text-[#B8B0A5] hover:text-zinc-900 dark:hover:text-[#F0EBE3] text-xs font-medium transition-colors cursor-pointer"
                 >
                   Reopen case
                 </button>
@@ -477,7 +477,7 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
               <button
                 type="button"
                 onClick={() => setShowIncidentModal(true)}
-                className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer"
+                className="px-4 py-2 bg-zinc-900 dark:bg-amber-600 hover:bg-zinc-800 dark:hover:bg-amber-700 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer"
               >
                 View incident report
               </button>
@@ -492,20 +492,20 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
       {isUnderway && (
         <div className="space-y-4" data-component-version="underway-incident-summary-v2-premium">
           {/* Header */}
-          <div className="flex items-center justify-between pb-3 border-b border-zinc-200/80">
+          <div className="flex items-center justify-between pb-3 border-b border-zinc-200/80 dark:border-[#302E29]">
             <div className="space-y-0.5">
-              <h2 className="font-serif font-bold text-lg text-zinc-900 tracking-tight">Emergency Response</h2>
-              <p className="text-xs text-zinc-500 font-sans">Response underway</p>
+              <h2 className="font-serif font-bold text-lg text-zinc-900 dark:text-[#F0EBE3] tracking-tight">Emergency Response</h2>
+              <p className="text-xs text-zinc-500 dark:text-[#7A7570] font-sans">Response underway</p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-medium text-[#C59B27] bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
+              <span className="text-[11px] font-medium text-[#C59B27] dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/40 px-2.5 py-0.5 rounded-full">
                 Response underway
               </span>
               {onClose && (
                 <button
                   type="button"
                   onClick={onClose}
-                  className="text-zinc-400 hover:text-zinc-700 p-1 rounded-lg hover:bg-zinc-100 transition-colors cursor-pointer"
+                  className="text-zinc-400 dark:text-[#7A7570] hover:text-zinc-700 dark:hover:text-[#F0EBE3] p-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-[#262520] transition-colors cursor-pointer"
                   title="Close"
                   aria-label="Close"
                 >
@@ -517,22 +517,22 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
 
           {/* Incident title and location */}
           <div className="space-y-1">
-            <h3 className="font-serif font-bold text-base text-zinc-950">
+            <h3 className="font-serif font-bold text-base text-zinc-950 dark:text-[#F0EBE3]">
               {alert?.title || 'Safety Emergency'}
             </h3>
-            <p className="text-xs text-zinc-600 font-sans">
+            <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] font-sans">
               {locationLabel}
             </p>
           </div>
 
           {/* Responder section */}
-          <div className="p-3.5 bg-white border border-zinc-200 rounded-xl space-y-1">
-            <span className="text-[11px] text-zinc-400 font-medium">Responding</span>
-            <p className="text-xs font-semibold text-zinc-900">
+          <div className="p-3.5 bg-white dark:bg-[#21211E] border border-zinc-200 dark:border-[#302E29] rounded-xl space-y-1">
+            <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] font-medium">Responding</span>
+            <p className="text-xs font-semibold text-zinc-900 dark:text-[#F0EBE3]">
               {acknowledgedByName}
             </p>
             {acknowledgedAt && (
-              <p className="text-[11px] text-zinc-500 font-sans">
+              <p className="text-[11px] text-zinc-500 dark:text-[#7A7570] font-sans">
                 Acknowledged at {formatTime(acknowledgedAt)}
               </p>
             )}
@@ -540,13 +540,13 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
 
           {/* Other Responders (ONLY if > 0) */}
           {response?.assistants && response.assistants.length > 0 && (
-            <div className="p-3.5 bg-white border border-zinc-200 rounded-xl space-y-2">
-              <span className="text-[11px] text-zinc-400 font-medium">Other responders ({response.assistants.length})</span>
+            <div className="p-3.5 bg-white dark:bg-[#21211E] border border-zinc-200 dark:border-[#302E29] rounded-xl space-y-2">
+              <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] font-medium">Other responders ({response.assistants.length})</span>
               <div className="space-y-1.5">
                 {response.assistants.map((assistant: any, idx: number) => (
                   <div key={assistant.id || idx} className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-zinc-800">{assistant.displayName}</span>
-                    <span className="text-[11px] text-zinc-400">{assistant.responsibility || 'Care Assistant'}</span>
+                    <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">{assistant.displayName}</span>
+                    <span className="text-[11px] text-zinc-400 dark:text-[#7A7570]">{assistant.responsibility || 'Care Assistant'}</span>
                   </div>
                 ))}
               </div>
@@ -555,8 +555,8 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
 
           {/* Distress message */}
           {alert?.message && (
-            <div className="pl-3.5 border-l-2 border-[#C59B27]/40 py-1 text-left">
-              <p className="text-xs text-zinc-800 leading-relaxed font-sans">
+            <div className="pl-3.5 border-l-2 border-[#C59B27]/40 dark:border-amber-500/40 py-1 text-left">
+              <p className="text-xs text-zinc-800 dark:text-[#F0EBE3] leading-relaxed font-sans">
                 “{alert.message}”
               </p>
             </div>
@@ -564,16 +564,16 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
 
           {/* Child & Parent Details */}
           {childName && (
-            <div className="py-2.5 px-3.5 bg-white border border-zinc-200/80 rounded-xl flex items-center justify-between gap-3 text-xs">
+            <div className="py-2.5 px-3.5 bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-xl flex items-center justify-between gap-3 text-xs">
               <div>
-                <span className="font-medium text-zinc-900">{childName}</span>
-                {childAgeGroup && <span className="text-zinc-500"> ({childAgeGroup})</span>}
-                {parentName && <span className="text-zinc-500 block text-[11px]">Parent: {parentName}</span>}
+                <span className="font-medium text-zinc-900 dark:text-[#F0EBE3]">{childName}</span>
+                {childAgeGroup && <span className="text-zinc-500 dark:text-[#7A7570]"> ({childAgeGroup})</span>}
+                {parentName && <span className="text-zinc-500 dark:text-[#7A7570] block text-[11px]">Parent: {parentName}</span>}
               </div>
               {parentPhone && (
                 <a
                   href={`tel:${parentPhone}`}
-                  className="text-[11px] text-zinc-600 hover:text-zinc-900 border border-zinc-200 px-2.5 py-1 rounded-lg bg-zinc-50"
+                  className="text-[11px] text-zinc-600 dark:text-[#B8B0A5] hover:text-zinc-900 dark:hover:text-[#F0EBE3] border border-zinc-200 dark:border-[#3A3835] px-2.5 py-1 rounded-lg bg-zinc-50 dark:bg-[#262520]"
                 >
                   {parentPhone}
                 </a>
@@ -583,22 +583,22 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
 
           {/* Handover decision card if target is current user */}
           {response?.handover?.pending && response.handover.targetUserId === currentUser.id && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 space-y-2.5">
-              <p className="text-xs font-semibold text-amber-950">Responsibility Handover Requested</p>
-              <p className="text-xs text-zinc-600">The current responder has requested to transfer this case to you.</p>
-              {response.handover.reason && <p className="text-xs text-zinc-500 italic">"{response.handover.reason}"</p>}
+            <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-xl p-3.5 space-y-2.5">
+              <p className="text-xs font-semibold text-amber-950 dark:text-amber-200">Responsibility Handover Requested</p>
+              <p className="text-xs text-zinc-600 dark:text-[#B8B0A5]">The current responder has requested to transfer this case to you.</p>
+              {response.handover.reason && <p className="text-xs text-zinc-500 dark:text-[#7A7570] italic">"{response.handover.reason}"</p>}
               <div className="flex gap-2 pt-1">
                 <button
                   type="button"
                   onClick={() => handleAction(() => api.safetyAlerts.respondToAlertHandover(alertId, response.handover.id, { decision: 'accept' }), 'handover_decide', 'Handover accepted')}
-                  className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-medium py-1.5 rounded-lg text-xs"
+                  className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-medium py-1.5 rounded-lg text-xs cursor-pointer"
                 >
                   Accept Transfer
                 </button>
                 <button
                   type="button"
                   onClick={() => handleAction(() => api.safetyAlerts.respondToAlertHandover(alertId, response.handover.id, { decision: 'decline' }), 'handover_decide', 'Handover declined')}
-                  className="flex-1 bg-white hover:bg-zinc-50 text-zinc-700 border border-zinc-200 font-medium py-1.5 rounded-lg text-xs"
+                  className="flex-1 bg-white dark:bg-[#21211E] hover:bg-zinc-50 dark:hover:bg-[#262520] text-zinc-700 dark:text-[#F0EBE3] border border-zinc-200 dark:border-[#3A3835] font-medium py-1.5 rounded-lg text-xs cursor-pointer"
                 >
                   Decline
                 </button>
@@ -607,35 +607,35 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
           )}
 
           {/* Timeline */}
-          <div className="space-y-2 pt-2 border-t border-zinc-100">
-            <h4 className="text-xs font-semibold text-zinc-900 font-sans">Response timeline</h4>
+          <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-[#302E29]">
+            <h4 className="text-xs font-semibold text-zinc-900 dark:text-[#F0EBE3] font-sans">Response timeline</h4>
             {timeline.length > 0 ? (
               <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
                 {timeline.map((item: any, idx: number) => (
-                  <div key={item.id || idx} className="text-xs flex items-start gap-2.5 text-zinc-600">
-                    <span className="text-[11px] text-zinc-400 shrink-0 font-mono pt-0.5">
+                  <div key={item.id || idx} className="text-xs flex items-start gap-2.5 text-zinc-600 dark:text-[#B8B0A5]">
+                    <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] shrink-0 font-mono pt-0.5">
                       {formatTime(item.createdAt || item.timestamp || item.created_at)}
                     </span>
                     <div className="min-w-0">
-                      <span className="font-medium text-zinc-800">{item.actionName || item.action}</span>
-                      {item.actorName && <span className="text-zinc-400"> · {item.actorName}</span>}
-                      {item.note && <p className="text-[11px] text-zinc-500 italic mt-0.5">"{item.note}"</p>}
+                      <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">{item.actionName || item.action}</span>
+                      {item.actorName && <span className="text-zinc-400 dark:text-[#7A7570]"> · {item.actorName}</span>}
+                      {item.note && <p className="text-[11px] text-zinc-500 dark:text-[#B8B0A5] italic mt-0.5">"{item.note}"</p>}
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-zinc-400 font-sans">No additional response notes.</p>
+              <p className="text-xs text-zinc-400 dark:text-[#7A7570] font-sans">No additional response notes.</p>
             )}
           </div>
 
           {/* Actions */}
-          <div className="pt-4 border-t border-zinc-200/80 flex items-center justify-between gap-3">
+          <div className="pt-4 border-t border-zinc-200/80 dark:border-[#302E29] flex items-center justify-between gap-3">
             {onClose ? (
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-700 text-xs font-medium rounded-lg transition-colors cursor-pointer"
+                className="px-4 py-2 bg-white dark:bg-[#21211E] hover:bg-zinc-50 dark:hover:bg-[#262520] border border-zinc-200 dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] text-xs font-medium rounded-lg transition-colors cursor-pointer"
               >
                 Close
               </button>
@@ -645,7 +645,7 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
                 <button
                   type="button"
                   onClick={() => setShowUpdateSheet(true)}
-                  className="px-3.5 py-2 text-zinc-600 hover:text-zinc-900 text-xs font-medium transition-colors cursor-pointer"
+                  className="px-3.5 py-2 text-zinc-600 dark:text-[#B8B0A5] hover:text-zinc-900 dark:hover:text-[#F0EBE3] text-xs font-medium transition-colors cursor-pointer"
                 >
                   Add update
                 </button>
@@ -654,7 +654,7 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
                 <button
                   type="button"
                   onClick={() => setShowAssistanceSheet(true)}
-                  className="px-3.5 py-2 text-zinc-600 hover:text-zinc-900 text-xs font-medium transition-colors cursor-pointer"
+                  className="px-3.5 py-2 text-zinc-600 dark:text-[#B8B0A5] hover:text-zinc-900 dark:hover:text-[#F0EBE3] text-xs font-medium transition-colors cursor-pointer"
                 >
                   Request backup
                 </button>
@@ -663,7 +663,7 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
                 <button
                   type="button"
                   onClick={() => { handleSearchEligible(); setShowHandoverSheet(true); }}
-                  className="px-3.5 py-2 text-zinc-600 hover:text-zinc-900 text-xs font-medium transition-colors cursor-pointer"
+                  className="px-3.5 py-2 text-zinc-600 dark:text-[#B8B0A5] hover:text-zinc-900 dark:hover:text-[#F0EBE3] text-xs font-medium transition-colors cursor-pointer"
                 >
                   Hand over
                 </button>
@@ -672,7 +672,7 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
                 <button
                   type="button"
                   onClick={() => setShowResolveSheet(true)}
-                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer"
+                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer"
                 >
                   Resolve request
                 </button>
@@ -688,20 +688,20 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
       {isNeedsResponse && (
         <div className="space-y-4" data-component-version="needs-response-incident-summary-v2-premium">
           {/* Header */}
-          <div className="flex items-center justify-between pb-3 border-b border-zinc-200/80">
+          <div className="flex items-center justify-between pb-3 border-b border-zinc-200/80 dark:border-[#302E29]">
             <div className="space-y-0.5">
-              <h2 className="font-serif font-bold text-lg text-zinc-900 tracking-tight">Emergency Response</h2>
-              <p className="text-xs text-zinc-500 font-sans">Needs response</p>
+              <h2 className="font-serif font-bold text-lg text-zinc-900 dark:text-[#F0EBE3] tracking-tight">Emergency Response</h2>
+              <p className="text-xs text-zinc-500 dark:text-[#7A7570] font-sans">Needs response</p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-medium text-red-700 bg-red-50 border border-red-200 px-2.5 py-0.5 rounded-full">
+              <span className="text-[11px] font-medium text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/40 px-2.5 py-0.5 rounded-full">
                 Needs response
               </span>
               {onClose && (
                 <button
                   type="button"
                   onClick={onClose}
-                  className="text-zinc-400 hover:text-zinc-700 p-1 rounded-lg hover:bg-zinc-100 transition-colors cursor-pointer"
+                  className="text-zinc-400 dark:text-[#7A7570] hover:text-zinc-700 dark:hover:text-[#F0EBE3] p-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-[#262520] transition-colors cursor-pointer"
                   title="Close"
                   aria-label="Close"
                 >
@@ -713,15 +713,15 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
 
           {/* Incident title and location */}
           <div className="space-y-1">
-            <h3 className="font-serif font-bold text-base text-zinc-950">
+            <h3 className="font-serif font-bold text-base text-zinc-950 dark:text-[#F0EBE3]">
               {alert?.title || 'Safety Emergency'}
             </h3>
-            <p className="text-xs text-zinc-600 font-sans">
+            <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] font-sans">
               {locationLabel}
             </p>
             {alert?.raised_by_name && (
-              <p className="text-xs text-zinc-500 font-sans">
-                Raised by <strong className="text-zinc-800">{alert.raised_by_name}</strong>
+              <p className="text-xs text-zinc-500 dark:text-[#7A7570] font-sans">
+                Raised by <strong className="text-zinc-800 dark:text-[#F0EBE3]">{alert.raised_by_name}</strong>
                 {alert.volunteer_team && <span> ({alert.volunteer_team})</span>}
               </p>
             )}
@@ -729,16 +729,16 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
 
           {/* Child & Parent Details */}
           {childName && (
-            <div className="py-2.5 px-3.5 bg-white border border-zinc-200/80 rounded-xl flex items-center justify-between gap-3 text-xs">
+            <div className="py-2.5 px-3.5 bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-xl flex items-center justify-between gap-3 text-xs">
               <div>
-                <span className="font-medium text-zinc-900">{childName}</span>
-                {childAgeGroup && <span className="text-zinc-500"> ({childAgeGroup})</span>}
-                {parentName && <span className="text-zinc-500 block text-[11px]">Parent: {parentName}</span>}
+                <span className="font-medium text-zinc-900 dark:text-[#F0EBE3]">{childName}</span>
+                {childAgeGroup && <span className="text-zinc-500 dark:text-[#7A7570]"> ({childAgeGroup})</span>}
+                {parentName && <span className="text-zinc-500 dark:text-[#7A7570] block text-[11px]">Parent: {parentName}</span>}
               </div>
               {parentPhone && (
                 <a
                   href={`tel:${parentPhone}`}
-                  className="text-[11px] text-zinc-600 hover:text-zinc-900 border border-zinc-200 px-2.5 py-1 rounded-lg bg-zinc-50"
+                  className="text-[11px] text-zinc-600 dark:text-[#B8B0A5] hover:text-zinc-900 dark:hover:text-[#F0EBE3] border border-zinc-200 dark:border-[#3A3835] px-2.5 py-1 rounded-lg bg-zinc-50 dark:bg-[#262520]"
                 >
                   {parentPhone}
                 </a>
@@ -748,26 +748,26 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
 
           {/* Distress message */}
           {alert?.message && (
-            <div className="pl-3.5 border-l-2 border-red-500 py-1 text-left">
-              <p className="text-xs text-zinc-800 leading-relaxed font-sans">
+            <div className="pl-3.5 border-l-2 border-red-500 dark:border-red-500/60 py-1 text-left">
+              <p className="text-xs text-zinc-800 dark:text-[#F0EBE3] leading-relaxed font-sans">
                 “{alert.message}”
               </p>
             </div>
           )}
 
           {/* Responder section: calm and honest */}
-          <div className="p-3 bg-zinc-50 border border-zinc-200/80 rounded-xl text-xs text-zinc-600 font-sans">
-            <span className="font-medium text-zinc-800">Responder: </span>
+          <div className="p-3 bg-zinc-50 dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-xl text-xs text-zinc-600 dark:text-[#B8B0A5] font-sans">
+            <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">Responder: </span>
             <span>No responder yet</span>
           </div>
 
           {/* Actions */}
-          <div className="pt-4 border-t border-zinc-200/80 flex items-center justify-between gap-3">
+          <div className="pt-4 border-t border-zinc-200/80 dark:border-[#302E29] flex items-center justify-between gap-3">
             {onClose ? (
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-700 text-xs font-medium rounded-lg transition-colors cursor-pointer"
+                className="px-4 py-2 bg-white dark:bg-[#21211E] hover:bg-zinc-50 dark:hover:bg-[#262520] border border-zinc-200 dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] text-xs font-medium rounded-lg transition-colors cursor-pointer"
               >
                 Close
               </button>
@@ -792,28 +792,28 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
       {/* 1. ADD RESPONSE UPDATE SHEET */}
       <AnimatePresence>
         {showUpdateSheet && (
-          <div className="fixed inset-0 bg-[#18181B]/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+          <div className="fixed inset-0 bg-[#18181B]/40 dark:bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
             <motion.div 
               initial={{ y: 100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 100, opacity: 0 }}
-              className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto"
+              className="bg-white dark:bg-[#1D1D1A] border-t sm:border border-transparent sm:border-zinc-200 dark:border-[#302E29] w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto"
               data-view-version="add-response-update-sheet-v1-premium"
             >
-              <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-                <h3 className="font-serif font-bold text-sm text-[#18181B]">Add Response Update</h3>
-                <button onClick={() => setShowUpdateSheet(false)} className="text-zinc-400 hover:text-zinc-600 bg-transparent border-none cursor-pointer">
+              <div className="flex items-center justify-between border-b border-zinc-100 dark:border-[#302E29] pb-3">
+                <h3 className="font-serif font-bold text-sm text-[#18181B] dark:text-[#F0EBE3]">Add Response Update</h3>
+                <button onClick={() => setShowUpdateSheet(false)} className="text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#F0EBE3] bg-transparent border-none cursor-pointer">
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               <div className="space-y-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Update Type</label>
+                  <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Update Type</label>
                   <select 
                     value={updateType}
                     onChange={(e) => setUpdateType(e.target.value)}
-                    className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                    className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] focus:outline-hidden"
                   >
                     <option value="Team has arrived">Team has arrived</option>
                     <option value="Child located">Child located</option>
@@ -828,17 +828,17 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Note (Optional)</label>
+                  <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Note (Optional)</label>
                   <textarea 
                     value={updateNote}
                     onChange={(e) => setUpdateNote(e.target.value)}
                     placeholder="Provide optional structured details..."
-                    className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800 h-20 resize-none"
+                    className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] h-20 resize-none focus:outline-hidden"
                   />
                 </div>
 
                 <div className="space-y-1" data-component-version="response-update-visibility-ui-v1">
-                  <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">Visibility Scope</label>
+                  <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider block">Visibility Scope</label>
                   <div className="grid grid-cols-3 gap-2 mt-1">
                     {[
                       { key: 'response_team', label: 'Team Only', icon: Users },
@@ -850,8 +850,8 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
                         onClick={() => setUpdateVisibility(v.key)}
                         className={`flex flex-col items-center p-2.5 rounded-xl border text-center space-y-1 transition-all cursor-pointer ${
                           updateVisibility === v.key 
-                            ? 'border-[#C59B27] bg-[#C59B27]/5 text-[#C59B27]' 
-                            : 'border-[#EAE8E1] bg-[#FAF9F6] text-zinc-500'
+                            ? 'border-[#C59B27] bg-[#C59B27]/5 dark:bg-amber-950/20 text-[#C59B27] dark:text-amber-400'
+                            : 'border-[#EAE8E1] dark:border-[#302E29] bg-[#FAF9F6] dark:bg-[#262520] text-zinc-500 dark:text-[#7A7570]'
                         }`}
                       >
                         <v.icon className="w-4 h-4" />
@@ -884,28 +884,28 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
       {/* 2. REQUEST ASSISTANCE SHEET */}
       <AnimatePresence>
         {showAssistanceSheet && (
-          <div className="fixed inset-0 bg-[#18181B]/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+          <div className="fixed inset-0 bg-[#18181B]/40 dark:bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
             <motion.div 
               initial={{ y: 100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 100, opacity: 0 }}
-              className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto"
+              className="bg-white dark:bg-[#1D1D1A] border-t sm:border border-transparent sm:border-zinc-200 dark:border-[#302E29] w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto"
               data-view-version="request-response-assistance-sheet-v1"
             >
-              <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-                <h3 className="font-serif font-bold text-sm text-[#18181B]">Request Additional Support</h3>
-                <button onClick={() => setShowAssistanceSheet(false)} className="text-zinc-400 hover:text-zinc-600 bg-transparent border-none cursor-pointer">
+              <div className="flex items-center justify-between border-b border-zinc-100 dark:border-[#302E29] pb-3">
+                <h3 className="font-serif font-bold text-sm text-[#18181B] dark:text-[#F0EBE3]">Request Additional Support</h3>
+                <button onClick={() => setShowAssistanceSheet(false)} className="text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#F0EBE3] bg-transparent border-none cursor-pointer">
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               <div className="space-y-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Required Team</label>
+                  <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Required Team</label>
                   <select 
                     value={assistanceTeamKey}
                     onChange={(e) => setAssistanceTeamKey(e.target.value)}
-                    className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                    className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] focus:outline-hidden"
                   >
                     <option value="first_aid">First Aid / Medical</option>
                     <option value="security">Security Team</option>
@@ -916,12 +916,12 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Note / Assistance Reason</label>
+                  <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Note / Assistance Reason</label>
                   <textarea 
                     value={assistanceNote}
                     onChange={(e) => setAssistanceNote(e.target.value)}
                     placeholder="Explain why backup support is required..."
-                    className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800 h-20 resize-none"
+                    className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] h-20 resize-none focus:outline-hidden"
                   />
                 </div>
 
@@ -947,36 +947,36 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
       {/* 3. REQUEST HANDOVER SHEET */}
       <AnimatePresence>
         {showHandoverSheet && (
-          <div className="fixed inset-0 bg-[#18181B]/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+          <div className="fixed inset-0 bg-[#18181B]/40 dark:bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
             <motion.div 
               initial={{ y: 100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 100, opacity: 0 }}
-              className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto"
+              className="bg-white dark:bg-[#1D1D1A] border-t sm:border border-transparent sm:border-zinc-200 dark:border-[#302E29] w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto"
               data-view-version="alert-response-handover-sheet-v1-premium"
             >
-              <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-                <h3 className="font-serif font-bold text-sm text-[#18181B]">Hand Over Case Responsibility</h3>
-                <button onClick={() => setShowHandoverSheet(false)} className="text-zinc-400 hover:text-zinc-600 bg-transparent border-none cursor-pointer">
+              <div className="flex items-center justify-between border-b border-zinc-100 dark:border-[#302E29] pb-3">
+                <h3 className="font-serif font-bold text-sm text-[#18181B] dark:text-[#F0EBE3]">Hand Over Case Responsibility</h3>
+                <button onClick={() => setShowHandoverSheet(false)} className="text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#F0EBE3] bg-transparent border-none cursor-pointer">
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               <div className="space-y-4" data-component-version="response-handover-request-ui-v2">
                 <div className="space-y-1">
-                  <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">Find Eligible Target Responder</label>
+                  <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider block">Find Eligible Target Responder</label>
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search approved teammates..."
-                    className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                    className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] focus:outline-hidden"
                   />
                   
-                  {searchingResponders && <p className="text-[10px] text-zinc-400">Searching active duty roster...</p>}
+                  {searchingResponders && <p className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Searching active duty roster...</p>}
                   
                   {eligibleResponders.length > 0 && (
-                    <div className="border border-[#EAE8E1] rounded-xl max-h-32 overflow-y-auto bg-white shadow-2xs mt-1 divide-y divide-zinc-100">
+                    <div className="border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl max-h-32 overflow-y-auto bg-white dark:bg-[#21211E] shadow-2xs mt-1 divide-y divide-zinc-100 dark:divide-[#302E29]">
                       {eligibleResponders.map((r: any) => (
                         <button
                           key={r.id}
@@ -985,13 +985,13 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
                             setSearchQuery(r.fullName || r.full_name || 'Selected');
                             setEligibleResponders([]);
                           }}
-                          className="w-full text-left p-2.5 hover:bg-zinc-50 text-xs flex justify-between items-center cursor-pointer border-none bg-transparent"
+                          className="w-full text-left p-2.5 hover:bg-zinc-50 dark:hover:bg-[#262520] text-xs flex justify-between items-center cursor-pointer border-none bg-transparent"
                         >
                           <div>
-                            <p className="font-semibold text-zinc-800">{r.fullName || r.full_name}</p>
-                            <p className="text-[10px] text-zinc-400">{r.preferredTeam || r.assignedTeam || 'Active Responder'}</p>
+                            <p className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">{r.fullName || r.full_name}</p>
+                            <p className="text-[10px] text-zinc-400 dark:text-[#7A7570]">{r.preferredTeam || r.assignedTeam || 'Active Responder'}</p>
                           </div>
-                          <ChevronRight className="w-3.5 h-3.5 text-zinc-300" />
+                          <ChevronRight className="w-3.5 h-3.5 text-zinc-300 dark:text-[#7A7570]" />
                         </button>
                       ))}
                     </div>
@@ -999,11 +999,11 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Transfer Reason</label>
+                  <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Transfer Reason</label>
                   <select 
                     value={handoverReason}
                     onChange={(e) => setHandoverReason(e.target.value)}
-                    className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                    className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] focus:outline-hidden"
                   >
                     <option value="Shift ending">Shift ending</option>
                     <option value="Leaving duty area">Leaving duty area</option>
@@ -1015,12 +1015,12 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Transfer Note (Optional)</label>
+                  <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Transfer Note (Optional)</label>
                   <textarea 
                     value={handoverNote}
                     onChange={(e) => setHandoverNote(e.target.value)}
                     placeholder="Add brief details to pass over to the target responder..."
-                    className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800 h-16 resize-none"
+                    className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] h-16 resize-none focus:outline-hidden"
                   />
                 </div>
 
@@ -1053,36 +1053,36 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
       {/* 4. ADMIN RESPONSE REASSIGNMENT SHEET */}
       <AnimatePresence>
         {showReassignmentSheet && (
-          <div className="fixed inset-0 bg-[#18181B]/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+          <div className="fixed inset-0 bg-[#18181B]/40 dark:bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
             <motion.div 
               initial={{ y: 100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 100, opacity: 0 }}
-              className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto"
+              className="bg-white dark:bg-[#1D1D1A] border-t sm:border border-transparent sm:border-zinc-200 dark:border-[#302E29] w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto"
               data-view-version="admin-response-reassignment-sheet-v1"
             >
-              <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-                <h3 className="font-serif font-bold text-sm text-[#18181B]">Admin Reassign Responder</h3>
-                <button onClick={() => setShowReassignmentSheet(false)} className="text-zinc-400 hover:text-zinc-600 bg-transparent border-none cursor-pointer">
+              <div className="flex items-center justify-between border-b border-zinc-100 dark:border-[#302E29] pb-3">
+                <h3 className="font-serif font-bold text-sm text-[#18181B] dark:text-[#F0EBE3]">Admin Reassign Responder</h3>
+                <button onClick={() => setShowReassignmentSheet(false)} className="text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#F0EBE3] bg-transparent border-none cursor-pointer">
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               <div className="space-y-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">Find Target Lead Responder</label>
+                  <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider block">Find Target Lead Responder</label>
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search approved active teammates..."
-                    className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                    className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] focus:outline-hidden"
                   />
                   
-                  {searchingResponders && <p className="text-[10px] text-zinc-400">Searching active duty roster...</p>}
+                  {searchingResponders && <p className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Searching active duty roster...</p>}
                   
                   {eligibleResponders.length > 0 && (
-                    <div className="border border-[#EAE8E1] rounded-xl max-h-32 overflow-y-auto bg-white shadow-2xs mt-1 divide-y divide-zinc-100">
+                    <div className="border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl max-h-32 overflow-y-auto bg-white dark:bg-[#21211E] shadow-2xs mt-1 divide-y divide-zinc-100 dark:divide-[#302E29]">
                       {eligibleResponders.map((r: any) => (
                         <button
                           key={r.id}
@@ -1091,13 +1091,13 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
                             setSearchQuery(r.fullName || r.full_name || 'Selected');
                             setEligibleResponders([]);
                           }}
-                          className="w-full text-left p-2.5 hover:bg-zinc-50 text-xs flex justify-between items-center cursor-pointer border-none bg-transparent"
+                          className="w-full text-left p-2.5 hover:bg-zinc-50 dark:hover:bg-[#262520] text-xs flex justify-between items-center cursor-pointer border-none bg-transparent"
                         >
                           <div>
-                            <p className="font-semibold text-zinc-800">{r.fullName || r.full_name}</p>
-                            <p className="text-[10px] text-zinc-400">{r.preferredTeam || r.assignedTeam || 'Active Responder'}</p>
+                            <p className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">{r.fullName || r.full_name}</p>
+                            <p className="text-[10px] text-zinc-400 dark:text-[#7A7570]">{r.preferredTeam || r.assignedTeam || 'Active Responder'}</p>
                           </div>
-                          <ChevronRight className="w-3.5 h-3.5 text-zinc-300" />
+                          <ChevronRight className="w-3.5 h-3.5 text-zinc-300 dark:text-[#7A7570]" />
                         </button>
                       ))}
                     </div>
@@ -1105,13 +1105,13 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Reason for Reassignment</label>
+                  <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Reason for Reassignment</label>
                   <input 
                     type="text"
                     value={reassignReason}
                     onChange={(e) => setReassignReason(e.target.value)}
                     placeholder="e.g., Unresponsive on duty, shift ending..."
-                    className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                    className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] focus:outline-hidden"
                   />
                 </div>
 
@@ -1147,28 +1147,28 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
       {/* 5. RESOLVE ALERT SHEET */}
       <AnimatePresence>
         {showResolveSheet && (
-          <div className="fixed inset-0 bg-[#18181B]/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+          <div className="fixed inset-0 bg-[#18181B]/40 dark:bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
             <motion.div 
               initial={{ y: 100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 100, opacity: 0 }}
-              className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto"
+              className="bg-white dark:bg-[#1D1D1A] border-t sm:border border-transparent sm:border-zinc-200 dark:border-[#302E29] w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto"
               data-view-version="resolve-alert-response-sheet-v2-premium"
             >
-              <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-                <h3 className="font-serif font-bold text-sm text-[#18181B]">Resolve Security Alert</h3>
-                <button onClick={() => setShowResolveSheet(false)} className="text-zinc-400 hover:text-zinc-600 bg-transparent border-none cursor-pointer">
+              <div className="flex items-center justify-between border-b border-zinc-100 dark:border-[#302E29] pb-3">
+                <h3 className="font-serif font-bold text-sm text-[#18181B] dark:text-[#F0EBE3]">Resolve Security Alert</h3>
+                <button onClick={() => setShowResolveSheet(false)} className="text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#F0EBE3] bg-transparent border-none cursor-pointer">
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               <div className="space-y-4" data-component-version="resolve-alert-response-ui-v3">
                 <div className="space-y-1">
-                  <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Resolution Outcome</label>
+                  <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Resolution Outcome</label>
                   <select 
                     value={resolveOutcome}
                     onChange={(e) => setResolveOutcome(e.target.value)}
-                    className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800"
+                    className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] focus:outline-hidden"
                   >
                     <option value="Child assisted">Child assisted</option>
                     <option value="Child located safely">Child located safely</option>
@@ -1182,25 +1182,25 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Resolution Summary (Required)</label>
+                  <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Resolution Summary (Required)</label>
                   <textarea 
                     value={resolveNote}
                     onChange={(e) => setResolveNote(e.target.value)}
                     placeholder="Summarize exact assessment, actions, or pickup verification findings..."
-                    className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800 h-24 resize-none"
+                    className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] h-24 resize-none focus:outline-hidden"
                   />
                 </div>
 
-                <div className="flex items-center justify-between p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl">
+                <div className="flex items-center justify-between p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl">
                   <div className="space-y-0.5">
-                    <span className="text-xs font-semibold text-zinc-800 block">Follow-up Required</span>
-                    <span className="text-[10px] text-zinc-400 block">Requires supervisor monitoring</span>
+                    <span className="text-xs font-semibold text-zinc-800 dark:text-[#F0EBE3] block">Follow-up Required</span>
+                    <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block">Requires supervisor monitoring</span>
                   </div>
                   <input
                     type="checkbox"
                     checked={resolveFollowUp}
                     onChange={(e) => setResolveFollowUp(e.target.checked)}
-                    className="w-4 h-4 text-[#C59B27] border-zinc-300 rounded-sm focus:ring-[#C59B27] cursor-pointer"
+                    className="w-4 h-4 text-[#C59B27] border-zinc-300 dark:border-[#3A3835] rounded-sm focus:ring-[#C59B27] cursor-pointer"
                   />
                 </div>
 
@@ -1231,29 +1231,29 @@ export const ActiveResponseCoordinationPanel: React.FC<ActiveResponseCoordinatio
       {/* 6. REOPEN ALERT SHEET */}
       <AnimatePresence>
         {showReopenSheet && (
-          <div className="fixed inset-0 bg-[#18181B]/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+          <div className="fixed inset-0 bg-[#18181B]/40 dark:bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
             <motion.div 
               initial={{ y: 100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 100, opacity: 0 }}
-              className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto"
+              className="bg-white dark:bg-[#1D1D1A] border-t sm:border border-transparent sm:border-zinc-200 dark:border-[#302E29] w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto"
               data-view-version="reopen-alert-response-sheet-v1"
             >
-              <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-                <h3 className="font-serif font-bold text-sm text-[#18181B]">Reopen Closed Request</h3>
-                <button onClick={() => setShowReopenSheet(false)} className="text-zinc-400 hover:text-zinc-600 bg-transparent border-none cursor-pointer">
+              <div className="flex items-center justify-between border-b border-zinc-100 dark:border-[#302E29] pb-3">
+                <h3 className="font-serif font-bold text-sm text-[#18181B] dark:text-[#F0EBE3]">Reopen Closed Request</h3>
+                <button onClick={() => setShowReopenSheet(false)} className="text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#F0EBE3] bg-transparent border-none cursor-pointer">
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               <div className="space-y-4" data-component-version="reopen-alert-response-ui-v1">
                 <div className="space-y-1">
-                  <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Reason for Reopening</label>
+                  <label className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-bold uppercase tracking-wider">Reason for Reopening</label>
                   <textarea 
                     value={reopenReason}
                     onChange={(e) => setReopenReason(e.target.value)}
                     placeholder="Provide reason for reopening this concern..."
-                    className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-800 h-20 resize-none"
+                    className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 text-xs text-zinc-800 dark:text-[#F0EBE3] h-20 resize-none focus:outline-hidden"
                   />
                 </div>
 

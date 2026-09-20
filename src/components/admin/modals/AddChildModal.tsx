@@ -167,22 +167,22 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-2xl rounded-3xl border border-[#EAE8E1] shadow-xl overflow-hidden my-8">
+      <div className="bg-white dark:bg-[#21211E] w-full max-w-2xl rounded-3xl border border-[#EAE8E1] dark:border-[#302E29] shadow-xl overflow-hidden my-8">
         
         {/* Header */}
-        <div className="p-6 border-b border-[#EAE8E1] flex items-center justify-between bg-[#FAF8F4]">
+        <div className="p-6 border-b border-[#EAE8E1] dark:border-[#302E29] flex items-center justify-between bg-[#FAF8F4] dark:bg-[#1D1D1A]">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-[#C59B27]">
+            <div className="w-10 h-10 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/40 flex items-center justify-center text-[#C59B27] dark:text-amber-400">
               <Baby className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-serif text-lg font-bold text-[#18181B]">Add Child Record</h3>
-              <p className="text-xs text-zinc-500">Link a child to a parent profile and configure attendance settings.</p>
+              <h3 className="font-serif text-lg font-bold text-[#18181B] dark:text-[#F0EBE3]">Add Child Record</h3>
+              <p className="text-xs text-zinc-500 dark:text-[#7A7570]">Link a child to a parent profile and configure attendance settings.</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-zinc-400 hover:text-zinc-600 p-2 rounded-xl transition-colors cursor-pointer"
+            className="text-zinc-400 hover:text-zinc-600 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] p-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-[#262520] transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -193,22 +193,22 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
           
           {/* SECTION 1: Parent Selection */}
           <div className="space-y-3">
-            <h4 className="text-xs font-bold text-[#C59B27] uppercase tracking-wider pb-1 border-b border-amber-100">
+            <h4 className="text-xs font-bold text-[#C59B27] dark:text-amber-400 uppercase tracking-wider pb-1 border-b border-amber-100 dark:border-amber-900/30">
               1. Parent / Guardian Link
             </h4>
 
             {selectedParent ? (
-              <div className="p-3.5 bg-amber-50/70 rounded-2xl border border-amber-200 flex items-center justify-between">
+              <div className="p-3.5 bg-amber-50/70 dark:bg-amber-950/20 rounded-2xl border border-amber-200 dark:border-amber-900/40 flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block">Linked Parent</span>
-                  <span className="text-sm font-bold text-zinc-900 block">{selectedParent.fullName}</span>
-                  {selectedParent.phone && <span className="text-xs text-zinc-500">{selectedParent.phone}</span>}
+                  <span className="text-[10px] font-bold text-amber-800 dark:text-amber-400 uppercase tracking-wider block">Linked Parent</span>
+                  <span className="text-sm font-bold text-zinc-900 dark:text-[#F0EBE3] block">{selectedParent.fullName}</span>
+                  {selectedParent.phone && <span className="text-xs text-zinc-500 dark:text-[#7A7570]">{selectedParent.phone}</span>}
                 </div>
                 {!preselectedParentId && (
                   <button
                     type="button"
                     onClick={() => setSelectedParent(null)}
-                    className="text-xs text-amber-900 hover:underline font-semibold"
+                    className="text-xs text-amber-900 dark:text-amber-400 hover:underline font-semibold"
                   >
                     Change Parent
                   </button>
@@ -216,7 +216,7 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
               </div>
             ) : (
               <div className="space-y-2">
-                <label className="text-xs font-semibold text-zinc-700 block">
+                <label className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] block">
                   Search Parent by Name, Email or Phone <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
@@ -225,13 +225,13 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
                     value={parentSearch}
                     onChange={(e) => handleSearchParents(e.target.value)}
                     placeholder="Type parent name, email or phone..."
-                    className="w-full pl-9 pr-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white focus:ring-2 focus:ring-amber-100 focus:border-[#C59B27]"
+                    className="w-full pl-9 pr-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:bg-white dark:focus:bg-[#2A2926] focus:ring-2 focus:ring-amber-100 dark:focus:ring-amber-900/30 focus:border-[#C59B27]"
                   />
-                  <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-3" />
+                  <Search className="w-4 h-4 text-zinc-400 dark:text-[#7A7570] absolute left-3 top-3" />
                 </div>
 
                 {parentResults.length > 0 && (
-                  <div className="border border-[#EAE8E1] rounded-2xl bg-white divide-y divide-[#EAE8E1] max-h-40 overflow-y-auto shadow-sm">
+                  <div className="border border-[#EAE8E1] dark:border-[#3A3835] rounded-2xl bg-white dark:bg-[#21211E] divide-y divide-[#EAE8E1] dark:divide-[#302E29] max-h-40 overflow-y-auto shadow-sm">
                     {parentResults.map((p) => (
                       <button
                         key={p.id}
@@ -244,13 +244,13 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
                             if (parts.length > 1) setLastName(parts[parts.length - 1]);
                           }
                         }}
-                        className="w-full text-left p-3 hover:bg-amber-50/50 transition-colors flex items-center justify-between text-xs"
+                        className="w-full text-left p-3 hover:bg-amber-50/50 dark:hover:bg-[#2A2926] transition-colors flex items-center justify-between text-xs"
                       >
                         <div>
-                          <span className="font-bold text-zinc-900 block">{p.fullName}</span>
-                          <span className="text-zinc-500">{p.email} · {p.phone || 'No phone'}</span>
+                          <span className="font-bold text-zinc-900 dark:text-[#F0EBE3] block">{p.fullName}</span>
+                          <span className="text-zinc-500 dark:text-[#7A7570]">{p.email} · {p.phone || 'No phone'}</span>
                         </div>
-                        <span className="text-[#C59B27] font-semibold">Select</span>
+                        <span className="text-[#C59B27] dark:text-amber-400 font-semibold">Select</span>
                       </button>
                     ))}
                   </div>
@@ -261,13 +261,13 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
 
           {/* SECTION 2: Child Personal Information */}
           <div className="space-y-3">
-            <h4 className="text-xs font-bold text-[#C59B27] uppercase tracking-wider pb-1 border-b border-amber-100">
+            <h4 className="text-xs font-bold text-[#C59B27] dark:text-amber-400 uppercase tracking-wider pb-1 border-b border-amber-100 dark:border-amber-900/30">
               2. Child Details
             </h4>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="text-xs font-semibold text-zinc-700 block mb-1">
+                <label className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] block mb-1">
                   First Name <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -277,12 +277,12 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
                   onChange={(e) => setFirstName(e.target.value)}
                   onBlur={handleCheckDuplicate}
                   placeholder="e.g. Samuel"
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:bg-white dark:focus:bg-[#2A2926] focus:outline-none focus:border-[#C59B27]"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-zinc-700 block mb-1">
+                <label className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] block mb-1">
                   Last Name <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -292,39 +292,39 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
                   onChange={(e) => setLastName(e.target.value)}
                   onBlur={handleCheckDuplicate}
                   placeholder="e.g. Adebayo"
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:bg-white dark:focus:bg-[#2A2926] focus:outline-none focus:border-[#C59B27]"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-zinc-700 block mb-1">Preferred Name</label>
+                <label className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] block mb-1">Preferred Name</label>
                 <input
                   type="text"
                   value={preferredName}
                   onChange={(e) => setPreferredName(e.target.value)}
                   placeholder="e.g. Sammy"
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:bg-white dark:focus:bg-[#2A2926] focus:outline-none focus:border-[#C59B27]"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="text-xs font-semibold text-zinc-700 block mb-1">Date of Birth</label>
+                <label className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] block mb-1">Date of Birth</label>
                 <input
                   type="date"
                   value={dateOfBirth}
                   onChange={(e) => setDateOfBirth(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] focus:bg-white dark:focus:bg-[#2A2926] focus:outline-none focus:border-[#C59B27]"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-zinc-700 block mb-1">Gender</label>
+                <label className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] block mb-1">Gender</label>
                 <select
                   value={gender}
                   onChange={(e: any) => setGender(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] focus:bg-white dark:focus:bg-[#2A2926] focus:outline-none focus:border-[#C59B27]"
                 >
                   <option value="">Select gender</option>
                   <option value="boy">Boy</option>
@@ -333,11 +333,11 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-zinc-700 block mb-1">Age Group / Class</label>
+                <label className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] block mb-1">Age Group / Class</label>
                 <select
                   value={ageGroup}
                   onChange={(e) => setAgeGroup(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] focus:bg-white dark:focus:bg-[#2A2926] focus:outline-none focus:border-[#C59B27]"
                 >
                   <option value="">Auto-assign or select</option>
                   <option value="Toddlers (1-3)">Toddlers (1-3)</option>
@@ -350,24 +350,24 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-semibold text-zinc-700 block mb-1">Allergies & Medical Notes</label>
+                <label className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] block mb-1">Allergies & Medical Notes</label>
                 <input
                   type="text"
                   value={allergies}
                   onChange={(e) => setAllergies(e.target.value)}
                   placeholder="e.g. Nuts, Dairy, Asthma"
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:bg-white dark:focus:bg-[#2A2926] focus:outline-none focus:border-[#C59B27]"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-zinc-700 block mb-1">Special Needs / Care Instructions</label>
+                <label className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] block mb-1">Special Needs / Care Instructions</label>
                 <input
                   type="text"
                   value={specialNeeds}
                   onChange={(e) => setSpecialNeeds(e.target.value)}
                   placeholder="e.g. Needs quiet environment during worship"
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] bg-zinc-50 focus:bg-white"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:bg-white dark:focus:bg-[#2A2926] focus:outline-none focus:border-[#C59B27]"
                 />
               </div>
             </div>
@@ -375,14 +375,14 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
 
           {/* SECTION 3: Authorized Pickup Persons */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between pb-1 border-b border-amber-100">
-              <h4 className="text-xs font-bold text-[#C59B27] uppercase tracking-wider">
+            <div className="flex items-center justify-between pb-1 border-b border-amber-100 dark:border-amber-900/30">
+              <h4 className="text-xs font-bold text-[#C59B27] dark:text-amber-400 uppercase tracking-wider">
                 3. Authorized Pickup Persons
               </h4>
               <button
                 type="button"
                 onClick={addPickupRow}
-                className="text-xs text-[#C59B27] hover:underline font-semibold flex items-center space-x-1"
+                className="text-xs text-[#C59B27] dark:text-amber-400 hover:underline font-semibold flex items-center space-x-1"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add Pickup Person</span>
@@ -390,20 +390,20 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
             </div>
 
             {authorizedPickups.map((pickup, idx) => (
-              <div key={idx} className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center bg-zinc-50 p-2.5 rounded-xl border border-[#EAE8E1]">
+              <div key={idx} className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center bg-zinc-50 dark:bg-[#262520] p-2.5 rounded-xl border border-[#EAE8E1] dark:border-[#302E29]">
                 <input
                   type="text"
                   value={pickup.fullName}
                   onChange={(e) => updatePickupRow(idx, 'fullName', e.target.value)}
                   placeholder="Full Name"
-                  className="px-3 py-1.5 text-xs rounded-lg border border-[#EAE8E1] bg-white"
+                  className="px-3 py-1.5 text-xs rounded-lg border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#1D1D1A] text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570]"
                 />
                 <input
                   type="tel"
                   value={pickup.phone}
                   onChange={(e) => updatePickupRow(idx, 'phone', e.target.value)}
                   placeholder="Phone Number"
-                  className="px-3 py-1.5 text-xs rounded-lg border border-[#EAE8E1] bg-white"
+                  className="px-3 py-1.5 text-xs rounded-lg border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#1D1D1A] text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570]"
                 />
                 <div className="flex items-center space-x-2">
                   <input
@@ -411,13 +411,13 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
                     value={pickup.relationship}
                     onChange={(e) => updatePickupRow(idx, 'relationship', e.target.value)}
                     placeholder="Relationship (e.g. Uncle)"
-                    className="w-full px-3 py-1.5 text-xs rounded-lg border border-[#EAE8E1] bg-white"
+                    className="w-full px-3 py-1.5 text-xs rounded-lg border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#1D1D1A] text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570]"
                   />
                   {authorizedPickups.length > 1 && (
                     <button
                       type="button"
                       onClick={() => removePickupRow(idx)}
-                      className="text-zinc-400 hover:text-red-600 p-1"
+                      className="text-zinc-400 hover:text-red-600 dark:text-[#7A7570] dark:hover:text-red-400 p-1"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -428,7 +428,7 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
           </div>
 
           {/* SECTION 4: Event Registration & Consents */}
-          <div className="space-y-3 bg-amber-50/50 p-4 rounded-2xl border border-amber-100">
+          <div className="space-y-3 bg-amber-50/50 dark:bg-amber-950/20 p-4 rounded-2xl border border-amber-100 dark:border-amber-900/40">
             <label className="flex items-center space-x-3 cursor-pointer">
               <input
                 type="checkbox"
@@ -436,12 +436,12 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
                 onChange={(e) => setRegisterForCurrentEvent(e.target.checked)}
                 className="w-4 h-4 text-[#C59B27] rounded focus:ring-[#C59B27]"
               />
-              <span className="text-xs font-bold text-zinc-900">
+              <span className="text-xs font-bold text-zinc-900 dark:text-[#F0EBE3]">
                 Register for current Koinonia Children & Teens event immediately
               </span>
             </label>
 
-            <div className="flex items-center space-x-6 text-xs text-zinc-700 pt-1">
+            <div className="flex items-center space-x-6 text-xs text-zinc-700 dark:text-[#B8B0A5] pt-1">
               <label className="flex items-center space-x-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -466,12 +466,12 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
 
           {/* DUPLICATE WARNING */}
           {duplicateMatch && (
-            <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 space-y-2 text-xs">
+            <div className="p-4 bg-amber-50 dark:bg-amber-950/20 rounded-2xl border border-amber-200 dark:border-amber-900/40 text-amber-900 dark:text-amber-300 space-y-2 text-xs">
               <div className="flex items-start space-x-2">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                 <span>{duplicateMatch.message}</span>
               </div>
-              <label className="flex items-center space-x-2 font-semibold text-amber-950 cursor-pointer pt-1">
+              <label className="flex items-center space-x-2 font-semibold text-amber-950 dark:text-amber-200 cursor-pointer pt-1">
                 <input
                   type="checkbox"
                   checked={overrideDuplicate}
@@ -484,7 +484,7 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
           )}
 
           {/* Action Buttons */}
-          <div className="pt-4 border-t border-[#EAE8E1] flex items-center justify-end space-x-3">
+          <div className="pt-4 border-t border-[#EAE8E1] dark:border-[#302E29] flex items-center justify-end space-x-3">
             <Button
               type="button"
               variant="secondary"
@@ -502,7 +502,6 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
               Save Child Record
             </Button>
           </div>
-
         </form>
       </div>
     </div>

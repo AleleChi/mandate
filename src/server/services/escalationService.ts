@@ -319,22 +319,33 @@ export async function startEscalationCycle(params: {
 }) {
   const { eventId, subjectType, alertId, incidentId, followUpId, conditionKey } = params;
 
-  // Check if an active cycle already exists for this subject + condition
+  // Guard: only start a new cycle if NO active or completed cycle already exists
+  // for this subject + condition. A new cycle is permitted only if all prior cycles
+  // were explicitly cancelled (e.g., alert reopened, manual re-trigger).
+  // This prevents the 10-second scheduler from creating duplicate cycles on every tick.
   let existingCycle;
   if (alertId) {
     existingCycle = await queryOne(`
       SELECT id FROM escalation_cycles 
-      WHERE alert_id = ? AND condition_key = ? AND status IN ('scheduled', 'processing')
+      WHERE alert_id = ? AND condition_key = ? AND status != 'cancelled'
+      ORDER BY created_at DESC LIMIT 1
     `, [alertId, conditionKey]);
   } else if (incidentId) {
     existingCycle = await queryOne(`
-      SELECT id FROM escalation_cycles 
-      WHERE incident_id = ? AND condition_key = ? AND status IN ('scheduled', 'processing')
+      SELECT id FROM escalation_cycles
+      WHERE incident_id = ? AND condition_key = ? AND status != 'cancelled'
+      ORDER BY created_at DESC LIMIT 1
     `, [incidentId, conditionKey]);
+  } else if (followUpId) {
+    existingCycle = await queryOne(`
+      SELECT id FROM escalation_cycles
+      WHERE follow_up_id = ? AND condition_key = ? AND status != 'cancelled'
+      ORDER BY created_at DESC LIMIT 1
+    `, [followUpId, conditionKey]);
   }
 
   if (existingCycle) {
-    return; // Already has an active escalation cycle
+    return; // Escalation already ran or is running for this alert+condition — do not re-trigger
   }
 
   // Get alert details for matching if applicable

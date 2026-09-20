@@ -109,11 +109,11 @@ export default function ResponseCoverageRow({
   const isRoutingIssue = item.coverageStatus === 'Routing issue';
 
   // Severity styling
-  let severityBadgeClass = 'bg-stone-100 text-stone-700 border-stone-200';
-  if (item.severity === 'Critical') severityBadgeClass = 'bg-rose-50 text-rose-800 border-rose-200/80';
-  else if (item.severity === 'High') severityBadgeClass = 'bg-orange-50 text-orange-800 border-orange-200/80';
-  else if (item.severity === 'Medium') severityBadgeClass = 'bg-amber-50 text-amber-800 border-amber-200/80';
-  else if (item.severity === 'Low') severityBadgeClass = 'bg-emerald-50 text-emerald-800 border-emerald-200/80';
+  let severityBadgeClass = 'bg-stone-100 dark:bg-[#262520] text-stone-700 dark:text-[#B8B0A5] border-stone-200 dark:border-[#302E29]';
+  if (item.severity === 'Critical') severityBadgeClass = 'bg-rose-50 dark:bg-rose-950/30 text-rose-800 dark:text-rose-400 border-rose-200/80 dark:border-rose-800/40';
+  else if (item.severity === 'High') severityBadgeClass = 'bg-orange-50 dark:bg-orange-950/30 text-orange-800 dark:text-orange-400 border-orange-200/80 dark:border-orange-800/40';
+  else if (item.severity === 'Medium') severityBadgeClass = 'bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border-amber-200/80 dark:border-amber-800/40';
+  else if (item.severity === 'Low') severityBadgeClass = 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400 border-emerald-200/80 dark:border-emerald-800/40';
 
   // Expected roles
   const visibleRoles = item.expectedRoles.slice(0, 2);
@@ -164,25 +164,25 @@ export default function ResponseCoverageRow({
   return (
     <>
       <tr 
-        className={`group transition-colors border-b border-stone-100 ${
-          isExpanded ? 'bg-amber-50/20' : 'hover:bg-stone-50/60 bg-white'
+        className={`group transition-colors border-b border-stone-100 dark:border-[#302E29] ${
+          isExpanded ? 'bg-amber-50/20 dark:bg-amber-950/20' : 'hover:bg-stone-50/60 dark:hover:bg-[#262520] bg-white dark:bg-[#1D1D1A]'
         }`}
       >
         {/* 1. Alert Type (220-250px) */}
         <td className="p-4 align-top w-60 min-w-[220px]">
           <div className="space-y-1.5">
-            <span className="font-serif font-semibold text-stone-900 text-sm leading-tight block">
+            <span className="font-serif font-semibold text-stone-900 dark:text-[#F0EBE3] text-sm leading-tight block">
               {item.name}
             </span>
             <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
               <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-semibold border ${severityBadgeClass}`}>
                 {item.severity}
               </span>
-              <span className="text-[10px] font-mono text-stone-400 uppercase tracking-wide">
+              <span className="text-[10px] font-mono text-stone-400 dark:text-[#7A7570] uppercase tracking-wide">
                 {item.categoryKey}
               </span>
             </div>
-            <p className="text-[11px] text-stone-500 leading-snug">
+            <p className="text-[11px] text-stone-500 dark:text-[#7A7570] leading-snug">
               Applies across all event locations
             </p>
           </div>
@@ -191,14 +191,14 @@ export default function ResponseCoverageRow({
         {/* 2. Expected Roles (180-220px) */}
         <td className="p-4 align-top w-52 min-w-[180px]">
           <div className="space-y-1.5">
-            <span className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-wider block">
+            <span className="text-[10px] font-mono font-bold text-stone-400 dark:text-[#7A7570] uppercase tracking-wider block">
               Expected roles
             </span>
             <div className="flex flex-col gap-1">
               {visibleRoles.map((role, idx) => (
                 <span 
                   key={idx} 
-                  className="bg-stone-100 border border-stone-200/80 text-stone-800 text-[11px] font-medium px-2.5 py-1 rounded-lg inline-flex items-center space-x-1 w-fit"
+                  className="bg-stone-100 dark:bg-[#262520] border border-stone-200/80 dark:border-[#302E29] text-stone-800 dark:text-[#F0EBE3] text-[11px] font-medium px-2.5 py-1 rounded-lg inline-flex items-center space-x-1 w-fit"
                 >
                   <span>{formatRoleName(role)}</span>
                 </span>
@@ -207,16 +207,16 @@ export default function ResponseCoverageRow({
                 <div className="relative">
                   <button
                     onClick={() => setShowRolePopover(!showRolePopover)}
-                    className="text-[10px] font-bold text-[#C59B27] hover:text-[#A47F1E] hover:underline cursor-pointer transition-colors"
+                    className="text-[10px] font-bold text-[#C59B27] dark:text-amber-400 hover:text-[#A47F1E] dark:hover:text-amber-300 hover:underline cursor-pointer transition-colors"
                   >
                     +{hiddenRolesCount} more role{hiddenRolesCount > 1 ? 's' : ''}
                   </button>
 
                   {showRolePopover && (
-                    <div className="absolute left-0 top-full mt-1 z-30 bg-white border border-stone-200 rounded-xl p-3 shadow-lg w-48 space-y-1 animate-fade-in">
-                      <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider block">All Expected Roles</span>
+                    <div className="absolute left-0 top-full mt-1 z-30 bg-white dark:bg-[#21211E] border border-stone-200 dark:border-[#302E29] rounded-xl p-3 shadow-lg w-48 space-y-1 animate-fade-in">
+                      <span className="text-[10px] font-bold text-stone-400 dark:text-[#7A7570] uppercase tracking-wider block">All Expected Roles</span>
                       {item.expectedRoles.map((r, i) => (
-                        <div key={i} className="text-xs text-stone-800 font-medium py-0.5 border-b border-stone-100 last:border-0">
+                        <div key={i} className="text-xs text-stone-800 dark:text-[#F0EBE3] font-medium py-0.5 border-b border-stone-100 dark:border-[#302E29] last:border-0">
                           {formatRoleName(r)}
                         </div>
                       ))}
@@ -233,15 +233,15 @@ export default function ResponseCoverageRow({
           <div className="space-y-3">
             {/* PRIMARY GROUP */}
             <div className="space-y-1">
-              <span className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-wider block">
+              <span className="text-[10px] font-mono font-bold text-stone-400 dark:text-[#7A7570] uppercase tracking-wider block">
                 Primary
               </span>
 
               {item.primaryResponders.length === 0 ? (
-                <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-2.5 flex items-center justify-between gap-2">
+                <div className="bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-xl p-2.5 flex items-center justify-between gap-2">
                   <div className="space-y-0.5">
-                    <span className="font-semibold text-xs text-amber-900 block leading-tight">Primary responder needed</span>
-                    <span className="text-[10px] text-amber-700/90 block">No on-duty responder assigned</span>
+                    <span className="font-semibold text-xs text-amber-900 dark:text-amber-200 block leading-tight">Primary responder needed</span>
+                    <span className="text-[10px] text-amber-700/90 dark:text-amber-400/90 block">No on-duty responder assigned</span>
                   </div>
                   <button
                     onClick={() => onNavigateTab?.('event_team')}
@@ -256,19 +256,19 @@ export default function ResponseCoverageRow({
                     const initials = getInitials(resp.name);
                     const displayName = formatDisplayName(resp.name);
                     return (
-                      <div key={resp.userId} className="flex items-start space-x-2.5 bg-stone-50/80 p-2 rounded-xl border border-stone-200/60">
-                        <div className="w-7 h-7 rounded-full bg-stone-200 text-stone-700 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+                      <div key={resp.userId} className="flex items-start space-x-2.5 bg-stone-50/80 dark:bg-[#21211E] p-2 rounded-xl border border-stone-200/60 dark:border-[#302E29]">
+                        <div className="w-7 h-7 rounded-full bg-stone-200 dark:bg-[#2A2926] text-stone-700 dark:text-[#F0EBE3] text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
                           {initials}
                         </div>
                         <div className="flex-1 min-w-0 space-y-0.5">
                           <div className="flex items-center space-x-1.5">
-                            <span className="font-semibold text-stone-900 text-xs truncate">{displayName}</span>
-                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${resp.onDuty ? 'bg-emerald-500' : 'bg-stone-300'}`} title={resp.onDuty ? 'On duty' : 'Off duty'} />
+                            <span className="font-semibold text-stone-900 dark:text-[#F0EBE3] text-xs truncate">{displayName}</span>
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${resp.onDuty ? 'bg-emerald-500' : 'bg-stone-300 dark:bg-stone-600'}`} title={resp.onDuty ? 'On duty' : 'Off duty'} />
                           </div>
-                          <div className="flex items-center space-x-1.5 text-[10px] text-stone-500 flex-wrap">
+                          <div className="flex items-center space-x-1.5 text-[10px] text-stone-500 dark:text-[#7A7570] flex-wrap">
                             <span className="font-medium">{formatRoleName(resp.responsibility)}</span>
                             <span>•</span>
-                            <span className={`font-medium ${resp.readyDevices > 0 ? 'text-emerald-700' : 'text-amber-600'}`}>
+                            <span className={`font-medium ${resp.readyDevices > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
                               {resp.readyDevices > 0 ? `${resp.readyDevices} device ready` : 'Needs device'}
                             </span>
                           </div>
@@ -281,15 +281,15 @@ export default function ResponseCoverageRow({
             </div>
 
             {/* BACKUP GROUP */}
-            <div className="space-y-1 pt-1 border-t border-stone-100">
+            <div className="space-y-1 pt-1 border-t border-stone-100 dark:border-[#302E29]">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-wider block">
+                <span className="text-[10px] font-mono font-bold text-stone-400 dark:text-[#7A7570] uppercase tracking-wider block">
                   Backup ({item.backupResponders.length})
                 </span>
               </div>
 
               {item.backupResponders.length === 0 ? (
-                <span className="text-[11px] text-stone-400 italic block pl-1">No backup assigned</span>
+                <span className="text-[11px] text-stone-400 dark:text-[#7A7570] italic block pl-1">No backup assigned</span>
               ) : (
                 <div className="space-y-1.5">
                   {visibleBackups.map((resp) => {
@@ -297,14 +297,14 @@ export default function ResponseCoverageRow({
                     const displayName = formatDisplayName(resp.name);
                     return (
                       <div key={resp.userId} className="flex items-center space-x-2 text-xs">
-                        <div className="w-5 h-5 rounded-full bg-stone-100 text-stone-600 text-[9px] font-bold flex items-center justify-center shrink-0">
+                        <div className="w-5 h-5 rounded-full bg-stone-100 dark:bg-[#262520] text-stone-600 dark:text-[#B8B0A5] text-[9px] font-bold flex items-center justify-center shrink-0">
                           {initials}
                         </div>
-                        <span className="font-medium text-stone-800 text-[11px] truncate">{displayName}</span>
-                        <span className="text-stone-300">•</span>
-                        <span className="text-[10px] text-stone-500 truncate">{formatRoleName(resp.responsibility)}</span>
-                        <span className="text-stone-300">•</span>
-                        <span className={`text-[10px] font-semibold ${resp.readyDevices > 0 ? 'text-emerald-700' : 'text-amber-600'}`}>
+                        <span className="font-medium text-stone-800 dark:text-[#F0EBE3] text-[11px] truncate">{displayName}</span>
+                        <span className="text-stone-300 dark:text-[#3A3835]">•</span>
+                        <span className="text-[10px] text-stone-500 dark:text-[#7A7570] truncate">{formatRoleName(resp.responsibility)}</span>
+                        <span className="text-stone-300 dark:text-[#3A3835]">•</span>
+                        <span className={`text-[10px] font-semibold ${resp.readyDevices > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
                           {resp.readyDevices > 0 ? 'Ready' : 'No device'}
                         </span>
                       </div>
@@ -315,21 +315,21 @@ export default function ResponseCoverageRow({
                     <div className="relative pt-0.5">
                       <button
                         onClick={() => setShowBackupsPopover(!showBackupsPopover)}
-                        className="text-[10px] font-bold text-[#C59B27] hover:text-[#A47F1E] hover:underline cursor-pointer"
+                        className="text-[10px] font-bold text-[#C59B27] dark:text-amber-400 hover:text-[#A47F1E] dark:hover:text-amber-300 hover:underline cursor-pointer"
                       >
                         +{hiddenBackupsCount} more backup{hiddenBackupsCount > 1 ? 's' : ''}
                       </button>
 
                       {showBackupsPopover && (
-                        <div className="absolute left-0 top-full mt-1 z-30 bg-white border border-stone-200 rounded-xl p-3 shadow-lg w-64 space-y-2 animate-fade-in">
-                          <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider block">All Backup Responders</span>
+                        <div className="absolute left-0 top-full mt-1 z-30 bg-white dark:bg-[#21211E] border border-stone-200 dark:border-[#302E29] rounded-xl p-3 shadow-lg w-64 space-y-2 animate-fade-in">
+                          <span className="text-[10px] font-bold text-stone-400 dark:text-[#7A7570] uppercase tracking-wider block">All Backup Responders</span>
                           {item.backupResponders.map((r) => (
-                            <div key={r.userId} className="text-xs space-y-0.5 border-b border-stone-100 pb-1.5 last:border-0 last:pb-0">
-                              <div className="font-semibold text-stone-900">{formatDisplayName(r.name)}</div>
-                              <div className="text-[10px] text-stone-500 flex items-center space-x-1.5">
+                            <div key={r.userId} className="text-xs space-y-0.5 border-b border-stone-100 dark:border-[#302E29] pb-1.5 last:border-0 last:pb-0">
+                              <div className="font-semibold text-stone-900 dark:text-[#F0EBE3]">{formatDisplayName(r.name)}</div>
+                              <div className="text-[10px] text-stone-500 dark:text-[#7A7570] flex items-center space-x-1.5">
                                 <span>{formatRoleName(r.responsibility)}</span>
                                 <span>•</span>
-                                <span className={r.readyDevices > 0 ? 'text-emerald-700 font-semibold' : 'text-amber-600 font-semibold'}>
+                                <span className={r.readyDevices > 0 ? 'text-emerald-700 dark:text-emerald-400 font-semibold' : 'text-amber-600 dark:text-amber-400 font-semibold'}>
                                   {r.readyDevices > 0 ? 'Device ready' : 'No device'}
                                 </span>
                               </div>
@@ -348,25 +348,25 @@ export default function ResponseCoverageRow({
         {/* 4. Device Readiness (140-160px) */}
         <td className="p-4 align-top w-40 min-w-[140px]">
           <div className="space-y-2">
-            <span className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-wider block">
+            <span className="text-[10px] font-mono font-bold text-stone-400 dark:text-[#7A7570] uppercase tracking-wider block">
               Device readiness
             </span>
 
             <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs font-semibold text-stone-800">
+              <div className="flex items-center justify-between text-xs font-semibold text-stone-800 dark:text-[#F0EBE3]">
                 <span>{totalCount > 0 ? `${readyCount} of ${totalCount} ready` : 'No devices'}</span>
-                <span className="text-[10px] font-mono text-stone-400">{readinessPercent}%</span>
+                <span className="text-[10px] font-mono text-stone-400 dark:text-[#7A7570]">{readinessPercent}%</span>
               </div>
 
               {/* Progress bar */}
-              <div className="w-full bg-stone-100 h-2 rounded-full overflow-hidden flex border border-stone-200/60">
+              <div className="w-full bg-stone-100 dark:bg-[#262520] h-2 rounded-full overflow-hidden flex border border-stone-200/60 dark:border-[#302E29]">
                 <div 
-                  className={`h-full transition-all duration-300 ${readyCount === totalCount && totalCount > 0 ? 'bg-emerald-500' : readyCount > 0 ? 'bg-amber-500' : 'bg-stone-300'}`}
+                  className={`h-full transition-all duration-300 ${readyCount === totalCount && totalCount > 0 ? 'bg-emerald-500' : readyCount > 0 ? 'bg-amber-500' : 'bg-stone-300 dark:bg-stone-700'}`}
                   style={{ width: `${readinessPercent}%` }}
                 />
               </div>
 
-              <p className="text-[10px] text-stone-500 font-medium pt-0.5">
+              <p className="text-[10px] text-stone-500 dark:text-[#7A7570] font-medium pt-0.5">
                 {totalCount === 0 
                   ? 'No responder devices' 
                   : (totalCount - readyCount) > 0 
@@ -380,27 +380,27 @@ export default function ResponseCoverageRow({
         {/* 5. Coverage Status (130-150px) */}
         <td className="p-4 align-top w-36 min-w-[130px]">
           <div className="space-y-1.5">
-            <span className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-wider block">
+            <span className="text-[10px] font-mono font-bold text-stone-400 dark:text-[#7A7570] uppercase tracking-wider block">
               Coverage
             </span>
 
             <span className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${
-              isComplete 
-                ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80' 
-                : isLimited 
-                ? 'bg-amber-50 text-amber-800 border-amber-200/80' 
-                : isNoCoverage 
-                ? 'bg-rose-50 text-rose-800 border-rose-200/80'
-                : 'bg-purple-50 text-purple-800 border-purple-200/80'
+              isComplete
+                ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400 border-emerald-200/80 dark:border-emerald-800/40'
+                : isLimited
+                ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border-amber-200/80 dark:border-amber-800/40'
+                : isNoCoverage
+                ? 'bg-rose-50 dark:bg-rose-950/30 text-rose-800 dark:text-rose-400 border-rose-200/80 dark:border-rose-800/40'
+                : 'bg-purple-50 dark:bg-purple-950/30 text-purple-800 dark:text-purple-400 border-purple-200/80 dark:border-purple-800/40'
             }`}>
-              {isComplete && <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
-              {isLimited && <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />}
-              {isNoCoverage && <XCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />}
-              {isRoutingIssue && <AlertCircle className="w-3.5 h-3.5 text-purple-600 shrink-0" />}
+              {isComplete && <CheckCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />}
+              {isLimited && <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />}
+              {isNoCoverage && <XCircle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />}
+              {isRoutingIssue && <AlertCircle className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />}
               <span>{item.coverageStatus}</span>
             </span>
 
-            <p className="text-[10px] text-stone-500 font-medium leading-tight">
+            <p className="text-[10px] text-stone-500 dark:text-[#7A7570] font-medium leading-tight">
               {statusReason}
             </p>
           </div>
@@ -409,11 +409,11 @@ export default function ResponseCoverageRow({
         {/* 6. Action (200-230px) */}
         <td className="p-4 align-top w-56 min-w-[200px]">
           <div className="space-y-2">
-            <span className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-wider block">
+            <span className="text-[10px] font-mono font-bold text-stone-400 dark:text-[#7A7570] uppercase tracking-wider block">
               Action
             </span>
 
-            <p className="text-xs text-stone-700 font-semibold leading-tight">
+            <p className="text-xs text-stone-700 dark:text-[#F0EBE3] font-semibold leading-tight">
               {actionTitle}
             </p>
 
@@ -445,9 +445,9 @@ export default function ResponseCoverageRow({
               ) : (
                 <button
                   onClick={() => onNavigateTab?.('alert_routing')}
-                  className="px-3 py-1.5 bg-white hover:bg-stone-50 border border-stone-200 text-stone-800 text-xs font-bold rounded-xl transition-all shadow-2xs flex items-center space-x-1.5 cursor-pointer"
+                  className="px-3 py-1.5 bg-white dark:bg-[#21211E] hover:bg-stone-50 dark:hover:bg-[#262520] border border-stone-200 dark:border-[#302E29] text-stone-800 dark:text-[#F0EBE3] text-xs font-bold rounded-xl transition-all shadow-2xs flex items-center space-x-1.5 cursor-pointer"
                 >
-                  <SlidersHorizontal className="w-3.5 h-3.5 text-stone-500" />
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-stone-500 dark:text-[#7A7570]" />
                   <span>View rule</span>
                 </button>
               )}
@@ -455,7 +455,7 @@ export default function ResponseCoverageRow({
               {/* Expand Toggle */}
               <button
                 onClick={onToggleExpand}
-                className="p-1.5 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer"
+                className="p-1.5 text-stone-500 dark:text-[#7A7570] hover:text-stone-900 dark:hover:text-[#F0EBE3] hover:bg-stone-100 dark:hover:bg-[#262520] rounded-lg transition-colors cursor-pointer"
                 title={isExpanded ? "Collapse details" : "View full details"}
               >
                 {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -467,17 +467,17 @@ export default function ResponseCoverageRow({
 
       {/* EXPANDABLE DETAILS PANEL */}
       {isExpanded && (
-        <tr className="bg-amber-50/30 border-b border-stone-200">
+        <tr className="bg-amber-50/30 dark:bg-amber-950/10 border-b border-stone-200 dark:border-[#302E29]">
           <td colSpan={6} className="p-6">
             <div className="space-y-4 animate-fade-in text-xs">
-              <div className="flex items-center justify-between border-b border-stone-200/80 pb-3">
+              <div className="flex items-center justify-between border-b border-stone-200/80 dark:border-[#302E29] pb-3">
                 <div className="flex items-center space-x-2">
-                  <ShieldCheck className="w-5 h-5 text-[#C59B27]" />
-                  <span className="font-bold text-sm text-stone-900">{item.name} — Full Coverage Breakdown</span>
+                  <ShieldCheck className="w-5 h-5 text-[#C59B27] dark:text-amber-400" />
+                  <span className="font-bold text-sm text-stone-900 dark:text-[#F0EBE3]">{item.name} — Full Coverage Breakdown</span>
                 </div>
                 <button
                   onClick={onToggleExpand}
-                  className="text-stone-500 hover:text-stone-800 text-xs font-semibold cursor-pointer"
+                  className="text-stone-500 dark:text-[#7A7570] hover:text-stone-800 dark:hover:text-[#F0EBE3] text-xs font-semibold cursor-pointer"
                 >
                   Close details
                 </button>
@@ -485,45 +485,45 @@ export default function ResponseCoverageRow({
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Panel Column 1: Expected Roles & Criteria */}
-                <div className="bg-white p-4 rounded-2xl border border-stone-200/80 space-y-3 shadow-2xs">
-                  <span className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-wider block">Required Response Roles</span>
+                <div className="bg-white dark:bg-[#1D1D1A] p-4 rounded-2xl border border-stone-200/80 dark:border-[#302E29] space-y-3 shadow-2xs">
+                  <span className="text-[10px] font-mono font-bold text-stone-400 dark:text-[#7A7570] uppercase tracking-wider block">Required Response Roles</span>
                   <div className="space-y-1.5">
                     {item.expectedRoles.map((r, i) => (
-                      <div key={i} className="flex items-center justify-between bg-stone-50 p-2 rounded-xl border border-stone-100">
-                        <span className="font-semibold text-stone-800">{formatRoleName(r)}</span>
-                        <span className="text-[10px] font-mono text-stone-400">{r}</span>
+                      <div key={i} className="flex items-center justify-between bg-stone-50 dark:bg-[#21211E] p-2 rounded-xl border border-stone-100 dark:border-[#302E29]">
+                        <span className="font-semibold text-stone-800 dark:text-[#F0EBE3]">{formatRoleName(r)}</span>
+                        <span className="text-[10px] font-mono text-stone-400 dark:text-[#7A7570]">{r}</span>
                       </div>
                     ))}
                   </div>
-                  <p className="text-[11px] text-stone-500 leading-relaxed pt-1">
+                  <p className="text-[11px] text-stone-500 dark:text-[#7A7570] leading-relaxed pt-1">
                     Alerts routed to this category require active on-duty personnel matching these assigned roles.
                   </p>
                 </div>
 
                 {/* Panel Column 2: All Primary & Backup Personnel */}
-                <div className="bg-white p-4 rounded-2xl border border-stone-200/80 space-y-3 shadow-2xs md:col-span-2">
-                  <span className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-wider block">Assigned Personnel Details</span>
+                <div className="bg-white dark:bg-[#1D1D1A] p-4 rounded-2xl border border-stone-200/80 dark:border-[#302E29] space-y-3 shadow-2xs md:col-span-2">
+                  <span className="text-[10px] font-mono font-bold text-stone-400 dark:text-[#7A7570] uppercase tracking-wider block">Assigned Personnel Details</span>
                   
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {/* Primary List */}
                     <div className="space-y-2">
-                      <span className="font-bold text-stone-700 text-xs block">Primary Responders</span>
+                      <span className="font-bold text-stone-700 dark:text-[#B8B0A5] text-xs block">Primary Responders</span>
                       {item.primaryResponders.length === 0 ? (
-                        <p className="text-amber-700 text-xs bg-amber-50 p-3 rounded-xl border border-amber-200 font-medium">
+                        <p className="text-amber-700 dark:text-amber-400 text-xs bg-amber-50 dark:bg-amber-950/20 p-3 rounded-xl border border-amber-200 dark:border-amber-900/40 font-medium">
                           No primary responder assigned. Navigate to Event Team to assign a responder to this category role.
                         </p>
                       ) : (
                         item.primaryResponders.map((p) => (
-                          <div key={p.userId} className="p-2.5 bg-stone-50 rounded-xl border border-stone-200/80 space-y-1">
+                          <div key={p.userId} className="p-2.5 bg-stone-50 dark:bg-[#21211E] rounded-xl border border-stone-200/80 dark:border-[#302E29] space-y-1">
                             <div className="flex items-center justify-between">
-                              <span className="font-bold text-stone-900">{formatDisplayName(p.name)}</span>
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${p.onDuty ? 'bg-emerald-100 text-emerald-800' : 'bg-stone-200 text-stone-700'}`}>
+                              <span className="font-bold text-stone-900 dark:text-[#F0EBE3]">{formatDisplayName(p.name)}</span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${p.onDuty ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-400' : 'bg-stone-200 dark:bg-[#262520] text-stone-700 dark:text-[#7A7570]'}`}>
                                 {p.onDuty ? 'On Duty' : 'Off Duty'}
                               </span>
                             </div>
-                            <div className="text-[11px] text-stone-600">{formatRoleName(p.responsibility)}</div>
-                            <div className="text-[10px] text-stone-500 flex items-center space-x-1">
-                              <Smartphone className="w-3 h-3 text-stone-400" />
+                            <div className="text-[11px] text-stone-600 dark:text-[#B8B0A5]">{formatRoleName(p.responsibility)}</div>
+                            <div className="text-[10px] text-stone-500 dark:text-[#7A7570] flex items-center space-x-1">
+                              <Smartphone className="w-3 h-3 text-stone-400 dark:text-[#7A7570]" />
                               <span>{p.readyDevices > 0 ? `${p.readyDevices} device(s) ready` : 'No active device'}</span>
                             </div>
                           </div>
@@ -533,23 +533,23 @@ export default function ResponseCoverageRow({
 
                     {/* Backup List */}
                     <div className="space-y-2">
-                      <span className="font-bold text-stone-700 text-xs block">Backup Responders</span>
+                      <span className="font-bold text-stone-700 dark:text-[#B8B0A5] text-xs block">Backup Responders</span>
                       {item.backupResponders.length === 0 ? (
-                        <p className="text-stone-500 text-xs bg-stone-50 p-3 rounded-xl border border-stone-200 font-medium">
+                        <p className="text-stone-500 dark:text-[#7A7570] text-xs bg-stone-50 dark:bg-[#21211E] p-3 rounded-xl border border-stone-200 dark:border-[#302E29] font-medium">
                           No backup responders currently configured.
                         </p>
                       ) : (
                         item.backupResponders.map((b) => (
-                          <div key={b.userId} className="p-2.5 bg-stone-50 rounded-xl border border-stone-200/80 space-y-1">
+                          <div key={b.userId} className="p-2.5 bg-stone-50 dark:bg-[#21211E] rounded-xl border border-stone-200/80 dark:border-[#302E29] space-y-1">
                             <div className="flex items-center justify-between">
-                              <span className="font-semibold text-stone-800">{formatDisplayName(b.name)}</span>
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${b.onDuty ? 'bg-emerald-100 text-emerald-800' : 'bg-stone-200 text-stone-700'}`}>
+                              <span className="font-semibold text-stone-800 dark:text-[#F0EBE3]">{formatDisplayName(b.name)}</span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${b.onDuty ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-400' : 'bg-stone-200 dark:bg-[#262520] text-stone-700 dark:text-[#7A7570]'}`}>
                                 {b.onDuty ? 'On Duty' : 'Off Duty'}
                               </span>
                             </div>
-                            <div className="text-[11px] text-stone-600">{formatRoleName(b.responsibility)}</div>
-                            <div className="text-[10px] text-stone-500 flex items-center space-x-1">
-                              <Smartphone className="w-3 h-3 text-stone-400" />
+                            <div className="text-[11px] text-stone-600 dark:text-[#B8B0A5]">{formatRoleName(b.responsibility)}</div>
+                            <div className="text-[10px] text-stone-500 dark:text-[#7A7570] flex items-center space-x-1">
+                              <Smartphone className="w-3 h-3 text-stone-400 dark:text-[#7A7570]" />
                               <span>{b.readyDevices > 0 ? `${b.readyDevices} device(s) ready` : 'No active device'}</span>
                             </div>
                           </div>
@@ -558,7 +558,7 @@ export default function ResponseCoverageRow({
                     </div>
                   </div>
 
-                  <div className="pt-2 flex items-center justify-end space-x-2 border-t border-stone-100">
+                  <div className="pt-2 flex items-center justify-end space-x-2 border-t border-stone-100 dark:border-[#302E29]">
                     <button
                       onClick={() => onNavigateTab?.('event_team')}
                       className="px-3 py-1.5 bg-[#C59B27] text-white text-xs font-bold rounded-xl hover:bg-[#A47F1E] transition-all shadow-xs cursor-pointer"
@@ -567,7 +567,7 @@ export default function ResponseCoverageRow({
                     </button>
                     <button
                       onClick={() => onNavigateTab?.('alert_routing')}
-                      className="px-3 py-1.5 bg-white border border-stone-200 text-stone-800 text-xs font-bold rounded-xl hover:bg-stone-50 transition-all cursor-pointer"
+                      className="px-3 py-1.5 bg-white dark:bg-[#21211E] border border-stone-200 dark:border-[#302E29] text-stone-800 dark:text-[#F0EBE3] text-xs font-bold rounded-xl hover:bg-stone-50 dark:hover:bg-[#262520] transition-all cursor-pointer"
                     >
                       Manage Routing Rules
                     </button>

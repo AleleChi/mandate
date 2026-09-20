@@ -79,53 +79,53 @@ export const TrainingObserverMode: React.FC<TrainingObserverModeProps> = ({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-serif text-zinc-900 tracking-tight">
+          <h1 className="text-2xl font-serif text-zinc-900 dark:text-[#F0EBE3] tracking-tight">
             Observer view
           </h1>
-          <p className="text-xs text-zinc-600 mt-1">
+          <p className="text-xs text-zinc-600 dark:text-[#7A7570] mt-1">
             Observe team practice, follow checklist progress, and note helpful feedback.
           </p>
         </div>
         <button
           onClick={() => onNavigate(`/admin/training/sessions/${sessionId}`)}
-          className="inline-flex items-center justify-center min-h-[40px] px-4 py-2 rounded-xl border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-zinc-700 text-xs font-semibold transition-colors cursor-pointer"
+          className="inline-flex items-center justify-center min-h-[40px] px-4 py-2 rounded-xl border border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#21211E] hover:bg-zinc-50 dark:hover:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] text-xs font-semibold transition-colors cursor-pointer"
         >
           View team practice screen
         </button>
       </div>
 
       {successMsg && (
-        <div className="mb-6 p-3.5 bg-emerald-50/80 border border-emerald-200/90 text-emerald-900 text-xs font-medium rounded-xl">
+        <div className="mb-6 p-3.5 bg-emerald-50/80 dark:bg-emerald-950/20 border border-emerald-200/90 dark:border-emerald-900/40 text-emerald-900 dark:text-emerald-200 text-xs font-medium rounded-xl">
           {successMsg}
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column: Post Note */}
-        <div className="bg-white rounded-2xl border border-[#EAE8E1] p-6 shadow-2xs h-fit">
-          <h2 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-4">
+        <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-6 shadow-2xs h-fit">
+          <h2 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider mb-4">
             Add observation note
           </h2>
 
           <div className="space-y-4 text-xs">
             <div>
-              <label className="block text-xs font-medium text-zinc-700 mb-1.5">
+              <label className="block text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] mb-1.5">
                 Topic
               </label>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="w-full bg-white border border-[#EAE8E1] rounded-xl px-3.5 py-2.5 text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] cursor-pointer"
+                className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl px-3.5 py-2.5 text-xs text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 cursor-pointer"
               >
-                <option value="Team communication">Team communication</option>
-                <option value="Arrivals and check-in">Arrivals and check-in</option>
-                <option value="Team coordination">Team coordination</option>
-                <option value="Safety response">Safety response</option>
+                <option value="Team communication" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">Team communication</option>
+                <option value="Arrivals and check-in" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">Arrivals and check-in</option>
+                <option value="Team coordination" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">Team coordination</option>
+                <option value="Safety response" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">Safety response</option>
               </select>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-zinc-700 mb-1.5">
+              <label className="block text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] mb-1.5">
                 Note
               </label>
               <textarea
@@ -133,7 +133,7 @@ export const TrainingObserverMode: React.FC<TrainingObserverModeProps> = ({
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="Record helpful feedback or notes on team teamwork..."
                 rows={4}
-                className="w-full bg-white border border-[#EAE8E1] rounded-xl px-3.5 py-2.5 text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27] resize-none"
+                className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl px-3.5 py-2.5 text-xs text-zinc-900 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 resize-none"
               />
             </div>
 
@@ -149,8 +149,8 @@ export const TrainingObserverMode: React.FC<TrainingObserverModeProps> = ({
 
         {/* Right 2 Columns: Objectives Progress */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white rounded-2xl border border-[#EAE8E1] p-6 shadow-2xs">
-            <h2 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-4">
+          <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-6 shadow-2xs">
+            <h2 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider mb-4">
               Checklist progress
             </h2>
 
@@ -163,20 +163,20 @@ export const TrainingObserverMode: React.FC<TrainingObserverModeProps> = ({
                   return (
                     <div
                       key={obj.id}
-                      className="p-3.5 rounded-xl bg-zinc-50/70 border border-[#EAE8E1] flex items-start gap-2.5"
+                      className="p-3.5 rounded-xl bg-zinc-50/70 dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] flex items-start gap-2.5"
                     >
-                      <span className={`text-sm mt-0.5 font-bold ${isCompleted ? 'text-emerald-600' : 'text-zinc-400'}`}>
+                      <span className={`text-sm mt-0.5 font-bold ${isCompleted ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 dark:text-[#7A7570]'}`}>
                         {isCompleted ? '✓' : '○'}
                       </span>
                       <div>
-                        <h3 className="font-semibold text-zinc-900">{obj.title}</h3>
-                        <p className="text-zinc-500 mt-0.5">{obj.description}</p>
+                        <h3 className="font-semibold text-zinc-900 dark:text-[#F0EBE3]">{obj.title}</h3>
+                        <p className="text-zinc-500 dark:text-[#7A7570] mt-0.5">{obj.description}</p>
                       </div>
                     </div>
                   );
                 })
               ) : (
-                <div className="p-3.5 rounded-xl bg-zinc-50/70 border border-[#EAE8E1] text-zinc-500">
+                <div className="p-3.5 rounded-xl bg-zinc-50/70 dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] text-zinc-500 dark:text-[#7A7570]">
                   No specific checklist items configured.
                 </div>
               )}

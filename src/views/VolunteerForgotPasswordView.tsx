@@ -128,7 +128,7 @@ export const VolunteerForgotPasswordView: React.FC<VolunteerForgotPasswordViewPr
       </div>
 
       <div className="text-center space-y-2">
-        <h1 className="text-3xl font-serif-koinonia font-bold text-[#18181B]">
+        <h1 className="type-h1-app text-[#18181B]">
           Forgot password?
         </h1>
         <p className="text-sm text-[#52525B] leading-relaxed max-w-sm mx-auto">

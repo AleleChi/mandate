@@ -14,9 +14,9 @@ const ResponseCoverageTab = lazyWithRetry(() => import('./duty/ResponseCoverageT
 const AdminEventLocationsTab = lazyWithRetry(() => import('./duty/AdminEventLocationsTab'), 'event_locations');
 
 const TabLoading = () => (
-  <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl space-y-3">
+  <div className="p-12 text-center text-xs text-zinc-500 dark:text-[#7A7570] bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl space-y-3">
     <RefreshCw className="w-5 h-5 animate-spin mx-auto text-[#C59B27]" />
-    <span className="font-medium text-zinc-600 block">Loading section…</span>
+    <span className="font-medium text-zinc-600 dark:text-[#B8B0A5] block">Loading section…</span>
   </div>
 );
 
@@ -70,12 +70,12 @@ export function AdminDutyDevicesView() {
   return (
     <div className="space-y-6" data-view-version="admin-event-duty-v6">
       {/* 1. Page Header with clean human ministry title and primary actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-[#EAE8E1]">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-[#EAE8E1] dark:border-[#302E29]">
         <div>
-          <h1 className="text-2xl font-bold font-sans text-[#18181B] dark:text-[#F7F4ED] tracking-tight">
+          <h1 className="text-2xl font-bold font-sans text-[#18181B] dark:text-[#F0EBE3] tracking-tight">
             Event Duty
           </h1>
-          <p className="text-xs text-zinc-500 dark:text-[#938C81] mt-1 font-normal">
+          <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1 font-normal">
             Manage where teams are serving and see who is currently on duty.
           </p>
         </div>
@@ -83,7 +83,7 @@ export function AdminDutyDevicesView() {
         <div className="flex flex-wrap items-center gap-2">
           {events.length > 0 && (
             <div className="flex items-center space-x-1.5 shrink-0 mr-1">
-              <label htmlFor="duty-event-selector" className="text-xs text-zinc-500 font-medium">
+              <label htmlFor="duty-event-selector" className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium">
                 Event:
               </label>
               <div className="relative">
@@ -92,7 +92,7 @@ export function AdminDutyDevicesView() {
                   value={selectedEventId}
                   onChange={(e) => setSelectedEventId(e.target.value)}
                   aria-label="Select event"
-                  className="appearance-none text-xs font-medium pl-3 pr-7 py-2 bg-white border border-[#EAE8E1] rounded-xl text-zinc-800 shadow-2xs hover:border-zinc-300 focus:outline-none focus:ring-1 focus:ring-[#C59B27] cursor-pointer"
+                  className="appearance-none text-xs font-medium pl-3 pr-7 py-2 bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-zinc-800 dark:text-[#F0EBE3] shadow-2xs hover:border-zinc-300 dark:hover:border-[#47443F] focus:outline-none focus:ring-1 focus:ring-[#C59B27] cursor-pointer"
                 >
                   {events.map((ev) => (
                     <option key={ev.id} value={ev.id}>
@@ -100,7 +100,7 @@ export function AdminDutyDevicesView() {
                     </option>
                   ))}
                 </select>
-                <ChevronDown className="w-3.5 h-3.5 text-zinc-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <ChevronDown className="w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
             </div>
           )}
@@ -111,10 +111,10 @@ export function AdminDutyDevicesView() {
               setActiveTab('event_locations');
               setTriggerPrintAllCodes(prev => prev + 1);
             }}
-            className="px-3 py-2 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 text-xs font-semibold rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 shadow-2xs"
+            className="px-3 py-2 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] hover:bg-zinc-50 dark:hover:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] text-xs font-semibold rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 shadow-2xs"
             title="Print printable venue posters for all locations"
           >
-            <Printer className="w-3.5 h-3.5 text-zinc-500" />
+            <Printer className="w-3.5 h-3.5 text-zinc-500 dark:text-[#7A7570]" />
             <span>Print duty QR codes</span>
           </button>
 
@@ -123,11 +123,11 @@ export function AdminDutyDevicesView() {
             onClick={() => setActiveTab('event_team')}
             className={`px-3 py-2 border rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center space-x-1.5 shadow-2xs ${
               activeTab === 'event_team'
-                ? 'bg-zinc-900 border-zinc-900 text-white'
-                : 'bg-white border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700'
+                ? 'bg-zinc-900 dark:bg-amber-400 text-white dark:text-[#18181B] border-zinc-900 dark:border-amber-400'
+                : 'bg-white dark:bg-[#21211E] border-[#EAE8E1] dark:border-[#302E29] hover:bg-zinc-50 dark:hover:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5]'
             }`}
           >
-            <Users className="w-3.5 h-3.5 text-zinc-500" />
+            <Users className="w-3.5 h-3.5 text-zinc-500 dark:text-[#7A7570]" />
             <span>Assignments</span>
           </button>
 
@@ -146,14 +146,14 @@ export function AdminDutyDevicesView() {
       </div>
 
       {/* 2. Restrained Admin Tab Navigation */}
-      <div className="flex border-b border-[#EAE8E1] overflow-x-auto" id="event-duty-tabs">
+      <div className="flex border-b border-[#EAE8E1] dark:border-[#302E29] overflow-x-auto" id="event-duty-tabs">
         <button
           onClick={() => setActiveTab('event_locations')}
           id="tab-duty-locations"
           className={`px-4 py-2.5 text-xs transition-all border-b-2 cursor-pointer focus:outline-none whitespace-nowrap ${
             activeTab === 'event_locations'
-              ? 'border-[#C59B27] text-[#18181B] font-semibold'
-              : 'border-transparent text-zinc-400 hover:text-zinc-600 font-medium'
+              ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3] font-semibold'
+              : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5] font-medium'
           }`}
         >
           Locations
@@ -164,8 +164,8 @@ export function AdminDutyDevicesView() {
           id="tab-duty-team"
           className={`px-4 py-2.5 text-xs transition-all border-b-2 cursor-pointer focus:outline-none whitespace-nowrap ${
             activeTab === 'event_team'
-              ? 'border-[#C59B27] text-[#18181B] font-semibold'
-              : 'border-transparent text-zinc-400 hover:text-zinc-600 font-medium'
+              ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3] font-semibold'
+              : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5] font-medium'
           }`}
         >
           Team Assignments
@@ -176,8 +176,8 @@ export function AdminDutyDevicesView() {
           id="tab-duty-coverage"
           className={`px-4 py-2.5 text-xs transition-all border-b-2 cursor-pointer focus:outline-none whitespace-nowrap ${
             activeTab === 'response_coverage'
-              ? 'border-[#C59B27] text-[#18181B] font-semibold'
-              : 'border-transparent text-zinc-400 hover:text-zinc-600 font-medium'
+              ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3] font-semibold'
+              : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5] font-medium'
           }`}
         >
           Team Coverage
@@ -188,8 +188,8 @@ export function AdminDutyDevicesView() {
           id="tab-duty-devices"
           className={`px-4 py-2.5 text-xs transition-all border-b-2 cursor-pointer focus:outline-none whitespace-nowrap ${
             activeTab === 'devices_readiness'
-              ? 'border-[#C59B27] text-[#18181B] font-semibold'
-              : 'border-transparent text-zinc-400 hover:text-zinc-600 font-medium'
+              ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3] font-semibold'
+              : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5] font-medium'
           }`}
         >
           Devices
@@ -200,8 +200,8 @@ export function AdminDutyDevicesView() {
           id="tab-duty-alerts"
           className={`px-4 py-2.5 text-xs transition-all border-b-2 cursor-pointer focus:outline-none whitespace-nowrap ${
             activeTab === 'alert_routing'
-              ? 'border-[#C59B27] text-[#18181B] font-semibold'
-              : 'border-transparent text-zinc-400 hover:text-zinc-600 font-medium'
+              ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3] font-semibold'
+              : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5] font-medium'
           }`}
         >
           Alert Rules

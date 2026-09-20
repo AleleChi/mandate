@@ -364,7 +364,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
       case 'review_reopened':
         return {
           label: 'Awaiting review',
-          className: 'bg-stone-100 text-stone-700 border border-stone-200'
+          className: 'bg-stone-100 text-stone-700 border border-stone-200 dark:bg-[#262520] dark:text-[#B8B0A5] dark:border-[#3A3835]'
         };
       case 'selected':
       case 'pass_ready':
@@ -372,22 +372,22 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
       case 'picked_up':
         return {
           label: 'Selected',
-          className: 'bg-emerald-50 text-emerald-800 border border-emerald-200/70'
+          className: 'bg-emerald-50 text-emerald-800 border border-emerald-200/70 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/40'
         };
       case 'waiting_list':
         return {
           label: 'Waiting list',
-          className: 'bg-amber-50 text-amber-800 border border-amber-200/70'
+          className: 'bg-amber-50 text-amber-800 border border-amber-200/70 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900/40'
         };
       case 'not_selected':
         return {
           label: 'Not selected',
-          className: 'bg-zinc-100 text-zinc-600 border border-zinc-200'
+          className: 'bg-zinc-100 text-zinc-600 border border-zinc-200 dark:bg-zinc-800/40 dark:text-[#7A7570] dark:border-zinc-700/50'
         };
       default:
         return {
           label: status.replace('_', ' '),
-          className: 'bg-zinc-100 text-zinc-600 border border-zinc-200'
+          className: 'bg-zinc-100 text-zinc-600 border border-zinc-200 dark:bg-zinc-800/40 dark:text-[#7A7570] dark:border-zinc-700/50'
         };
     }
   };
@@ -413,12 +413,12 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
       data-view-version="admin-review-board-v3-refined"
     >
       {/* 1. PAGE HEADER */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#EAE8E1] pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#EAE8E1] dark:border-[#302E29] pb-5">
         <div>
-          <h1 className="type-h1-app text-[#18181B]">
+          <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
             Registration review
           </h1>
-          <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
+          <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1 leading-relaxed">
             Review child registrations and make event decisions with care.
           </p>
         </div>
@@ -427,7 +427,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
           <button 
             onClick={() => fetchApplications(true)}
             disabled={refreshing}
-            className="px-3.5 py-2 text-xs font-semibold bg-white border border-[#EAE8E1] text-[#18181B] rounded-xl hover:bg-zinc-50 transition-colors cursor-pointer flex items-center gap-2"
+            className="px-3.5 py-2 text-xs font-semibold bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] text-[#18181B] dark:text-[#F0EBE3] rounded-xl hover:bg-zinc-50 dark:hover:bg-[#2A2926] transition-colors cursor-pointer flex items-center gap-2"
           >
             {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C59B27]" /> : null}
             Refresh
@@ -449,51 +449,51 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
       ) : (
         <>
           <div 
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 shadow-xs"
+            className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-xs"
             data-component-version="admin-review-summary-strip"
           >
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-y-4 sm:gap-y-0 sm:divide-x divide-[#EAE8E1]">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-y-4 sm:gap-y-0 sm:divide-x divide-[#EAE8E1] dark:sm:divide-[#302E29]">
               <div className="sm:px-4 first:sm:pl-0">
-                <span className="text-xs font-medium text-zinc-500 block">
+                <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
                   Awaiting review
                 </span>
-                <span className="text-2xl font-semibold text-[#18181B] block mt-1">
+                <span className="text-2xl font-semibold text-[#18181B] dark:text-[#F0EBE3] block mt-1">
                   {metrics.underReview}
                 </span>
               </div>
 
               <div className="sm:px-4">
-                <span className="text-xs font-medium text-zinc-500 block">
+                <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
                   Selected
                 </span>
-                <span className="text-2xl font-semibold text-[#18181B] block mt-1">
+                <span className="text-2xl font-semibold text-[#18181B] dark:text-[#F0EBE3] block mt-1">
                   {metrics.selected}
                 </span>
               </div>
 
               <div className="sm:px-4">
-                <span className="text-xs font-medium text-zinc-500 block">
+                <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
                   Waiting list
                 </span>
-                <span className="text-2xl font-semibold text-[#18181B] block mt-1">
+                <span className="text-2xl font-semibold text-[#18181B] dark:text-[#F0EBE3] block mt-1">
                   {metrics.waitingList}
                 </span>
               </div>
 
               <div className="sm:px-4">
-                <span className="text-xs font-medium text-zinc-500 block">
+                <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
                   Not selected
                 </span>
-                <span className="text-2xl font-semibold text-[#18181B] block mt-1">
+                <span className="text-2xl font-semibold text-[#18181B] dark:text-[#F0EBE3] block mt-1">
                   {metrics.notSelected}
                 </span>
               </div>
 
               <div className="sm:px-4 last:sm:pr-0">
-                <span className="text-xs font-medium text-zinc-500 block">
+                <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
                   Needs attention
                 </span>
-                <span className={`text-2xl font-semibold block mt-1 ${metrics.needsAttention > 0 ? 'text-amber-800' : 'text-zinc-500'}`}>
+                <span className={`text-2xl font-semibold block mt-1 ${metrics.needsAttention > 0 ? 'text-amber-800 dark:text-amber-400' : 'text-zinc-500 dark:text-[#7A7570]'}`}>
                   {metrics.needsAttention}
                 </span>
               </div>
@@ -505,18 +505,18 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
             
             {/* 3. FILTER LEFT PANEL (Desktop: 3 cols, Hidden on Mobile) */}
             <aside 
-              className="lg:col-span-3 bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-5 hidden lg:block shadow-xs"
+              className="lg:col-span-3 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-5 space-y-5 hidden lg:block shadow-xs"
               data-component-version="admin-review-filters-panel"
             >
-              <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-3">
-                <span className="text-xs font-semibold text-[#18181B] flex items-center gap-1.5">
+              <div className="flex items-center justify-between border-b border-[#EAE8E1] dark:border-[#302E29] pb-3">
+                <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] flex items-center gap-1.5">
                   <SlidersHorizontal className="w-3.5 h-3.5 text-[#C59B27]" />
                   Filters
                 </span>
                 {isFiltersActive && (
                   <button 
                     onClick={handleResetFilters}
-                    className="text-xs text-zinc-400 hover:text-[#C59B27] font-medium hover:underline cursor-pointer"
+                    className="text-xs text-zinc-400 dark:text-[#7A7570] hover:text-[#C59B27] dark:hover:text-[#C59B27] font-medium hover:underline cursor-pointer"
                   >
                     Clear filters
                   </button>
@@ -525,13 +525,13 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
 
               {/* Status Filter */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-500 block">
+                <label className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
                   Status
                 </label>
                 <select 
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-white p-2.5 text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
+                  className="w-full text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] p-2.5 text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
                 >
                   <option value="all">All statuses</option>
                   <option value="under_review">Awaiting review</option>
@@ -543,13 +543,13 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
 
               {/* Attention Conditions Filter */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-500 block">
+                <label className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
                   Needs attention
                 </label>
                 <select 
                   value={flagFilter}
                   onChange={(e) => setFlagFilter(e.target.value)}
-                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-white p-2.5 text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
+                  className="w-full text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] p-2.5 text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
                 >
                   <option value="all">All registrations</option>
                   <option value="below_age">Age needs review</option>
@@ -562,13 +562,13 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
 
               {/* Parent Role Filter */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-500 block">
+                <label className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
                   Parent role
                 </label>
                 <select 
                   value={workerFilter}
                   onChange={(e) => setWorkerFilter(e.target.value)}
-                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-white p-2.5 text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
+                  className="w-full text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] p-2.5 text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
                 >
                   <option value="all">All parents</option>
                   <option value="worker">Ministry team & workers</option>
@@ -580,7 +580,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
             {/* MOBILE SEARCH & FILTER TRIGGER */}
             <div className="lg:hidden flex items-center gap-2 w-full">
               <div className="relative flex-1">
-                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-zinc-400">
+                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-zinc-400 dark:text-[#7A7570]">
                   <Search className="w-4 h-4" />
                 </span>
                 <input
@@ -588,15 +588,15 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search by child, parent or email"
-                  className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-white focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
+                  className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] dark:text-[#F0EBE3] dark:placeholder-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
                 />
               </div>
 
               <button
                 onClick={() => setMobileFiltersOpen(true)}
-                className="px-3.5 py-2 bg-white border border-[#EAE8E1] rounded-xl text-xs font-semibold text-zinc-700 flex items-center gap-1.5 cursor-pointer hover:bg-zinc-50"
+                className="px-3.5 py-2 bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-xs font-semibold text-zinc-700 dark:text-[#F0EBE3] flex items-center gap-1.5 cursor-pointer hover:bg-zinc-50 dark:hover:bg-[#2A2926]"
               >
-                <Filter className="w-3.5 h-3.5 text-zinc-500" />
+                <Filter className="w-3.5 h-3.5 text-zinc-500 dark:text-[#7A7570]" />
                 Filters
               </button>
             </div>
@@ -607,10 +607,10 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
               data-component-version="admin-review-results-list"
             >
               {/* SEARCH & SORT TOOLBAR */}
-              <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+              <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
                 {/* Search Bar - Desktop */}
                 <div className="relative flex-1 max-w-sm hidden lg:block">
-                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-zinc-400">
+                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-zinc-400 dark:text-[#7A7570]">
                     <Search className="w-4 h-4" />
                   </span>
                   <input
@@ -618,26 +618,26 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search by child, parent or email"
-                    className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-white focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
+                    className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] dark:text-[#F0EBE3] dark:placeholder-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
                   />
                 </div>
 
                 {/* Match count and Sort Options */}
                 <div className="flex items-center justify-between sm:justify-end gap-3 w-full lg:w-auto">
-                  <span className="text-xs text-zinc-500 font-medium">
+                  <span className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium">
                     {filteredApplications.length} {filteredApplications.length === 1 ? 'result' : 'results'}
                   </span>
 
-                  <div className="flex items-center gap-1 bg-[#FAF9F6] p-1 border border-[#EAE8E1] rounded-xl text-xs">
+                  <div className="flex items-center gap-1 bg-[#FAF9F6] dark:bg-[#262520] p-1 border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-xs">
                     <button 
                       onClick={() => setSortBy('oldest')}
-                      className={`px-2.5 py-1 font-medium rounded-lg transition-colors cursor-pointer ${sortBy === 'oldest' ? 'bg-white text-[#18181B] shadow-2xs font-semibold' : 'text-zinc-500 hover:text-zinc-700'}`}
+                      className={`px-2.5 py-1 font-medium rounded-lg transition-colors cursor-pointer ${sortBy === 'oldest' ? 'bg-white dark:bg-[#1D1D1A] text-[#18181B] dark:text-[#F0EBE3] shadow-2xs font-semibold' : 'text-zinc-500 dark:text-[#7A7570] hover:text-zinc-700 dark:hover:text-[#B8B0A5]'}`}
                     >
                       Oldest first
                     </button>
                     <button 
                       onClick={() => setSortBy('newest')}
-                      className={`px-2.5 py-1 font-medium rounded-lg transition-colors cursor-pointer ${sortBy === 'newest' ? 'bg-white text-[#18181B] shadow-2xs font-semibold' : 'text-zinc-500 hover:text-zinc-700'}`}
+                      className={`px-2.5 py-1 font-medium rounded-lg transition-colors cursor-pointer ${sortBy === 'newest' ? 'bg-white dark:bg-[#1D1D1A] text-[#18181B] dark:text-[#F0EBE3] shadow-2xs font-semibold' : 'text-zinc-500 dark:text-[#7A7570] hover:text-zinc-700 dark:hover:text-[#B8B0A5]'}`}
                     >
                       Newest first
                     </button>
@@ -647,10 +647,10 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
 
               {/* Bulk Action Controls Banner */}
               {selectedIds.length > 0 && (
-                <div className="bg-[#FAF8F3] border border-[#E5D5AE]/60 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-fade-in">
+                <div className="bg-[#FAF8F3] dark:bg-[#21211E] border border-[#E5D5AE]/60 dark:border-[#3A3835] rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-fade-in">
                   <div className="flex items-center space-x-2.5">
                     <CheckSquare className="w-4 h-4 text-[#C59B27]" />
-                    <span className="text-xs font-semibold text-zinc-800">
+                    <span className="text-xs font-semibold text-zinc-800 dark:text-[#F0EBE3]">
                       {selectedIds.length} registration{selectedIds.length > 1 ? 's' : ''} selected
                     </span>
                   </div>
@@ -661,7 +661,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                         setBulkDecision('selected');
                         setBulkActionOpen(true);
                       }}
-                      className="px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200/60 hover:bg-emerald-100 text-xs font-medium rounded-xl cursor-pointer transition-colors"
+                      className="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40 hover:bg-emerald-100 dark:hover:bg-emerald-950/50 text-xs font-medium rounded-xl cursor-pointer transition-colors"
                     >
                       Select for event
                     </button>
@@ -671,7 +671,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                         setBulkDecision('waiting_list');
                         setBulkActionOpen(true);
                       }}
-                      className="px-3 py-1.5 bg-amber-50 text-amber-800 border border-amber-200/60 hover:bg-amber-100 text-xs font-medium rounded-xl cursor-pointer transition-colors"
+                      className="px-3 py-1.5 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40 hover:bg-amber-100 dark:hover:bg-amber-950/50 text-xs font-medium rounded-xl cursor-pointer transition-colors"
                     >
                       Add to waiting list
                     </button>
@@ -681,14 +681,14 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                         setBulkDecision('not_selected');
                         setBulkActionOpen(true);
                       }}
-                      className="px-3 py-1.5 bg-zinc-100 text-zinc-700 border border-zinc-200 hover:bg-zinc-200 text-xs font-medium rounded-xl cursor-pointer transition-colors"
+                      className="px-3 py-1.5 bg-zinc-100 dark:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] border border-zinc-200 dark:border-[#3A3835] hover:bg-zinc-200 dark:hover:bg-[#2A2926] text-xs font-medium rounded-xl cursor-pointer transition-colors"
                     >
                       Mark not selected
                     </button>
 
                     <button
                       onClick={() => setSelectedIds([])}
-                      className="text-xs text-zinc-400 hover:text-zinc-600 font-medium cursor-pointer px-2 py-1.5"
+                      className="text-xs text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5] font-medium cursor-pointer px-2 py-1.5"
                     >
                       Cancel
                     </button>
@@ -698,12 +698,12 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
 
               {/* REGISTRATIONS RESULTS LIST */}
               {filteredApplications.length === 0 ? (
-                <div className="bg-white border border-[#EAE8E1] rounded-2xl p-12 text-center space-y-3 shadow-xs">
-                  <AlertCircle className="w-8 h-8 text-zinc-400 mx-auto" />
-                  <h3 className="text-base font-semibold text-[#18181B]">
+                <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-12 text-center space-y-3 shadow-xs">
+                  <AlertCircle className="w-8 h-8 text-zinc-400 dark:text-[#7A7570] mx-auto" />
+                  <h3 className="text-base font-semibold text-[#18181B] dark:text-[#F0EBE3]">
                     {isFiltersActive ? 'No registrations match these filters.' : 'No registrations found.'}
                   </h3>
-                  <p className="text-xs text-zinc-500 max-w-sm mx-auto leading-relaxed">
+                  <p className="text-xs text-zinc-500 dark:text-[#7A7570] max-w-sm mx-auto leading-relaxed">
                     {isFiltersActive 
                       ? 'Try clearing your search terms or filter selections to view registrations.'
                       : 'No child registrations are currently waiting for review.'}
@@ -736,10 +736,10 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                       <div 
                         key={app.id}
                         onClick={() => setActiveSelectId(app.id)}
-                        className={`bg-white border rounded-2xl p-4 sm:p-5 transition-all cursor-pointer ${
+                        className={`bg-white dark:bg-[#1D1D1A] border rounded-2xl p-4 sm:p-5 transition-all cursor-pointer ${
                           isActive 
                             ? 'border-[#C59B27] ring-1 ring-[#C59B27]/30 shadow-xs' 
-                            : 'border-[#EAE8E1] hover:border-[#C59B27]/40'
+                            : 'border-[#EAE8E1] dark:border-[#302E29] hover:border-[#C59B27]/40 dark:hover:border-[#C59B27]/40'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -760,12 +760,12 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                               {isSelected ? (
                                 <CheckSquare className="w-4 h-4 text-[#C59B27]" />
                               ) : (
-                                <Square className="w-4 h-4 text-zinc-300 hover:text-zinc-400" />
+                                <Square className="w-4 h-4 text-zinc-300 dark:text-[#5A5550] hover:text-zinc-400 dark:hover:text-[#7A7570]" />
                               )}
                             </button>
 
                             {/* Avatar */}
-                            <div className="w-12 h-14 bg-zinc-50 border border-[#EAE8E1] rounded-xl shrink-0 overflow-hidden flex items-center justify-center relative">
+                            <div className="w-12 h-14 bg-zinc-50 dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl shrink-0 overflow-hidden flex items-center justify-center relative">
                               {app.child?.photoUrl ? (
                                 <img 
                                   src={app.child.photoUrl} 
@@ -774,7 +774,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                                   referrerPolicy="no-referrer"
                                 />
                               ) : (
-                                <span className="text-zinc-400 font-semibold text-sm">
+                                <span className="text-zinc-400 dark:text-[#7A7570] font-semibold text-sm">
                                   {app.child?.fullName?.charAt(0) || 'C'}
                                 </span>
                               )}
@@ -782,16 +782,16 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
 
                             {/* Text Metadata */}
                             <div className="space-y-1 min-w-0">
-                              <h4 className="text-sm font-semibold text-[#18181B] truncate">
+                              <h4 className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] truncate">
                                 {app.child?.fullName || 'Unnamed child'}
                               </h4>
                               
-                              <p className="text-xs text-zinc-500 font-medium">
+                              <p className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium">
                                 {ageDisplay}{ageGroupClean ? ` · ${ageGroupClean}` : ''}
                               </p>
 
-                              <p className="text-xs text-zinc-600 pt-0.5 truncate">
-                                Parent: <span className="font-medium text-zinc-800">{app.parent?.fullName || 'Not recorded'}</span>
+                              <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] pt-0.5 truncate">
+                                Parent: <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">{app.parent?.fullName || 'Not recorded'}</span>
                                 {app.parent?.isWorker ? (
                                   <span className="text-[#C59B27] font-medium ml-1">
                                     (Team member)
@@ -799,39 +799,39 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                                 ) : null}
                               </p>
 
-                              <p className="text-xs text-zinc-400 pt-0.5">
+                              <p className="text-xs text-zinc-400 dark:text-[#7A7570] pt-0.5">
                                 {formatSubmittedDate(app.submittedAt)}
                               </p>
 
                               {/* Attention Notices */}
                               <div className="flex flex-wrap gap-1.5 pt-2">
                                 {app.flags.belowAge && (
-                                  <span className="bg-amber-50 text-amber-800 border border-amber-200/60 text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0">
+                                  <span className="bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40 text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0">
                                     Age needs review
                                   </span>
                                 )}
                                 {app.flags.missingChildPhoto && (
-                                  <span className="bg-stone-100 text-stone-700 border border-stone-200 text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0">
+                                  <span className="bg-stone-100 dark:bg-[#262520] text-stone-700 dark:text-[#B8B0A5] border border-stone-200 dark:border-[#3A3835] text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0">
                                     Photo needed
                                   </span>
                                 )}
                                 {app.flags.missingPickupPhoto && (
-                                  <span className="bg-stone-100 text-stone-700 border border-stone-200 text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0">
+                                  <span className="bg-stone-100 dark:bg-[#262520] text-stone-700 dark:text-[#B8B0A5] border border-stone-200 dark:border-[#3A3835] text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0">
                                     Pickup photo needed
                                   </span>
                                 )}
                                 {app.flags.medicalNotes && (
-                                  <span className="bg-amber-50 text-amber-800 border border-amber-200/60 text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0">
+                                  <span className="bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40 text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0">
                                     Care note
                                   </span>
                                 )}
                                 {app.flags.extraSupport && (
-                                  <span className="bg-amber-50 text-amber-800 border border-amber-200/60 text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0">
+                                  <span className="bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40 text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0">
                                     Extra support
                                   </span>
                                 )}
                                 {app.siblings.length > 0 && (
-                                  <span className="bg-stone-100 text-stone-700 border border-stone-200 text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0">
+                                  <span className="bg-stone-100 dark:bg-[#262520] text-stone-700 dark:text-[#B8B0A5] border border-stone-200 dark:border-[#3A3835] text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0">
                                     Sibling registration
                                   </span>
                                 )}
@@ -851,10 +851,10 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                                 e.stopPropagation();
                                 setSelectedApplicationId(app.id);
                               }}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-xs font-semibold text-[#18181B] transition-colors cursor-pointer mt-auto"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] transition-colors cursor-pointer mt-auto"
                             >
                               <span>{app.status === 'under_review' ? 'Review' : 'View review'}</span>
-                              <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
+                              <ChevronRight className="w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570]" />
                             </button>
                           </div>
 
@@ -871,10 +871,10 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
               
               {/* REGISTRATION DETAILS CARD */}
               <div 
-                className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4 shadow-xs"
+                className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-5 space-y-4 shadow-xs"
                 data-component-version="admin-review-details-preview"
               >
-                <span className="text-xs font-semibold text-[#18181B] block border-b border-[#EAE8E1] pb-2.5">
+                <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] block border-b border-[#EAE8E1] dark:border-[#302E29] pb-2.5">
                   Registration details
                 </span>
 
@@ -882,7 +882,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                   <div className="space-y-4 animate-fade-in">
                     <div className="flex items-start space-x-3.5">
                       {/* Photo or Initials */}
-                      <div className="w-16 h-20 bg-zinc-50 border border-[#EAE8E1] rounded-xl overflow-hidden shrink-0 flex items-center justify-center relative">
+                      <div className="w-16 h-20 bg-zinc-50 dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl overflow-hidden shrink-0 flex items-center justify-center relative">
                         {activeSelectedChild.child?.photoUrl ? (
                           <img 
                             src={activeSelectedChild.child.photoUrl} 
@@ -891,55 +891,55 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                             referrerPolicy="no-referrer"
                           />
                         ) : (
-                          <span className="text-zinc-400 font-semibold text-lg">
+                          <span className="text-zinc-400 dark:text-[#7A7570] font-semibold text-lg">
                             {activeSelectedChild.child?.fullName?.charAt(0) || 'C'}
                           </span>
                         )}
                       </div>
 
                       <div className="min-w-0 space-y-1">
-                        <h3 className="text-sm font-semibold text-[#18181B] truncate leading-snug">
+                        <h3 className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] truncate leading-snug">
                           {activeSelectedChild.child?.fullName}
                         </h3>
-                        <p className="text-xs text-zinc-500 font-medium">
+                        <p className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium">
                           {activeSelectedChild.child?.age === 0 ? 'Under 1 year' : `${activeSelectedChild.child?.age} years`} · {activeSelectedChild.child?.gender || 'Gender not stated'}
                         </p>
-                        <p className="text-xs text-zinc-500">
+                        <p className="text-xs text-zinc-500 dark:text-[#7A7570]">
                           {activeSelectedChild.child?.ageGroup ? (activeSelectedChild.child.ageGroup.toLowerCase().startsWith('ages') ? activeSelectedChild.child.ageGroup : `Ages ${activeSelectedChild.child.ageGroup}`) : 'Section not stated'}
                         </p>
                       </div>
                     </div>
 
                     {/* Definition List with subtle dividers */}
-                    <div className="divide-y divide-[#EAE8E1]/60 text-xs space-y-2 pt-1">
+                    <div className="divide-y divide-[#EAE8E1]/60 dark:divide-[#302E29] text-xs space-y-2 pt-1">
                       <div className="flex justify-between items-center py-1.5">
-                        <span className="text-zinc-500">Class</span>
-                        <span className="font-medium text-[#18181B] truncate max-w-[150px]">
+                        <span className="text-zinc-500 dark:text-[#7A7570]">Class</span>
+                        <span className="font-medium text-[#18181B] dark:text-[#F0EBE3] truncate max-w-[150px]">
                           {activeSelectedChild.schoolClass || 'Not stated'}
                         </span>
                       </div>
                       <div className="flex justify-between items-center py-1.5">
-                        <span className="text-zinc-500">School</span>
-                        <span className="font-medium text-[#18181B] truncate max-w-[150px]">
+                        <span className="text-zinc-500 dark:text-[#7A7570]">School</span>
+                        <span className="font-medium text-[#18181B] dark:text-[#F0EBE3] truncate max-w-[150px]">
                           {activeSelectedChild.schoolName || 'Not stated'}
                         </span>
                       </div>
                       <div className="flex justify-between items-center py-1.5">
-                        <span className="text-zinc-500">Parent / guardian</span>
-                        <span className="font-medium text-[#18181B] truncate max-w-[150px]">
+                        <span className="text-zinc-500 dark:text-[#7A7570]">Parent / guardian</span>
+                        <span className="font-medium text-[#18181B] dark:text-[#F0EBE3] truncate max-w-[150px]">
                           {activeSelectedChild.parent?.fullName || 'Not stated'}
                         </span>
                       </div>
                       <div className="flex justify-between items-center py-1.5">
-                        <span className="text-zinc-500">Phone</span>
-                        <span className="font-medium text-[#18181B] flex items-center gap-1">
+                        <span className="text-zinc-500 dark:text-[#7A7570]">Phone</span>
+                        <span className="font-medium text-[#18181B] dark:text-[#F0EBE3] flex items-center gap-1">
                           {activeSelectedChild.parent?.phone || 'Not stated'}
                         </span>
                       </div>
                       {activeSelectedChild.siblings.length > 0 && (
                         <div className="flex justify-between items-center py-1.5">
-                          <span className="text-zinc-500">Siblings</span>
-                          <span className="font-medium text-[#18181B] truncate max-w-[150px]">
+                          <span className="text-zinc-500 dark:text-[#7A7570]">Siblings</span>
+                          <span className="font-medium text-[#18181B] dark:text-[#F0EBE3] truncate max-w-[150px]">
                             {activeSelectedChild.siblings.join(', ')}
                           </span>
                         </div>
@@ -947,8 +947,8 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                     </div>
 
                     {activeSelectedChild.noteToTeam && (
-                      <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl p-3 text-xs text-zinc-600 leading-relaxed space-y-1">
-                        <span className="font-semibold text-zinc-800 block">Parent note</span>
+                      <div className="bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl p-3 text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed space-y-1">
+                        <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3] block">Parent note</span>
                         <p className="italic">"{activeSelectedChild.noteToTeam}"</p>
                       </div>
                     )}
@@ -966,8 +966,8 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                   </div>
                 ) : (
                   <div className="text-center py-8 px-4 space-y-2">
-                    <Users className="w-8 h-8 text-zinc-300 mx-auto" />
-                    <p className="text-xs text-zinc-400 leading-relaxed">
+                    <Users className="w-8 h-8 text-zinc-300 dark:text-[#5A5550] mx-auto" />
+                    <p className="text-xs text-zinc-400 dark:text-[#7A7570] leading-relaxed">
                       Select a registration from the list to see preview details here.
                     </p>
                   </div>
@@ -976,16 +976,16 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
 
               {/* ROOM CAPACITIES CARD */}
               <div 
-                className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-4 shadow-xs"
+                className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-5 space-y-4 shadow-xs"
                 data-component-version="admin-review-room-capacities"
               >
-                <span className="text-xs font-semibold text-[#18181B] block border-b border-[#EAE8E1] pb-2.5">
+                <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] block border-b border-[#EAE8E1] dark:border-[#302E29] pb-2.5">
                   Room capacities
                 </span>
 
                 {!capacityStats || capacityStats.length === 0 ? (
                   <div className="text-center py-4 px-2">
-                    <p className="text-xs text-zinc-400">
+                    <p className="text-xs text-zinc-400 dark:text-[#7A7570]">
                       Capacity rules have not been configured yet.
                     </p>
                   </div>
@@ -1005,17 +1005,17 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                       return (
                         <div key={c.id} className="space-y-1.5">
                           <div className="flex items-center justify-between text-xs">
-                            <span className="text-zinc-600 truncate max-w-[140px]">
+                            <span className="text-zinc-600 dark:text-[#B8B0A5] truncate max-w-[140px]">
                               {c.label}
                             </span>
-                            <span className="text-zinc-500 font-medium">
-                              <span className="text-[#18181B] font-semibold">{c.current}</span>
-                              <span className="text-zinc-300 mx-0.5">/</span>
+                            <span className="text-zinc-500 dark:text-[#7A7570] font-medium">
+                              <span className="text-[#18181B] dark:text-[#F0EBE3] font-semibold">{c.current}</span>
+                              <span className="text-zinc-300 dark:text-[#5A5550] mx-0.5">/</span>
                               <span>{c.limit}</span>
                             </span>
                           </div>
                           
-                          <div className="w-full bg-[#FAF9F6] border border-zinc-100 h-2 rounded-full overflow-hidden">
+                          <div className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-zinc-100 dark:border-[#3A3835] h-2 rounded-full overflow-hidden">
                             <div 
                               className={`${barFillColor} h-full rounded-full transition-all duration-500`} 
                               style={{ width: `${pct}%` }} 
@@ -1030,24 +1030,24 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
 
               {/* REVIEW CRITERIA CARD */}
               <div 
-                className="bg-white border border-[#EAE8E1] rounded-2xl p-5 space-y-3 shadow-xs"
+                className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-5 space-y-3 shadow-xs"
                 data-component-version="admin-review-guidelines"
               >
-                <span className="text-xs font-semibold text-[#18181B] block border-b border-[#EAE8E1] pb-2.5">
+                <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] block border-b border-[#EAE8E1] dark:border-[#302E29] pb-2.5">
                   Review criteria
                 </span>
 
-                <div className="space-y-3 pt-0.5 text-xs text-zinc-600 leading-relaxed">
+                <div className="space-y-3 pt-0.5 text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
                   <div>
-                    <strong className="text-[#18181B] font-medium block">Age guideline:</strong>
+                    <strong className="text-[#18181B] dark:text-[#F0EBE3] font-medium block">Age guideline:</strong>
                     Children should meet the designated age bracket for their event section.
                   </div>
                   <div>
-                    <strong className="text-[#18181B] font-medium block">Team priority:</strong>
+                    <strong className="text-[#18181B] dark:text-[#F0EBE3] font-medium block">Team priority:</strong>
                     Children of serving team members are prioritized to facilitate volunteer coverage.
                   </div>
                   <div>
-                    <strong className="text-[#18181B] font-medium block">Safety standard:</strong>
+                    <strong className="text-[#18181B] dark:text-[#F0EBE3] font-medium block">Safety standard:</strong>
                     A complete authorized pickup contact is required prior to gate check-in.
                   </div>
                 </div>
@@ -1066,32 +1066,32 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
             onClick={() => setBulkActionOpen(false)}
             className="fixed inset-0 bg-black/40 backdrop-blur-xs" 
           />
-          <div className="relative bg-white border border-[#EAE8E1] rounded-2xl w-full max-w-md p-6 shadow-2xl animate-fade-in space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1]">
-              <h3 className="text-base font-semibold text-[#18181B]">
+          <div className="relative bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl w-full max-w-md p-6 shadow-2xl animate-fade-in space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1] dark:border-[#302E29]">
+              <h3 className="text-base font-semibold text-[#18181B] dark:text-[#F0EBE3]">
                 Bulk decision
               </h3>
               <button 
                 onClick={() => setBulkActionOpen(false)}
-                className="text-zinc-400 hover:text-[#18181B] p-1 rounded-lg cursor-pointer"
+                className="text-zinc-400 dark:text-[#7A7570] hover:text-[#18181B] dark:hover:text-[#F0EBE3] p-1 rounded-lg cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <form onSubmit={handleBulkSubmit} className="space-y-4">
-              <p className="text-xs text-zinc-500 leading-relaxed">
+              <p className="text-xs text-zinc-500 dark:text-[#7A7570] leading-relaxed">
                 You are recording a decision for <strong>{selectedIds.length}</strong> child registrations.
               </p>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-600 block">
+                <label className="text-xs font-medium text-zinc-600 dark:text-[#B8B0A5] block">
                   Action decision
                 </label>
                 <select 
                   value={bulkDecision}
                   onChange={(e) => setBulkDecision(e.target.value as any)}
-                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-white p-2.5 text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                  className="w-full text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] p-2.5 text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
                 >
                   <option value="selected">Select for event</option>
                   <option value="waiting_list">Add to waiting list</option>
@@ -1101,26 +1101,26 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-600 block">
+                <label className="text-xs font-medium text-zinc-600 dark:text-[#B8B0A5] block">
                   Team note (optional)
                 </label>
                 <textarea 
                   value={bulkNote}
                   onChange={(e) => setBulkNote(e.target.value)}
                   placeholder="Add an internal note explaining this bulk decision..."
-                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-white p-2.5 text-zinc-800 h-20 focus:outline-none focus:ring-1 focus:ring-[#C59B27] resize-none"
+                  className="w-full text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] p-2.5 text-zinc-800 dark:text-[#F0EBE3] dark:placeholder-[#7A7570] h-20 focus:outline-none focus:ring-1 focus:ring-[#C59B27] resize-none"
                 />
               </div>
 
-              <div className="bg-[#FAF9F6] border border-[#EAE8E1] p-3 rounded-xl text-xs text-zinc-500 leading-normal">
+              <div className="bg-[#FAF9F6] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] p-3 rounded-xl text-xs text-zinc-500 dark:text-[#7A7570] leading-normal">
                 Parents will be updated according to your event notification settings.
               </div>
 
-              <div className="pt-3 border-t border-[#EAE8E1] flex justify-end gap-2">
+              <div className="pt-3 border-t border-[#EAE8E1] dark:border-[#302E29] flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setBulkActionOpen(false)}
-                  className="px-4 py-2 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 font-medium rounded-xl text-xs cursor-pointer"
+                  className="px-4 py-2 bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#F0EBE3] font-medium rounded-xl text-xs cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -1147,15 +1147,15 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
             onClick={() => setMobileFiltersOpen(false)}
             className="fixed inset-0 bg-black/40 backdrop-blur-xs" 
           />
-          <div className="relative w-full max-w-xs bg-white h-full shadow-2xl p-6 flex flex-col space-y-6 animate-slide-in-right">
-            <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-3 shrink-0">
-              <span className="text-sm font-semibold text-zinc-800 flex items-center gap-1.5">
+          <div className="relative w-full max-w-xs bg-white dark:bg-[#1D1D1A] h-full shadow-2xl p-6 flex flex-col space-y-6 animate-slide-in-right">
+            <div className="flex items-center justify-between border-b border-[#EAE8E1] dark:border-[#302E29] pb-3 shrink-0">
+              <span className="text-sm font-semibold text-zinc-800 dark:text-[#F0EBE3] flex items-center gap-1.5">
                 <SlidersHorizontal className="w-4 h-4 text-[#C59B27]" />
                 Filters
               </span>
               <button 
                 onClick={() => setMobileFiltersOpen(false)}
-                className="text-zinc-400 hover:text-zinc-600 p-1 cursor-pointer"
+                className="text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#F0EBE3] p-1 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1164,13 +1164,13 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
             <div className="flex-1 overflow-y-auto space-y-5 pr-1 py-1">
               {/* Status Filter */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-500 block">
+                <label className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
                   Status
                 </label>
                 <select 
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-white p-2.5 text-zinc-800 focus:outline-none"
+                  className="w-full text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] p-2.5 text-zinc-800 dark:text-[#F0EBE3] focus:outline-none"
                 >
                   <option value="all">All statuses</option>
                   <option value="under_review">Awaiting review</option>
@@ -1182,13 +1182,13 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
 
               {/* Attention Conditions Filter */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-500 block">
+                <label className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
                   Needs attention
                 </label>
                 <select 
                   value={flagFilter}
                   onChange={(e) => setFlagFilter(e.target.value)}
-                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-white p-2.5 text-zinc-800 focus:outline-none"
+                  className="w-full text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] p-2.5 text-zinc-800 dark:text-[#F0EBE3] focus:outline-none"
                 >
                   <option value="all">All registrations</option>
                   <option value="below_age">Age needs review</option>
@@ -1201,13 +1201,13 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
 
               {/* Parent Role Filter */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-500 block">
+                <label className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
                   Parent role
                 </label>
                 <select 
                   value={workerFilter}
                   onChange={(e) => setWorkerFilter(e.target.value)}
-                  className="w-full text-xs rounded-xl border border-[#EAE8E1] bg-white p-2.5 text-zinc-800 focus:outline-none"
+                  className="w-full text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] p-2.5 text-zinc-800 dark:text-[#F0EBE3] focus:outline-none"
                 >
                   <option value="all">All parents</option>
                   <option value="worker">Ministry team & workers</option>
@@ -1216,10 +1216,10 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
               </div>
             </div>
 
-            <div className="pt-4 border-t border-[#EAE8E1] flex gap-2 shrink-0">
+            <div className="pt-4 border-t border-[#EAE8E1] dark:border-[#302E29] flex gap-2 shrink-0">
               <button
                 onClick={handleResetFilters}
-                className="flex-1 py-2 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 font-medium rounded-xl text-xs cursor-pointer"
+                className="flex-1 py-2 bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#F0EBE3] font-medium rounded-xl text-xs cursor-pointer"
               >
                 Reset
               </button>

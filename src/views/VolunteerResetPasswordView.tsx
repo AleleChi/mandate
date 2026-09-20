@@ -85,7 +85,7 @@ export const VolunteerResetPasswordView: React.FC<VolunteerResetPasswordViewProp
           </div>
           
           <div className="space-y-2">
-            <h1 className="font-serif-koinonia font-bold text-2xl text-[#18181B] tracking-tight">
+            <h1 className="type-h1-app text-[#18181B]">
               Reset link missing
             </h1>
             <p className="text-sm text-[#52525B] leading-relaxed max-w-sm mx-auto">
@@ -112,7 +112,7 @@ export const VolunteerResetPasswordView: React.FC<VolunteerResetPasswordViewProp
           </div>
           
           <div className="space-y-2">
-            <h1 className="font-serif-koinonia font-bold text-2xl text-[#18181B] tracking-tight">
+            <h1 className="type-h1-app text-[#18181B]">
               Reset link expired
             </h1>
             <p className="text-sm text-[#52525B] leading-relaxed max-w-sm mx-auto">
@@ -139,7 +139,7 @@ export const VolunteerResetPasswordView: React.FC<VolunteerResetPasswordViewProp
           </div>
           
           <div className="space-y-2">
-            <h1 className="font-serif-koinonia font-bold text-3xl text-[#18181B] tracking-tight">
+            <h1 className="type-h1-app text-[#18181B]">
               Password updated
             </h1>
             <p className="text-sm text-[#52525B] leading-relaxed max-w-sm mx-auto font-medium">
@@ -166,7 +166,7 @@ export const VolunteerResetPasswordView: React.FC<VolunteerResetPasswordViewProp
           </div>
 
           <div className="text-center space-y-2">
-            <h1 className="text-3xl font-serif-koinonia font-bold text-[#18181B]">
+            <h1 className="type-h1-app text-[#18181B]">
               Create new password
             </h1>
             <p className="text-sm text-[#52525B] leading-relaxed max-w-sm mx-auto">

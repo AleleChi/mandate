@@ -11288,6 +11288,236 @@ router.get('/safety-alerts/:id', authMiddleware, async (req: AuthenticatedReques
   }
 });
 
+// POST /api/admin/safety-alerts/bulk-resolve
+router.post('/safety-alerts/bulk-resolve', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { alertIds, resolutionNote, outcome } = req.body;
+
+    if (!Array.isArray(alertIds) || alertIds.length === 0) {
+      return res.status(400).json({ error: 'alertIds array is required and cannot be empty.' });
+    }
+
+    if (!resolutionNote || !resolutionNote.trim()) {
+      return res.status(400).json({ error: 'Please provide a resolution note.' });
+    }
+
+    const cleanNote = resolutionNote.trim();
+    const cleanOutcome = outcome?.trim() || 'resolved_on_site';
+    const finalNote = outcome ? `${cleanOutcome}: ${cleanNote}` : cleanNote;
+    const now = new Date().toISOString();
+
+    const results: Array<{ id: string; status: 'resolved' | 'skipped' | 'failed'; reason?: string }> = [];
+
+    for (const id of alertIds) {
+      try {
+        const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [id]);
+        if (!alert) {
+          results.push({ id, status: 'failed', reason: 'Alert not found' });
+          continue;
+        }
+
+        if (alert.status === 'resolved') {
+          results.push({ id, status: 'skipped', reason: 'Already resolved' });
+          continue;
+        }
+
+        await execute(`
+          UPDATE event_safety_alerts
+          SET status = 'resolved',
+              resolved_by = ?,
+              resolved_at = ?,
+              resolution_note = ?,
+              updated_at = ?
+          WHERE id = ?
+        `, [req.user.id, now, finalNote, now, id]);
+
+        await execute(`
+          UPDATE safety_alert_recipients
+          SET sound_stopped_at = COALESCE(sound_stopped_at, ?), updated_at = ?
+          WHERE alert_id = ?
+        `, [now, now, id]);
+
+        try {
+          await cancelActiveEscalationCycles({ alertId: id, reason: 'Bulk resolved by admin' });
+        } catch (escErr) {
+          console.error('[Escalation Cancel Error]:', escErr);
+        }
+
+        try {
+          broadcastSSEEvent('safety_alert_resolved', {
+            alertId: id,
+            resolvedBy: req.user.id,
+            resolvedAt: now,
+            resolutionNote: finalNote
+          });
+        } catch (_) {}
+
+        results.push({ id, status: 'resolved' });
+      } catch (itemErr: any) {
+        results.push({ id, status: 'failed', reason: itemErr?.message || 'Database error' });
+      }
+    }
+
+    const resolvedCount = results.filter(r => r.status === 'resolved').length;
+    const skippedCount = results.filter(r => r.status === 'skipped').length;
+    const failedCount = results.filter(r => r.status === 'failed').length;
+
+    return res.json({
+      success: true,
+      message: `${resolvedCount} alert(s) resolved${skippedCount > 0 ? `, ${skippedCount} skipped (already resolved)` : ''}${failedCount > 0 ? `, ${failedCount} failed` : ''}.`,
+      resolvedCount,
+      skippedCount,
+      failedCount,
+      results
+    });
+  } catch (err) {
+    console.error('Bulk resolve safety alerts error:', err);
+    res.status(500).json({ error: 'Failed to bulk resolve safety alerts' });
+  }
+});
+
+// POST /api/admin/safety-alerts/bulk-acknowledge
+router.post('/safety-alerts/bulk-acknowledge', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { alertIds } = req.body;
+    if (!Array.isArray(alertIds) || alertIds.length === 0) {
+      return res.status(400).json({ error: 'alertIds array is required and cannot be empty.' });
+    }
+
+    const now = new Date().toISOString();
+    const results: Array<{ id: string; status: 'acknowledged' | 'skipped' | 'failed'; reason?: string }> = [];
+
+    for (const id of alertIds) {
+      try {
+        const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [id]);
+        if (!alert) {
+          results.push({ id, status: 'failed', reason: 'Alert not found' });
+          continue;
+        }
+
+        if (alert.status !== 'open') {
+          results.push({ id, status: 'skipped', reason: `Status is already ${alert.status}` });
+          continue;
+        }
+
+        await execute(`
+          UPDATE event_safety_alerts
+          SET status = 'acknowledged',
+              acknowledged_by = ?,
+              acknowledged_at = ?,
+              updated_at = ?
+          WHERE id = ? AND status = 'open'
+        `, [req.user.id, now, now, id]);
+
+        await execute(`
+          UPDATE safety_alert_recipients
+          SET sound_stopped_at = COALESCE(sound_stopped_at, ?), updated_at = ?
+          WHERE alert_id = ?
+        `, [now, now, id]);
+
+        try {
+          broadcastSSEEvent('safety_alert_acknowledged', {
+            alertId: id,
+            acknowledgedBy: req.user.id,
+            acknowledgedAt: now
+          });
+        } catch (_) {}
+
+        results.push({ id, status: 'acknowledged' });
+      } catch (itemErr: any) {
+        results.push({ id, status: 'failed', reason: itemErr?.message || 'Database error' });
+      }
+    }
+
+    const ackCount = results.filter(r => r.status === 'acknowledged').length;
+    const skippedCount = results.filter(r => r.status === 'skipped').length;
+    const failedCount = results.filter(r => r.status === 'failed').length;
+
+    return res.json({
+      success: true,
+      message: `${ackCount} alert(s) acknowledged${skippedCount > 0 ? `, ${skippedCount} skipped` : ''}${failedCount > 0 ? `, ${failedCount} failed` : ''}.`,
+      acknowledgedCount: ackCount,
+      skippedCount,
+      failedCount,
+      results
+    });
+  } catch (err) {
+    console.error('Bulk acknowledge safety alerts error:', err);
+    res.status(500).json({ error: 'Failed to bulk acknowledge safety alerts' });
+  }
+});
+
+// POST /api/admin/safety-alerts/bulk-assign
+router.post('/safety-alerts/bulk-assign', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { alertIds, targetUserId, reason } = req.body;
+    if (!Array.isArray(alertIds) || alertIds.length === 0) {
+      return res.status(400).json({ error: 'alertIds array is required and cannot be empty.' });
+    }
+    if (!targetUserId) {
+      return res.status(400).json({ error: 'targetUserId is required.' });
+    }
+
+    const targetUser = await queryOne('SELECT id, email, role FROM users WHERE id = ?', [targetUserId]);
+    if (!targetUser) {
+      return res.status(404).json({ error: 'Target responder not found.' });
+    }
+
+    const now = new Date().toISOString();
+    const results: Array<{ id: string; status: 'assigned' | 'skipped' | 'failed'; reason?: string }> = [];
+
+    for (const id of alertIds) {
+      try {
+        const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [id]);
+        if (!alert) {
+          results.push({ id, status: 'failed', reason: 'Alert not found' });
+          continue;
+        }
+
+        if (alert.status === 'resolved') {
+          results.push({ id, status: 'skipped', reason: 'Cannot assign resolved alert' });
+          continue;
+        }
+
+        await execute(`
+          UPDATE event_safety_alerts
+          SET owner_user_id = ?,
+              owner_assigned_at = ?,
+              updated_at = ?
+          WHERE id = ?
+        `, [targetUserId, now, now, id]);
+
+        results.push({ id, status: 'assigned' });
+      } catch (itemErr: any) {
+        results.push({ id, status: 'failed', reason: itemErr?.message || 'Database error' });
+      }
+    }
+
+    const assignedCount = results.filter(r => r.status === 'assigned').length;
+    return res.json({
+      success: true,
+      message: `${assignedCount} alert(s) assigned.`,
+      assignedCount,
+      results
+    });
+  } catch (err) {
+    console.error('Bulk assign safety alerts error:', err);
+    res.status(500).json({ error: 'Failed to bulk assign safety alerts' });
+  }
+});
+
 // POST /api/admin/safety-alerts/:id/acknowledge
 router.post('/safety-alerts/:id/acknowledge', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {

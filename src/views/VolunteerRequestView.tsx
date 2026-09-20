@@ -118,7 +118,7 @@ export const VolunteerRequestView: React.FC<VolunteerRequestViewProps> = ({
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
-          <span className="text-sm font-bold font-serif-koinonia text-[#18181B] tracking-wide uppercase">Volunteer Request</span>
+          <span className="text-sm font-bold font-sans text-[#18181B] tracking-wide uppercase">Volunteer Request</span>
           <div className="w-8" />
         </div>
 
@@ -127,7 +127,7 @@ export const VolunteerRequestView: React.FC<VolunteerRequestViewProps> = ({
             <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-xs font-bold uppercase tracking-wider mx-auto">
               <span>{isNotOpen ? 'Registration Not Open' : 'Registration Closed'}</span>
             </div>
-            <h1 className="text-2xl font-bold font-serif-koinonia text-[#18181B]">
+            <h1 className="type-h1-app text-[#18181B]">
               {isNotOpen ? 'Registration is not open yet' : 'Registration has closed'}
             </h1>
             <p className="text-xs sm:text-sm text-gray-500 leading-relaxed">
@@ -177,14 +177,14 @@ export const VolunteerRequestView: React.FC<VolunteerRequestViewProps> = ({
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <span className="text-sm font-bold font-serif-koinonia text-[#18181B] tracking-wide uppercase">Volunteer Request</span>
+        <span className="text-sm font-bold font-sans text-[#18181B] tracking-wide uppercase">Volunteer Request</span>
         <div className="w-8" />
       </div>
 
       <div className="flex-1 max-w-md w-full mx-auto p-4 space-y-6">
         <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#EAE8E1] shadow-sm space-y-6">
           <div className="space-y-2 text-center">
-            <h1 className="text-2xl font-bold font-serif-koinonia text-[#18181B]">Volunteer with Children & Teens</h1>
+            <h1 className="type-h1-app text-[#18181B]">Volunteer with Children & Teens</h1>
             <p className="text-xs text-gray-500 leading-relaxed">
               Help us create a safe, engaging, and spiritually nourishing environment for our young ones. Fill out the application details below to begin.
             </p>

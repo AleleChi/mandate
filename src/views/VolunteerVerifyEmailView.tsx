@@ -153,7 +153,7 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
         <div className="space-y-6 py-6 flex flex-col items-center animate-pulse">
           <Loader2 className="w-12 h-12 text-[#C59B27] animate-spin stroke-[2]" />
           <div className="space-y-1">
-            <h1 className="font-serif-koinonia font-bold text-xl text-[#18181B] tracking-tight">
+            <h1 className="type-h1-app text-xl text-[#18181B]">
               Confirming your email...
             </h1>
             <p className="text-xs text-gray-500 animate-pulse">
@@ -171,7 +171,7 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
             </div>
           </div>
           <div className="space-y-2">
-            <h1 className="font-serif-koinonia font-bold text-2xl text-[#18181B] tracking-tight">
+            <h1 className="type-h1-app text-2xl text-[#18181B]">
               Email Verified!
             </h1>
             <p className="text-sm text-gray-500 leading-relaxed">
@@ -197,7 +197,7 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
           </div>
           
           <div className="space-y-2">
-            <h1 className="font-serif-koinonia font-bold text-2xl sm:text-[28px] text-[#18181B] tracking-tight">
+            <h1 className="type-h1-app text-2xl sm:text-[28px] text-[#18181B]">
               Check your email
             </h1>
             <div className="text-sm text-[#3F3F46] leading-relaxed max-w-[360px] mx-auto pt-1">
@@ -344,7 +344,7 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
           </div>
           
           <div className="space-y-2">
-            <h1 className="font-serif-koinonia font-bold text-xl text-[#18181B] tracking-tight">
+            <h1 className="type-h1-app text-xl text-[#18181B]">
               Confirmation Link Invalid
             </h1>
             <p className="text-xs text-gray-500 leading-relaxed max-w-sm mx-auto">

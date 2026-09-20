@@ -145,23 +145,23 @@ export const TrainingFacilitatorConsole: React.FC<TrainingFacilitatorConsoleProp
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-serif text-zinc-900 tracking-tight">
+          <h1 className="text-2xl font-serif text-zinc-900 dark:text-[#F0EBE3] tracking-tight">
             Practice coordinator
           </h1>
-          <p className="text-xs text-zinc-600 mt-1">
+          <p className="text-xs text-zinc-600 dark:text-[#7A7570] mt-1">
             Guide the session, introduce situations, and prepare team debrief notes.
           </p>
         </div>
         <button
           onClick={() => onNavigate(`/admin/training/sessions/${sessionId}`)}
-          className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 py-2 rounded-xl border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-zinc-700 text-xs font-semibold transition-colors cursor-pointer"
+          className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 py-2 rounded-xl border border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#21211E] hover:bg-zinc-50 dark:hover:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] text-xs font-semibold transition-colors cursor-pointer"
         >
           View team practice screen
         </button>
       </div>
 
       {successMsg && (
-        <div className="mb-6 p-3.5 bg-emerald-50/80 border border-emerald-200/90 text-emerald-900 text-xs font-medium rounded-xl">
+        <div className="mb-6 p-3.5 bg-emerald-50/80 dark:bg-emerald-950/20 border border-emerald-200/90 dark:border-emerald-900/40 text-emerald-900 dark:text-emerald-200 text-xs font-medium rounded-xl">
           {successMsg}
         </div>
       )}
@@ -170,16 +170,16 @@ export const TrainingFacilitatorConsole: React.FC<TrainingFacilitatorConsoleProp
         {/* Left Column: Controls & Team */}
         <div className="space-y-6">
           {/* Controls Box */}
-          <div className="bg-white rounded-2xl border border-[#EAE8E1] p-6 shadow-2xs">
-            <h2 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-4">
+          <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-6 shadow-2xs">
+            <h2 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider mb-4">
               Practice controls
             </h2>
 
-            <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl p-4 text-center mb-5">
-              <span className="text-[11px] text-zinc-500 uppercase font-semibold tracking-wider">
+            <div className="bg-[#FAF9F5] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl p-4 text-center mb-5">
+              <span className="text-[11px] text-zinc-500 dark:text-[#7A7570] uppercase font-semibold tracking-wider">
                 Status
               </span>
-              <div className="text-xl font-semibold text-zinc-900 mt-1">
+              <div className="text-xl font-semibold text-zinc-900 dark:text-[#F0EBE3] mt-1">
                 {status === 'active' ? 'Practice in progress' : status === 'paused' ? 'Paused' : 'Not started'}
               </div>
             </div>
@@ -217,34 +217,34 @@ export const TrainingFacilitatorConsole: React.FC<TrainingFacilitatorConsoleProp
             <button
               type="button"
               onClick={handleReset}
-              className="w-full mt-3 min-h-[38px] px-3 py-2 rounded-xl border border-red-200 bg-white hover:bg-red-50 text-red-700 text-xs font-medium transition-colors cursor-pointer"
+              className="w-full mt-3 min-h-[38px] px-3 py-2 rounded-xl border border-red-200 dark:border-red-900/40 bg-white dark:bg-[#21211E] hover:bg-red-50 dark:hover:bg-red-950/30 text-red-700 dark:text-red-400 text-xs font-medium transition-colors cursor-pointer"
             >
               Restart practice session
             </button>
           </div>
 
           {/* Team Members List */}
-          <div className="bg-white rounded-2xl border border-[#EAE8E1] p-6 shadow-2xs">
-            <h2 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-3">
+          <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-6 shadow-2xs">
+            <h2 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider mb-3">
               Team members in practice
             </h2>
             <div className="space-y-2">
               {session?.participants?.length === 0 ? (
-                <p className="text-xs text-zinc-500 italic py-2">
+                <p className="text-xs text-zinc-500 dark:text-[#7A7570] italic py-2">
                   Waiting for team members to join.
                 </p>
               ) : (
                 session?.participants?.map((p: any) => (
                   <div
                     key={p.id}
-                    className="p-3 bg-zinc-50/70 border border-[#EAE8E1] rounded-xl text-xs flex justify-between items-center"
+                    className="p-3 bg-zinc-50/70 dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl text-xs flex justify-between items-center"
                   >
                     <div>
-                      <p className="font-semibold text-zinc-900">
+                      <p className="font-semibold text-zinc-900 dark:text-[#F0EBE3]">
                         {p.user_name || 'Team member'}
                       </p>
-                      <span className="text-zinc-500 text-[11px]">
-                        Role: <strong className="text-[#8C6D1F]">{formatPracticeRole(p.training_role)}</strong>
+                      <span className="text-zinc-500 dark:text-[#7A7570] text-[11px]">
+                        Role: <strong className="text-[#8C6D1F] dark:text-amber-400">{formatPracticeRole(p.training_role)}</strong>
                       </span>
                     </div>
                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
@@ -258,11 +258,11 @@ export const TrainingFacilitatorConsole: React.FC<TrainingFacilitatorConsoleProp
         {/* Right 2 Columns: Situations & Debrief Notes */}
         <div className="lg:col-span-2 space-y-6">
           {/* Practice situations to introduce */}
-          <div className="bg-white rounded-2xl border border-[#EAE8E1] p-6 shadow-2xs">
-            <h2 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
+          <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-6 shadow-2xs">
+            <h2 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider mb-2">
               Situations to introduce
             </h2>
-            <p className="text-xs text-zinc-500 mb-4">
+            <p className="text-xs text-zinc-500 dark:text-[#7A7570] mb-4">
               Introduce practice situations to prompt team response and verify procedures.
             </p>
 
@@ -270,12 +270,12 @@ export const TrainingFacilitatorConsole: React.FC<TrainingFacilitatorConsoleProp
               {session?.injections?.map((inj: any) => (
                 <div
                   key={inj.id}
-                  className="p-4 bg-zinc-50/70 border border-[#EAE8E1] rounded-xl text-xs flex flex-col justify-between"
+                  className="p-4 bg-zinc-50/70 dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl text-xs flex flex-col justify-between"
                 >
                   <div>
-                    <h3 className="font-semibold text-zinc-900">{inj.title}</h3>
+                    <h3 className="font-semibold text-zinc-900 dark:text-[#F0EBE3]">{inj.title}</h3>
                     {inj.expected_action && (
-                      <p className="text-[11px] text-zinc-600 mt-1.5">
+                      <p className="text-[11px] text-zinc-600 dark:text-[#B8B0A5] mt-1.5">
                         Expected action: {inj.expected_action}
                       </p>
                     )}
@@ -293,17 +293,17 @@ export const TrainingFacilitatorConsole: React.FC<TrainingFacilitatorConsoleProp
           </div>
 
           {/* Coordinator Debrief Notes */}
-          <div className="bg-white rounded-2xl border border-[#EAE8E1] p-6 shadow-2xs">
-            <h2 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
+          <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-6 shadow-2xs">
+            <h2 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider mb-2">
               Coordinator debrief notes
             </h2>
-            <p className="text-xs text-zinc-500 mb-4">
+            <p className="text-xs text-zinc-500 dark:text-[#7A7570] mb-4">
               Prepare notes for your team discussion after the practice ends.
             </p>
 
             <div className="space-y-4 text-xs">
               <div>
-                <label className="block text-xs font-medium text-zinc-700 mb-1.5">
+                <label className="block text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] mb-1.5">
                   1. Summary of session
                 </label>
                 <textarea
@@ -311,12 +311,12 @@ export const TrainingFacilitatorConsole: React.FC<TrainingFacilitatorConsoleProp
                   onChange={(e) => setDebriefSummary(e.target.value)}
                   placeholder="Record how the team performed check-in scans, communication, or handled questions."
                   rows={2}
-                  className="w-full bg-white border border-[#EAE8E1] rounded-xl px-3.5 py-2 text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27] resize-none"
+                  className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl px-3.5 py-2 text-xs text-zinc-900 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 resize-none"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-zinc-700 mb-1.5">
+                <label className="block text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] mb-1.5">
                   2. What went well
                 </label>
                 <textarea
@@ -324,12 +324,12 @@ export const TrainingFacilitatorConsole: React.FC<TrainingFacilitatorConsoleProp
                   onChange={(e) => setDebriefStrengths(e.target.value)}
                   placeholder="e.g. Prompt team communication, calm guardian interactions, clear notes."
                   rows={2}
-                  className="w-full bg-white border border-[#EAE8E1] rounded-xl px-3.5 py-2 text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27] resize-none"
+                  className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl px-3.5 py-2 text-xs text-zinc-900 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 resize-none"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-zinc-700 mb-1.5">
+                <label className="block text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] mb-1.5">
                   3. Areas to practise further
                 </label>
                 <textarea
@@ -337,7 +337,7 @@ export const TrainingFacilitatorConsole: React.FC<TrainingFacilitatorConsoleProp
                   onChange={(e) => setDebriefImprovements(e.target.value)}
                   placeholder="e.g. Speed up pass verification when internet access is unavailable."
                   rows={2}
-                  className="w-full bg-white border border-[#EAE8E1] rounded-xl px-3.5 py-2 text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27] resize-none"
+                  className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl px-3.5 py-2 text-xs text-zinc-900 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 resize-none"
                 />
               </div>
 

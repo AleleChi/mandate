@@ -56,18 +56,18 @@ function formatDutyStatus(status?: string): { label: string; textClass: string; 
   switch (status) {
     case 'on_duty':
     case 'active':
-      return { label: 'On duty', textClass: 'text-emerald-700', dotClass: 'bg-emerald-500' };
+      return { label: 'On duty', textClass: 'text-emerald-700 dark:text-emerald-400', dotClass: 'bg-emerald-500 dark:bg-emerald-400' };
     case 'temporarily_unavailable':
     case 'on_break':
-      return { label: 'On break', textClass: 'text-amber-700', dotClass: 'bg-amber-500' };
+      return { label: 'On break', textClass: 'text-amber-700 dark:text-amber-400', dotClass: 'bg-amber-500 dark:bg-amber-400' };
     case 'scheduled':
     case 'upcoming':
-      return { label: 'Scheduled', textClass: 'text-zinc-600', dotClass: 'bg-zinc-400' };
+      return { label: 'Scheduled', textClass: 'text-zinc-600 dark:text-[#B8B0A5]', dotClass: 'bg-zinc-400 dark:bg-[#7A7570]' };
     case 'ended':
     case 'unavailable':
-      return { label: 'Unavailable', textClass: 'text-zinc-500', dotClass: 'bg-zinc-400' };
+      return { label: 'Unavailable', textClass: 'text-zinc-500 dark:text-[#7A7570]', dotClass: 'bg-zinc-400 dark:bg-[#7A7570]' };
     default:
-      return { label: 'Scheduled', textClass: 'text-zinc-600', dotClass: 'bg-zinc-400' };
+      return { label: 'Scheduled', textClass: 'text-zinc-600 dark:text-[#B8B0A5]', dotClass: 'bg-zinc-400 dark:bg-[#7A7570]' };
   }
 }
 
@@ -547,24 +547,24 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
       )}
 
       {/* 1. Header Row */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EAE8E1] pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EAE8E1] dark:border-[#302E29] pb-4">
         <div>
-          <h2 className="text-xl font-bold text-[#18181B] tracking-tight">
+          <h2 className="text-xl font-bold text-[#18181B] dark:text-[#F0EBE3] tracking-tight">
             Team Assignments
           </h2>
-          <p className="text-xs text-zinc-500 mt-0.5 font-normal">
+          <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-0.5 font-normal">
             Assign approved team members to the areas and roles they will cover during the event.
           </p>
         </div>
         <div className="flex items-center space-x-3">
-          <span className="text-xs text-zinc-500 font-medium">
+          <span className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium">
             {assignments.length} {assignments.length === 1 ? 'assignment' : 'assignments'}
           </span>
           <button
             onClick={() => fetchAssignments(1)}
             disabled={loading}
             aria-label="Refresh assignments"
-            className="flex items-center space-x-2 px-3 py-1.5 bg-white hover:bg-zinc-50 border border-[#EAE8E1] text-xs font-medium text-[#18181B] rounded-lg transition-all shadow-2xs cursor-pointer disabled:opacity-50"
+            className="flex items-center space-x-2 px-3 py-1.5 bg-white dark:bg-[#21211E] hover:bg-zinc-50 dark:hover:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] rounded-lg transition-all shadow-2xs cursor-pointer disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-[#C59B27] ${loading ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
@@ -580,15 +580,15 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
       </div>
 
       {/* 2. Filter / Search Bar */}
-      <div className="p-3 bg-white border border-[#EAE8E1] rounded-xl flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shadow-2xs">
+      <div className="p-3 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shadow-2xs">
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Search team members, roles or areas…"
             value={teamSearch}
             onChange={(e) => setTeamSearch(e.target.value)}
-            className="w-full text-xs pl-8 pr-3 py-1.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] text-zinc-900 placeholder:text-zinc-400 font-normal"
+            className="w-full text-xs pl-8 pr-3 py-1.5 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] text-zinc-900 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] font-normal"
           />
         </div>
 
@@ -597,7 +597,7 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
             value={filterRole}
             onChange={(e) => setFilterRole(e.target.value)}
             aria-label="Filter by role"
-            className="text-xs px-2.5 py-1.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] text-zinc-700 font-medium cursor-pointer"
+            className="text-xs px-2.5 py-1.5 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] text-zinc-700 dark:text-[#B8B0A5] font-medium cursor-pointer"
           >
             <option value="">All roles</option>
             {responsibilities.map((r) => (
@@ -609,7 +609,7 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
             aria-label="Filter by duty status"
-            className="text-xs px-2.5 py-1.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] text-zinc-700 font-medium cursor-pointer"
+            className="text-xs px-2.5 py-1.5 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] text-zinc-700 dark:text-[#B8B0A5] font-medium cursor-pointer"
           >
             <option value="">All statuses</option>
             <option value="on_duty">On duty</option>
@@ -622,21 +622,21 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
 
       {/* 3. Main Content: Table / List */}
       {loading && assignments.length === 0 ? (
-        <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl">
+        <div className="p-12 text-center text-xs text-zinc-500 dark:text-[#7A7570] bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl">
           <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-[#C59B27]" />
           <span>Loading assignments…</span>
         </div>
       ) : error && assignments.length === 0 ? (
-        <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-rose-200 rounded-2xl space-y-3 shadow-2xs">
-          <AlertTriangle className="w-6 h-6 mx-auto text-rose-500" />
+        <div className="p-12 text-center text-xs text-zinc-500 dark:text-[#7A7570] bg-white dark:bg-[#1D1D1A] border border-rose-200 dark:border-red-900/40 rounded-2xl space-y-3 shadow-2xs">
+          <AlertTriangle className="w-6 h-6 mx-auto text-rose-500 dark:text-red-400" />
           <div>
-            <h3 className="font-semibold text-zinc-800 text-sm">{error}</h3>
-            <p className="text-zinc-500 text-xs mt-0.5">Please check your connection or try loading assignments again.</p>
+            <h3 className="font-semibold text-zinc-800 dark:text-[#F0EBE3] text-sm">{error}</h3>
+            <p className="text-zinc-500 dark:text-[#7A7570] text-xs mt-0.5">Please check your connection or try loading assignments again.</p>
           </div>
           <div className="pt-1">
             <button
               onClick={() => fetchAssignments(assignmentPagination.page)}
-              className="px-3.5 py-1.5 bg-white border border-[#EAE8E1] text-zinc-700 text-xs font-medium rounded-xl hover:bg-zinc-50 cursor-pointer shadow-2xs"
+              className="px-3.5 py-1.5 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] text-zinc-700 dark:text-[#B8B0A5] text-xs font-medium rounded-xl hover:bg-zinc-50 dark:hover:bg-[#262520] cursor-pointer shadow-2xs"
             >
               Try again
             </button>
@@ -644,25 +644,25 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
         </div>
       ) : assignments.length === 0 ? (
         hasActiveFilters ? (
-          <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl space-y-2">
-            <Users className="w-6 h-6 mx-auto text-zinc-400" />
-            <h3 className="font-semibold text-zinc-800 text-sm">No matching assignments</h3>
-            <p className="text-zinc-500 text-xs">Try changing your filters or search.</p>
+          <div className="p-12 text-center text-xs text-zinc-500 dark:text-[#7A7570] bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl space-y-2">
+            <Users className="w-6 h-6 mx-auto text-zinc-400 dark:text-[#7A7570]" />
+            <h3 className="font-semibold text-zinc-800 dark:text-[#F0EBE3] text-sm">No matching assignments</h3>
+            <p className="text-zinc-500 dark:text-[#7A7570] text-xs">Try changing your filters or search.</p>
             <div className="pt-2">
               <button
                 onClick={clearFilters}
-                className="px-3.5 py-1.5 bg-white border border-[#EAE8E1] rounded-xl text-zinc-700 text-xs font-medium hover:bg-zinc-50 cursor-pointer"
+                className="px-3.5 py-1.5 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl text-zinc-700 dark:text-[#B8B0A5] text-xs font-medium hover:bg-zinc-50 dark:hover:bg-[#262520] cursor-pointer"
               >
                 Clear filters
               </button>
             </div>
           </div>
         ) : (
-          <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl space-y-3">
-            <Users className="w-6 h-6 mx-auto text-zinc-400" />
+          <div className="p-12 text-center text-xs text-zinc-500 dark:text-[#7A7570] bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl space-y-3">
+            <Users className="w-6 h-6 mx-auto text-zinc-400 dark:text-[#7A7570]" />
             <div>
-              <h3 className="font-semibold text-zinc-800 text-sm">No team assignments yet</h3>
-              <p className="text-zinc-500 text-xs mt-0.5">
+              <h3 className="font-semibold text-zinc-800 dark:text-[#F0EBE3] text-sm">No team assignments yet</h3>
+              <p className="text-zinc-500 dark:text-[#7A7570] text-xs mt-0.5">
                 Assign approved team members to roles and areas for this event.
               </p>
             </div>
@@ -677,12 +677,12 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
           </div>
         )
       ) : (
-        <div className="bg-white border border-[#EAE8E1] rounded-xl overflow-hidden shadow-2xs">
+        <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl overflow-hidden shadow-2xs">
           {/* Desktop & Tablet Table */}
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="bg-[#FAF9F5] border-b border-[#EAE8E1] text-zinc-500 font-medium text-[11px]">
+                <tr className="bg-[#FAF9F5] dark:bg-[#21211E] border-b border-[#EAE8E1] dark:border-[#302E29] text-zinc-500 dark:text-[#7A7570] font-medium text-[11px]">
                   <th className="p-3.5 pl-4 font-medium w-[220px]">Team member</th>
                   <th className="p-3.5 font-medium w-[150px]">Role</th>
                   <th className="p-3.5 font-medium min-w-[180px]">Assigned area</th>
@@ -691,14 +691,14 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
                   <th className="p-3.5 pr-4 font-medium text-right w-[150px]">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-100 text-zinc-700">
+              <tbody className="divide-y divide-zinc-100 dark:divide-[#302E29] text-zinc-700 dark:text-[#B8B0A5]">
                 {assignments.map((as) => {
                   const statusInfo = formatDutyStatus(as.status);
                   const personName = as.user_name || 'Administrator';
                   const areaName = as.assigned_location_name || 'Central Command';
 
                   return (
-                    <tr key={as.id} className="hover:bg-zinc-50/60 transition-colors">
+                    <tr key={as.id} className="hover:bg-zinc-50/60 dark:hover:bg-[#21211E]/60 transition-colors">
                       {/* Team Member */}
                       <td className="p-3.5 pl-4">
                         <div className="flex items-center space-x-3">
@@ -706,11 +706,11 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
                             {getInitials(personName)}
                           </div>
                           <div className="min-w-0">
-                            <div className="font-semibold text-zinc-900 text-xs truncate">
+                            <div className="font-semibold text-zinc-900 dark:text-[#F0EBE3] text-xs truncate">
                               {personName}
                             </div>
                             {as.user_email && (
-                              <div className="text-[11px] text-zinc-400 truncate">
+                              <div className="text-[11px] text-zinc-400 dark:text-[#7A7570] truncate">
                                 {as.user_email}
                               </div>
                             )}
@@ -719,13 +719,13 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
                       </td>
 
                       {/* Role */}
-                      <td className="p-3.5 font-medium text-zinc-800">
+                      <td className="p-3.5 font-medium text-zinc-800 dark:text-[#F0EBE3]">
                         {as.responsibility_key || formatRoleLabel(as.user_role)}
                       </td>
 
                       {/* Assigned Area */}
-                      <td className="p-3.5 text-zinc-700">
-                        <span className="font-medium text-zinc-800">{areaName}</span>
+                      <td className="p-3.5 text-zinc-700 dark:text-[#B8B0A5]">
+                        <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">{areaName}</span>
                       </td>
 
                       {/* Duty Status */}
@@ -739,7 +739,7 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
                       </td>
 
                       {/* Shift Time */}
-                      <td className="p-3.5 text-[11px] text-zinc-500 font-normal">
+                      <td className="p-3.5 text-[11px] text-zinc-500 dark:text-[#7A7570] font-normal">
                         {formatShiftWindow(as.starts_at, as.ends_at)}
                       </td>
 
@@ -748,21 +748,21 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
                         <div className="flex items-center justify-end space-x-2">
                           <button
                             onClick={() => setDetailAssignment(as)}
-                            className="text-xs text-zinc-600 hover:text-zinc-900 font-medium cursor-pointer"
+                            className="text-xs text-zinc-600 dark:text-[#B8B0A5] hover:text-zinc-900 dark:hover:text-[#F0EBE3] font-medium cursor-pointer"
                           >
                             View
                           </button>
-                          <span className="text-zinc-300">•</span>
+                          <span className="text-zinc-300 dark:text-[#52504B]">•</span>
                           <button
                             onClick={() => openEditModal(as)}
                             className="text-xs text-[#C59B27] hover:text-[#A8821B] font-medium cursor-pointer"
                           >
                             Edit
                           </button>
-                          <span className="text-zinc-300">•</span>
+                          <span className="text-zinc-300 dark:text-[#52504B]">•</span>
                           <button
                             onClick={() => setDeletingAssignment(as)}
-                            className="text-xs text-rose-600 hover:text-rose-700 font-medium cursor-pointer"
+                            className="text-xs text-rose-600 dark:text-red-400 hover:text-rose-700 dark:hover:text-red-300 font-medium cursor-pointer"
                           >
                             Remove
                           </button>
@@ -776,7 +776,7 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
           </div>
 
           {/* Mobile Cards View */}
-          <div className="block md:hidden divide-y divide-zinc-100">
+          <div className="block md:hidden divide-y divide-zinc-100 dark:divide-[#302E29]">
             {assignments.map((as) => {
               const statusInfo = formatDutyStatus(as.status);
               const personName = as.user_name || 'Administrator';
@@ -790,8 +790,8 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
                         {getInitials(personName)}
                       </div>
                       <div>
-                        <div className="font-semibold text-zinc-900 text-xs">{personName}</div>
-                        <div className="text-[11px] text-zinc-500">{as.responsibility_key}</div>
+                        <div className="font-semibold text-zinc-900 dark:text-[#F0EBE3] text-xs">{personName}</div>
+                        <div className="text-[11px] text-zinc-500 dark:text-[#7A7570]">{as.responsibility_key}</div>
                       </div>
                     </div>
                     <div className="flex items-center space-x-1.5">
@@ -802,21 +802,21 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
                     </div>
                   </div>
 
-                  <div className="p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-lg text-xs space-y-1">
+                  <div className="p-2.5 bg-[#FAF9F5] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-lg text-xs space-y-1">
                     <div className="flex justify-between">
-                      <span className="text-zinc-400">Area</span>
-                      <span className="font-medium text-zinc-900">{areaName}</span>
+                      <span className="text-zinc-400 dark:text-[#7A7570]">Area</span>
+                      <span className="font-medium text-zinc-900 dark:text-[#F0EBE3]">{areaName}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-zinc-400">Shift</span>
-                      <span className="text-zinc-600">{formatShiftWindow(as.starts_at, as.ends_at)}</span>
+                      <span className="text-zinc-400 dark:text-[#7A7570]">Shift</span>
+                      <span className="text-zinc-600 dark:text-[#B8B0A5]">{formatShiftWindow(as.starts_at, as.ends_at)}</span>
                     </div>
                   </div>
 
                   <div className="flex items-center justify-end space-x-3 pt-1 text-xs">
                     <button
                       onClick={() => setDetailAssignment(as)}
-                      className="text-zinc-600 font-medium hover:underline cursor-pointer"
+                      className="text-zinc-600 dark:text-[#B8B0A5] font-medium hover:underline cursor-pointer"
                     >
                       View
                     </button>
@@ -828,7 +828,7 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
                     </button>
                     <button
                       onClick={() => setDeletingAssignment(as)}
-                      className="text-rose-600 font-medium hover:underline cursor-pointer"
+                      className="text-rose-600 dark:text-red-400 font-medium hover:underline cursor-pointer"
                     >
                       Remove
                     </button>
@@ -848,23 +848,23 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
           aria-modal="true"
           aria-labelledby="assign-modal-title"
         >
-          <div className="bg-white border border-[#EAE8E1] rounded-2xl w-full max-w-xl max-h-[90vh] shadow-xl flex flex-col overflow-hidden font-sans">
-            <div className="flex items-start justify-between border-b border-[#EAE8E1] px-6 py-4 shrink-0">
+          <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl w-full max-w-xl max-h-[90vh] shadow-xl flex flex-col overflow-hidden font-sans">
+            <div className="flex items-start justify-between border-b border-[#EAE8E1] dark:border-[#302E29] px-6 py-4 shrink-0">
               <div>
-                <h3 id="assign-modal-title" className="text-base font-bold text-[#18181B]">
+                <h3 id="assign-modal-title" className="text-base font-bold text-[#18181B] dark:text-[#F0EBE3]">
                   {editingAssignment
                     ? 'Edit assignment'
                     : selectedUserIds.length > 1
                       ? 'Assign team members'
                       : 'Assign team member'}
                 </h3>
-                <p className="text-xs text-zinc-500 mt-0.5">
+                <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mt-0.5">
                   Choose who is serving, what they are responsible for, and where they will serve.
                 </p>
               </div>
               <button
                 onClick={() => setShowAddAssignModal(false)}
-                className="text-zinc-400 hover:text-zinc-600 p-1.5 rounded-lg hover:bg-zinc-100 cursor-pointer transition-colors"
+                className="text-zinc-400 hover:text-zinc-600 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-[#262520] cursor-pointer transition-colors"
                 aria-label="Close dialog"
               >
                 <X className="w-4 h-4" />
@@ -873,56 +873,56 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
 
             <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
               {formError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-950 rounded-xl text-xs font-medium flex items-center space-x-2">
-                  <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <div className="p-3 bg-rose-50 dark:bg-red-950/20 border border-rose-200 dark:border-red-900/40 text-rose-950 dark:text-red-300 rounded-xl text-xs font-medium flex items-center space-x-2">
+                  <XCircle className="w-4 h-4 text-rose-600 dark:text-red-400 shrink-0" />
                   <span>{formError}</span>
                 </div>
               )}
 
               {/* Member Selection */}
               <div className="space-y-1.5">
-                <label className="block text-xs font-medium text-zinc-800">Team member</label>
+                <label className="block text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">Team member</label>
                 {editingAssignment ? (
-                  <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl font-medium text-xs text-zinc-900">
+                  <div className="p-3 bg-[#FAF9F5] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl font-medium text-xs text-zinc-900 dark:text-[#F0EBE3]">
                     {editingAssignment.user_name || 'Administrator'} ({editingAssignment.user_email})
                   </div>
                 ) : (
                   <div className="space-y-2">
                     <div className="relative">
-                      <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <Search className="w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570] absolute left-3 top-1/2 -translate-y-1/2" />
                       <input
                         type="text"
                         placeholder="Search team members"
                         value={memberSearch}
                         onChange={(e) => setMemberSearch(e.target.value)}
-                        className="w-full text-xs min-h-[44px] pl-9 pr-3 py-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white text-zinc-900 transition-colors"
+                        className="w-full text-xs min-h-[44px] pl-9 pr-3 py-2.5 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 focus:bg-white dark:focus:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] transition-colors"
                       />
                     </div>
                     <div className="flex items-center justify-between px-1 text-xs">
-                      <span className="font-medium text-zinc-600">
+                      <span className="font-medium text-zinc-600 dark:text-[#B8B0A5]">
                         {selectedUserIds.length === 1 ? '1 selected' : `${selectedUserIds.length} selected`}
                       </span>
                       <div className="flex items-center space-x-3">
                         <button
                           type="button"
                           onClick={handleSelectAll}
-                          className="text-[#C59B27] hover:text-[#A8821B] font-semibold text-xs cursor-pointer hover:underline"
+                          className="text-[#C59B27] dark:text-amber-400 hover:text-[#A8821B] dark:hover:text-amber-300 font-semibold text-xs cursor-pointer hover:underline"
                         >
                           Select all
                         </button>
-                        <span className="text-zinc-300">•</span>
+                        <span className="text-zinc-300 dark:text-[#3A3835]">•</span>
                         <button
                           type="button"
                           onClick={handleClearSelection}
-                          className="text-zinc-500 hover:text-zinc-700 font-medium text-xs cursor-pointer hover:underline"
+                          className="text-zinc-500 hover:text-zinc-700 dark:text-[#7A7570] dark:hover:text-[#B8B0A5] font-medium text-xs cursor-pointer hover:underline"
                         >
                           Clear
                         </button>
                       </div>
                     </div>
-                    <div className="max-h-48 overflow-y-auto border border-[#EAE8E1] rounded-xl divide-y divide-[#EAE8E1] bg-white">
+                    <div className="max-h-48 overflow-y-auto border border-[#EAE8E1] dark:border-[#302E29] rounded-xl divide-y divide-[#EAE8E1] dark:divide-[#302E29] bg-white dark:bg-[#1D1D1A]">
                       {visibleEligibleMembers.length === 0 ? (
-                        <div className="p-3 text-center text-zinc-400 text-xs">
+                        <div className="p-3 text-center text-zinc-400 dark:text-[#7A7570] text-xs">
                           No team members found.
                         </div>
                       ) : (
@@ -938,8 +938,8 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
                               key={memberId}
                               type="button"
                               onClick={() => toggleMemberSelection(memberId)}
-                              className={`w-full text-left p-2.5 flex items-center justify-between hover:bg-zinc-50 cursor-pointer transition-colors ${
-                                isSelected ? 'bg-amber-50/50 border-l-4 border-l-[#C59B27]' : ''
+                              className={`w-full text-left p-2.5 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-[#262520] cursor-pointer transition-colors ${
+                                isSelected ? 'bg-amber-50/50 dark:bg-amber-950/20 border-l-4 border-l-[#C59B27]' : ''
                               }`}
                             >
                               <div className="flex items-center space-x-2.5 min-w-0">
@@ -947,21 +947,21 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
                                   className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0 ${
                                     isSelected
                                       ? 'bg-[#C59B27] border-[#C59B27] text-white'
-                                      : 'border-zinc-300 bg-white hover:border-zinc-400'
+                                      : 'border-zinc-300 dark:border-[#3A3835] bg-white dark:bg-[#262520] hover:border-zinc-400 dark:hover:border-[#7A7570]'
                                   }`}
                                 >
                                   {isSelected && <Check className="w-3 h-3 text-white stroke-[2.5]" />}
                                 </div>
                                 <div className="truncate">
-                                  <div className="font-semibold text-zinc-900 text-xs truncate">
+                                  <div className="font-semibold text-zinc-900 dark:text-[#F0EBE3] text-xs truncate">
                                     {m.full_name || m.email}
                                   </div>
-                                  <div className="text-[11px] text-zinc-500 truncate">
+                                  <div className="text-[11px] text-zinc-500 dark:text-[#B8B0A5] truncate">
                                     {m.email}{m.user_role === 'volunteer' || m.role === 'volunteer' ? ' • Volunteer' : ''}
                                   </div>
                                 </div>
                               </div>
-                              <span className="text-[11px] text-zinc-400 font-normal shrink-0 ml-2">
+                              <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] font-normal shrink-0 ml-2">
                                 {activeCount > 0 ? `${activeCount} active duty` : 'Available'}
                               </span>
                             </button>
@@ -976,11 +976,11 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
               {/* Assignment: Responsibility & Area */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div className="space-y-1">
-                  <label className="block text-xs font-medium text-zinc-800">Responsibility</label>
+                  <label className="block text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">Responsibility</label>
                   <select
                     value={formResponsibility}
                     onChange={(e) => setFormResponsibility(e.target.value)}
-                    className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white cursor-pointer"
+                    className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-xs font-medium text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 focus:bg-white dark:focus:bg-[#262520] cursor-pointer"
                   >
                     {responsibilities.map((r) => (
                       <option key={r} value={r}>{formatResponsibilityDisplay(r)}</option>
@@ -989,11 +989,11 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
                 </div>
 
                 <div className="space-y-1">
-                  <label className="block text-xs font-medium text-zinc-800">Area</label>
+                  <label className="block text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">Area</label>
                   <select
                     value={formLocationId}
                     onChange={(e) => setFormLocationId(e.target.value)}
-                    className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white cursor-pointer"
+                    className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-xs font-medium text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 focus:bg-white dark:focus:bg-[#262520] cursor-pointer"
                   >
                     <option value="">Central Command / General</option>
                     {eventLocations.map((loc) => (
@@ -1007,11 +1007,11 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
 
               {/* Duty Status */}
               <div className="space-y-1">
-                <label className="block text-xs font-medium text-zinc-800">Status</label>
+                <label className="block text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">Status</label>
                 <select
                   value={formStatus}
                   onChange={(e) => setFormStatus(e.target.value)}
-                  className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white cursor-pointer"
+                  className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-xs font-medium text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 focus:bg-white dark:focus:bg-[#262520] cursor-pointer"
                 >
                   <option value="scheduled">Scheduled</option>
                   <option value="on_duty">On duty</option>
@@ -1023,21 +1023,21 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
               {/* Shift times */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div className="space-y-1">
-                  <label className="block text-xs font-medium text-zinc-800">Starts</label>
+                  <label className="block text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">Starts</label>
                   <input
                     type="datetime-local"
                     value={formStartsAt}
                     onChange={(e) => setFormStartsAt(e.target.value)}
-                    className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white"
+                    className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-xs font-medium text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 focus:bg-white dark:focus:bg-[#262520] dark:[color-scheme:dark]"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="block text-xs font-medium text-zinc-800">Ends</label>
+                  <label className="block text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">Ends</label>
                   <input
                     type="datetime-local"
                     value={formEndsAt}
                     onChange={(e) => setFormEndsAt(e.target.value)}
-                    className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white"
+                    className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-xs font-medium text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 focus:bg-white dark:focus:bg-[#262520] dark:[color-scheme:dark]"
                   />
                 </div>
               </div>
@@ -1045,25 +1045,25 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
               {/* Notes */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-medium text-zinc-800">Notes</label>
-                  <span className="text-[11px] text-zinc-400">Optional</span>
+                  <label className="block text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">Notes</label>
+                  <span className="text-[11px] text-zinc-400 dark:text-[#7A7570]">Optional</span>
                 </div>
                 <textarea
                   rows={2}
                   value={formNote}
                   onChange={(e) => setFormNote(e.target.value)}
                   placeholder="Add any shift instructions or notes…"
-                  className="w-full p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-normal text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white"
+                  className="w-full p-2.5 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-xs font-normal text-zinc-800 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 focus:bg-white dark:focus:bg-[#262520]"
                 />
               </div>
             </div>
 
-            <div className="flex items-center justify-between px-6 py-4 border-t border-[#EAE8E1] bg-white shrink-0">
+            <div className="flex items-center justify-between px-6 py-4 border-t border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#1D1D1A] shrink-0">
               <button
                 type="button"
                 onClick={() => setShowAddAssignModal(false)}
                 disabled={isSubmitting}
-                className="min-h-[44px] px-4 py-2 bg-white hover:bg-zinc-50 border border-[#EAE8E1] text-zinc-700 font-medium text-xs rounded-xl cursor-pointer disabled:opacity-50 transition-colors"
+                className="min-h-[44px] px-4 py-2 bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] text-zinc-700 dark:text-[#B8B0A5] font-medium text-xs rounded-xl cursor-pointer disabled:opacity-50 transition-colors"
               >
                 Cancel
               </button>
@@ -1089,57 +1089,57 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
       {/* 5. View Details Modal */}
       {detailAssignment && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 relative">
-            <div className="flex items-start justify-between border-b border-[#EAE8E1] pb-3">
+          <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 relative">
+            <div className="flex items-start justify-between border-b border-[#EAE8E1] dark:border-[#302E29] pb-3">
               <div>
-                <h3 className="text-base font-bold text-[#18181B]">Assignment Details</h3>
-                <p className="text-xs text-zinc-500 mt-0.5">
+                <h3 className="text-base font-bold text-[#18181B] dark:text-[#F0EBE3]">Assignment Details</h3>
+                <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mt-0.5">
                   {detailAssignment.user_name || 'Administrator'}
                 </p>
               </div>
               <button
                 onClick={() => setDetailAssignment(null)}
-                className="text-zinc-400 hover:text-zinc-600 p-1 cursor-pointer"
+                className="text-zinc-400 hover:text-zinc-600 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="space-y-2.5 text-xs">
-              <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl flex items-center justify-between">
-                <span className="text-zinc-500">Responsibility</span>
-                <span className="font-semibold text-zinc-900">{formatResponsibilityDisplay(detailAssignment.responsibility_key || '')}</span>
+              <div className="p-3 bg-[#FAF9F5] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl flex items-center justify-between">
+                <span className="text-zinc-500 dark:text-[#7A7570]">Responsibility</span>
+                <span className="font-semibold text-zinc-900 dark:text-[#F0EBE3]">{formatResponsibilityDisplay(detailAssignment.responsibility_key || '')}</span>
               </div>
 
-              <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl flex items-center justify-between">
-                <span className="text-zinc-500">Area</span>
-                <span className="font-semibold text-zinc-900">{detailAssignment.assigned_location_name || 'Central Command'}</span>
+              <div className="p-3 bg-[#FAF9F5] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl flex items-center justify-between">
+                <span className="text-zinc-500 dark:text-[#7A7570]">Area</span>
+                <span className="font-semibold text-zinc-900 dark:text-[#F0EBE3]">{detailAssignment.assigned_location_name || 'Central Command'}</span>
               </div>
 
-              <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl flex items-center justify-between">
-                <span className="text-zinc-500">Status</span>
+              <div className="p-3 bg-[#FAF9F5] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl flex items-center justify-between">
+                <span className="text-zinc-500 dark:text-[#7A7570]">Status</span>
                 <span className={`font-semibold ${formatDutyStatus(detailAssignment.status).textClass}`}>
                   {formatDutyStatus(detailAssignment.status).label}
                 </span>
               </div>
 
-              <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl flex items-center justify-between">
-                <span className="text-zinc-500">Shift</span>
-                <span className="font-medium text-zinc-800">{formatShiftWindow(detailAssignment.starts_at, detailAssignment.ends_at)}</span>
+              <div className="p-3 bg-[#FAF9F5] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl flex items-center justify-between">
+                <span className="text-zinc-500 dark:text-[#7A7570]">Shift</span>
+                <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">{formatShiftWindow(detailAssignment.starts_at, detailAssignment.ends_at)}</span>
               </div>
 
               {detailAssignment.note && (
-                <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl space-y-1">
-                  <span className="text-zinc-500 block">Note</span>
-                  <p className="text-zinc-700 italic">"{detailAssignment.note}"</p>
+                <div className="p-3 bg-[#FAF9F5] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl space-y-1">
+                  <span className="text-zinc-500 dark:text-[#7A7570] block">Note</span>
+                  <p className="text-zinc-700 dark:text-[#B8B0A5] italic">"{detailAssignment.note}"</p>
                 </div>
               )}
             </div>
 
-            <div className="flex items-center justify-end space-x-2 pt-2 border-t border-[#EAE8E1]">
+            <div className="flex items-center justify-end space-x-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
               <button
                 onClick={() => setDetailAssignment(null)}
-                className="px-3.5 py-2 bg-white hover:bg-zinc-100 border border-[#EAE8E1] text-zinc-700 font-medium text-xs rounded-xl cursor-pointer"
+                className="px-3.5 py-2 bg-white dark:bg-[#262520] hover:bg-zinc-100 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] text-zinc-700 dark:text-[#B8B0A5] font-medium text-xs rounded-xl cursor-pointer"
               >
                 Close
               </button>
@@ -1161,47 +1161,47 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
       {/* 6. Remove Assignment Confirmation Modal */}
       {deletingAssignment && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4">
+          <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4">
             <div className="flex items-start space-x-3">
-              <div className="w-9 h-9 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl flex items-center justify-center shrink-0">
+              <div className="w-9 h-9 bg-rose-50 dark:bg-red-950/20 border border-rose-200 dark:border-red-900/40 text-rose-600 dark:text-red-400 rounded-xl flex items-center justify-center shrink-0">
                 <AlertTriangle className="w-4 h-4" />
               </div>
               <div className="space-y-0.5 pr-4">
-                <h3 className="text-base font-bold text-[#18181B]">Remove this assignment?</h3>
-                <p className="text-xs text-zinc-500">
+                <h3 className="text-base font-bold text-[#18181B] dark:text-[#F0EBE3]">Remove this assignment?</h3>
+                <p className="text-xs text-zinc-500 dark:text-[#B8B0A5]">
                   This team member will no longer be assigned to this area.
                 </p>
               </div>
               <button
                 onClick={() => setDeletingAssignment(null)}
                 disabled={isSubmitting}
-                className="text-zinc-400 hover:text-zinc-600 p-1 cursor-pointer"
+                className="text-zinc-400 hover:text-zinc-600 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl p-3.5 space-y-1.5 text-xs">
+            <div className="bg-[#FAF9F5] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl p-3.5 space-y-1.5 text-xs">
               <div className="flex justify-between">
-                <span className="text-zinc-500">Team member</span>
-                <span className="font-semibold text-zinc-900">{deletingAssignment.user_name || 'Administrator'}</span>
+                <span className="text-zinc-500 dark:text-[#7A7570]">Team member</span>
+                <span className="font-semibold text-zinc-900 dark:text-[#F0EBE3]">{deletingAssignment.user_name || 'Administrator'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-zinc-500">Role</span>
-                <span className="font-semibold text-zinc-900">{deletingAssignment.responsibility_key}</span>
+                <span className="text-zinc-500 dark:text-[#7A7570]">Role</span>
+                <span className="font-semibold text-zinc-900 dark:text-[#F0EBE3]">{deletingAssignment.responsibility_key}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-zinc-500">Area</span>
-                <span className="font-semibold text-zinc-900">{deletingAssignment.assigned_location_name || 'Central Command'}</span>
+                <span className="text-zinc-500 dark:text-[#7A7570]">Area</span>
+                <span className="font-semibold text-zinc-900 dark:text-[#F0EBE3]">{deletingAssignment.assigned_location_name || 'Central Command'}</span>
               </div>
             </div>
 
-            <div className="flex items-center justify-end space-x-2.5 pt-2 border-t border-[#EAE8E1]">
+            <div className="flex items-center justify-end space-x-2.5 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
               <button
                 type="button"
                 onClick={() => setDeletingAssignment(null)}
                 disabled={isSubmitting}
-                className="px-3.5 py-2 bg-white hover:bg-zinc-100 border border-[#EAE8E1] text-zinc-700 font-medium text-xs rounded-xl cursor-pointer disabled:opacity-50"
+                className="px-3.5 py-2 bg-white dark:bg-[#262520] hover:bg-zinc-100 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] text-zinc-700 dark:text-[#B8B0A5] font-medium text-xs rounded-xl cursor-pointer disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -1209,7 +1209,7 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
                 type="button"
                 onClick={handleConfirmRemoveAssignment}
                 disabled={isSubmitting}
-                className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-medium text-xs rounded-xl shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 dark:bg-red-600 dark:hover:bg-red-700 text-white font-medium text-xs rounded-xl shadow-2xs transition-all cursor-pointer disabled:opacity-50"
               >
                 {isSubmitting ? 'Removing…' : 'Remove assignment'}
               </button>

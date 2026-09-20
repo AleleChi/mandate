@@ -454,50 +454,50 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
     <div className="space-y-5 animate-fade-in" data-view-version="admin-alert-rules-v5">
       {/* Toast Notifications */}
       {success && (
-        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-950 rounded-xl flex items-center justify-between space-x-2 text-xs font-medium animate-fade-in shadow-2xs">
+        <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 text-emerald-950 dark:text-emerald-200 rounded-xl flex items-center justify-between space-x-2 text-xs font-medium animate-fade-in shadow-2xs">
           <div className="flex items-center space-x-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
             <span>{success}</span>
           </div>
-          <button onClick={() => setSuccess(null)} className="text-emerald-700 hover:text-emerald-900 cursor-pointer p-1">
+          <button onClick={() => setSuccess(null)} className="text-emerald-700 dark:text-emerald-400 hover:text-emerald-900 dark:hover:text-emerald-200 cursor-pointer p-1">
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
       {error && (
-        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-950 rounded-xl flex items-center justify-between space-x-2 text-xs font-medium animate-fade-in shadow-2xs">
+        <div className="p-3.5 bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 text-rose-950 dark:text-rose-200 rounded-xl flex items-center justify-between space-x-2 text-xs font-medium animate-fade-in shadow-2xs">
           <div className="flex items-center space-x-2">
-            <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <XCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
             <span>{error}</span>
           </div>
-          <button onClick={() => setError(null)} className="text-rose-700 hover:text-rose-900 cursor-pointer p-1">
+          <button onClick={() => setError(null)} className="text-rose-700 dark:text-rose-400 hover:text-rose-900 dark:hover:text-rose-200 cursor-pointer p-1">
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
       {/* 1. Header Row */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EAE8E1] pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EAE8E1] dark:border-[#302E29] pb-4">
         <div>
-          <h2 className="text-xl font-bold text-[#18181B] tracking-tight">
+          <h2 className="text-xl font-bold text-[#18181B] dark:text-[#F0EBE3] tracking-tight">
             Alert Rules
           </h2>
-          <p className="text-xs text-zinc-500 mt-0.5 font-normal">
+          <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-0.5 font-normal">
             Choose who should receive important event alerts and when.
           </p>
         </div>
         <div className="flex items-center space-x-3">
-          <span className="text-xs text-zinc-500 font-medium">
+          <span className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium">
             {rules.length} {rules.length === 1 ? 'rule' : 'rules'}
           </span>
           <button
             onClick={fetchAlertRules}
             disabled={loading}
             aria-label="Refresh alert rules"
-            className="flex items-center space-x-2 px-3 py-1.5 bg-white hover:bg-zinc-50 border border-[#EAE8E1] text-xs font-medium text-[#18181B] rounded-lg transition-all shadow-2xs cursor-pointer disabled:opacity-50"
+            className="flex items-center space-x-2 px-3 py-1.5 bg-white dark:bg-[#21211E] hover:bg-zinc-50 dark:hover:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] rounded-lg transition-all shadow-2xs cursor-pointer disabled:opacity-50"
           >
-            <RefreshCw className={`w-3.5 h-3.5 text-[#C59B27] ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 text-[#C59B27] dark:text-amber-400 ${loading ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
           </button>
           <button
@@ -512,32 +512,32 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
 
       {/* 2. Rules List */}
       {loading && rules.length === 0 ? (
-        <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl">
-          <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-[#C59B27]" />
+        <div className="p-12 text-center text-xs text-zinc-500 dark:text-[#7A7570] bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl">
+          <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-[#C59B27] dark:text-amber-400" />
           <span>Loading alert rules…</span>
         </div>
       ) : error && rules.length === 0 ? (
-        <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-rose-200 rounded-2xl space-y-3 shadow-2xs">
-          <AlertTriangle className="w-6 h-6 mx-auto text-rose-500" />
+        <div className="p-12 text-center text-xs text-zinc-500 dark:text-[#7A7570] bg-white dark:bg-[#1D1D1A] border border-rose-200 dark:border-rose-900/40 rounded-2xl space-y-3 shadow-2xs">
+          <AlertTriangle className="w-6 h-6 mx-auto text-rose-500 dark:text-rose-400" />
           <div>
-            <h3 className="font-semibold text-zinc-800 text-sm">{error}</h3>
-            <p className="text-zinc-500 text-xs mt-0.5">Please check your connection or try loading alert rules again.</p>
+            <h3 className="font-semibold text-zinc-800 dark:text-[#F0EBE3] text-sm">{error}</h3>
+            <p className="text-zinc-500 dark:text-[#7A7570] text-xs mt-0.5">Please check your connection or try loading alert rules again.</p>
           </div>
           <div className="pt-1">
             <button
               onClick={fetchAlertRules}
-              className="px-3.5 py-1.5 bg-white border border-[#EAE8E1] text-zinc-700 text-xs font-medium rounded-xl hover:bg-zinc-50 cursor-pointer shadow-2xs"
+              className="px-3.5 py-1.5 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] text-zinc-700 dark:text-[#B8B0A5] text-xs font-medium rounded-xl hover:bg-zinc-50 dark:hover:bg-[#262520] cursor-pointer shadow-2xs"
             >
               Try again
             </button>
           </div>
         </div>
       ) : rules.length === 0 ? (
-        <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl space-y-3">
-          <Bell className="w-6 h-6 mx-auto text-zinc-400" />
+        <div className="p-12 text-center text-xs text-zinc-500 dark:text-[#7A7570] bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl space-y-3">
+          <Bell className="w-6 h-6 mx-auto text-zinc-400 dark:text-[#7A7570]" />
           <div>
-            <h3 className="font-semibold text-zinc-800 text-sm">No alert rules configured</h3>
-            <p className="text-zinc-500 text-xs mt-0.5">
+            <h3 className="font-semibold text-zinc-800 dark:text-[#F0EBE3] text-sm">No alert rules configured</h3>
+            <p className="text-zinc-500 dark:text-[#7A7570] text-xs mt-0.5">
               Set up rules to determine who receives event notifications when an issue occurs.
             </p>
           </div>
@@ -571,21 +571,21 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
             return (
               <div
                 key={rule.id}
-                className={`p-4 bg-white border rounded-xl transition-all shadow-2xs relative ${
-                  isActive ? 'border-[#EAE8E1]' : 'border-zinc-200 bg-zinc-50/40 opacity-75'
+                className={`p-4 bg-white dark:bg-[#1D1D1A] border rounded-xl transition-all shadow-2xs relative ${
+                  isActive ? 'border-[#EAE8E1] dark:border-[#302E29]' : 'border-zinc-200 dark:border-[#302E29] bg-zinc-50/40 dark:bg-[#19191A]/60 opacity-75'
                 }`}
               >
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                   <div className="space-y-1.5 flex-1">
                     <div className="flex items-center space-x-2.5">
-                      <h3 className="font-semibold text-sm text-zinc-900">
+                      <h3 className="font-semibold text-sm text-zinc-900 dark:text-[#F0EBE3]">
                         {meta.name}
                       </h3>
                       <span
                         className={`text-[11px] font-medium px-2 py-0.5 rounded-md ${
                           isActive
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : 'bg-zinc-100 text-zinc-600 border border-zinc-200'
+                            ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/50'
+                            : 'bg-zinc-100 dark:bg-[#262520] text-zinc-600 dark:text-[#7A7570] border border-zinc-200 dark:border-[#302E29]'
                         }`}
                       >
                         {isActive ? 'Active' : 'Inactive'}
@@ -593,18 +593,18 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
                     </div>
 
                     {/* Human sentence rule description */}
-                    <div className="text-xs text-zinc-700 leading-relaxed font-normal">
-                      <span className="text-zinc-500">{meta.triggerText}: </span>
-                      <strong className="text-zinc-900 font-medium">Notify {primaryName}</strong> by In-app alert.
+                    <div className="text-xs text-zinc-700 dark:text-[#B8B0A5] leading-relaxed font-normal">
+                      <span className="text-zinc-500 dark:text-[#7A7570]">{meta.triggerText}: </span>
+                      <strong className="text-zinc-900 dark:text-[#F0EBE3] font-medium">Notify {primaryName}</strong> by In-app alert.
                       {backupName && (
                         <span>
                           {' '}If there is no response within {delayMinutes} minute{delayMinutes === 1 ? '' : 's'}, also notify{' '}
-                          <strong className="text-zinc-900 font-medium">{backupName}</strong>.
+                          <strong className="text-zinc-900 dark:text-[#F0EBE3] font-medium">{backupName}</strong>.
                         </span>
                       )}
                     </div>
 
-                    <div className="flex items-center space-x-3 text-[11px] text-zinc-400 pt-0.5">
+                    <div className="flex items-center space-x-3 text-[11px] text-zinc-400 dark:text-[#7A7570] pt-0.5">
                       <span>Contact method: In-app alert</span>
                       <span>•</span>
                       <span>Response timeout: {delayMinutes}m</span>
@@ -615,13 +615,13 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
                   <div className="flex items-center space-x-2 shrink-0 self-end sm:self-start">
                     <button
                       onClick={() => setDetailRule(rule)}
-                      className="text-xs text-zinc-600 hover:text-zinc-900 font-medium px-2 py-1 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                      className="text-xs text-zinc-600 dark:text-[#B8B0A5] hover:text-zinc-900 dark:hover:text-[#F0EBE3] font-medium px-2 py-1 rounded-lg hover:bg-zinc-50 dark:hover:bg-[#262520] cursor-pointer"
                     >
                       View
                     </button>
                     <button
                       onClick={() => openEditModal(rule)}
-                      className="text-xs text-[#C59B27] hover:text-[#A8821B] font-medium px-2 py-1 rounded-lg hover:bg-[#C59B27]/10 cursor-pointer"
+                      className="text-xs text-[#C59B27] dark:text-amber-400 hover:text-[#A8821B] dark:hover:text-amber-300 font-medium px-2 py-1 rounded-lg hover:bg-[#C59B27]/10 dark:hover:bg-amber-400/10 cursor-pointer"
                     >
                       Edit
                     </button>
@@ -630,19 +630,19 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
                     <div className="relative">
                       <button
                         onClick={() => setActiveMenuRuleId(isMenuOpen ? null : rule.id)}
-                        className="p-1 text-zinc-400 hover:text-zinc-700 rounded-lg hover:bg-zinc-100 cursor-pointer"
+                        className="p-1 text-zinc-400 dark:text-[#7A7570] hover:text-zinc-700 dark:hover:text-[#F0EBE3] rounded-lg hover:bg-zinc-100 dark:hover:bg-[#262520] cursor-pointer"
                         aria-label="More actions"
                       >
                         <MoreVertical className="w-4 h-4" />
                       </button>
 
                       {isMenuOpen && (
-                        <div className="absolute right-0 mt-1 w-36 bg-white border border-[#EAE8E1] rounded-xl shadow-lg py-1 z-20 text-xs animate-fade-in">
+                        <div className="absolute right-0 mt-1 w-36 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl shadow-lg py-1 z-20 text-xs animate-fade-in">
                           <button
                             onClick={() => handleToggleRuleStatus(rule)}
-                            className="w-full text-left px-3 py-1.5 hover:bg-zinc-50 flex items-center space-x-2 text-zinc-700 cursor-pointer font-medium"
+                            className="w-full text-left px-3 py-1.5 hover:bg-zinc-50 dark:hover:bg-[#262520] flex items-center space-x-2 text-zinc-700 dark:text-[#F0EBE3] cursor-pointer font-medium"
                           >
-                            <Power className="w-3.5 h-3.5 text-zinc-400" />
+                            <Power className="w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570]" />
                             <span>{isActive ? 'Pause rule' : 'Enable rule'}</span>
                           </button>
                           <button
@@ -650,7 +650,7 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
                               setActiveMenuRuleId(null);
                               setDeletingRule(rule);
                             }}
-                            className="w-full text-left px-3 py-1.5 hover:bg-rose-50 flex items-center space-x-2 text-rose-600 cursor-pointer font-medium"
+                            className="w-full text-left px-3 py-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/30 flex items-center space-x-2 text-rose-600 dark:text-rose-400 cursor-pointer font-medium"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                             <span>Delete rule</span>
@@ -674,13 +674,13 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
           aria-modal="true"
           aria-labelledby="alert-modal-title"
         >
-          <div className="bg-white border border-[#EAE8E1] rounded-2xl w-full max-w-xl max-h-[90vh] shadow-xl flex flex-col overflow-hidden font-sans">
-            <div className="flex items-start justify-between border-b border-[#EAE8E1] px-6 py-4 shrink-0">
+          <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl w-full max-w-xl max-h-[90vh] shadow-xl flex flex-col overflow-hidden font-sans">
+            <div className="flex items-start justify-between border-b border-[#EAE8E1] dark:border-[#302E29] px-6 py-4 shrink-0">
               <div>
-                <h3 id="alert-modal-title" className="text-base font-bold text-[#18181B]">
+                <h3 id="alert-modal-title" className="text-base font-bold text-[#18181B] dark:text-[#F0EBE3]">
                   {editingRule ? 'Edit alert rule' : 'Create alert rule'}
                 </h3>
-                <p className="text-xs text-zinc-500 mt-0.5">
+                <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-0.5">
                   Choose who should be notified when something needs attention.
                 </p>
               </div>
@@ -689,7 +689,7 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
                   setShowAddModal(false);
                   setEditingRule(null);
                 }}
-                className="text-zinc-400 hover:text-zinc-600 p-1.5 rounded-lg hover:bg-zinc-100 cursor-pointer transition-colors"
+                className="text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#F0EBE3] p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-[#262520] cursor-pointer transition-colors"
                 aria-label="Close dialog"
               >
                 <X className="w-4 h-4" />
@@ -698,87 +698,87 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
 
             <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
               {formError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-950 rounded-xl text-xs font-medium flex items-center space-x-2">
-                  <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <div className="p-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 text-rose-950 dark:text-rose-200 rounded-xl text-xs font-medium flex items-center space-x-2">
+                  <XCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
                   <span>{formError}</span>
                 </div>
               )}
 
               {/* When this happens */}
               <div className="space-y-1">
-                <label className="block text-xs font-medium text-zinc-800">When this happens</label>
+                <label className="block text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">When this happens</label>
                 <select
                   value={formCategory}
                   onChange={(e) => setFormCategory(e.target.value)}
-                  className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white cursor-pointer"
+                  className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-xs font-medium text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 focus:bg-white dark:focus:bg-[#262520] cursor-pointer"
                 >
                   {Object.entries(CATEGORY_DEFINITIONS).map(([key, item]) => (
-                    <option key={key} value={key}>
+                    <option key={key} value={key} className="dark:bg-[#21211E] dark:text-[#F0EBE3]">
                       {item.name}
                     </option>
                   ))}
                 </select>
-                <p className="text-[12px] text-zinc-500 pt-0.5">
+                <p className="text-[12px] text-zinc-500 dark:text-[#7A7570] pt-0.5">
                   {CATEGORY_DEFINITIONS[formCategory]?.triggerText}
                 </p>
               </div>
 
               {/* Notify first */}
               <div className="space-y-1">
-                <label className="block text-xs font-medium text-zinc-800">Notify first</label>
+                <label className="block text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">Notify first</label>
                 <select
                   value={formPrimaryRole}
                   onChange={(e) => setFormPrimaryRole(e.target.value)}
-                  className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white cursor-pointer"
+                  className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-xs font-medium text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 focus:bg-white dark:focus:bg-[#262520] cursor-pointer"
                 >
                   {RESPONSIBILITIES.map((r) => (
-                    <option key={r} value={r}>{formatRoleDisplay(r)}</option>
+                    <option key={r} value={r} className="dark:bg-[#21211E] dark:text-[#F0EBE3]">{formatRoleDisplay(r)}</option>
                   ))}
                 </select>
               </div>
 
               {/* Send alert by */}
               <div className="space-y-1">
-                <label className="block text-xs font-medium text-zinc-800">Send alert by</label>
+                <label className="block text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">Send alert by</label>
                 <select
                   value={formContactMethod}
                   onChange={(e) => setFormContactMethod(e.target.value)}
-                  className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white cursor-pointer"
+                  className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-xs font-medium text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 focus:bg-white dark:focus:bg-[#262520] cursor-pointer"
                 >
-                  <option value="in_app">In the app</option>
-                  <option value="sms">SMS</option>
-                  <option value="email">Email</option>
-                  <option value="whatsapp" disabled>WhatsApp (Coming soon)</option>
+                  <option value="in_app" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">In the app</option>
+                  <option value="sms" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">SMS</option>
+                  <option value="email" className="dark:bg-[#21211E] dark:text-[#F0EBE3]">Email</option>
+                  <option value="whatsapp" disabled className="dark:bg-[#21211E] dark:text-[#7A7570]">WhatsApp (Coming soon)</option>
                 </select>
               </div>
 
               {/* If no one responds */}
-              <div className="space-y-2 pt-2 border-t border-[#EAE8E1]">
-                <span className="block text-xs font-medium text-zinc-800">If no one responds</span>
+              <div className="space-y-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+                <span className="block text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">If no one responds</span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div className="space-y-1">
-                    <label className="block text-xs text-zinc-600">After</label>
+                    <label className="block text-xs text-zinc-600 dark:text-[#B8B0A5]">After</label>
                     <select
                       value={formDelayMinutes}
                       onChange={(e) => setFormDelayMinutes(Number(e.target.value))}
-                      className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white cursor-pointer"
+                      className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-xs font-medium text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 focus:bg-white dark:focus:bg-[#262520] cursor-pointer"
                     >
-                      <option value={1}>1 minute</option>
-                      <option value={2}>2 minutes</option>
-                      <option value={3}>3 minutes</option>
-                      <option value={5}>5 minutes</option>
-                      <option value={10}>10 minutes</option>
+                      <option value={1} className="dark:bg-[#21211E] dark:text-[#F0EBE3]">1 minute</option>
+                      <option value={2} className="dark:bg-[#21211E] dark:text-[#F0EBE3]">2 minutes</option>
+                      <option value={3} className="dark:bg-[#21211E] dark:text-[#F0EBE3]">3 minutes</option>
+                      <option value={5} className="dark:bg-[#21211E] dark:text-[#F0EBE3]">5 minutes</option>
+                      <option value={10} className="dark:bg-[#21211E] dark:text-[#F0EBE3]">10 minutes</option>
                     </select>
                   </div>
                   <div className="space-y-1">
-                    <label className="block text-xs text-zinc-600">Then notify</label>
+                    <label className="block text-xs text-zinc-600 dark:text-[#B8B0A5]">Then notify</label>
                     <select
                       value={formBackupRole}
                       onChange={(e) => setFormBackupRole(e.target.value)}
-                      className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:bg-white cursor-pointer"
+                      className="w-full min-h-[44px] px-3 py-2 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-xs font-medium text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 focus:bg-white dark:focus:bg-[#262520] cursor-pointer"
                     >
                       {RESPONSIBILITIES.map((r) => (
-                        <option key={r} value={r}>{formatRoleDisplay(r)}</option>
+                        <option key={r} value={r} className="dark:bg-[#21211E] dark:text-[#F0EBE3]">{formatRoleDisplay(r)}</option>
                       ))}
                     </select>
                   </div>
@@ -786,7 +786,7 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
               </div>
             </div>
 
-            <div className="flex items-center justify-between px-6 py-4 border-t border-[#EAE8E1] bg-white shrink-0">
+            <div className="flex items-center justify-between px-6 py-4 border-t border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#1D1D1A] shrink-0">
               <button
                 type="button"
                 onClick={() => {
@@ -794,7 +794,7 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
                   setEditingRule(null);
                 }}
                 disabled={isSubmitting}
-                className="min-h-[44px] px-4 py-2 bg-white hover:bg-zinc-50 border border-[#EAE8E1] text-zinc-700 font-medium text-xs rounded-xl cursor-pointer disabled:opacity-50 transition-colors"
+                className="min-h-[44px] px-4 py-2 bg-white dark:bg-[#21211E] hover:bg-zinc-50 dark:hover:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] text-zinc-700 dark:text-[#B8B0A5] font-medium text-xs rounded-xl cursor-pointer disabled:opacity-50 transition-colors"
               >
                 Cancel
               </button>
@@ -814,17 +814,17 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
       {/* 4. View Details Modal */}
       {detailRule && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4">
-            <div className="flex items-start justify-between border-b border-[#EAE8E1] pb-3">
+          <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4">
+            <div className="flex items-start justify-between border-b border-[#EAE8E1] dark:border-[#302E29] pb-3">
               <div>
-                <h3 className="text-base font-bold text-[#18181B]">
+                <h3 className="text-base font-bold text-[#18181B] dark:text-[#F0EBE3]">
                   {CATEGORY_DEFINITIONS[detailRule.category_key]?.name || detailRule.category_key}
                 </h3>
-                <p className="text-xs text-zinc-500 mt-0.5">Alert rule details</p>
+                <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-0.5">Alert rule details</p>
               </div>
               <button
                 onClick={() => setDetailRule(null)}
-                className="text-zinc-400 hover:text-zinc-600 p-1.5 rounded-lg hover:bg-zinc-100 cursor-pointer transition-colors"
+                className="text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#F0EBE3] p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-[#262520] cursor-pointer transition-colors"
                 aria-label="Close dialog"
               >
                 <X className="w-4 h-4" />
@@ -832,39 +832,39 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
             </div>
 
             <div className="space-y-2.5 text-xs">
-              <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl flex items-center justify-between">
-                <span className="text-zinc-500">Status</span>
-                <span className={`font-semibold ${detailRule.is_active ? 'text-emerald-700' : 'text-zinc-500'}`}>
+              <div className="p-3 bg-[#FAF9F5] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl flex items-center justify-between">
+                <span className="text-zinc-500 dark:text-[#7A7570]">Status</span>
+                <span className={`font-semibold ${detailRule.is_active ? 'text-emerald-700 dark:text-emerald-400' : 'text-zinc-500 dark:text-[#7A7570]'}`}>
                   {detailRule.is_active ? 'Active' : 'Inactive'}
                 </span>
               </div>
 
-              <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl space-y-1">
-                <span className="text-zinc-500 block">When this happens</span>
-                <p className="font-medium text-zinc-800">
+              <div className="p-3 bg-[#FAF9F5] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl space-y-1">
+                <span className="text-zinc-500 dark:text-[#7A7570] block">When this happens</span>
+                <p className="font-medium text-zinc-800 dark:text-[#F0EBE3]">
                   {CATEGORY_DEFINITIONS[detailRule.category_key]?.triggerText || detailRule.category_key}
                 </p>
               </div>
 
-              <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl space-y-1">
-                <span className="text-zinc-500 block">Notify first</span>
-                <p className="font-medium text-zinc-800">
+              <div className="p-3 bg-[#FAF9F5] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl space-y-1">
+                <span className="text-zinc-500 dark:text-[#7A7570] block">Notify first</span>
+                <p className="font-medium text-zinc-800 dark:text-[#F0EBE3]">
                   {formatRoleDisplay(detailRule.recipients?.find((r) => r.delivery_tier === 'primary')?.responsibility_key || 'Care Lead')}
                 </p>
               </div>
 
-              <div className="p-3 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl space-y-1">
-                <span className="text-zinc-500 block">If no one responds after {Math.round((detailRule.escalation_delay_seconds || 120) / 60)} minutes</span>
-                <p className="font-medium text-zinc-800">
+              <div className="p-3 bg-[#FAF9F5] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl space-y-1">
+                <span className="text-zinc-500 dark:text-[#7A7570] block">If no one responds after {Math.round((detailRule.escalation_delay_seconds || 120) / 60)} minutes</span>
+                <p className="font-medium text-zinc-800 dark:text-[#F0EBE3]">
                   Then notify {formatRoleDisplay(detailRule.recipients?.find((r) => r.delivery_tier === 'backup')?.responsibility_key || 'General Response')}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-3 border-t border-[#EAE8E1]">
+            <div className="flex items-center justify-between pt-3 border-t border-[#EAE8E1] dark:border-[#302E29]">
               <button
                 onClick={() => setDetailRule(null)}
-                className="min-h-[44px] px-4 py-2 bg-white hover:bg-zinc-50 border border-[#EAE8E1] text-zinc-700 font-medium text-xs rounded-xl cursor-pointer transition-colors"
+                className="min-h-[44px] px-4 py-2 bg-white dark:bg-[#21211E] hover:bg-zinc-50 dark:hover:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] text-zinc-700 dark:text-[#B8B0A5] font-medium text-xs rounded-xl cursor-pointer transition-colors"
               >
                 Close
               </button>
@@ -886,39 +886,39 @@ export default function AlertRoutingTab({ eventId = 'event-ga-2026' }: AlertRout
       {/* 5. Delete Confirmation Modal */}
       {deletingRule && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4">
+          <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4">
             <div className="flex items-start space-x-3">
-              <div className="w-9 h-9 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl flex items-center justify-center shrink-0">
+              <div className="w-9 h-9 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/40 text-rose-600 dark:text-rose-400 rounded-xl flex items-center justify-center shrink-0">
                 <AlertTriangle className="w-4 h-4" />
               </div>
               <div className="space-y-0.5 pr-4">
-                <h3 className="text-base font-bold text-[#18181B]">Delete this alert rule?</h3>
-                <p className="text-xs text-zinc-500">
+                <h3 className="text-base font-bold text-[#18181B] dark:text-[#F0EBE3]">Delete this alert rule?</h3>
+                <p className="text-xs text-zinc-500 dark:text-[#7A7570]">
                   This rule will no longer be used for future alerts.
                 </p>
               </div>
               <button
                 onClick={() => setDeletingRule(null)}
                 disabled={isSubmitting}
-                className="text-zinc-400 hover:text-zinc-600 p-1 cursor-pointer"
+                className="text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#F0EBE3] p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl p-3.5 space-y-1 text-xs">
-              <span className="text-zinc-500">Rule category</span>
-              <p className="font-semibold text-zinc-900">
+            <div className="bg-[#FAF9F5] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl p-3.5 space-y-1 text-xs">
+              <span className="text-zinc-500 dark:text-[#7A7570]">Rule category</span>
+              <p className="font-semibold text-zinc-900 dark:text-[#F0EBE3]">
                 {CATEGORY_DEFINITIONS[deletingRule.category_key]?.name || deletingRule.category_key}
               </p>
             </div>
 
-            <div className="flex items-center justify-end space-x-2.5 pt-2 border-t border-[#EAE8E1]">
+            <div className="flex items-center justify-end space-x-2.5 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
               <button
                 type="button"
                 onClick={() => setDeletingRule(null)}
                 disabled={isSubmitting}
-                className="px-3.5 py-2 bg-white hover:bg-zinc-100 border border-[#EAE8E1] text-zinc-700 font-medium text-xs rounded-xl cursor-pointer disabled:opacity-50"
+                className="px-3.5 py-2 bg-white dark:bg-[#21211E] hover:bg-zinc-100 dark:hover:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] text-zinc-700 dark:text-[#B8B0A5] font-medium text-xs rounded-xl cursor-pointer disabled:opacity-50"
               >
                 Cancel
               </button>

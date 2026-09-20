@@ -1646,6 +1646,43 @@ export const api = {
       return api.request<{ success: boolean; message: string; alert: any }>('/api/admin/alert-delivery/test-device', {
         method: 'POST'
       });
+    },
+    async bulkResolveSafetyAlerts(alertIds: string[], note: string, outcome?: string) {
+      return api.request<{
+        success: boolean;
+        message: string;
+        resolvedCount: number;
+        skippedCount: number;
+        failedCount: number;
+        results: any[];
+      }>(`/api/admin/safety-alerts/bulk-resolve`, {
+        method: 'POST',
+        body: JSON.stringify({ alertIds, resolutionNote: note, outcome })
+      });
+    },
+    async bulkAcknowledgeSafetyAlerts(alertIds: string[]) {
+      return api.request<{
+        success: boolean;
+        message: string;
+        acknowledgedCount: number;
+        skippedCount: number;
+        failedCount: number;
+        results: any[];
+      }>(`/api/admin/safety-alerts/bulk-acknowledge`, {
+        method: 'POST',
+        body: JSON.stringify({ alertIds })
+      });
+    },
+    async bulkAssignSafetyAlerts(alertIds: string[], targetUserId: string, reason?: string) {
+      return api.request<{
+        success: boolean;
+        message: string;
+        assignedCount: number;
+        results: any[];
+      }>(`/api/admin/safety-alerts/bulk-assign`, {
+        method: 'POST',
+        body: JSON.stringify({ alertIds, targetUserId, reason })
+      });
     }
   },
 

@@ -292,7 +292,7 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
     >
       {/* Title Area */}
       <div className="text-center mb-6">
-        <h1 className="font-serif-koinonia font-bold text-3xl sm:text-[34px] text-[#18181B] leading-tight tracking-tight">
+        <h1 className="type-h1-app text-[#18181B]">
           Create parent account
         </h1>
         <p className="text-sm text-[#3F3F46] mt-3 max-w-[320px] mx-auto leading-relaxed">

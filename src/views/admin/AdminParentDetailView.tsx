@@ -255,10 +255,10 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
 
   if (!parent) {
     return (
-      <div className="text-center py-16 bg-white border border-[#EAE8E1] rounded-3xl p-8 max-w-lg mx-auto mt-8">
-        <Users className="w-8 h-8 stroke-[1.5] mx-auto text-zinc-300 mb-3" />
-        <h3 className="text-base font-semibold text-[#18181B]">Parent profile not found</h3>
-        <p className="text-xs text-zinc-400 mt-1">
+      <div className="text-center py-16 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-8 max-w-lg mx-auto mt-8">
+        <Users className="w-8 h-8 stroke-[1.5] mx-auto text-zinc-300 dark:text-[#5A5550] mb-3" />
+        <h3 className="text-base font-semibold text-[#18181B] dark:text-[#F0EBE3]">Parent profile not found</h3>
+        <p className="text-xs text-zinc-400 dark:text-[#7A7570] mt-1">
           The requested parent record could not be found or may have been removed.
         </p>
         <Button onClick={onBack} variant="secondary" className="mt-5 text-xs px-5 py-2">
@@ -285,19 +285,19 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
         className="fixed inset-0 bg-black/50"
         style={{ backdropFilter: 'blur(2px)' }}
       />
-      <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
-        <div className="flex items-center gap-3 mb-4 text-amber-600">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
+        <div className="flex items-center gap-3 mb-4 text-amber-600 dark:text-amber-400">
           <AlertTriangle className="w-5 h-5 shrink-0" />
-          <h4 className="font-semibold text-base text-[#18181B]">
+          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
             Remove this parent?
           </h4>
         </div>
-        <p className="text-xs text-zinc-500 mb-4 leading-relaxed">
+        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-4 leading-relaxed">
           Their account will move to Removed and can be restored later.
         </p>
         <form onSubmit={handleRemoveParentSubmit} className="space-y-4">
           <div>
-            <label className="text-zinc-500 text-[10px] font-semibold uppercase tracking-wider block mb-1.5">
+            <label className="text-zinc-500 dark:text-[#7A7570] text-[10px] font-semibold uppercase tracking-wider block mb-1.5">
               Reason for removal (optional)
             </label>
             <textarea
@@ -305,10 +305,10 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
               value={removeReason}
               onChange={(e) => setRemoveReason(e.target.value)}
               rows={3}
-              className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] focus:outline-none focus:border-red-400 transition-all bg-zinc-50 resize-none text-zinc-700"
+              className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] focus:outline-none focus:border-red-400 transition-all bg-zinc-50 dark:bg-[#262520] resize-none text-zinc-700 dark:text-[#F0EBE3]"
             />
           </div>
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
             <Button
               type="button"
               onClick={() => setParentToRemove(null)}
@@ -339,17 +339,17 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
         className="fixed inset-0 bg-black/50"
         style={{ backdropFilter: 'blur(2px)' }}
       />
-      <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
         <div className="flex items-center gap-3 text-emerald-600 mb-4">
           <RotateCcw className="w-5 h-5 shrink-0" />
-          <h4 className="font-semibold text-base text-[#18181B]">
+          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
             Restore this parent?
           </h4>
         </div>
-        <p className="text-xs text-zinc-500 mb-6 leading-relaxed">
+        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-6 leading-relaxed">
           This parent will be restored and will appear under Active parents again.
         </p>
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
           <Button
             onClick={() => setParentToRestore(null)}
             variant="secondary"
@@ -372,7 +372,7 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
   ) : null;
 
   return (
-    <div className="space-y-6 text-zinc-800 pb-12" id="admin-parent-detail-root">
+    <div className="space-y-6 text-zinc-800 dark:text-[#F0EBE3] pb-12" id="admin-parent-detail-root">
       {/* Portal modals */}
       {removeModal}
       {restoreModal}
@@ -380,14 +380,14 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
       {/* Archive Warning Banner */}
       {parent.isDeleted && (
         <div
-          className="bg-red-50/70 border border-red-200/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-red-900 animate-fade-in"
+          className="bg-red-50/70 dark:bg-red-950/20 border border-red-200/80 dark:border-red-900/40 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-red-900 dark:text-red-300 animate-fade-in"
           id="archived-parent-banner"
         >
           <div className="flex items-start gap-3">
             <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
             <div>
-              <p className="font-semibold text-red-950">This parent account is currently removed.</p>
-              <p className="text-red-700 mt-0.5">
+              <p className="font-semibold text-red-950 dark:text-red-200">This parent account is currently removed.</p>
+              <p className="text-red-700 dark:text-red-400 mt-0.5">
                 Removed on{' '}
                 {parent.deletedAt
                   ? new Date(parent.deletedAt).toLocaleDateString(undefined, { dateStyle: 'medium' })
@@ -409,26 +409,26 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
       )}
 
       {/* Top Breadcrumb & Actions Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-[#EAE8E1]">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-[#EAE8E1] dark:border-[#302E29]">
         <div className="flex items-center gap-3">
           <button
             onClick={onBack}
-            className="p-1.5 -ml-1.5 text-zinc-400 hover:text-[#18181B] hover:bg-zinc-100 rounded-xl transition-colors cursor-pointer focus:outline-none"
+            className="p-1.5 -ml-1.5 text-zinc-400 dark:text-[#7A7570] hover:text-[#18181B] dark:hover:text-[#F0EBE3] hover:bg-zinc-100 dark:hover:bg-[#262520] rounded-xl transition-colors cursor-pointer focus:outline-none"
             title="Back to parents"
             aria-label="Back to parents"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <div className="flex items-center gap-1.5 text-xs text-zinc-400">
+            <div className="flex items-center gap-1.5 text-xs text-zinc-400 dark:text-[#7A7570]">
               <button
                 onClick={onBack}
-                className="hover:text-zinc-700 transition-colors cursor-pointer focus:outline-none"
+                className="hover:text-zinc-700 dark:hover:text-[#F0EBE3] transition-colors cursor-pointer focus:outline-none"
               >
                 Parents
               </button>
               <span>/</span>
-              <span className="text-zinc-600 font-medium truncate max-w-[200px] sm:max-w-none">
+              <span className="text-zinc-600 dark:text-[#B8B0A5] font-medium truncate max-w-[200px] sm:max-w-none">
                 {displayName}
               </span>
             </div>
@@ -450,15 +450,15 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
               <Button
                 onClick={() => setIsEditing(!isEditing)}
                 variant="secondary"
-                className="text-xs px-4 py-2 border border-[#EAE8E1]"
+                className="text-xs px-4 py-2 border border-[#EAE8E1] dark:border-[#3A3835]"
               >
-                <Edit3 className="w-3.5 h-3.5 mr-1.5 text-zinc-400" />
+                <Edit3 className="w-3.5 h-3.5 mr-1.5 text-zinc-400 dark:text-[#7A7570]" />
                 {isEditing ? 'Cancel' : 'Edit details'}
               </Button>
               <Button
                 onClick={() => setParentToRemove(parent)}
                 variant="secondary"
-                className="text-xs px-4 py-2 text-zinc-600 hover:text-red-600 hover:bg-red-50 hover:border-red-200"
+                className="text-xs px-4 py-2 text-zinc-600 dark:text-[#B8B0A5] hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 hover:border-red-200 dark:hover:border-red-900/40"
                 id="remove-parent-detail-btn"
               >
                 Remove parent
@@ -470,80 +470,80 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
 
       {/* Edit Details Form or Balanced Profile Layout */}
       {isEditing ? (
-        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 shadow-xs max-w-2xl mx-auto">
-          <h3 className="text-sm font-semibold text-[#18181B] border-b border-[#EAE8E1] pb-3 mb-5">
+        <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 shadow-xs max-w-2xl mx-auto">
+          <h3 className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] border-b border-[#EAE8E1] dark:border-[#302E29] pb-3 mb-5">
             Edit contact details
           </h3>
 
           <form onSubmit={handleSaveProfile} className="space-y-4 text-xs">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2">
-                <label className="text-zinc-500 font-medium block mb-1">Full name</label>
+                <label className="text-zinc-500 dark:text-[#7A7570] font-medium block mb-1">Full name</label>
                 <input
                   type="text"
                   required
                   value={editForm.fullName}
                   onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
-                  className="w-full px-3.5 py-2 border border-[#EAE8E1] bg-zinc-50 rounded-xl focus:outline-none focus:border-[#C59B27] transition-colors"
+                  className="w-full px-3.5 py-2 border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] rounded-xl focus:outline-none focus:border-[#C59B27] transition-colors"
                 />
               </div>
 
               <div>
-                <label className="text-zinc-500 font-medium block mb-1">Phone</label>
+                <label className="text-zinc-500 dark:text-[#7A7570] font-medium block mb-1">Phone</label>
                 <input
                   type="text"
                   value={editForm.phone}
                   onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                  className="w-full px-3.5 py-2 border border-[#EAE8E1] bg-zinc-50 rounded-xl focus:outline-none focus:border-[#C59B27] transition-colors"
+                  className="w-full px-3.5 py-2 border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] rounded-xl focus:outline-none focus:border-[#C59B27] transition-colors"
                 />
               </div>
 
               <div>
-                <label className="text-zinc-500 font-medium block mb-1">WhatsApp</label>
+                <label className="text-zinc-500 dark:text-[#7A7570] font-medium block mb-1">WhatsApp</label>
                 <input
                   type="text"
                   value={editForm.whatsapp}
                   onChange={(e) => setEditForm({ ...editForm, whatsapp: e.target.value })}
-                  className="w-full px-3.5 py-2 border border-[#EAE8E1] bg-zinc-50 rounded-xl focus:outline-none focus:border-[#C59B27] transition-colors"
+                  className="w-full px-3.5 py-2 border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] rounded-xl focus:outline-none focus:border-[#C59B27] transition-colors"
                 />
               </div>
 
               <div className="sm:col-span-2">
-                <label className="text-zinc-500 font-medium block mb-1">Address</label>
+                <label className="text-zinc-500 dark:text-[#7A7570] font-medium block mb-1">Address</label>
                 <input
                   type="text"
                   value={editForm.homeAddress}
                   onChange={(e) => setEditForm({ ...editForm, homeAddress: e.target.value })}
-                  className="w-full px-3.5 py-2 border border-[#EAE8E1] bg-zinc-50 rounded-xl focus:outline-none focus:border-[#C59B27] transition-colors"
+                  className="w-full px-3.5 py-2 border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] rounded-xl focus:outline-none focus:border-[#C59B27] transition-colors"
                 />
               </div>
 
               <div>
-                <label className="text-zinc-500 font-medium block mb-1">City</label>
+                <label className="text-zinc-500 dark:text-[#7A7570] font-medium block mb-1">City</label>
                 <input
                   type="text"
                   value={editForm.city}
                   onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
-                  className="w-full px-3.5 py-2 border border-[#EAE8E1] bg-zinc-50 rounded-xl focus:outline-none focus:border-[#C59B27] transition-colors"
+                  className="w-full px-3.5 py-2 border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] rounded-xl focus:outline-none focus:border-[#C59B27] transition-colors"
                 />
               </div>
 
               <div>
-                <label className="text-zinc-500 font-medium block mb-1">State / Region</label>
+                <label className="text-zinc-500 dark:text-[#7A7570] font-medium block mb-1">State / Region</label>
                 <input
                   type="text"
                   value={editForm.stateRegion}
                   onChange={(e) => setEditForm({ ...editForm, stateRegion: e.target.value })}
-                  className="w-full px-3.5 py-2 border border-[#EAE8E1] bg-zinc-50 rounded-xl focus:outline-none focus:border-[#C59B27] transition-colors"
+                  className="w-full px-3.5 py-2 border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] rounded-xl focus:outline-none focus:border-[#C59B27] transition-colors"
                 />
               </div>
 
               <div>
-                <label className="text-zinc-500 font-medium block mb-1">Preferred contact mode</label>
+                <label className="text-zinc-500 dark:text-[#7A7570] font-medium block mb-1">Preferred contact mode</label>
                 <select
                   value={editForm.preferredContact}
                   onChange={(e) => setEditForm({ ...editForm, preferredContact: e.target.value })}
-                  className="w-full px-3.5 py-2 border border-[#EAE8E1] bg-zinc-50 rounded-xl focus:outline-none focus:border-[#C59B27] transition-colors cursor-pointer"
+                  className="w-full px-3.5 py-2 border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] rounded-xl focus:outline-none focus:border-[#C59B27] transition-colors cursor-pointer"
                 >
                   <option value="phone">Phone calls</option>
                   <option value="whatsapp">WhatsApp</option>
@@ -552,12 +552,12 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
               </div>
 
               <div className="flex items-center pt-5 pl-1">
-                <label className="flex items-center gap-2 cursor-pointer font-medium text-zinc-700">
+                <label className="flex items-center gap-2 cursor-pointer font-medium text-zinc-700 dark:text-[#B8B0A5]">
                   <input
                     type="checkbox"
                     checked={editForm.isKoinoniaWorker}
                     onChange={(e) => setEditForm({ ...editForm, isKoinoniaWorker: e.target.checked })}
-                    className="rounded text-[#C59B27] focus:ring-[#C59B27] w-4 h-4 border-zinc-300 cursor-pointer"
+                    className="rounded text-[#C59B27] focus:ring-[#C59B27] w-4 h-4 border-zinc-300 dark:border-[#3A3835] cursor-pointer"
                   />
                   <span>Team member</span>
                 </label>
@@ -565,19 +565,19 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
 
               {editForm.isKoinoniaWorker && (
                 <div className="sm:col-span-2">
-                  <label className="text-zinc-500 font-medium block mb-1">Department / Ministry</label>
+                  <label className="text-zinc-500 dark:text-[#7A7570] font-medium block mb-1">Department / Ministry</label>
                   <input
                     type="text"
                     value={editForm.department}
                     onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
-                    className="w-full px-3.5 py-2 border border-[#EAE8E1] bg-zinc-50 rounded-xl focus:outline-none focus:border-[#C59B27] transition-colors"
+                    className="w-full px-3.5 py-2 border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] rounded-xl focus:outline-none focus:border-[#C59B27] transition-colors"
                     placeholder="e.g. Children's ministry, Media, Hospitality"
                   />
                 </div>
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-4 border-t border-[#EAE8E1] mt-6">
+            <div className="flex items-center justify-end gap-2 pt-4 border-t border-[#EAE8E1] dark:border-[#302E29] mt-6">
               <Button
                 type="button"
                 onClick={() => setIsEditing(false)}
@@ -606,43 +606,43 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
           <div className="lg:col-span-1 space-y-6">
 
             {/* Parent Identity Card */}
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6">
+            <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6">
               <div className="flex flex-col items-center text-center">
                 {parent.photoUrl ? (
                   <img
                     src={parent.photoUrl}
                     alt={displayName}
                     referrerPolicy="no-referrer"
-                    className="w-20 h-20 rounded-2xl object-cover border border-[#EAE8E1] mb-3 shrink-0"
+                    className="w-20 h-20 rounded-2xl object-cover border border-[#EAE8E1] dark:border-[#3A3835] mb-3 shrink-0"
                   />
                 ) : (
-                  <div className="w-20 h-20 rounded-2xl bg-[#FAF9F6] border border-[#EAE8E1] flex items-center justify-center text-[#C59B27] font-semibold text-2xl uppercase mb-3 shrink-0">
+                  <div className="w-20 h-20 rounded-2xl bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] flex items-center justify-center text-[#C59B27] font-semibold text-2xl uppercase mb-3 shrink-0">
                     {initials}
                   </div>
                 )}
 
-                <h3 className="font-sans text-xl font-bold text-[#18181B] dark:text-[#F7F4ED] tracking-tight leading-snug">
+                <h3 className="font-sans text-xl font-bold text-[#18181B] dark:text-[#F0EBE3] tracking-tight leading-snug">
                   {displayName}
                 </h3>
-                <p className="text-xs text-zinc-400 mt-0.5">{parent.email || 'Not provided'}</p>
+                <p className="text-xs text-zinc-400 dark:text-[#7A7570] mt-0.5">{parent.email || 'Not provided'}</p>
 
                 {/* Account Status Badges */}
                 <div className="flex flex-wrap justify-center gap-1.5 mt-3">
                   {parent.isDeleted ? (
-                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-red-50 text-red-700 border border-red-200">
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-900/40">
                       Removed
                     </span>
                   ) : parent.emailVerified ? (
-                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/40">
                       Verified
                     </span>
                   ) : (
-                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40">
                       Invitation pending
                     </span>
                   )}
                   {parent.isKoinoniaWorker && (
-                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[#FAF6EC] text-[#C59B27] border border-[#C59B27]/20">
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[#FAF6EC] dark:bg-amber-950/30 text-[#C59B27] dark:text-amber-400 border border-[#C59B27]/20 dark:border-amber-900/40">
                       Team member{parent.department ? ` • ${parent.department}` : ''}
                     </span>
                   )}
@@ -650,13 +650,13 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
 
                 {/* Primary Contact Actions (Only rendered if phone or whatsapp exists) */}
                 {(parent.phone || parent.whatsapp) && (
-                  <div className="grid grid-cols-2 gap-2 w-full mt-5 pt-5 border-t border-[#EAE8E1]">
+                  <div className="grid grid-cols-2 gap-2 w-full mt-5 pt-5 border-t border-[#EAE8E1] dark:border-[#302E29]">
                     {parent.phone ? (
                       <a
                         href={`tel:${parent.phone}`}
-                        className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-zinc-700 bg-zinc-50 hover:bg-zinc-100 border border-[#EAE8E1] rounded-xl transition-colors cursor-pointer"
+                        className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-zinc-700 dark:text-[#F0EBE3] bg-zinc-50 dark:bg-[#262520] hover:bg-zinc-100 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl transition-colors cursor-pointer"
                       >
-                        <Phone className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                        <Phone className="w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570] shrink-0" />
                         <span>Call parent</span>
                       </a>
                     ) : (
@@ -667,7 +667,7 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
                         href={`https://wa.me/${parent.whatsapp.replace(/[^0-9]/g, '')}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-colors cursor-pointer"
+                        className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-900/40 rounded-xl transition-colors cursor-pointer"
                       >
                         <MessageSquare className="w-3.5 h-3.5 shrink-0" />
                         <span>WhatsApp</span>
@@ -682,7 +682,7 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
                     <button
                       onClick={handleResendInvite}
                       disabled={resendingInvite}
-                      className="w-full py-1.5 text-xs text-amber-800 hover:text-amber-900 bg-amber-50/50 hover:bg-amber-50 border border-amber-200/60 rounded-xl transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      className="w-full py-1.5 text-xs text-amber-800 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 bg-amber-50/50 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/40 rounded-xl transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                     >
                       <Send className="w-3 h-3 text-[#C59B27]" />
                       <span>{resendingInvite ? 'Sending invitation...' : 'Resend invitation'}</span>
@@ -693,37 +693,37 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
             </div>
 
             {/* Contact Details Card */}
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-4">
-              <h4 className="text-xs font-semibold text-[#18181B] pb-2 border-b border-[#EAE8E1]">
+            <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-4">
+              <h4 className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] pb-2 border-b border-[#EAE8E1] dark:border-[#302E29]">
                 Contact details
               </h4>
 
               <div className="space-y-3.5 text-xs">
                 <div>
-                  <span className="text-[10px] text-zinc-400 block mb-0.5">Phone</span>
-                  <span className="font-medium text-zinc-700 block">{parent.phone || 'Not provided'}</span>
+                  <span className="text-[10px] text-zinc-400 dark:text-[#5A5550] block mb-0.5">Phone</span>
+                  <span className="font-medium text-zinc-700 dark:text-[#F0EBE3] block">{parent.phone || 'Not provided'}</span>
                 </div>
 
                 <div>
-                  <span className="text-[10px] text-zinc-400 block mb-0.5">WhatsApp</span>
-                  <span className="font-medium text-zinc-700 block">{parent.whatsapp || 'Not provided'}</span>
+                  <span className="text-[10px] text-zinc-400 dark:text-[#5A5550] block mb-0.5">WhatsApp</span>
+                  <span className="font-medium text-zinc-700 dark:text-[#F0EBE3] block">{parent.whatsapp || 'Not provided'}</span>
                 </div>
 
                 <div>
-                  <span className="text-[10px] text-zinc-400 block mb-0.5">Email</span>
-                  <span className="font-medium text-zinc-700 block break-all">{parent.email || 'Not provided'}</span>
+                  <span className="text-[10px] text-zinc-400 dark:text-[#5A5550] block mb-0.5">Email</span>
+                  <span className="font-medium text-zinc-700 dark:text-[#F0EBE3] block break-all">{parent.email || 'Not provided'}</span>
                 </div>
 
                 <div>
-                  <span className="text-[10px] text-zinc-400 block mb-0.5">Address</span>
-                  <span className="font-medium text-zinc-700 block leading-relaxed">
+                  <span className="text-[10px] text-zinc-400 dark:text-[#5A5550] block mb-0.5">Address</span>
+                  <span className="font-medium text-zinc-700 dark:text-[#F0EBE3] block leading-relaxed">
                     {fullAddress || 'Not provided'}
                   </span>
                 </div>
 
                 <div>
-                  <span className="text-[10px] text-zinc-400 block mb-0.5">Added</span>
-                  <span className="font-medium text-zinc-700 block">
+                  <span className="text-[10px] text-zinc-400 dark:text-[#5A5550] block mb-0.5">Added</span>
+                  <span className="font-medium text-zinc-700 dark:text-[#F0EBE3] block">
                     {parent.createdAt
                       ? new Date(parent.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' })
                       : 'Not provided'}
@@ -734,12 +734,12 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
 
             {/* Attention Checklist (if issues exist) */}
             {attention.hasIssue && (
-              <div className="bg-amber-50/50 border border-amber-200/70 rounded-2xl p-5 space-y-2 text-xs">
-                <div className="flex items-center gap-2 text-amber-800 font-semibold">
+              <div className="bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/70 dark:border-amber-900/40 rounded-2xl p-5 space-y-2 text-xs">
+                <div className="flex items-center gap-2 text-amber-800 dark:text-amber-400 font-semibold">
                   <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                   <span>Items requiring attention</span>
                 </div>
-                <ul className="space-y-1 pl-5 list-disc text-zinc-600">
+                <ul className="space-y-1 pl-5 list-disc text-zinc-600 dark:text-[#B8B0A5]">
                   {attention.items.map((item: string, idx: number) => (
                     <li key={idx} className="leading-snug">{item}</li>
                   ))}
@@ -753,46 +753,46 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
           <div className="lg:col-span-2 space-y-6">
 
             {/* Current Event Summary Strip */}
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-4">
-              <h4 className="text-xs font-semibold text-[#18181B]">Current event</h4>
+            <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-4">
+              <h4 className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">Current event</h4>
 
               <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-                <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl text-center">
-                  <p className="text-[10px] text-zinc-400 mb-1">Children</p>
-                  <p className="text-base font-semibold text-[#18181B]">{eventSummary.childrenAdded}</p>
+                <div className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl text-center">
+                  <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-1">Children</p>
+                  <p className="text-base font-semibold text-[#18181B] dark:text-[#F0EBE3]">{eventSummary.childrenAdded}</p>
                 </div>
 
-                <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl text-center">
-                  <p className="text-[10px] text-zinc-400 mb-1">Awaiting review</p>
-                  <p className={`text-base font-semibold ${eventSummary.underReview > 0 ? 'text-amber-700' : 'text-zinc-600'}`}>
+                <div className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl text-center">
+                  <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-1">Awaiting review</p>
+                  <p className={`text-base font-semibold ${eventSummary.underReview > 0 ? 'text-amber-700 dark:text-amber-400' : 'text-zinc-600 dark:text-[#7A7570]'}`}>
                     {eventSummary.underReview}
                   </p>
                 </div>
 
-                <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl text-center">
-                  <p className="text-[10px] text-zinc-400 mb-1">Selected</p>
-                  <p className={`text-base font-semibold ${eventSummary.selected > 0 ? 'text-emerald-700' : 'text-zinc-600'}`}>
+                <div className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl text-center">
+                  <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-1">Selected</p>
+                  <p className={`text-base font-semibold ${eventSummary.selected > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-zinc-600 dark:text-[#7A7570]'}`}>
                     {eventSummary.selected}
                   </p>
                 </div>
 
-                <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl text-center">
-                  <p className="text-[10px] text-zinc-400 mb-1">Passes ready</p>
-                  <p className={`text-base font-semibold ${eventSummary.passReady > 0 ? 'text-emerald-700' : 'text-zinc-600'}`}>
+                <div className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl text-center">
+                  <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-1">Passes ready</p>
+                  <p className={`text-base font-semibold ${eventSummary.passReady > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-zinc-600 dark:text-[#7A7570]'}`}>
                     {eventSummary.passReady}
                   </p>
                 </div>
 
-                <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl text-center">
-                  <p className="text-[10px] text-zinc-400 mb-1">Checked in</p>
-                  <p className={`text-base font-semibold ${eventSummary.checkedIn > 0 ? 'text-emerald-700' : 'text-zinc-600'}`}>
+                <div className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl text-center">
+                  <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-1">Checked in</p>
+                  <p className={`text-base font-semibold ${eventSummary.checkedIn > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-zinc-600 dark:text-[#7A7570]'}`}>
                     {eventSummary.checkedIn}
                   </p>
                 </div>
 
-                <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl text-center">
-                  <p className="text-[10px] text-zinc-400 mb-1">Picked up</p>
-                  <p className={`text-base font-semibold ${eventSummary.pickedUp > 0 ? 'text-zinc-800' : 'text-zinc-600'}`}>
+                <div className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl text-center">
+                  <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-1">Picked up</p>
+                  <p className={`text-base font-semibold ${eventSummary.pickedUp > 0 ? 'text-zinc-800 dark:text-[#F0EBE3]' : 'text-zinc-600 dark:text-[#7A7570]'}`}>
                     {eventSummary.pickedUp}
                   </p>
                 </div>
@@ -800,21 +800,21 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
             </div>
 
             {/* Linked Children Section */}
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-4">
-              <div className="flex items-center justify-between pb-2 border-b border-[#EAE8E1]">
-                <h4 className="text-xs font-semibold text-[#18181B]">Children</h4>
+            <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-[#EAE8E1] dark:border-[#302E29]">
+                <h4 className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">Children</h4>
                 {linkedChildren.length > 0 && (
-                  <span className="text-xs text-zinc-400">
+                  <span className="text-xs text-zinc-400 dark:text-[#7A7570]">
                     {linkedChildren.length} {linkedChildren.length === 1 ? 'child' : 'children'}
                   </span>
                 )}
               </div>
 
               {linkedChildren.length === 0 ? (
-                <div className="text-center py-10 text-zinc-400 space-y-1.5">
-                  <Users className="w-6 h-6 stroke-[1.5] mx-auto text-zinc-300" />
-                  <p className="text-xs font-medium text-zinc-700">No children added yet</p>
-                  <p className="text-[11px] text-zinc-400">This parent has not added any children yet.</p>
+                <div className="text-center py-10 text-zinc-400 dark:text-[#5A5550] space-y-1.5">
+                  <Users className="w-6 h-6 stroke-[1.5] mx-auto text-zinc-300 dark:text-[#5A5550]" />
+                  <p className="text-xs font-medium text-zinc-700 dark:text-[#B8B0A5]">No children added yet</p>
+                  <p className="text-[11px] text-zinc-400 dark:text-[#7A7570]">This parent has not added any children yet.</p>
                 </div>
               ) : (
                 <div className="space-y-2.5">
@@ -828,15 +828,15 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
 
                     const statusClass =
                       child.entryStatus === 'selected' || child.entryStatus === 'pass_ready'
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/40'
                         : child.entryStatus === 'under_review'
-                        ? 'bg-amber-50 text-amber-700 border-amber-200'
-                        : 'bg-zinc-100 text-zinc-600 border-zinc-200';
+                        ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-900/40'
+                        : 'bg-zinc-100 dark:bg-[#262520] text-zinc-600 dark:text-[#7A7570] border-zinc-200 dark:border-[#3A3835]';
 
                     return (
                       <div
                         key={child.id}
-                        className="p-3.5 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl flex items-center justify-between gap-4"
+                        className="p-3.5 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl flex items-center justify-between gap-4"
                         data-child-card-id={child.id}
                       >
                         <div className="flex items-center gap-3 min-w-0">
@@ -845,16 +845,16 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
                               src={child.photoUrl}
                               alt={child.fullName}
                               referrerPolicy="no-referrer"
-                              className="w-10 h-10 rounded-xl object-cover border border-[#EAE8E1] shrink-0"
+                              className="w-10 h-10 rounded-xl object-cover border border-[#EAE8E1] dark:border-[#3A3835] shrink-0"
                             />
                           ) : (
-                            <div className="w-10 h-10 rounded-xl bg-white border border-[#EAE8E1] flex items-center justify-center text-zinc-500 font-semibold text-xs shrink-0">
+                            <div className="w-10 h-10 rounded-xl bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] flex items-center justify-center text-zinc-500 dark:text-[#7A7570] font-semibold text-xs shrink-0">
                               {child.fullName ? child.fullName.substring(0, 2).toUpperCase() : 'CH'}
                             </div>
                           )}
                           <div className="min-w-0">
-                            <p className="font-semibold text-xs text-[#18181B] truncate">{child.fullName}</p>
-                            <p className="text-[11px] text-zinc-400 mt-0.5">
+                            <p className="font-semibold text-xs text-[#18181B] dark:text-[#F0EBE3] truncate">{child.fullName}</p>
+                            <p className="text-[11px] text-zinc-400 dark:text-[#7A7570] mt-0.5">
                               {[child.gender, child.ageLabel, child.ageGroup].filter(Boolean).join(' • ')}
                             </p>
                           </div>
@@ -866,7 +866,7 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
                           </span>
                           <button
                             onClick={() => onNavigate(`/admin/children/${child.id}` as AppRoute)}
-                            className="px-3 py-1 text-xs font-medium text-zinc-700 bg-white hover:bg-zinc-50 border border-[#EAE8E1] rounded-xl transition-colors cursor-pointer focus:outline-none"
+                            className="px-3 py-1 text-xs font-medium text-zinc-700 dark:text-[#F0EBE3] bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl transition-colors cursor-pointer focus:outline-none"
                           >
                             View child
                           </button>
@@ -879,8 +879,8 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
             </div>
 
             {/* Admin Notes Section */}
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-6 space-y-4">
-              <h4 className="text-xs font-semibold text-[#18181B]">Admin notes</h4>
+            <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-4">
+              <h4 className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">Admin notes</h4>
 
               {/* Submit a New Note Form */}
               <form onSubmit={handleSaveNote} className="space-y-3">
@@ -889,7 +889,7 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
                   onChange={(e) => setNewNote(e.target.value)}
                   placeholder="Add an internal note about this parent account..."
                   rows={3}
-                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] focus:outline-none focus:border-[#C59B27] transition-all bg-zinc-50/50 resize-none text-zinc-700"
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] focus:outline-none focus:border-[#C59B27] transition-all bg-zinc-50/50 dark:bg-[#262520] resize-none text-zinc-700 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#5A5550]"
                 />
                 <div className="flex justify-end">
                   <Button
@@ -905,23 +905,23 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
               </form>
 
               {/* Notes History list */}
-              <div className="space-y-3 pt-3 border-t border-[#EAE8E1] max-h-[300px] overflow-y-auto">
+              <div className="space-y-3 pt-3 border-t border-[#EAE8E1] dark:border-[#302E29] max-h-[300px] overflow-y-auto">
                 {adminNotes.length === 0 ? (
-                  <p className="text-xs text-zinc-400 py-3 text-center">No notes have been added yet.</p>
+                  <p className="text-xs text-zinc-400 dark:text-[#7A7570] py-3 text-center">No notes have been added yet.</p>
                 ) : (
                   adminNotes.map((note) => (
                     <div
                       key={note.id}
-                      className="p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl text-xs space-y-1"
+                      className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl text-xs space-y-1"
                       data-note-item-id={note.id}
                     >
-                      <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                        <span className="font-semibold text-zinc-700">{note.author}</span>
+                      <div className="flex items-center justify-between text-[11px] text-zinc-400 dark:text-[#7A7570]">
+                        <span className="font-semibold text-zinc-700 dark:text-[#F0EBE3]">{note.author}</span>
                         <span>
                           {new Date(note.createdAt).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}
                         </span>
                       </div>
-                      <p className="text-zinc-600 whitespace-pre-wrap leading-relaxed">{note.note}</p>
+                      <p className="text-zinc-600 dark:text-[#B8B0A5] whitespace-pre-wrap leading-relaxed">{note.note}</p>
                     </div>
                   ))
                 )}

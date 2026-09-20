@@ -1204,7 +1204,7 @@ export default function App() {
 
       return (
         <AdminProtectedRoute>
-          <div className="min-h-screen bg-[#FAF9F6] flex flex-col">
+          <div className="min-h-screen bg-[#FAF9F6] dark:bg-[#19191A] flex flex-col">
             <PersistentTrainingBanner 
               roleName={trainingRole || 'Check-in team'} 
               onExit={() => {

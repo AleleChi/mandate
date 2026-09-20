@@ -23,6 +23,7 @@ import { subscribeUserToPush, unsubscribeUserFromPush, getPushNotificationStatus
 import { DeviceSecurityModal } from '../components/common/DeviceSecurityModal';
 import { EventLocationSelector } from '../components/volunteer/EventLocationSelector';
 import { ChildEmergencySummary } from '../components/ChildEmergencySummary';
+import { ThemeSwitcher } from '../components/common/ThemeSwitcher';
 import { offlineService, OutboxAction } from '../services/offlineService';
 import { ModuleLoadingState } from '../components/common/ModuleLoadingState';
 import { KoinoniaInlineLoader } from '../components/common/KoinoniaInlineLoader';
@@ -2468,6 +2469,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
           {/* Right: Notifications & Profile Avatar */}
           <div className="flex items-center space-x-2">
+            <ThemeSwitcher />
             {hasParentProfile && (
               <button
                 disabled={isSwitchingExperience}
@@ -2679,7 +2681,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             
             {/* 1. Compact Volunteer Greeting */}
             <div className="pt-2 pb-1 space-y-1" data-component-version="volunteer-dashboard-compact-greeting">
-              <h1 className="text-2xl sm:text-3xl font-serif font-normal text-[#18181B] tracking-tight">
+              <h1 className="type-h1-app text-[#18181B]">
                 {(() => {
                   const hour = new Date().getHours();
                   const rawName = volunteerProfile?.full_name || 
@@ -3013,7 +3015,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3" data-component-version="volunteer-dashboard-attention-refined">
               <div className="flex items-center space-x-2 border-b border-zinc-100 pb-2.5">
                 <AlertTriangle className="h-4 w-4 text-[#C59B27]" />
-                <h2 className="text-base font-serif font-bold text-zinc-900">Needs Attention</h2>
+                <h2 className="text-base font-sans font-bold text-zinc-900">Needs Attention</h2>
               </div>
 
               {attentionItems.length === 0 && !loading && (
@@ -3096,7 +3098,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             >
               <div className="flex items-center space-x-2 border-b border-zinc-100 pb-2.5">
                 <History className="h-4 w-4 text-[#C59B27]" />
-                <h2 className="text-base font-serif font-bold text-zinc-900">Recent Activity</h2>
+                <h2 className="text-base font-sans font-bold text-zinc-900">Recent Activity</h2>
               </div>
 
               {recentScans.length === 0 && (

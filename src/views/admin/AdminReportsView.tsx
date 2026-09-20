@@ -798,16 +798,16 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      className="space-y-8 pb-16"
+      className="space-y-8 pb-16 text-stone-900 dark:text-[#F0EBE3]"
       id="admin-reports-module"
     >
       {/* ----------------- 1. MAIN PAGE HEADER (Prompt Section 4) ----------------- */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-stone-200/80 pb-6">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-stone-200/80 dark:border-[#302E29] pb-6">
         <div>
-          <h1 className="type-h1-app text-stone-900">
+          <h1 className="type-h1-app text-stone-900 dark:text-[#F0EBE3]">
             Reports
           </h1>
-          <p className="text-stone-500 text-sm mt-1.5 leading-relaxed">
+          <p className="text-stone-500 dark:text-[#7A7570] text-sm mt-1.5 leading-relaxed">
             Create clear event reports for leadership, review previous reports and understand how the current event is progressing.
           </p>
         </div>
@@ -819,17 +819,17 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
               if (activeMainTab === 'live_metrics') fetchLiveOverview(selectedEventId);
             }}
             variant="outline"
-            className="border-stone-200 hover:bg-stone-50 text-stone-700 text-xs py-2 px-3.5 flex items-center gap-1.5 rounded-lg font-medium"
+            className="border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#21211E] hover:bg-stone-50 dark:hover:bg-[#262520] text-stone-700 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] text-xs py-2 px-3.5 flex items-center gap-1.5 rounded-lg font-medium"
             id="btn-refresh-all-reports"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            <RefreshCw className="w-3.5 h-3.5 text-stone-500 dark:text-[#7A7570]" />
             Refresh
           </Button>
         </div>
       </div>
 
       {/* ----------------- 2. TOP-LEVEL TABS (Prompt Section 5) ----------------- */}
-      <div className="flex border-b border-stone-200 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto scrollbar-none">
+      <div className="flex border-b border-stone-200 dark:border-[#302E29] -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto scrollbar-none">
         <div className="flex space-x-8 min-w-max pb-1">
           {[
             { id: 'reports_centre', label: 'Reports' },
@@ -844,8 +844,8 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                 onClick={() => setActiveMainTab(tab.id as MainTab)}
                 className={`pb-3 text-left transition-all relative font-sans ${
                   isActive 
-                    ? 'text-[#C59B27] font-semibold' 
-                    : 'text-stone-500 hover:text-stone-800 font-medium'
+                    ? 'text-[#C59B27] dark:text-amber-400 font-semibold'
+                    : 'text-stone-500 dark:text-[#7A7570] hover:text-stone-800 dark:hover:text-[#F0EBE3] font-medium'
                 }`}
                 id={`main-tab-${tab.id}`}
               >
@@ -853,7 +853,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                 {isActive && (
                   <motion.div 
                     layoutId="activeMainTabUnderline" 
-                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#C59B27]"
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#C59B27] dark:bg-amber-400"
                   />
                 )}
               </button>
@@ -891,10 +891,10 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
 
         return (
           <div className="space-y-6">
-            <div className="bg-white border border-stone-200/80 p-5 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200/80 dark:border-[#302E29] p-5 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="space-y-0.5">
-                <h2 className="text-base font-semibold text-stone-900">Reports</h2>
-                <p className="text-stone-500 text-xs leading-relaxed">
+                <h2 className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">Reports</h2>
+                <p className="text-stone-500 dark:text-[#7A7570] text-xs leading-relaxed">
                   Reports created for this event will appear here.
                 </p>
               </div>
@@ -907,7 +907,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                       setSelectedEventId(newId);
                       fetchReportsListAndTemplates(newId);
                     }}
-                    className="text-xs py-2 px-3 bg-stone-50 border border-stone-200 rounded-lg text-stone-800 font-medium focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                    className="text-xs py-2 px-3 bg-stone-50 dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg text-stone-800 dark:text-[#F0EBE3] font-medium focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
                     id="select-reports-event"
                     aria-label="Filter reports by event"
                   >
@@ -923,7 +923,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                     setCreateStep(1);
                     setActiveMainTab('custom_builder');
                   }}
-                  className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2 px-4 rounded-lg flex items-center gap-1.5 shadow-2xs transition-all"
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] dark:bg-[#C59B27] dark:hover:bg-[#B08621] text-white text-xs font-semibold py-2 px-4 rounded-lg flex items-center gap-1.5 shadow-2xs transition-all"
                   id="btn-nav-custom-builder"
                 >
                   <Plus className="w-4 h-4" />
@@ -937,14 +937,14 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                 <KoinoniaInlineLoader variant="logo" size="md" label="Loading reports..." />
               </div>
             ) : reportsListError ? (
-              <div className="flex flex-col items-center justify-center p-12 bg-white border border-stone-200 rounded-xl min-h-[30vh] text-center space-y-4">
+              <div className="flex flex-col items-center justify-center p-12 bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl min-h-[30vh] text-center space-y-4">
                 <div className="space-y-1.5 max-w-sm">
-                  <AlertCircle className="w-8 h-8 text-amber-600 mx-auto mb-2" />
-                  <p className="text-base font-medium text-stone-800">We couldn't load reports. Try again.</p>
+                  <AlertCircle className="w-8 h-8 text-amber-600 dark:text-amber-400 mx-auto mb-2" />
+                  <p className="text-base font-medium text-stone-800 dark:text-[#F0EBE3]">We couldn't load reports. Try again.</p>
                 </div>
                 <Button
                   onClick={() => fetchReportsListAndTemplates(selectedEventId)}
-                  className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] dark:bg-[#C59B27] dark:hover:bg-[#B08621] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
                   id="btn-retry-reports-list"
                 >
                   Try again
@@ -952,10 +952,10 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
               </div>
             ) : displayedReports.length === 0 ? (
               /* Quiet Empty State (Prompt Section 7) */
-              <div className="flex flex-col items-center justify-center p-12 bg-white border border-stone-200 rounded-xl min-h-[30vh] text-center space-y-4">
+              <div className="flex flex-col items-center justify-center p-12 bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl min-h-[30vh] text-center space-y-4">
                 <div className="space-y-1.5 max-w-sm">
-                  <p className="text-base font-medium text-stone-800">No reports have been created for this event yet.</p>
-                  <p className="text-xs text-stone-500 leading-relaxed">
+                  <p className="text-base font-medium text-stone-800 dark:text-[#F0EBE3]">No reports have been created for this event yet.</p>
+                  <p className="text-xs text-stone-500 dark:text-[#7A7570] leading-relaxed">
                     Create a report to summarise registrations, attendance, participation and event operations.
                   </p>
                 </div>
@@ -964,7 +964,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                     setCreateStep(1);
                     setActiveMainTab('custom_builder');
                   }}
-                  className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] dark:bg-[#C59B27] dark:hover:bg-[#B08621] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
                 >
                   Create report
                 </Button>
@@ -973,14 +973,14 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
               <div className="space-y-3">
                 {/* Contextual Bulk Action Bar (Priority 14, 15, 17) */}
                 {selectedReportIds.length > 0 && (
-                  <div className="bg-[#FAF9F6] border border-[#C59B27]/30 rounded-xl px-5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-in fade-in duration-150">
+                  <div className="bg-[#FAF9F6] dark:bg-[#21211E] border border-[#C59B27]/30 dark:border-amber-900/40 rounded-xl px-5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-in fade-in duration-150">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-stone-800">
+                      <span className="text-xs font-semibold text-stone-800 dark:text-[#F0EBE3]">
                         {selectedReportIds.length} {selectedReportIds.length === 1 ? 'report' : 'reports'} selected
                       </span>
                       <button
                         onClick={() => setSelectedReportIds([])}
-                        className="text-xs text-stone-500 hover:text-stone-800 underline ml-2 cursor-pointer"
+                        className="text-xs text-stone-500 dark:text-[#7A7570] hover:text-stone-800 dark:hover:text-[#F0EBE3] underline ml-2 cursor-pointer"
                       >
                         Clear selection
                       </button>
@@ -990,20 +990,20 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                         onClick={handleBulkDownload}
                         disabled={bulkDownloading}
                         variant="outline"
-                        className="bg-white border-stone-200 text-stone-700 hover:bg-stone-50 text-xs py-1.5 px-3 flex items-center gap-1.5 rounded-lg font-medium shadow-2xs"
+                        className="bg-white dark:bg-[#262520] border-stone-200 dark:border-[#3A3835] text-stone-700 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#2A2926] dark:hover:text-[#F0EBE3] text-xs py-1.5 px-3 flex items-center gap-1.5 rounded-lg font-medium shadow-2xs"
                         id="btn-bulk-download"
                       >
-                        {bulkDownloading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C59B27]" /> : <Download className="w-3.5 h-3.5 text-stone-500" />}
+                        {bulkDownloading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C59B27]" /> : <Download className="w-3.5 h-3.5 text-stone-500 dark:text-[#7A7570]" />}
                         Download selected
                       </Button>
                       <Button
                         onClick={() => setBulkDeleteConfirmOpen(true)}
                         disabled={deleting}
                         variant="outline"
-                        className="bg-white border-red-200 text-red-700 hover:bg-red-50 text-xs py-1.5 px-3 flex items-center gap-1.5 rounded-lg font-medium shadow-2xs"
+                        className="bg-white dark:bg-[#262520] border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 text-xs py-1.5 px-3 flex items-center gap-1.5 rounded-lg font-medium shadow-2xs"
                         id="btn-bulk-delete"
                       >
-                        <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                        <Trash2 className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
                         Delete selected
                       </Button>
                     </div>
@@ -1011,11 +1011,11 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                 )}
 
                 {/* Generated Report List Table (Prompt Section 8) */}
-                <div className="bg-white border border-stone-200 rounded-xl overflow-hidden shadow-2xs">
+                <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl overflow-hidden shadow-2xs">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse" aria-label="Reports Archive">
                       <thead>
-                        <tr className="bg-stone-50 border-b border-stone-200">
+                        <tr className="bg-stone-50 dark:bg-[#21211E] border-b border-stone-200 dark:border-[#302E29]">
                           <th className="py-3 px-4 w-10 text-center">
                             <input
                               type="checkbox"
@@ -1026,20 +1026,20 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                                 }
                               }}
                               onChange={handleToggleSelectAll}
-                              className="w-4 h-4 rounded border-stone-300 text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
+                              className="w-4 h-4 rounded border-stone-300 dark:border-[#3A3835] text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
                               aria-label="Select all reports"
                             />
                           </th>
-                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Report</th>
-                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Event</th>
-                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Type</th>
-                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Created</th>
-                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Created by</th>
-                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Status</th>
-                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 uppercase tracking-wider text-right">Actions</th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 dark:text-[#7A7570] uppercase tracking-wider">Report</th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 dark:text-[#7A7570] uppercase tracking-wider">Event</th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 dark:text-[#7A7570] uppercase tracking-wider">Type</th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 dark:text-[#7A7570] uppercase tracking-wider">Created</th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 dark:text-[#7A7570] uppercase tracking-wider">Created by</th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 dark:text-[#7A7570] uppercase tracking-wider">Status</th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 dark:text-[#7A7570] uppercase tracking-wider text-right">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-stone-100">
+                      <tbody className="divide-y divide-stone-100 dark:divide-[#302E29]">
                         {displayedReports.map((report) => {
                           const isComplete = report.status === 'completed' || report.status === 'ready';
                           const isPending = ['queued', 'generating'].includes(report.status);
@@ -1057,48 +1057,48 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                           return (
                             <tr
                               key={report.id}
-                              className={`hover:bg-stone-50/60 transition-colors ${isSelected ? 'bg-[#FAF9F6]' : ''}`}
+                              className={`hover:bg-stone-50/60 dark:hover:bg-[#262520]/60 transition-colors ${isSelected ? 'bg-[#FAF9F6] dark:bg-amber-950/15' : ''}`}
                             >
                               <td className="py-4 px-4 w-10 text-center" onClick={e => e.stopPropagation()}>
                                 <input
                                   type="checkbox"
                                   checked={isSelected}
                                   onChange={() => handleToggleSelectRow(report.id)}
-                                  className="w-4 h-4 rounded border-stone-300 text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
+                                  className="w-4 h-4 rounded border-stone-300 dark:border-[#3A3835] text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
                                   aria-label={`Select report ${reportTitle}`}
                                 />
                               </td>
                               <td className="py-4 px-6">
                                 <div className="space-y-0.5">
-                                  <span className="text-sm font-semibold text-stone-900 block line-clamp-1">
+                                  <span className="text-sm font-semibold text-stone-900 dark:text-[#F0EBE3] block line-clamp-1">
                                     {reportTitle}
                                   </span>
-                                  <span className="text-xs text-stone-400 block">
+                                  <span className="text-xs text-stone-400 dark:text-[#7A7570] block">
                                     {report.pageCount ? `${report.pageCount} pages` : 'PDF Document'}
                                   </span>
                                 </div>
                               </td>
-                              <td className="py-4 px-6 text-xs text-stone-700 font-medium">
+                              <td className="py-4 px-6 text-xs text-stone-700 dark:text-[#B8B0A5] font-medium">
                                 {eventTitle}
                               </td>
-                              <td className="py-4 px-6 text-xs text-stone-600">
+                              <td className="py-4 px-6 text-xs text-stone-600 dark:text-[#7A7570]">
                                 {typeName}
                               </td>
-                              <td className="py-4 px-6 text-xs text-stone-500 tabular-nums">
+                              <td className="py-4 px-6 text-xs text-stone-500 dark:text-[#7A7570] tabular-nums">
                                 {formattedDate}
                               </td>
-                              <td className="py-4 px-6 text-xs text-stone-700 font-medium">
+                              <td className="py-4 px-6 text-xs text-stone-700 dark:text-[#B8B0A5] font-medium">
                                 {preparedBy}
                               </td>
                               <td className="py-4 px-6">
                                 <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-0.5 rounded-full ${
-                                  isExpired ? 'bg-amber-50 text-amber-800 border border-amber-200/70' :
-                                  isComplete ? 'bg-stone-100 text-stone-700 border border-stone-200/80' :
-                                  isPending ? 'bg-amber-50 text-amber-800 border border-amber-200/60' :
-                                  isFailed ? 'bg-red-50 text-red-800 border border-red-200/60' :
-                                  'bg-stone-100 text-stone-600'
+                                  isExpired ? 'bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-400 border border-amber-200/70 dark:border-amber-900/40' :
+                                  isComplete ? 'bg-stone-100 dark:bg-[#262520] text-stone-700 dark:text-[#B8B0A5] border border-stone-200/80 dark:border-[#3A3835]' :
+                                  isPending ? 'bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40' :
+                                  isFailed ? 'bg-red-50 dark:bg-red-950/20 text-red-800 dark:text-red-400 border border-red-200/60 dark:border-red-900/40' :
+                                  'bg-stone-100 dark:bg-[#262520] text-stone-600 dark:text-[#B8B0A5]'
                                 }`}>
-                                  {isPending && <Loader2 className="w-2.5 h-2.5 animate-spin text-amber-600" />}
+                                  {isPending && <Loader2 className="w-2.5 h-2.5 animate-spin text-amber-600 dark:text-amber-400" />}
                                   {statusLabel}
                                 </span>
                               </td>
@@ -1112,17 +1112,17 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                                           setPreviewReportTitle(reportTitle);
                                           setPreviewEventTitle(eventTitle);
                                         }}
-                                        className="h-8 px-3 bg-white border border-stone-200 text-stone-800 rounded-lg text-xs font-semibold hover:bg-stone-50 transition-all flex items-center justify-center gap-1 shadow-2xs"
+                                        className="h-8 px-3 bg-white dark:bg-[#21211E] border border-stone-200 dark:border-[#3A3835] text-stone-800 dark:text-[#F0EBE3] rounded-lg text-xs font-semibold hover:bg-stone-50 dark:hover:bg-[#262520] transition-all flex items-center justify-center gap-1 shadow-2xs cursor-pointer"
                                         id={`btn-view-${report.id}`}
                                       >
-                                        <Eye className="w-3.5 h-3.5 text-stone-500" />
+                                        <Eye className="w-3.5 h-3.5 text-stone-500 dark:text-[#7A7570]" />
                                         Review report
                                       </button>
 
                                       {isExpired ? (
                                         <button
                                           onClick={() => handleRegenerateReport(report.id)}
-                                          className="h-8 px-3 bg-[#C59B27] text-white rounded-lg text-xs font-semibold hover:bg-[#b08920] transition-all flex items-center justify-center gap-1 shadow-2xs"
+                                          className="h-8 px-3 bg-[#C59B27] hover:bg-[#b08920] text-white rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1 shadow-2xs cursor-pointer"
                                           id={`btn-regenerate-${report.id}`}
                                         >
                                           <RefreshCw className="w-3.5 h-3.5" />
@@ -1131,7 +1131,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                                       ) : (
                                         <button
                                           onClick={() => handleDownloadReportPDF(report.id, report.storage_key || report.storageKey)}
-                                          className="h-8 px-3 bg-[#C59B27] text-white rounded-lg text-xs font-semibold hover:bg-[#b08920] transition-all flex items-center justify-center gap-1 shadow-2xs"
+                                          className="h-8 px-3 bg-[#C59B27] hover:bg-[#b08920] text-white rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1 shadow-2xs cursor-pointer"
                                           id={`btn-download-${report.id}`}
                                         >
                                           <Download className="w-3.5 h-3.5" />
@@ -1144,7 +1144,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                                   {isFailed && (
                                     <button
                                       onClick={() => handleRegenerateReport(report.id)}
-                                      className="h-8 px-3 bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold rounded-lg flex items-center gap-1"
+                                      className="h-8 px-3 bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold rounded-lg flex items-center gap-1 cursor-pointer"
                                       id={`btn-retry-${report.id}`}
                                     >
                                       <RefreshCw className="w-3 h-3" />
@@ -1183,28 +1183,28 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
             {templates.slice(0, 6).map((temp) => (
               <div 
                 key={temp.key} 
-                className="bg-white p-6 rounded-xl border border-stone-200 hover:border-[#C59B27]/40 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between space-y-6"
+                className="bg-white dark:bg-[#1D1D1A] p-6 rounded-xl border border-stone-200 dark:border-[#302E29] hover:border-[#C59B27]/40 dark:hover:border-amber-500/40 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between space-y-6"
                 id={`template-card-${temp.key}`}
               >
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <h2 className="text-base font-semibold text-stone-900 leading-snug">
+                    <h2 className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3] leading-snug">
                       {temp.name}
                     </h2>
-                    <p className="text-stone-500 text-xs leading-relaxed">
+                    <p className="text-stone-500 dark:text-[#7A7570] text-xs leading-relaxed">
                       {temp.description}
                     </p>
                   </div>
 
                   {/* Included Sections */}
-                  <div className="border-t border-stone-100 pt-3.5 space-y-2">
-                    <span className="text-[11px] font-semibold text-stone-700 uppercase tracking-wider block">
+                  <div className="border-t border-stone-100 dark:border-[#302E29] pt-3.5 space-y-2">
+                    <span className="text-[11px] font-semibold text-stone-700 dark:text-[#B8B0A5] uppercase tracking-wider block">
                       Included sections
                     </span>
-                    <ul className="space-y-1 text-xs text-stone-600">
+                    <ul className="space-y-1 text-xs text-stone-600 dark:text-[#7A7570]">
                       {(temp.recommendedSections || temp.defaultSections || []).slice(0, 5).map((item: string, idx: number) => (
                         <li key={idx} className="flex items-start gap-1.5">
-                          <span className="text-[#C59B27] shrink-0 font-bold">•</span>
+                          <span className="text-[#C59B27] dark:text-amber-400 shrink-0 font-bold">•</span>
                           <span className="leading-tight">{item}</span>
                         </li>
                       ))}
@@ -1212,14 +1212,14 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                   </div>
                 </div>
 
-                <div className="border-t border-stone-100 pt-4">
+                <div className="border-t border-stone-100 dark:border-[#302E29] pt-4">
                   <button
                     onClick={() => handleSelectTemplate(temp.key)}
-                    className="w-full bg-white hover:bg-stone-50 border border-stone-200 text-stone-800 text-xs font-semibold py-2.5 px-4 rounded-lg flex items-center justify-between transition-all"
+                    className="w-full bg-white dark:bg-[#21211E] hover:bg-stone-50 dark:hover:bg-[#262520] border border-stone-200 dark:border-[#3A3835] text-stone-800 dark:text-[#F0EBE3] text-xs font-semibold py-2.5 px-4 rounded-lg flex items-center justify-between transition-all cursor-pointer"
                     id={`btn-use-template-${temp.key}`}
                   >
                     <span>Use template</span>
-                    <span className="text-[#C59B27] font-bold text-sm">→</span>
+                    <span className="text-[#C59B27] dark:text-amber-400 font-bold text-sm">→</span>
                   </button>
                 </div>
               </div>
@@ -1230,10 +1230,10 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
 
       {/* ----------------- TAB 3: CREATE REPORT FLOW (Prompt Section 10-14 & 48) ----------------- */}
       {activeMainTab === 'custom_builder' && (
-        <div className="max-w-3xl mx-auto bg-white border border-stone-200 rounded-xl p-6 sm:p-8 space-y-8 shadow-2xs">
+        <div className="max-w-3xl mx-auto bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-6 sm:p-8 space-y-8 shadow-2xs">
           {/* Step Progress Tracker */}
-          <div className="border-b border-stone-200 pb-4">
-            <div className="flex items-center justify-between text-xs font-medium text-stone-500">
+          <div className="border-b border-stone-200 dark:border-[#302E29] pb-4">
+            <div className="flex items-center justify-between text-xs font-medium text-stone-500 dark:text-[#7A7570]">
               {[
                 { step: 1, label: 'Report type' },
                 { step: 2, label: 'Event' },
@@ -1245,12 +1245,12 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                   key={step}
                   type="button"
                   onClick={() => setCreateStep(step)}
-                  className={`flex items-center gap-1.5 transition-colors ${
-                    createStep === step ? 'text-[#C59B27] font-semibold' : createStep > step ? 'text-stone-800' : 'text-stone-400'
+                  className={`flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    createStep === step ? 'text-[#C59B27] dark:text-amber-400 font-semibold' : createStep > step ? 'text-stone-800 dark:text-[#F0EBE3]' : 'text-stone-400 dark:text-[#7A7570]'
                   }`}
                 >
                   <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${
-                    createStep === step ? 'bg-[#C59B27] text-white' : createStep > step ? 'bg-stone-200 text-stone-700' : 'bg-stone-100 text-stone-400'
+                    createStep === step ? 'bg-[#C59B27] text-white' : createStep > step ? 'bg-stone-200 dark:bg-[#262520] text-stone-700 dark:text-[#F0EBE3]' : 'bg-stone-100 dark:bg-[#21211E] text-stone-400 dark:text-[#7A7570]'
                   }`}>
                     {step}
                   </span>
@@ -1264,8 +1264,8 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
           {createStep === 1 && (
             <div className="space-y-6 animate-fadeIn">
               <div className="space-y-1">
-                <h2 className="text-xl font-sans font-semibold text-stone-900 dark:text-[#F7F4ED]">Choose report type</h2>
-                <p className="text-xs text-stone-500 dark:text-[#938C81]">Select the report template designed for your audience.</p>
+                <h2 className="text-xl font-sans font-semibold text-stone-900 dark:text-[#F0EBE3]">Choose report type</h2>
+                <p className="text-xs text-stone-500 dark:text-[#7A7570]">Select the report template designed for your audience.</p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1281,24 +1281,24 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                       }}
                       className={`p-4 rounded-xl border cursor-pointer transition-all space-y-2 ${
                         isSelected 
-                          ? 'border-[#C59B27] bg-[#C59B27]/5 ring-1 ring-[#C59B27]' 
-                          : 'border-stone-200 hover:border-stone-300 bg-white'
+                          ? 'border-[#C59B27] dark:border-amber-400 bg-[#C59B27]/5 dark:bg-amber-950/20 ring-1 ring-[#C59B27] dark:ring-amber-400'
+                          : 'border-stone-200 dark:border-[#302E29] hover:border-stone-300 dark:hover:border-[#3A3835] bg-white dark:bg-[#21211E]'
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-semibold text-stone-900">{temp.name}</span>
-                        {isSelected && <Check className="w-4 h-4 text-[#C59B27]" />}
+                        <span className="text-sm font-semibold text-stone-900 dark:text-[#F0EBE3]">{temp.name}</span>
+                        {isSelected && <Check className="w-4 h-4 text-[#C59B27] dark:text-amber-400" />}
                       </div>
-                      <p className="text-xs text-stone-500 leading-relaxed">{temp.description}</p>
+                      <p className="text-xs text-stone-500 dark:text-[#7A7570] leading-relaxed">{temp.description}</p>
                     </div>
                   );
                 })}
               </div>
 
-              <div className="flex justify-end pt-4 border-t border-stone-100">
+              <div className="flex justify-end pt-4 border-t border-stone-100 dark:border-[#302E29]">
                 <Button
                   onClick={() => setCreateStep(2)}
-                  className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] dark:bg-[#C59B27] dark:hover:bg-[#B08621] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
                 >
                   Continue to event selection →
                 </Button>
@@ -1310,16 +1310,16 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
           {createStep === 2 && (
             <div className="space-y-6 animate-fadeIn">
               <div className="space-y-1">
-                <h2 className="text-xl font-sans font-semibold text-stone-900 dark:text-[#F7F4ED]">Choose event</h2>
-                <p className="text-xs text-stone-500 dark:text-[#938C81]">Select the event to report on. Data will be compiled from current event records.</p>
+                <h2 className="text-xl font-sans font-semibold text-stone-900 dark:text-[#F0EBE3]">Choose event</h2>
+                <p className="text-xs text-stone-500 dark:text-[#7A7570]">Select the event to report on. Data will be compiled from current event records.</p>
               </div>
 
               <div className="space-y-3">
-                <label className="text-xs font-semibold text-stone-700 block uppercase tracking-wider">Event</label>
+                <label className="text-xs font-semibold text-stone-700 dark:text-[#B8B0A5] block uppercase tracking-wider">Event</label>
                 <select
                   value={selectedEventId}
                   onChange={(e) => setSelectedEventId(e.target.value)}
-                  className="w-full text-sm p-3 bg-stone-50 border border-stone-200 rounded-lg text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#C59B27]"
+                  className="w-full text-sm p-3 bg-stone-50 dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg text-stone-900 dark:text-[#F0EBE3] focus:outline-none focus:ring-2 focus:ring-[#C59B27]"
                 >
                   {availableEvents.map((ev) => (
                     <option key={ev.id} value={ev.id}>
@@ -1329,17 +1329,17 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                 </select>
               </div>
 
-              <div className="flex justify-between items-center pt-4 border-t border-stone-100">
+              <div className="flex justify-between items-center pt-4 border-t border-stone-100 dark:border-[#302E29]">
                 <Button
                   onClick={() => setCreateStep(1)}
                   variant="outline"
-                  className="border-stone-200 text-stone-700 text-xs py-2 px-4 rounded-lg"
+                  className="border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#21211E] text-stone-700 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#262520] dark:hover:text-[#F0EBE3] text-xs py-2 px-4 rounded-lg"
                 >
                   ← Back
                 </Button>
                 <Button
                   onClick={() => setCreateStep(3)}
-                  className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] dark:bg-[#C59B27] dark:hover:bg-[#B08621] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
                 >
                   Continue to report title →
                 </Button>
@@ -1351,45 +1351,45 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
           {createStep === 3 && (
             <div className="space-y-6 animate-fadeIn">
               <div className="space-y-1">
-                <h2 className="text-xl font-sans font-semibold text-stone-900 dark:text-[#F7F4ED]">Report title</h2>
-                <p className="text-xs text-stone-500 dark:text-[#938C81]">Edit the presentation title and subtitle for the final management document.</p>
+                <h2 className="text-xl font-sans font-semibold text-stone-900 dark:text-[#F0EBE3]">Report title</h2>
+                <p className="text-xs text-stone-500 dark:text-[#7A7570]">Edit the presentation title and subtitle for the final management document.</p>
               </div>
 
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-stone-700 block uppercase tracking-wider">Document title</label>
+                  <label className="text-xs font-semibold text-stone-700 dark:text-[#B8B0A5] block uppercase tracking-wider">Document title</label>
                   <input
                     type="text"
                     value={customReportTitle}
                     onChange={(e) => setCustomReportTitle(e.target.value)}
                     placeholder="e.g. The General Assembly 2026 — Management Report"
-                    className="w-full text-sm p-3 bg-stone-50 border border-stone-200 rounded-lg text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#C59B27]"
+                    className="w-full text-sm p-3 bg-stone-50 dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg text-stone-900 dark:text-[#F0EBE3] placeholder-stone-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-2 focus:ring-[#C59B27]"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-stone-700 block uppercase tracking-wider">Subtitle</label>
+                  <label className="text-xs font-semibold text-stone-700 dark:text-[#B8B0A5] block uppercase tracking-wider">Subtitle</label>
                   <input
                     type="text"
                     value={customSubtitle}
                     onChange={(e) => setCustomSubtitle(e.target.value)}
                     placeholder="Children & Teens Ministry"
-                    className="w-full text-sm p-3 bg-stone-50 border border-stone-200 rounded-lg text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#C59B27]"
+                    className="w-full text-sm p-3 bg-stone-50 dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg text-stone-900 dark:text-[#F0EBE3] placeholder-stone-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-2 focus:ring-[#C59B27]"
                   />
                 </div>
               </div>
 
-              <div className="flex justify-between items-center pt-4 border-t border-stone-100">
+              <div className="flex justify-between items-center pt-4 border-t border-stone-100 dark:border-[#302E29]">
                 <Button
                   onClick={() => setCreateStep(2)}
                   variant="outline"
-                  className="border-stone-200 text-stone-700 text-xs py-2 px-4 rounded-lg"
+                  className="border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#21211E] text-stone-700 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#262520] dark:hover:text-[#F0EBE3] text-xs py-2 px-4 rounded-lg"
                 >
                   ← Back
                 </Button>
                 <Button
                   onClick={() => setCreateStep(4)}
-                  className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] dark:bg-[#C59B27] dark:hover:bg-[#B08621] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
                 >
                   Continue to sections →
                 </Button>
@@ -1401,8 +1401,8 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
           {createStep === 4 && (
             <div className="space-y-6 animate-fadeIn">
               <div className="space-y-1">
-                <h2 className="text-xl font-sans font-semibold text-stone-900 dark:text-[#F7F4ED]">Included sections</h2>
-                <p className="text-xs text-stone-500 dark:text-[#938C81]">Select which analysis sections to compile into this report.</p>
+                <h2 className="text-xl font-sans font-semibold text-stone-900 dark:text-[#F0EBE3]">Included sections</h2>
+                <p className="text-xs text-stone-500 dark:text-[#7A7570]">Select which analysis sections to compile into this report.</p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1422,14 +1422,14 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                     <label 
                       key={sec} 
                       className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-                        checked ? 'border-[#C59B27] bg-[#C59B27]/5 text-stone-900 font-medium' : 'border-stone-200 text-stone-600 hover:bg-stone-50'
+                        checked ? 'border-[#C59B27] dark:border-amber-400 bg-[#C59B27]/5 dark:bg-amber-950/20 text-stone-900 dark:text-[#F0EBE3] font-medium' : 'border-stone-200 dark:border-[#302E29] text-stone-600 dark:text-[#B8B0A5] bg-white dark:bg-[#21211E] hover:bg-stone-50 dark:hover:bg-[#262520]'
                       }`}
                     >
                       <input
                         type="checkbox"
                         checked={checked}
                         onChange={() => handleToggleSection(sec)}
-                        className="rounded border-stone-300 text-[#C59B27] focus:ring-[#C59B27] h-4 w-4"
+                        className="rounded border-stone-300 dark:border-[#3A3835] text-[#C59B27] focus:ring-[#C59B27] h-4 w-4"
                       />
                       <span className="text-xs">{sec}</span>
                     </label>
@@ -1437,17 +1437,17 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                 })}
               </div>
 
-              <div className="flex justify-between items-center pt-4 border-t border-stone-100">
+              <div className="flex justify-between items-center pt-4 border-t border-stone-100 dark:border-[#302E29]">
                 <Button
                   onClick={() => setCreateStep(3)}
                   variant="outline"
-                  className="border-stone-200 text-stone-700 text-xs py-2 px-4 rounded-lg"
+                  className="border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#21211E] text-stone-700 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#262520] dark:hover:text-[#F0EBE3] text-xs py-2 px-4 rounded-lg"
                 >
                   ← Back
                 </Button>
                 <Button
                   onClick={() => setCreateStep(5)}
-                  className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] dark:bg-[#C59B27] dark:hover:bg-[#B08621] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
                 >
                   Preview report →
                 </Button>
@@ -1459,34 +1459,34 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
           {createStep === 5 && (
             <div className="space-y-6 animate-fadeIn">
               <div className="space-y-1">
-                <h2 className="text-xl font-sans font-semibold text-stone-900 dark:text-[#F7F4ED]">Preview report</h2>
-                <p className="text-xs text-stone-500 dark:text-[#938C81]">Review your report configuration before creating the official PDF snapshot.</p>
+                <h2 className="text-xl font-sans font-semibold text-stone-900 dark:text-[#F0EBE3]">Preview report</h2>
+                <p className="text-xs text-stone-500 dark:text-[#7A7570]">Review your report configuration before creating the official PDF snapshot.</p>
               </div>
 
               {/* Summary Card */}
-              <div className="bg-stone-50 dark:bg-[#20201E] border border-stone-200 dark:border-[#2A2926] rounded-xl p-6 space-y-4">
-                <div className="border-b border-stone-200 dark:border-[#2A2926] pb-3 space-y-1">
-                  <span className="text-[10px] uppercase font-semibold tracking-wider text-[#C59B27] block">Document title</span>
-                  <h3 className="text-base font-sans font-semibold text-stone-900 dark:text-[#F7F4ED]">{customReportTitle}</h3>
-                  <p className="text-xs text-stone-500 dark:text-[#938C81]">{customSubtitle}</p>
+              <div className="bg-stone-50 dark:bg-[#21211E] border border-stone-200 dark:border-[#302E29] rounded-xl p-6 space-y-4">
+                <div className="border-b border-stone-200 dark:border-[#302E29] pb-3 space-y-1">
+                  <span className="text-[10px] uppercase font-semibold tracking-wider text-[#C59B27] dark:text-amber-400 block">Document title</span>
+                  <h3 className="text-base font-sans font-semibold text-stone-900 dark:text-[#F0EBE3]">{customReportTitle}</h3>
+                  <p className="text-xs text-stone-500 dark:text-[#7A7570]">{customSubtitle}</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 text-xs">
                   <div>
-                    <span className="text-stone-400 block text-[10px] uppercase font-semibold">Event</span>
-                    <span className="font-semibold text-stone-800">{selectedEventObj?.title || 'The General Assembly'}</span>
+                    <span className="text-stone-400 dark:text-[#7A7570] block text-[10px] uppercase font-semibold">Event</span>
+                    <span className="font-semibold text-stone-800 dark:text-[#F0EBE3]">{selectedEventObj?.title || 'The General Assembly'}</span>
                   </div>
                   <div>
-                    <span className="text-stone-400 block text-[10px] uppercase font-semibold">Report type</span>
-                    <span className="font-semibold text-stone-800">{selectedTemplateObj?.name || 'Management summary'}</span>
+                    <span className="text-stone-400 dark:text-[#7A7570] block text-[10px] uppercase font-semibold">Report type</span>
+                    <span className="font-semibold text-stone-800 dark:text-[#F0EBE3]">{selectedTemplateObj?.name || 'Management summary'}</span>
                   </div>
                 </div>
 
-                <div className="border-t border-stone-200 pt-3 space-y-1.5">
-                  <span className="text-[10px] uppercase font-semibold tracking-wider text-stone-400 block">Included sections</span>
+                <div className="border-t border-stone-200 dark:border-[#302E29] pt-3 space-y-1.5">
+                  <span className="text-[10px] uppercase font-semibold tracking-wider text-stone-400 dark:text-[#7A7570] block">Included sections</span>
                   <div className="flex flex-wrap gap-1.5">
                     {builderSections.map((sec) => (
-                      <span key={sec} className="text-[11px] bg-white border border-stone-200 px-2.5 py-0.5 rounded text-stone-700 font-medium">
+                      <span key={sec} className="text-[11px] bg-white dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] px-2.5 py-0.5 rounded text-stone-700 dark:text-[#B8B0A5] font-medium">
                         {sec}
                       </span>
                     ))}
@@ -1494,18 +1494,18 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                 </div>
               </div>
 
-              <div className="flex justify-between items-center pt-4 border-t border-stone-100">
+              <div className="flex justify-between items-center pt-4 border-t border-stone-100 dark:border-[#302E29]">
                 <Button
                   onClick={() => setCreateStep(4)}
                   variant="outline"
-                  className="border-stone-200 text-stone-700 text-xs py-2 px-4 rounded-lg"
+                  className="border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#21211E] text-stone-700 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#262520] dark:hover:text-[#F0EBE3] text-xs py-2 px-4 rounded-lg"
                 >
                   ← Back
                 </Button>
                 <Button
                   onClick={handleCreateReportJob}
                   disabled={submittingJob}
-                  className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2.5 px-6 rounded-lg flex items-center gap-2"
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] dark:bg-[#C59B27] dark:hover:bg-[#B08621] text-white text-xs font-semibold py-2.5 px-6 rounded-lg flex items-center gap-2"
                 >
                   {submittingJob ? (
                     <>
@@ -1526,24 +1526,24 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
       {activeMainTab === 'live_metrics' && (
         <div className="space-y-6">
           {/* Header & Event Selector */}
-          <div className="bg-white border border-stone-200/80 p-5 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200/80 dark:border-[#302E29] p-5 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="space-y-1">
-              <h2 className="text-base font-semibold text-stone-900">Event overview</h2>
-              <p className="text-stone-500 text-xs leading-relaxed">
+              <h2 className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">Event overview</h2>
+              <p className="text-stone-500 dark:text-[#7A7570] text-xs leading-relaxed">
                 Current operational and participation data for event reporting.
               </p>
             </div>
 
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-stone-500 font-medium">Event:</span>
+                <span className="text-xs text-stone-500 dark:text-[#7A7570] font-medium">Event:</span>
                 <select
                   value={selectedEventId}
                   onChange={(e) => {
                     setSelectedEventId(e.target.value);
                     fetchLiveOverview(e.target.value);
                   }}
-                  className="text-xs p-2 bg-stone-50 border border-stone-200 rounded-lg text-stone-800 font-medium focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                  className="text-xs p-2 bg-stone-50 dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg text-stone-800 dark:text-[#F0EBE3] font-medium focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
                 >
                   {availableEvents.map((ev) => (
                     <option key={ev.id} value={ev.id}>
@@ -1555,7 +1555,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
               <Button
                 onClick={() => fetchLiveOverview(selectedEventId)}
                 variant="outline"
-                className="border-stone-200 text-stone-700 text-xs py-1.5 px-3 rounded-lg"
+                className="border-stone-200 dark:border-[#3A3835] text-stone-700 dark:text-[#B8B0A5] dark:bg-[#21211E] dark:hover:bg-[#262520] text-xs py-1.5 px-3 rounded-lg"
               >
                 <RefreshCw className="w-3 h-3" />
               </Button>
@@ -1567,13 +1567,13 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
               <KoinoniaInlineLoader variant="logo" size="md" label="Loading event overview…" />
             </div>
           ) : !liveOverviewAnalytics ? (
-            <div className="p-12 text-center text-xs text-stone-500 bg-white border border-stone-200 rounded-xl">
+            <div className="p-12 text-center text-xs text-stone-500 dark:text-[#7A7570] bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl">
               No report data available for the selected event.
             </div>
           ) : (
             <div className="space-y-6">
               {/* Top Compact Metrics Row (Prompt Section 45: Registered, Selected, Checked in, Inside, Picked up, Volunteers) */}
-              <div className="bg-white border border-stone-200 rounded-xl overflow-hidden shadow-2xs divide-y sm:divide-y-0 sm:divide-x divide-stone-200 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+              <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl overflow-hidden shadow-2xs divide-y sm:divide-y-0 sm:divide-x divide-stone-200 dark:divide-[#302E29] grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
                 {[
                   {
                     label: 'Registered',
@@ -1606,14 +1606,14 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                     sub: `${liveOverviewAnalytics.volunteers?.totalApproved ?? 0} assigned`
                   }
                 ].map((kpi, idx) => (
-                  <div key={idx} className="p-4 space-y-1 bg-white">
-                    <span className="text-[10px] uppercase font-semibold text-stone-500 block tracking-wider truncate">
+                  <div key={idx} className="p-4 space-y-1 bg-white dark:bg-[#1D1D1A]">
+                    <span className="text-[10px] uppercase font-semibold text-stone-500 dark:text-[#7A7570] block tracking-wider truncate">
                       {kpi.label}
                     </span>
-                    <span className="text-2xl font-bold text-stone-900 block tracking-tight tabular-nums font-sans">
+                    <span className="text-2xl font-bold text-stone-900 dark:text-[#F0EBE3] block tracking-tight tabular-nums font-sans">
                       {kpi.value}
                     </span>
-                    <span className="text-[10px] text-stone-400 block truncate leading-tight">
+                    <span className="text-[10px] text-stone-400 dark:text-[#7A7570] block truncate leading-tight">
                       {kpi.sub}
                     </span>
                   </div>
@@ -1641,7 +1641,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                     }}
                   />
                 ) : (
-                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-500 min-h-[160px] flex items-center justify-center">
+                  <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-5 text-center text-xs text-stone-500 dark:text-[#7A7570] min-h-[160px] flex items-center justify-center">
                     No registration outcome data recorded.
                   </div>
                 )}
@@ -1665,7 +1665,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                     }}
                   />
                 ) : (
-                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-500 min-h-[160px] flex items-center justify-center">
+                  <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-5 text-center text-xs text-stone-500 dark:text-[#7A7570] min-h-[160px] flex items-center justify-center">
                     No age group distribution available.
                   </div>
                 )}
@@ -1689,7 +1689,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                     }}
                   />
                 ) : (
-                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-500 min-h-[160px] flex items-center justify-center">
+                  <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-5 text-center text-xs text-stone-500 dark:text-[#7A7570] min-h-[160px] flex items-center justify-center">
                     No attendance has been recorded yet.
                   </div>
                 )}
@@ -1713,7 +1713,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                     }}
                   />
                 ) : (
-                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-500 min-h-[160px] flex items-center justify-center">
+                  <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-5 text-center text-xs text-stone-500 dark:text-[#7A7570] min-h-[160px] flex items-center justify-center">
                     Check-in times were not recorded in enough detail to show an arrival trend.
                   </div>
                 )}
@@ -1737,7 +1737,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                     }}
                   />
                 ) : (
-                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-500 min-h-[160px] flex items-center justify-center">
+                  <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-5 text-center text-xs text-stone-500 dark:text-[#7A7570] min-h-[160px] flex items-center justify-center">
                     No recorded team distribution is available for this event.
                   </div>
                 )}
@@ -1764,64 +1764,64 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                     }}
                   />
                 ) : (
-                  <div className="bg-white border border-stone-200 rounded-xl p-5 text-center text-xs text-stone-500 min-h-[160px] flex items-center justify-center">
+                  <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-5 text-center text-xs text-stone-500 dark:text-[#7A7570] min-h-[160px] flex items-center justify-center">
                     No safety matters were recorded for this event.
                   </div>
                 )}
               </div>
 
               {/* Care & Safety Aggregated Summary (Prompt Section 31: Zero child PII) */}
-              <div className="bg-white border border-stone-200 rounded-xl p-6 space-y-4">
+              <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-6 space-y-4">
                 <div className="space-y-0.5">
-                  <h3 className="text-sm font-semibold text-stone-900">Care & support summary</h3>
-                  <p className="text-xs text-stone-500">
+                  <h3 className="text-sm font-semibold text-stone-900 dark:text-[#F0EBE3]">Care & support summary</h3>
+                  <p className="text-xs text-stone-500 dark:text-[#7A7570]">
                     Aggregated care indicators requiring administrative awareness. Individual medical records remain protected.
                   </p>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-                  <div className="bg-stone-50 p-4 rounded-lg border border-stone-100 space-y-1">
-                    <span className="text-stone-500 font-medium block">Care records on file</span>
-                    <span className="text-xl font-bold text-stone-900 tabular-nums font-sans">
+                  <div className="bg-stone-50 dark:bg-[#21211E] p-4 rounded-lg border border-stone-100 dark:border-[#302E29] space-y-1">
+                    <span className="text-stone-500 dark:text-[#7A7570] font-medium block">Care records on file</span>
+                    <span className="text-xl font-bold text-stone-900 dark:text-[#F0EBE3] tabular-nums font-sans">
                       {liveOverviewAnalytics.registrations?.totalCareCount ?? 0}
                     </span>
-                    <span className="text-[10px] text-stone-400 block">Children requiring care awareness</span>
+                    <span className="text-[10px] text-stone-400 dark:text-[#7A7570] block">Children requiring care awareness</span>
                   </div>
 
-                  <div className="bg-stone-50 p-4 rounded-lg border border-stone-100 space-y-1">
-                    <span className="text-stone-500 font-medium block">Dietary & allergy notices</span>
-                    <span className="text-xl font-bold text-stone-900 tabular-nums font-sans">
+                  <div className="bg-stone-50 dark:bg-[#21211E] p-4 rounded-lg border border-stone-100 dark:border-[#302E29] space-y-1">
+                    <span className="text-stone-500 dark:text-[#7A7570] font-medium block">Dietary & allergy notices</span>
+                    <span className="text-xl font-bold text-stone-900 dark:text-[#F0EBE3] tabular-nums font-sans">
                       {liveOverviewAnalytics.registrations?.medicalNotesCount ?? 0}
                     </span>
-                    <span className="text-[10px] text-stone-400 block">Notified to refreshments teams</span>
+                    <span className="text-[10px] text-stone-400 dark:text-[#7A7570] block">Notified to refreshments teams</span>
                   </div>
 
-                  <div className="bg-stone-50 p-4 rounded-lg border border-stone-100 space-y-1">
-                    <span className="text-stone-500 font-medium block">Additional support</span>
-                    <span className="text-xl font-bold text-stone-900 tabular-nums font-sans">
+                  <div className="bg-stone-50 dark:bg-[#21211E] p-4 rounded-lg border border-stone-100 dark:border-[#302E29] space-y-1">
+                    <span className="text-stone-500 dark:text-[#7A7570] font-medium block">Additional support</span>
+                    <span className="text-xl font-bold text-stone-900 dark:text-[#F0EBE3] tabular-nums font-sans">
                       {liveOverviewAnalytics.registrations?.extraSupportCount ?? 0}
                     </span>
-                    <span className="text-[10px] text-stone-400 block">Support volunteers assigned</span>
+                    <span className="text-[10px] text-stone-400 dark:text-[#7A7570] block">Support volunteers assigned</span>
                   </div>
                 </div>
               </div>
 
               {/* Standard Spreadsheet Exports (Preserved functionality) */}
-              <div className="bg-white p-6 rounded-xl border border-stone-200 shadow-2xs space-y-3">
-                <h3 className="text-sm font-semibold text-stone-900">Data spreadsheet exports</h3>
+              <div className="bg-white dark:bg-[#1D1D1A] p-6 rounded-xl border border-stone-200 dark:border-[#302E29] shadow-2xs space-y-3">
+                <h3 className="text-sm font-semibold text-stone-900 dark:text-[#F0EBE3]">Data spreadsheet exports</h3>
                 <div className="flex flex-wrap gap-3">
                   <button 
                     onClick={() => handleExport('attendance', 'csv')}
-                    className="bg-stone-50 hover:bg-stone-100 border border-stone-200 text-stone-700 text-xs font-semibold py-2 px-3.5 rounded-lg flex items-center gap-1.5 transition-all"
+                    className="bg-stone-50 dark:bg-[#21211E] hover:bg-stone-100 dark:hover:bg-[#262520] border border-stone-200 dark:border-[#3A3835] text-stone-700 dark:text-[#B8B0A5] text-xs font-semibold py-2 px-3.5 rounded-lg flex items-center gap-1.5 transition-all"
                   >
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-stone-400" />
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-stone-400 dark:text-[#7A7570]" />
                     Download Attendance CSV
                   </button>
                   <button 
                     onClick={() => handleExport('care_notes', 'csv')}
-                    className="bg-stone-50 hover:bg-stone-100 border border-stone-200 text-stone-700 text-xs font-semibold py-2 px-3.5 rounded-lg flex items-center gap-1.5 transition-all"
+                    className="bg-stone-50 dark:bg-[#21211E] hover:bg-stone-100 dark:hover:bg-[#262520] border border-stone-200 dark:border-[#3A3835] text-stone-700 dark:text-[#B8B0A5] text-xs font-semibold py-2 px-3.5 rounded-lg flex items-center gap-1.5 transition-all"
                   >
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-stone-400" />
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-stone-400 dark:text-[#7A7570]" />
                     Download Care Notes CSV
                   </button>
                 </div>
@@ -1856,15 +1856,15 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-xl shadow-2xl border border-stone-200 w-full max-w-2xl overflow-hidden"
+              className="bg-white dark:bg-[#21211E] rounded-xl shadow-2xl border border-stone-200 dark:border-[#302E29] w-full max-w-2xl overflow-hidden"
             >
-              <div className="bg-[#FAF9F6] border-b border-stone-200 px-6 py-4 flex items-center justify-between">
+              <div className="bg-[#FAF9F6] dark:bg-[#1D1D1A] border-b border-stone-200 dark:border-[#302E29] px-6 py-4 flex items-center justify-between">
                 <div>
-                  <h3 id="audit-modal-title" className="text-base font-sans font-semibold text-stone-900 dark:text-[#F7F4ED]">Report history</h3>
+                  <h3 id="audit-modal-title" className="text-base font-sans font-semibold text-stone-900 dark:text-[#F0EBE3]">Report history</h3>
                 </div>
                 <button 
                   onClick={() => setAuditReportId(null)}
-                  className="text-stone-400 hover:text-stone-700 p-1.5 hover:bg-stone-100 rounded-full transition-all"
+                  className="text-stone-400 dark:text-[#7A7570] hover:text-stone-700 dark:hover:text-[#F0EBE3] p-1.5 hover:bg-stone-100 dark:hover:bg-[#262520] rounded-full transition-all"
                   aria-label="Close"
                 >
                   <X className="w-5 h-5" />
@@ -1877,16 +1877,16 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                     <Loader2 className="w-6 h-6 animate-spin text-[#C59B27]" />
                   </div>
                 ) : auditLogs.length === 0 ? (
-                  <div className="text-center text-xs text-stone-400 py-12">No history actions recorded yet.</div>
+                  <div className="text-center text-xs text-stone-400 dark:text-[#7A7570] py-12">No history actions recorded yet.</div>
                 ) : (
                   <div className="space-y-3">
                     {auditLogs.map((log) => (
-                      <div key={log.id} className="bg-stone-50 p-3.5 rounded-lg border border-stone-100 flex justify-between gap-4 text-xs">
+                      <div key={log.id} className="bg-stone-50 dark:bg-[#1D1D1A] p-3.5 rounded-lg border border-stone-100 dark:border-[#302E29] flex justify-between gap-4 text-xs">
                         <div className="space-y-1">
-                          <span className="font-semibold text-stone-800 capitalize">{log.action_type.replace(/_/g, ' ')}</span>
-                          <p className="text-stone-500 leading-relaxed text-[11px]">{log.safe_summary}</p>
+                          <span className="font-semibold text-stone-800 dark:text-[#F0EBE3] capitalize">{log.action_type.replace(/_/g, ' ')}</span>
+                          <p className="text-stone-500 dark:text-[#7A7570] leading-relaxed text-[11px]">{log.safe_summary}</p>
                         </div>
-                        <span className="text-[10px] text-stone-400 shrink-0 mt-0.5 tabular-nums">
+                        <span className="text-[10px] text-stone-400 dark:text-[#7A7570] shrink-0 mt-0.5 tabular-nums">
                           {new Date(log.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                         </span>
                       </div>
@@ -1895,10 +1895,10 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                 )}
               </div>
 
-              <div className="bg-stone-50 border-t border-stone-200 px-6 py-3.5 flex justify-end">
+              <div className="bg-stone-50 dark:bg-[#1D1D1A] border-t border-stone-200 dark:border-[#302E29] px-6 py-3.5 flex justify-end">
                 <Button 
                   onClick={() => setAuditReportId(null)}
-                  className="bg-stone-900 hover:bg-black text-white text-xs font-semibold py-2 px-4 rounded-lg"
+                  className="bg-stone-900 hover:bg-black dark:bg-[#262520] dark:hover:bg-[#2A2926] dark:border dark:border-[#3A3835] text-white dark:text-[#F0EBE3] text-xs font-semibold py-2 px-4 rounded-lg"
                 >
                   Close
                 </Button>
@@ -1921,18 +1921,18 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-xl shadow-2xl border border-stone-200 w-full max-w-md overflow-hidden p-6 space-y-4"
+              className="bg-white dark:bg-[#21211E] rounded-xl shadow-2xl border border-stone-200 dark:border-[#302E29] w-full max-w-md overflow-hidden p-6 space-y-4"
             >
               <div className="flex items-start gap-3">
-                <div className="p-2.5 bg-red-50 text-red-600 rounded-full shrink-0">
+                <div className="p-2.5 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 rounded-full shrink-0 border border-transparent dark:border-red-900/40">
                   <AlertCircle className="w-5 h-5" />
                 </div>
                 <div className="space-y-1">
-                  <h3 id="single-delete-title" className="text-base font-semibold text-stone-900">
+                  <h3 id="single-delete-title" className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">
                     Delete report?
                   </h3>
-                  <p className="text-xs text-stone-500 dark:text-[#938C81] leading-relaxed">
-                    Are you sure you want to delete <span className="font-medium text-stone-800 dark:text-[#F7F4ED] font-sans">"{deleteTarget.title}"</span>? This will permanently remove the generated PDF document and snapshot data.
+                  <p className="text-xs text-stone-500 dark:text-[#7A7570] leading-relaxed">
+                    Are you sure you want to delete <span className="font-medium text-stone-800 dark:text-[#F0EBE3] font-sans">"{deleteTarget.title}"</span>? This will permanently remove the generated PDF document and snapshot data.
                   </p>
                 </div>
               </div>
@@ -1942,14 +1942,14 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                   variant="outline"
                   onClick={() => setDeleteTarget(null)}
                   disabled={deleting}
-                  className="border-stone-200 text-stone-700 text-xs py-2 px-3.5 rounded-lg"
+                  className="border-stone-200 dark:border-[#3A3835] text-stone-700 dark:text-[#B8B0A5] dark:bg-[#262520] dark:hover:bg-[#2A2926] text-xs py-2 px-3.5 rounded-lg"
                 >
                   Cancel
                 </Button>
                 <Button
                   onClick={handleConfirmSingleDelete}
                   disabled={deleting}
-                  className="bg-red-600 hover:bg-red-700 text-white text-xs font-semibold py-2 px-4 rounded-lg flex items-center gap-1.5"
+                  className="bg-red-600 hover:bg-red-700 dark:bg-red-600/90 dark:hover:bg-red-600 text-white text-xs font-semibold py-2 px-4 rounded-lg flex items-center gap-1.5"
                   id="btn-confirm-single-delete"
                 >
                   {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
@@ -1974,17 +1974,17 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-xl shadow-2xl border border-stone-200 w-full max-w-md overflow-hidden p-6 space-y-4"
+              className="bg-white dark:bg-[#21211E] rounded-xl shadow-2xl border border-stone-200 dark:border-[#302E29] w-full max-w-md overflow-hidden p-6 space-y-4"
             >
               <div className="flex items-start gap-3">
-                <div className="p-2.5 bg-red-50 text-red-600 rounded-full shrink-0">
+                <div className="p-2.5 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 rounded-full shrink-0 border border-transparent dark:border-red-900/40">
                   <AlertCircle className="w-5 h-5" />
                 </div>
                 <div className="space-y-1">
-                  <h3 id="bulk-delete-title" className="text-base font-semibold text-stone-900">
+                  <h3 id="bulk-delete-title" className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">
                     Delete {selectedReportIds.length} {selectedReportIds.length === 1 ? 'report' : 'reports'}?
                   </h3>
-                  <p className="text-xs text-stone-500 leading-relaxed">
+                  <p className="text-xs text-stone-500 dark:text-[#7A7570] leading-relaxed">
                     Are you sure you want to delete {selectedReportIds.length} selected {selectedReportIds.length === 1 ? 'report' : 'reports'}? This will permanently remove the generated files and snapshot data.
                   </p>
                 </div>
@@ -1995,14 +1995,14 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                   variant="outline"
                   onClick={() => setBulkDeleteConfirmOpen(false)}
                   disabled={deleting}
-                  className="border-stone-200 text-stone-700 text-xs py-2 px-3.5 rounded-lg"
+                  className="border-stone-200 dark:border-[#3A3835] text-stone-700 dark:text-[#B8B0A5] dark:bg-[#262520] dark:hover:bg-[#2A2926] text-xs py-2 px-3.5 rounded-lg"
                 >
                   Cancel
                 </Button>
                 <Button
                   onClick={handleConfirmBulkDelete}
                   disabled={deleting}
-                  className="bg-red-600 hover:bg-red-700 text-white text-xs font-semibold py-2 px-4 rounded-lg flex items-center gap-1.5"
+                  className="bg-red-600 hover:bg-red-700 dark:bg-red-600/90 dark:hover:bg-red-600 text-white text-xs font-semibold py-2 px-4 rounded-lg flex items-center gap-1.5"
                   id="btn-confirm-bulk-delete"
                 >
                   {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
@@ -2027,17 +2027,17 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-xl shadow-2xl border border-stone-200 w-full max-w-md overflow-hidden p-6 space-y-4"
+              className="bg-white dark:bg-[#21211E] rounded-xl shadow-2xl border border-stone-200 dark:border-[#302E29] w-full max-w-md overflow-hidden p-6 space-y-4"
             >
               <div className="flex items-start gap-3">
-                <div className="p-2.5 bg-amber-50 text-amber-600 rounded-full shrink-0">
+                <div className="p-2.5 bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 rounded-full shrink-0 border border-transparent dark:border-amber-900/40">
                   <AlertCircle className="w-5 h-5" />
                 </div>
                 <div className="space-y-1">
-                  <h3 id="expired-download-title" className="text-base font-semibold text-stone-900">
+                  <h3 id="expired-download-title" className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">
                     That download has expired.
                   </h3>
-                  <p className="text-xs text-stone-500 leading-relaxed">
+                  <p className="text-xs text-stone-500 dark:text-[#7A7570] leading-relaxed">
                     Regenerate the report to create a fresh copy.
                   </p>
                 </div>
@@ -2047,7 +2047,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                 <Button
                   variant="outline"
                   onClick={() => setExpiredModalReportId(null)}
-                  className="border-stone-200 text-stone-700 text-xs py-2 px-3.5 rounded-lg"
+                  className="border-stone-200 dark:border-[#3A3835] text-stone-700 dark:text-[#B8B0A5] dark:bg-[#262520] dark:hover:bg-[#2A2926] text-xs py-2 px-3.5 rounded-lg"
                   id="btn-close-expired-modal"
                 >
                   Close

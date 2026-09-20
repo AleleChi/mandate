@@ -72,7 +72,7 @@ export const TrainingDebrief: React.FC<TrainingDebriefProps> = ({
     return (
       <div className="flex flex-col items-center justify-center py-24 min-h-[50vh] font-sans">
         <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#C59B27] border-t-transparent"></div>
-        <p className="text-xs text-zinc-500 mt-3 font-sans">Loading practice debrief...</p>
+        <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-3 font-sans">Loading practice debrief...</p>
       </div>
     );
   }
@@ -103,7 +103,7 @@ export const TrainingDebrief: React.FC<TrainingDebriefProps> = ({
       <div className="mb-6">
         <button
           onClick={() => onNavigate('/admin/training/scenarios')}
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-800 transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 dark:text-[#7A7570] hover:text-zinc-800 dark:hover:text-[#F0EBE3] transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>Return to practice scenarios</span>
@@ -111,50 +111,50 @@ export const TrainingDebrief: React.FC<TrainingDebriefProps> = ({
       </div>
 
       {successMsg && (
-        <div className="mb-6 p-3.5 bg-emerald-50/80 border border-emerald-200/90 rounded-xl text-xs text-emerald-900 font-medium">
+        <div className="mb-6 p-3.5 bg-emerald-50/80 dark:bg-emerald-950/20 border border-emerald-200/90 dark:border-emerald-900/40 rounded-xl text-xs text-emerald-900 dark:text-emerald-300 font-medium">
           {successMsg}
         </div>
       )}
 
       {/* Main Container */}
-      <div className="bg-white rounded-2xl border border-[#EAE8E1] p-6 sm:p-8 shadow-2xs">
+      <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-6 sm:p-8 shadow-2xs">
         {/* Title Header */}
-        <div className="border-b border-[#F4F3ED] pb-6 mb-6">
+        <div className="border-b border-[#F4F3ED] dark:border-[#302E29] pb-6 mb-6">
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-[11px] font-semibold text-[#8C6D1F] uppercase tracking-wider">
+            <span className="text-[11px] font-semibold text-[#8C6D1F] dark:text-amber-400 uppercase tracking-wider">
               {scenarioTopic}
             </span>
-            <span className="text-zinc-300">•</span>
-            <span className="text-[11px] text-zinc-500">
+            <span className="text-zinc-300 dark:text-[#7A7570]">•</span>
+            <span className="text-[11px] text-zinc-500 dark:text-[#7A7570]">
               Practice completed
             </span>
           </div>
 
-          <h1 className="text-2xl sm:text-3xl font-serif text-zinc-900 tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-serif text-zinc-900 dark:text-[#F0EBE3] tracking-tight">
             Practice complete
           </h1>
 
-          <p className="text-sm font-medium text-zinc-700 mt-1">
+          <p className="text-sm font-medium text-zinc-700 dark:text-[#B8B0A5] mt-1">
             {scenarioTitle}
           </p>
         </div>
 
         {/* Overview Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-          <div className="p-4 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl">
-            <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider block">
+          <div className="p-4 bg-[#FAF9F5] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl">
+            <span className="text-[11px] font-semibold text-zinc-500 dark:text-[#7A7570] uppercase tracking-wider block">
               Completed in
             </span>
-            <div className="text-xl font-semibold text-zinc-900 mt-1 font-sans">
+            <div className="text-xl font-semibold text-zinc-900 dark:text-[#F0EBE3] mt-1 font-sans">
               {elapsedMinutes} minutes
             </div>
           </div>
 
-          <div className="p-4 bg-[#FAF9F5] border border-[#EAE8E1] rounded-xl">
-            <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider block">
+          <div className="p-4 bg-[#FAF9F5] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl">
+            <span className="text-[11px] font-semibold text-zinc-500 dark:text-[#7A7570] uppercase tracking-wider block">
               Actions completed
             </span>
-            <div className="text-xl font-semibold text-zinc-900 mt-1 font-sans">
+            <div className="text-xl font-semibold text-zinc-900 dark:text-[#F0EBE3] mt-1 font-sans">
               {completedCount} of {totalCount}
             </div>
           </div>
@@ -162,7 +162,7 @@ export const TrainingDebrief: React.FC<TrainingDebriefProps> = ({
 
         {/* Steps Completed Checklist */}
         <div className="mb-8">
-          <h2 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-3">
+          <h2 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider mb-3">
             Steps practised
           </h2>
           <div className="space-y-2">
@@ -172,16 +172,16 @@ export const TrainingDebrief: React.FC<TrainingDebriefProps> = ({
                 return (
                   <div
                     key={obj.id}
-                    className="p-3 rounded-xl bg-zinc-50/70 border border-[#EAE8E1] flex items-start gap-2.5 text-xs"
+                    className="p-3 rounded-xl bg-zinc-50/70 dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] flex items-start gap-2.5 text-xs"
                   >
-                    <span className={`text-sm mt-0.5 font-bold ${isDone ? 'text-emerald-600' : 'text-zinc-400'}`}>
+                    <span className={`text-sm mt-0.5 font-bold ${isDone ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 dark:text-[#7A7570]'}`}>
                       {isDone ? '✓' : '○'}
                     </span>
                     <div>
-                      <p className="font-medium text-zinc-900">
+                      <p className="font-medium text-zinc-900 dark:text-[#F0EBE3]">
                         {obj.title}
                       </p>
-                      <p className="text-[11px] text-zinc-500 mt-0.5">
+                      <p className="text-[11px] text-zinc-500 dark:text-[#7A7570] mt-0.5">
                         {obj.description}
                       </p>
                     </div>
@@ -189,8 +189,8 @@ export const TrainingDebrief: React.FC<TrainingDebriefProps> = ({
                 );
               })
             ) : (
-              <div className="p-3 rounded-xl bg-zinc-50/70 border border-[#EAE8E1] flex items-start gap-2.5 text-xs text-zinc-700">
-                <span className="text-emerald-600 font-bold">✓</span>
+              <div className="p-3 rounded-xl bg-zinc-50/70 dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] flex items-start gap-2.5 text-xs text-zinc-700 dark:text-[#B8B0A5]">
+                <span className="text-emerald-600 dark:text-emerald-400 font-bold">✓</span>
                 <span>Team completed the practice scenario steps.</span>
               </div>
             )}
@@ -199,31 +199,31 @@ export const TrainingDebrief: React.FC<TrainingDebriefProps> = ({
 
         {/* Team Reflection: What went well & Needs another look */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-          <div className="p-4 rounded-xl border border-[#EAE8E1] bg-white">
-            <h3 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
+          <div className="p-4 rounded-xl border border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#21211E]">
+            <h3 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider mb-2">
               What went well
             </h3>
-            <p className="text-xs text-zinc-600 leading-relaxed">
+            <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
               {strengthsText}
             </p>
           </div>
 
-          <div className="p-4 rounded-xl border border-[#EAE8E1] bg-white">
-            <h3 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
+          <div className="p-4 rounded-xl border border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#21211E]">
+            <h3 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider mb-2">
               Needs another look
             </h3>
-            <p className="text-xs text-zinc-600 leading-relaxed">
+            <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
               {improvementsText}
             </p>
           </div>
         </div>
 
         {/* Personal Takeaway */}
-        <div className="border-t border-[#F4F3ED] pt-6 mb-8">
-          <h3 className="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2">
+        <div className="border-t border-[#F4F3ED] dark:border-[#302E29] pt-6 mb-8">
+          <h3 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider mb-2">
             Personal takeaway
           </h3>
-          <p className="text-xs text-zinc-500 mb-3">
+          <p className="text-xs text-zinc-500 dark:text-[#7A7570] mb-3">
             Record what you learned or what you want to remember on event day.
           </p>
 
@@ -239,12 +239,12 @@ export const TrainingDebrief: React.FC<TrainingDebriefProps> = ({
                 }
               }}
               placeholder="e.g. Learned how to manage check-in smoothly without internet."
-              className="flex-1 bg-white border border-[#EAE8E1] rounded-xl px-3.5 py-2 text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+              className="flex-1 bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl px-3.5 py-2 text-xs text-zinc-900 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
             />
             <button
               type="button"
               onClick={handleAddTakeaway}
-              className="min-h-[38px] px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-900 text-white text-xs font-medium transition-colors cursor-pointer shrink-0"
+              className="min-h-[38px] px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-900 dark:bg-[#C59B27] dark:hover:bg-[#A37F1D] text-white text-xs font-medium transition-colors cursor-pointer shrink-0"
             >
               Add note
             </button>
@@ -253,7 +253,7 @@ export const TrainingDebrief: React.FC<TrainingDebriefProps> = ({
           {outcomes.length > 0 && (
             <div className="mt-3 space-y-1.5">
               {outcomes.map((note, idx) => (
-                <div key={idx} className="p-2.5 rounded-lg bg-zinc-50 border border-[#EAE8E1] text-xs text-zinc-700 flex items-center gap-2">
+                <div key={idx} className="p-2.5 rounded-lg bg-zinc-50 dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] text-xs text-zinc-700 dark:text-[#B8B0A5] flex items-center gap-2">
                   <span className="text-[#C59B27]">•</span>
                   <span>{note}</span>
                 </div>
@@ -263,11 +263,11 @@ export const TrainingDebrief: React.FC<TrainingDebriefProps> = ({
         </div>
 
         {/* Actions */}
-        <div className="border-t border-[#F4F3ED] pt-6 flex flex-col-reverse sm:flex-row items-center justify-between gap-3">
+        <div className="border-t border-[#F4F3ED] dark:border-[#302E29] pt-6 flex flex-col-reverse sm:flex-row items-center justify-between gap-3">
           <button
             type="button"
             onClick={handleTryAgain}
-            className="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-xl border border-[#EAE8E1] bg-white hover:bg-zinc-50 text-zinc-700 text-xs font-semibold transition-colors cursor-pointer inline-flex items-center justify-center gap-2"
+            className="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-xl border border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#21211E] hover:bg-zinc-50 dark:hover:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] text-xs font-semibold transition-colors cursor-pointer inline-flex items-center justify-center gap-2"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span>Try again</span>

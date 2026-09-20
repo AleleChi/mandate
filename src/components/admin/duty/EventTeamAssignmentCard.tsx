@@ -135,39 +135,39 @@ export function formatStatusInfo(status?: string) {
     case 'active':
       return {
         label: 'Active',
-        className: 'bg-emerald-50 text-emerald-800 border-emerald-200/80',
-        dotColor: 'bg-emerald-500'
+        className: 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-400 border-emerald-200/80 dark:border-emerald-900/40',
+        dotColor: 'bg-emerald-500 dark:bg-emerald-400'
       };
     case 'scheduled':
     case 'available':
       return {
         label: 'Upcoming',
-        className: 'bg-[#FAF9F5] text-amber-900 border-[#EAE8E1]',
-        dotColor: 'bg-amber-500'
+        className: 'bg-[#FAF9F5] dark:bg-[#262520] text-amber-900 dark:text-amber-300 border-[#EAE8E1] dark:border-[#3A3835]',
+        dotColor: 'bg-amber-500 dark:bg-amber-400'
       };
     case 'temporarily_unavailable':
       return {
         label: 'Paused',
-        className: 'bg-amber-50 text-amber-800 border-amber-200/80',
-        dotColor: 'bg-amber-500'
+        className: 'bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-400 border-amber-200/80 dark:border-amber-900/40',
+        dotColor: 'bg-amber-500 dark:bg-amber-400'
       };
     case 'ended':
       return {
         label: 'Completed',
-        className: 'bg-stone-100 text-stone-600 border-stone-200',
-        dotColor: 'bg-stone-400'
+        className: 'bg-stone-100 dark:bg-[#262520] text-stone-600 dark:text-[#B8B0A5] border-stone-200 dark:border-[#3A3835]',
+        dotColor: 'bg-stone-400 dark:bg-[#7A7570]'
       };
     case 'cancelled':
       return {
         label: 'Cancelled',
-        className: 'bg-rose-50 text-rose-800 border-rose-200/80',
-        dotColor: 'bg-rose-500'
+        className: 'bg-rose-50 dark:bg-red-950/20 text-rose-800 dark:text-red-400 border-rose-200/80 dark:border-red-900/40',
+        dotColor: 'bg-rose-500 dark:bg-red-400'
       };
     default:
       return {
         label: status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Active',
-        className: 'bg-emerald-50 text-emerald-800 border-emerald-200/80',
-        dotColor: 'bg-emerald-500'
+        className: 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-400 border-emerald-200/80 dark:border-emerald-900/40',
+        dotColor: 'bg-emerald-500 dark:bg-emerald-400'
       };
   }
 }
@@ -243,23 +243,23 @@ export default function EventTeamAssignmentCard({
   const locationLabel = assignment.assigned_location_name || 'Location not assigned';
 
   return (
-    <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 md:p-6 hover:border-[#C59B27]/50 transition-all duration-200 flex flex-col justify-between shadow-xs hover:shadow-md relative group">
+    <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-5 md:p-6 hover:border-[#C59B27]/50 dark:hover:border-amber-400/50 transition-all duration-200 flex flex-col justify-between shadow-xs hover:shadow-md relative group">
       <div>
         {/* HEADER */}
-        <div className="flex items-start justify-between gap-3 pb-4 border-b border-stone-100">
+        <div className="flex items-start justify-between gap-3 pb-4 border-b border-stone-100 dark:border-[#302E29]">
           <div className="flex items-start space-x-3 min-w-0">
             <div className="w-11 h-11 bg-[#C59B27]/10 text-[#C59B27] border border-[#C59B27]/20 rounded-2xl flex items-center justify-center font-bold text-sm shrink-0 shadow-xs">
               {initials}
             </div>
             <div className="min-w-0">
-              <h3 className="font-serif text-[18px] font-medium leading-6 text-stone-950 truncate">
+              <h3 className="font-serif text-[18px] font-medium leading-6 text-stone-950 dark:text-[#F0EBE3] truncate">
                 {assignment.user_name || 'Administrator'}
               </h3>
-              <p className="text-[12px] font-normal text-stone-500 truncate mt-0.5">
+              <p className="text-[12px] font-normal text-stone-500 dark:text-[#7A7570] truncate mt-0.5">
                 {humanRole}
               </p>
               {assignment.user_email && (
-                <p className="text-[11px] font-normal text-stone-400 font-mono truncate max-w-[210px] mt-0.5">
+                <p className="text-[11px] font-normal text-stone-400 dark:text-[#7A7570] font-mono truncate max-w-[210px] mt-0.5">
                   {assignment.user_email}
                 </p>
               )}
@@ -279,26 +279,26 @@ export default function EventTeamAssignmentCard({
                 onClick={() => setMenuOpen(!menuOpen)}
                 aria-label={`Actions for ${assignment.user_name || 'team member'}`}
                 aria-expanded={menuOpen}
-                className="w-8 h-8 rounded-xl flex items-center justify-center text-stone-400 hover:text-stone-800 hover:bg-stone-100 transition-colors focus:outline-none focus:ring-2 focus:ring-[#C59B27] cursor-pointer"
+                className="w-8 h-8 rounded-xl flex items-center justify-center text-stone-400 dark:text-[#7A7570] hover:text-stone-800 dark:hover:text-[#F0EBE3] hover:bg-stone-100 dark:hover:bg-[#262520] transition-colors focus:outline-none focus:ring-2 focus:ring-[#C59B27] cursor-pointer"
               >
                 <MoreVertical className="w-4 h-4" />
               </button>
 
               {menuOpen && (
-                <div className="absolute right-0 top-9 w-48 bg-white border border-[#EAE8E1] rounded-2xl shadow-xl z-30 py-1.5 text-xs font-medium text-stone-800 animate-fade-in divide-y divide-stone-100">
+                <div className="absolute right-0 top-9 w-48 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl shadow-xl z-30 py-1.5 text-xs font-medium text-stone-800 dark:text-[#F0EBE3] animate-fade-in divide-y divide-stone-100 dark:divide-[#302E29]">
                   <div className="py-1">
                     <button
                       onClick={() => { setMenuOpen(false); onViewDetails(assignment); }}
-                      className="w-full text-left px-3.5 py-2 hover:bg-stone-50 flex items-center space-x-2 text-stone-700 cursor-pointer"
+                      className="w-full text-left px-3.5 py-2 hover:bg-stone-50 dark:hover:bg-[#262520] flex items-center space-x-2 text-stone-700 dark:text-[#B8B0A5] cursor-pointer"
                     >
-                      <Eye className="w-3.5 h-3.5 text-stone-400" />
+                      <Eye className="w-3.5 h-3.5 text-stone-400 dark:text-[#7A7570]" />
                       <span>View details</span>
                     </button>
                     <button
                       onClick={() => { setMenuOpen(false); onEdit(assignment); }}
-                      className="w-full text-left px-3.5 py-2 hover:bg-stone-50 flex items-center space-x-2 text-stone-700 cursor-pointer"
+                      className="w-full text-left px-3.5 py-2 hover:bg-stone-50 dark:hover:bg-[#262520] flex items-center space-x-2 text-stone-700 dark:text-[#B8B0A5] cursor-pointer"
                     >
-                      <Edit3 className="w-3.5 h-3.5 text-stone-400" />
+                      <Edit3 className="w-3.5 h-3.5 text-stone-400 dark:text-[#7A7570]" />
                       <span>Edit assignment</span>
                     </button>
                   </div>
@@ -307,27 +307,27 @@ export default function EventTeamAssignmentCard({
                     {assignment.status !== 'on_duty' && (
                       <button
                         onClick={() => { setMenuOpen(false); onUpdateStatus(assignment.id, 'on_duty'); }}
-                        className="w-full text-left px-3.5 py-2 hover:bg-emerald-50 flex items-center space-x-2 text-emerald-800 cursor-pointer"
+                        className="w-full text-left px-3.5 py-2 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 flex items-center space-x-2 text-emerald-800 dark:text-emerald-400 cursor-pointer"
                       >
-                        <PlayCircle className="w-3.5 h-3.5 text-emerald-600" />
+                        <PlayCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                         <span>Set On Duty</span>
                       </button>
                     )}
                     {assignment.status === 'on_duty' && (
                       <button
                         onClick={() => { setMenuOpen(false); onUpdateStatus(assignment.id, 'temporarily_unavailable'); }}
-                        className="w-full text-left px-3.5 py-2 hover:bg-amber-50 flex items-center space-x-2 text-amber-800 cursor-pointer"
+                        className="w-full text-left px-3.5 py-2 hover:bg-amber-50 dark:hover:bg-amber-950/30 flex items-center space-x-2 text-amber-800 dark:text-amber-400 cursor-pointer"
                       >
-                        <PauseCircle className="w-3.5 h-3.5 text-amber-600" />
+                        <PauseCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                         <span>Go on Break</span>
                       </button>
                     )}
                     {assignment.status === 'temporarily_unavailable' && (
                       <button
                         onClick={() => { setMenuOpen(false); onUpdateStatus(assignment.id, 'on_duty'); }}
-                        className="w-full text-left px-3.5 py-2 hover:bg-emerald-50 flex items-center space-x-2 text-emerald-800 cursor-pointer"
+                        className="w-full text-left px-3.5 py-2 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 flex items-center space-x-2 text-emerald-800 dark:text-emerald-400 cursor-pointer"
                       >
-                        <PlayCircle className="w-3.5 h-3.5 text-emerald-600" />
+                        <PlayCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                         <span>Return to Duty</span>
                       </button>
                     )}
@@ -336,9 +336,9 @@ export default function EventTeamAssignmentCard({
                   <div className="py-1">
                     <button
                       onClick={() => { setMenuOpen(false); onDeleteRequest(assignment); }}
-                      className="w-full text-left px-3.5 py-2 hover:bg-rose-50 flex items-center space-x-2 text-rose-700 cursor-pointer"
+                      className="w-full text-left px-3.5 py-2 hover:bg-rose-50 dark:hover:bg-red-950/30 flex items-center space-x-2 text-rose-700 dark:text-red-400 cursor-pointer"
                     >
-                      <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                      <Trash2 className="w-3.5 h-3.5 text-rose-500 dark:text-red-400" />
                       <span>Remove assignment</span>
                     </button>
                   </div>
@@ -350,59 +350,59 @@ export default function EventTeamAssignmentCard({
 
         {/* PRIMARY ASSIGNMENT */}
         <div className="pt-4 pb-2">
-          <div className="text-[15px] font-medium text-stone-900 leading-tight">
+          <div className="text-[15px] font-medium text-stone-900 dark:text-[#F0EBE3] leading-tight">
             {assignment.responsibility_key || 'Room Operator'}
           </div>
-          <div className="flex items-center text-[13px] font-normal text-stone-600 mt-1 space-x-1.5">
+          <div className="flex items-center text-[13px] font-normal text-stone-600 dark:text-[#B8B0A5] mt-1 space-x-1.5">
             <MapPin className="w-3.5 h-3.5 text-[#C59B27] shrink-0" />
-            <span className={assignment.assigned_location_name ? 'text-stone-800 font-medium' : 'text-stone-400 italic'}>
+            <span className={assignment.assigned_location_name ? 'text-stone-800 dark:text-[#F0EBE3] font-medium' : 'text-stone-400 dark:text-[#7A7570] italic'}>
               {locationLabel}
             </span>
           </div>
         </div>
 
         {/* DETAIL GRID */}
-        <div className="grid grid-cols-2 gap-y-2.5 gap-x-4 py-3.5 my-3 border-y border-stone-100 bg-[#FAF9F5]/60 rounded-xl px-3.5">
+        <div className="grid grid-cols-2 gap-y-2.5 gap-x-4 py-3.5 my-3 border-y border-stone-100 dark:border-[#302E29] bg-[#FAF9F5]/60 dark:bg-[#21211E]/60 rounded-xl px-3.5">
           <div>
-            <span className="block text-[12px] font-normal text-stone-500">Serving group</span>
-            <span className="block text-[13px] font-medium text-stone-800 mt-0.5">{servingGroup}</span>
+            <span className="block text-[12px] font-normal text-stone-500 dark:text-[#7A7570]">Serving group</span>
+            <span className="block text-[13px] font-medium text-stone-800 dark:text-[#F0EBE3] mt-0.5">{servingGroup}</span>
           </div>
           <div>
-            <span className="block text-[12px] font-normal text-stone-500">Shift</span>
-            <span className="block text-[13px] font-medium text-stone-800 mt-0.5">{shiftText}</span>
+            <span className="block text-[12px] font-normal text-stone-500 dark:text-[#7A7570]">Shift</span>
+            <span className="block text-[13px] font-medium text-stone-800 dark:text-[#F0EBE3] mt-0.5">{shiftText}</span>
           </div>
           <div>
-            <span className="block text-[12px] font-normal text-stone-500">Device</span>
-            <span className="flex items-center text-[13px] font-medium text-stone-800 mt-0.5 space-x-1.5">
+            <span className="block text-[12px] font-normal text-stone-500 dark:text-[#7A7570]">Device</span>
+            <span className="flex items-center text-[13px] font-medium text-stone-800 dark:text-[#F0EBE3] mt-0.5 space-x-1.5">
               <span className={`w-2 h-2 rounded-full shrink-0 ${deviceSummary.bulletColor}`} />
               <span className="truncate">{deviceSummary.text}</span>
             </span>
           </div>
           <div>
-            <span className="block text-[12px] font-normal text-stone-500">Coverage</span>
-            <span className="block text-[13px] font-medium text-stone-800 mt-0.5">
+            <span className="block text-[12px] font-normal text-stone-500 dark:text-[#7A7570]">Coverage</span>
+            <span className="block text-[13px] font-medium text-stone-800 dark:text-[#F0EBE3] mt-0.5">
               {assignment.status === 'on_duty' ? 'On duty' : assignment.status === 'temporarily_unavailable' ? 'On break' : assignment.status === 'ended' ? 'Completed' : 'Scheduled'}
             </span>
           </div>
         </div>
 
         {assignment.note && (
-          <p className="text-[12px] font-normal text-stone-600 italic bg-stone-50 p-2.5 rounded-xl border border-stone-100 mb-3">
+          <p className="text-[12px] font-normal text-stone-600 dark:text-[#B8B0A5] italic bg-stone-50 dark:bg-[#262520] p-2.5 rounded-xl border border-stone-100 dark:border-[#302E29] mb-3">
             "{assignment.note}"
           </p>
         )}
       </div>
 
       {/* CARD FOOTER */}
-      <div className="pt-3 border-t border-stone-100 flex items-center justify-between gap-2 mt-1">
-        <div className="flex items-center space-x-1.5 text-[12px] font-normal text-stone-500">
+      <div className="pt-3 border-t border-stone-100 dark:border-[#302E29] flex items-center justify-between gap-2 mt-1">
+        <div className="flex items-center space-x-1.5 text-[12px] font-normal text-stone-500 dark:text-[#7A7570]">
           <ShieldCheck className="w-3.5 h-3.5 text-[#C59B27]" />
           <span>{assignment.ready_devices && assignment.ready_devices > 0 ? 'Verified ready' : 'Readiness pending'}</span>
         </div>
 
         <button
           onClick={() => onViewDetails(assignment)}
-          className="px-3.5 py-1.5 bg-[#FAF9F5] hover:bg-[#C59B27]/10 text-stone-800 hover:text-[#C59B27] border border-[#EAE8E1] rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-2xs"
+          className="px-3.5 py-1.5 bg-[#FAF9F5] dark:bg-[#262520] hover:bg-[#C59B27]/10 text-stone-800 dark:text-[#F0EBE3] hover:text-[#C59B27] dark:hover:text-amber-400 border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-2xs"
         >
           View details
         </button>

@@ -354,7 +354,7 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
           <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-xs font-bold uppercase tracking-wider">
             <span>{isNotOpen ? 'Registration Not Open' : 'Registration Closed'}</span>
           </div>
-          <h1 className="font-serif-koinonia font-bold text-2xl sm:text-3xl text-[#18181B] leading-tight">
+          <h1 className="type-h1-app text-[#18181B] leading-tight">
             {isNotOpen ? 'Registration is not open yet' : 'Registration has closed'}
           </h1>
           <p className="text-sm text-[#52525B] max-w-sm mx-auto leading-relaxed">
@@ -366,9 +366,9 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
 
         <div className="space-y-6">
           <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl p-4.5 text-xs text-zinc-600 leading-relaxed space-y-1.5 text-left">
-            <p className="font-semibold text-zinc-900">Already registered?</p>
+            <p className="font-semibold text-zinc-900">Already a volunteer?</p>
             <p>
-              If you already have an approved volunteer account, you can sign in to access your dashboard and event duties.
+              If you already have a volunteer account, sign in to view your schedule and event assignments.
             </p>
           </div>
 
@@ -378,7 +378,7 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
               onClick={() => onNavigate('/volunteer/sign-in')}
               className="w-full py-3.5 bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-xs uppercase tracking-wider cursor-pointer shadow-xs"
             >
-              Volunteer Sign In
+              Sign in to volunteer account
             </Button>
             <Button
               type="button"
@@ -402,7 +402,7 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
       maxWidth="lg"
     >
       <div className="text-center space-y-2">
-        <h1 className="text-3xl font-serif-koinonia font-bold text-[#18181B]">Volunteer Signup</h1>
+        <h1 className="type-h1-app text-[#18181B]">Volunteer Signup</h1>
         <p className="text-sm text-[#52525B] leading-relaxed">Sign up to serve. All fields are verified securely.</p>
       </div>
 

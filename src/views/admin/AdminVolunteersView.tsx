@@ -763,18 +763,18 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
 
       {/* Panel */}
       <div
-        className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-xl shadow-2xl flex flex-col"
+        className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-xl shadow-2xl flex flex-col"
         style={{ maxHeight: '90vh' }}
       >
         {/* Header */}
-        <div className="h-16 px-6 border-b border-[#EAE8E1] flex items-center justify-between bg-white rounded-t-3xl shrink-0">
+        <div className="h-16 px-6 border-b border-[#EAE8E1] dark:border-[#302E29] flex items-center justify-between bg-white dark:bg-[#1D1D1A] rounded-t-3xl shrink-0">
           <div>
-            <h3 className="text-sm font-semibold text-[#18181B] leading-tight">
+            <h3 className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] leading-tight">
               {norm && (norm.status === 'pending_review' || norm.status === 'pending')
                 ? 'Review profile'
                 : 'Volunteer profile'}
             </h3>
-            <p className="text-xs text-zinc-400 font-normal mt-0.5">
+            <p className="text-xs text-zinc-400 dark:text-[#5A5550] font-normal mt-0.5">
               {norm && (norm.status === 'pending_review' || norm.status === 'pending')
                 ? 'Review details and make a decision.'
                 : 'Review details and manage team assignment.'}
@@ -782,7 +782,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
           </div>
           <button
             onClick={handleCloseReview}
-            className="text-zinc-400 hover:text-[#18181B] p-1.5 rounded-xl hover:bg-zinc-50 transition-colors focus:outline-none"
+            className="text-zinc-400 hover:text-[#18181B] dark:hover:text-[#F0EBE3] p-1.5 rounded-xl hover:bg-zinc-50 dark:hover:bg-[#262520] transition-colors focus:outline-none"
           >
             <X className="w-5 h-5" />
           </button>
@@ -819,7 +819,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                     {norm.deletedByEmail && <> by <strong>{norm.deletedByEmail}</strong></>}.
                   </p>
                   {norm.deleteReason && (
-                    <p className="bg-white/80 border border-red-100 p-2.5 rounded-xl italic text-red-900">
+                    <p className="bg-white/80 dark:bg-red-950/20 border border-red-100 dark:border-red-900/40 p-2.5 rounded-xl italic text-red-900 dark:text-red-300">
                       Reason: "{norm.deleteReason}"
                     </p>
                   )}
@@ -827,40 +827,40 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
               )}
 
               {/* Identity */}
-              <div className="flex flex-col sm:flex-row gap-4 items-center sm:items-start bg-white border border-[#EAE8E1] p-5 rounded-2xl">
+              <div className="flex flex-col sm:flex-row gap-4 items-center sm:items-start bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] p-5 rounded-2xl">
                 {norm.photoUrl ? (
                   <img
                     src={norm.photoUrl}
                     alt={norm.fullName}
                     referrerPolicy="no-referrer"
-                    className="w-16 h-16 rounded-2xl object-cover border border-[#EAE8E1] shadow-xs shrink-0"
+                    className="w-16 h-16 rounded-2xl object-cover border border-[#EAE8E1] dark:border-[#3A3835] shadow-xs shrink-0"
                   />
                 ) : (
-                  <div className="w-16 h-16 rounded-2xl bg-[#FAF9F6] flex items-center justify-center text-[#C59B27] font-semibold shrink-0 text-xl border border-[#EAE8E1] uppercase">
+                  <div className="w-16 h-16 rounded-2xl bg-[#FAF9F6] dark:bg-[#262520] flex items-center justify-center text-[#C59B27] font-semibold shrink-0 text-xl border border-[#EAE8E1] dark:border-[#3A3835] uppercase">
                     {norm.initials}
                   </div>
                 )}
 
                 <div className="text-center sm:text-left space-y-1.5 min-w-0">
-                  <h4 className="font-semibold text-base text-[#18181B] leading-snug">{norm.fullName}</h4>
-                  <p className="text-xs text-zinc-400">{norm.email}</p>
+                  <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3] leading-snug">{norm.fullName}</h4>
+                  <p className="text-xs text-zinc-400 dark:text-[#7A7570]">{norm.email}</p>
                   <div className="flex flex-wrap gap-1.5 justify-center sm:justify-start pt-1">
                     <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
                       (norm.status === 'approved' || norm.status === 'active')
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/40'
                         : (norm.status === 'pending_review' || norm.status === 'pending')
-                        ? 'bg-amber-50 text-amber-700 border-amber-200'
-                        : 'bg-red-50 text-red-700 border-red-100'
+                        ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-900/40'
+                        : 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border-red-100 dark:border-red-900/40'
                     }`}>
                       {norm.statusLabel}
                     </span>
                     {norm.isKoinoniaWorker && (
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[#FFFDF5] text-amber-800 border border-[#F5E6BE]">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[#FFFDF5] dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-[#F5E6BE] dark:border-amber-900/40">
                         Staff worker
                       </span>
                     )}
                     {norm.preferredTeam && (
-                      <span className="px-2 py-0.5 rounded-md text-[10px] bg-zinc-100 text-zinc-600 border border-zinc-200">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] bg-zinc-100 dark:bg-[#262520] text-zinc-600 dark:text-[#7A7570] border border-zinc-200 dark:border-[#3A3835]">
                         {norm.preferredTeamLabel}
                       </span>
                     )}
@@ -870,32 +870,32 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
 
               {/* Contact details */}
               <div className="space-y-3">
-                <h4 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Contact details</h4>
+                <h4 className="text-xs font-semibold text-zinc-500 dark:text-[#7A7570] uppercase tracking-wider">Contact details</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  <div className="space-y-0.5 bg-white p-3.5 rounded-2xl border border-[#EAE8E1]">
-                    <span className="text-zinc-400 text-[10px] uppercase tracking-wider block">Phone</span>
-                    <span className="font-medium text-zinc-800 flex items-center gap-1.5">
+                  <div className="space-y-0.5 bg-white dark:bg-[#21211E] p-3.5 rounded-2xl border border-[#EAE8E1] dark:border-[#302E29]">
+                    <span className="text-zinc-400 dark:text-[#5A5550] text-[10px] uppercase tracking-wider block">Phone</span>
+                    <span className="font-medium text-zinc-800 dark:text-[#F0EBE3] flex items-center gap-1.5">
                       <Phone className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                       {norm.phone}
                     </span>
                   </div>
-                  <div className="space-y-0.5 bg-white p-3.5 rounded-2xl border border-[#EAE8E1]">
-                    <span className="text-zinc-400 text-[10px] uppercase tracking-wider block">WhatsApp</span>
-                    <span className="font-medium text-zinc-800 flex items-center gap-1.5">
+                  <div className="space-y-0.5 bg-white dark:bg-[#21211E] p-3.5 rounded-2xl border border-[#EAE8E1] dark:border-[#302E29]">
+                    <span className="text-zinc-400 dark:text-[#5A5550] text-[10px] uppercase tracking-wider block">WhatsApp</span>
+                    <span className="font-medium text-zinc-800 dark:text-[#F0EBE3] flex items-center gap-1.5">
                       <MessageSquare className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                       {norm.whatsAppDisplay}
                     </span>
                   </div>
-                  <div className="space-y-0.5 bg-white p-3.5 rounded-2xl border border-[#EAE8E1]">
-                    <span className="text-zinc-400 text-[10px] uppercase tracking-wider block">Role</span>
-                    <span className="font-medium text-zinc-800">
+                  <div className="space-y-0.5 bg-white dark:bg-[#21211E] p-3.5 rounded-2xl border border-[#EAE8E1] dark:border-[#302E29]">
+                    <span className="text-zinc-400 dark:text-[#5A5550] text-[10px] uppercase tracking-wider block">Role</span>
+                    <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">
                       {norm.roleLabel}
                     </span>
                   </div>
                   {norm.isKoinoniaWorker && norm.department && (
-                    <div className="space-y-0.5 bg-white p-3.5 rounded-2xl border border-[#EAE8E1]">
-                      <span className="text-zinc-400 text-[10px] uppercase tracking-wider block">Department</span>
-                      <span className="font-medium text-zinc-800 flex items-center gap-1.5">
+                    <div className="space-y-0.5 bg-white dark:bg-[#21211E] p-3.5 rounded-2xl border border-[#EAE8E1] dark:border-[#302E29]">
+                      <span className="text-zinc-400 dark:text-[#5A5550] text-[10px] uppercase tracking-wider block">Department</span>
+                      <span className="font-medium text-zinc-800 dark:text-[#F0EBE3] flex items-center gap-1.5">
                         <Briefcase className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                         {norm.department}
                       </span>
@@ -906,11 +906,11 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
 
               {/* Serving experience */}
               <div className="space-y-3">
-                <h4 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Serving experience</h4>
-                <div className="bg-white p-4 rounded-2xl border border-[#EAE8E1] space-y-3">
+                <h4 className="text-xs font-semibold text-zinc-500 dark:text-[#7A7570] uppercase tracking-wider">Serving experience</h4>
+                <div className="bg-white dark:bg-[#21211E] p-4 rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] space-y-3">
                   <div className="text-xs">
-                    <span className="text-zinc-400 text-[10px] uppercase tracking-wider block mb-1">Prior experience with minors</span>
-                    <p className="text-zinc-700 leading-relaxed whitespace-pre-line bg-[#FAF9F6] p-3 rounded-xl border border-[#EAE8E1]">
+                    <span className="text-zinc-400 dark:text-[#7A7570] text-[10px] uppercase tracking-wider block mb-1">Prior experience with minors</span>
+                    <p className="text-zinc-700 dark:text-[#B8B0A5] leading-relaxed whitespace-pre-line bg-[#FAF9F6] dark:bg-[#1D1D1A] p-3 rounded-xl border border-[#EAE8E1] dark:border-[#302E29]">
                       {norm.hasServingExperience
                         ? 'Yes — prior experience working with minors indicated.'
                         : norm.servingExperienceText
@@ -920,15 +920,15 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                   </div>
                   {norm.note ? (
                     <div className="text-xs">
-                      <span className="text-zinc-400 text-[10px] uppercase tracking-wider block mb-1">Additional note</span>
-                      <p className="text-zinc-700 leading-relaxed whitespace-pre-line bg-[#FAF9F6] p-3 rounded-xl border border-[#EAE8E1]">
+                      <span className="text-zinc-400 dark:text-[#7A7570] text-[10px] uppercase tracking-wider block mb-1">Additional note</span>
+                      <p className="text-zinc-700 dark:text-[#B8B0A5] leading-relaxed whitespace-pre-line bg-[#FAF9F6] dark:bg-[#1D1D1A] p-3 rounded-xl border border-[#EAE8E1] dark:border-[#302E29]">
                         {norm.note}
                       </p>
                     </div>
                   ) : (
                     <div className="text-xs">
-                      <span className="text-zinc-400 text-[10px] uppercase tracking-wider block mb-1">Additional note</span>
-                      <p className="text-zinc-400 text-xs italic">
+                      <span className="text-zinc-400 dark:text-[#7A7570] text-[10px] uppercase tracking-wider block mb-1">Additional note</span>
+                      <p className="text-zinc-400 dark:text-[#5A5550] text-xs italic">
                         No notes added
                       </p>
                     </div>
@@ -938,18 +938,18 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
 
               {/* Team assignment (only for non-archived) */}
               {!norm.isDeleted && (
-                <div className="space-y-3 pt-2 border-t border-[#EAE8E1]">
+                <div className="space-y-3 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
                   <div>
-                    <h4 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Team assignment</h4>
-                    <p className="text-[11px] text-zinc-400 mt-0.5">Choose where this volunteer will serve.</p>
+                    <h4 className="text-xs font-semibold text-zinc-500 dark:text-[#7A7570] uppercase tracking-wider">Team assignment</h4>
+                    <p className="text-[11px] text-zinc-400 dark:text-[#5A5550] mt-0.5">Choose where this volunteer will serve.</p>
                   </div>
-                  <div className="space-y-3 bg-white p-4 rounded-2xl border border-[#EAE8E1]">
+                  <div className="space-y-3 bg-white dark:bg-[#21211E] p-4 rounded-2xl border border-[#EAE8E1] dark:border-[#302E29]">
                     <div>
-                      <label className="text-zinc-400 text-[10px] uppercase tracking-wider block mb-1.5">Assigned team</label>
+                      <label className="text-zinc-400 dark:text-[#7A7570] text-[10px] uppercase tracking-wider block mb-1.5">Assigned team</label>
                       <select
                         value={assignedTeam}
                         onChange={(e) => setAssignedTeam(e.target.value)}
-                        className="w-full px-3 py-2 text-xs rounded-xl border border-[#EAE8E1] focus:outline-none focus:border-[#C59B27] bg-[#FAF9F6] text-[#18181B] font-medium cursor-pointer"
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] focus:outline-none focus:border-[#C59B27] bg-[#FAF9F6] dark:bg-[#262520] text-[#18181B] dark:text-[#F0EBE3] font-medium cursor-pointer"
                       >
                         {teamOptions.map(opt => (
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -957,13 +957,13 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                       </select>
                     </div>
                     <div>
-                      <label className="text-zinc-400 text-[10px] uppercase tracking-wider block mb-1.5">Decision memo / Internal notes</label>
+                      <label className="text-zinc-400 dark:text-[#7A7570] text-[10px] uppercase tracking-wider block mb-1.5">Decision memo / Internal notes</label>
                       <textarea
                         placeholder="Add an internal note about this volunteer..."
                         value={reviewNote}
                         onChange={(e) => setReviewNote(e.target.value)}
                         rows={2}
-                        className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] focus:outline-none focus:border-[#C59B27] transition-all bg-[#FAF9F6]/50 resize-none text-zinc-700"
+                        className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] focus:outline-none focus:border-[#C59B27] transition-all bg-[#FAF9F6]/50 dark:bg-[#262520] resize-none text-zinc-700 dark:text-[#F0EBE3]"
                       />
                     </div>
                   </div>
@@ -973,7 +973,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
 
             {/* Footer */}
             <div
-              className="h-20 border-t border-[#EAE8E1] bg-white px-6 rounded-b-3xl flex items-center justify-between shrink-0"
+              className="h-20 border-t border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#1D1D1A] px-6 rounded-b-3xl flex items-center justify-between shrink-0"
             >
               {norm.isDeleted ? (
                 <>
@@ -1000,7 +1000,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                     <button
                       type="button"
                       onClick={() => setShowMoreActions(!showMoreActions)}
-                      className="px-3 py-2 text-xs font-medium text-zinc-600 bg-zinc-50 border border-[#EAE8E1] hover:bg-zinc-100 rounded-xl flex items-center gap-1.5 transition-all focus:outline-none"
+                      className="px-3 py-2 text-xs font-medium text-zinc-600 dark:text-[#B8B0A5] bg-zinc-50 dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] hover:bg-zinc-100 dark:hover:bg-[#2A2926] rounded-xl flex items-center gap-1.5 transition-all focus:outline-none"
                     >
                       <span>More</span>
                       <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${showMoreActions ? 'rotate-180' : ''}`} />
@@ -1008,13 +1008,13 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                     {showMoreActions && (
                       <>
                         <div className="fixed inset-0 z-[9998]" onClick={() => setShowMoreActions(false)} />
-                        <div className="absolute bottom-12 left-0 z-[9999] bg-white border border-[#EAE8E1] rounded-2xl shadow-xl p-1.5 min-w-[200px] flex flex-col gap-0.5 text-left">
+                        <div className="absolute bottom-12 left-0 z-[9999] bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl shadow-xl p-1.5 min-w-[200px] flex flex-col gap-0.5 text-left">
                           {(norm.status === 'approved' || norm.status === 'active') && (
                             <button
                               type="button"
                               disabled={resendingEmail}
                               onClick={handleResendEmail}
-                              className="w-full text-left px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 rounded-xl flex items-center gap-2 font-medium disabled:opacity-50"
+                              className="w-full text-left px-3 py-2 text-xs text-zinc-700 dark:text-[#B8B0A5] hover:bg-zinc-50 dark:hover:bg-[#262520] rounded-xl flex items-center gap-2 font-medium disabled:opacity-50"
                             >
                               <Mail className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                               {resendingEmail ? 'Sending...' : 'Resend welcome email'}
@@ -1075,7 +1075,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
             </div>
           </>
         ) : (
-          <div className="h-20 border-t border-[#EAE8E1] bg-white px-6 rounded-b-3xl flex items-center justify-end shrink-0">
+          <div className="h-20 border-t border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#1D1D1A] px-6 rounded-b-3xl flex items-center justify-end shrink-0">
             <Button onClick={handleCloseReview} variant="secondary" className="px-4 py-2 text-xs">
               Close
             </Button>
@@ -1093,19 +1093,19 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
         className="fixed inset-0 bg-black/50"
         style={{ backdropFilter: 'blur(2px)' }}
       />
-      <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
         <div className="flex items-center gap-3 mb-4">
           <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
-          <h4 className="font-semibold text-base text-[#18181B]">
+          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
             Remove {volToRemove.fullName || volToRemove.name || 'volunteer'}?
           </h4>
         </div>
-        <p className="text-xs text-zinc-500 mb-4 leading-relaxed">
+        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-4 leading-relaxed">
           {volToRemove.fullName || volToRemove.name || 'This volunteer'} will no longer appear under Active volunteers. Their profile and history will remain available under Removed.
         </p>
         <form onSubmit={handleRemoveVolSubmit} className="space-y-4">
           <div>
-            <label className="text-zinc-500 text-[10px] font-semibold uppercase tracking-wider block mb-1.5">
+            <label className="text-zinc-500 dark:text-[#7A7570] text-[10px] font-semibold uppercase tracking-wider block mb-1.5">
               Reason for removal
             </label>
             <textarea
@@ -1114,10 +1114,10 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
               value={removeReason}
               onChange={(e) => setRemoveReason(e.target.value)}
               rows={3}
-              className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] focus:outline-none focus:border-red-400 transition-all bg-zinc-50 resize-none text-zinc-700"
+              className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] focus:outline-none focus:border-red-400 transition-all bg-zinc-50 dark:bg-[#262520] resize-none text-zinc-700 dark:text-[#F0EBE3]"
             />
           </div>
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
             <Button
               type="button"
               onClick={() => setVolToRemove(null)}
@@ -1148,17 +1148,17 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
         className="fixed inset-0 bg-black/50"
         style={{ backdropFilter: 'blur(2px)' }}
       />
-      <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
         <div className="flex items-center gap-3 text-emerald-600 mb-4">
           <RotateCcw className="w-5 h-5 shrink-0" />
-          <h4 className="font-semibold text-base text-[#18181B]">
+          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
             Restore {volToRestore.fullName || volToRestore.name || 'volunteer'}?
           </h4>
         </div>
-        <p className="text-xs text-zinc-500 mb-6 leading-relaxed">
+        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-6 leading-relaxed">
           This volunteer will be restored and made available for team assignments again.
         </p>
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
           <Button
             onClick={() => setVolToRestore(null)}
             variant="secondary"
@@ -1187,19 +1187,19 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
         onClick={() => setVolToDelete(null)}
         style={{ backdropFilter: 'blur(2px)' }}
       />
-      <div className="relative bg-[#FFFDF9] border border-red-200 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-red-200 dark:border-red-900/40 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
         <div className="flex items-center gap-2 text-red-600">
           <Trash2 className="w-5 h-5 shrink-0" />
-          <h3 className="font-semibold text-base text-[#18181B]">
+          <h3 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
             Delete {volToDelete.fullName || volToDelete.name || 'Volunteer'} permanently?
           </h3>
         </div>
-        <p className="text-xs text-zinc-600 leading-relaxed">
+        <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
           Their profile and associated personal information will be permanently removed and cannot be restored.
         </p>
         <form onSubmit={handlePermanentDeleteSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-600 block">
+            <label className="text-xs font-medium text-zinc-600 dark:text-[#B8B0A5] block">
               Type <span className="font-mono font-bold text-red-600">DELETE</span> to continue
             </label>
             <input
@@ -1208,11 +1208,11 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
               value={deleteConfirmationText}
               onChange={(e) => setDeleteConfirmationText(e.target.value)}
               placeholder="DELETE"
-              className="w-full px-3 py-2 text-xs font-mono border border-zinc-200 bg-zinc-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-600/10 focus:border-red-400 transition-all text-zinc-800"
+              className="w-full px-3 py-2 text-xs font-mono border border-zinc-200 dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] rounded-xl focus:outline-none focus:ring-2 focus:ring-red-600/10 focus:border-red-400 transition-all text-zinc-800 dark:text-[#F0EBE3]"
               id="single-vol-delete-confirm-input"
             />
           </div>
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
             <Button
               type="button"
               onClick={() => setVolToDelete(null)}
@@ -1243,26 +1243,26 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
         className="fixed inset-0 bg-black/50"
         style={{ backdropFilter: 'blur(2px)' }}
       />
-      <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
         <div className="flex items-center gap-3 text-[#C59B27] mb-4">
           <Briefcase className="w-5 h-5 shrink-0" />
-          <h4 className="font-semibold text-base text-[#18181B]">
+          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
             Assign {selectedVolIds.length} volunteers
           </h4>
         </div>
-        <p className="text-xs text-zinc-500 mb-5 leading-relaxed">
+        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-5 leading-relaxed">
           Select the ministry serving team for the selected volunteers.
         </p>
         <form onSubmit={handleBulkAssignTeam} className="space-y-4">
           <div>
-            <label className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block mb-1.5">
+            <label className="text-[10px] font-semibold text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block mb-1.5">
               Team
             </label>
             <select
               required
               value={bulkAssignTeam}
               onChange={(e) => setBulkAssignTeam(e.target.value)}
-              className="w-full px-3 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27] text-zinc-800"
+              className="w-full px-3 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] focus:outline-none focus:border-[#C59B27] text-zinc-800 dark:text-[#F0EBE3]"
             >
               <option value="">Select a team...</option>
               {teamOptions.map(t => (
@@ -1270,7 +1270,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
               ))}
             </select>
           </div>
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#EAE8E1]">
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#EAE8E1] dark:border-[#302E29]">
             <Button
               type="button"
               onClick={() => setShowBulkAssignModal(false)}
@@ -1303,25 +1303,25 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
         className="fixed inset-0 bg-black/50"
         style={{ backdropFilter: 'blur(2px)' }}
       />
-      <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
         <div className="flex items-center gap-3 text-emerald-600 mb-4">
           <UserCheck className="w-5 h-5 shrink-0" />
-          <h4 className="font-semibold text-base text-[#18181B]">
+          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
             Approve {selectedVolIds.length} volunteers?
           </h4>
         </div>
-        <p className="text-xs text-zinc-500 mb-5 leading-relaxed">
+        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-5 leading-relaxed">
           Approved volunteers will be moved to Active and will receive an official welcome email with portal access instructions.
         </p>
         <div className="space-y-4">
           <div>
-            <label className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block mb-1.5">
+            <label className="text-[10px] font-semibold text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block mb-1.5">
               Assign team (optional)
             </label>
             <select
               value={bulkApproveTeam}
               onChange={(e) => setBulkApproveTeam(e.target.value)}
-              className="w-full px-3 py-2.5 text-xs rounded-xl border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27] text-zinc-800"
+              className="w-full px-3 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] focus:outline-none focus:border-[#C59B27] text-zinc-800 dark:text-[#F0EBE3]"
             >
               <option value="">Keep current preference</option>
               {teamOptions.map(t => (
@@ -1329,7 +1329,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
               ))}
             </select>
           </div>
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#EAE8E1]">
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#EAE8E1] dark:border-[#302E29]">
             <Button
               type="button"
               onClick={() => setShowBulkApproveModal(false)}
@@ -1362,17 +1362,17 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
         className="fixed inset-0 bg-black/50"
         style={{ backdropFilter: 'blur(2px)' }}
       />
-      <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
         <div className="flex items-center gap-3 text-zinc-700 mb-4">
           <AlertCircle className="w-5 h-5 shrink-0 text-zinc-500" />
-          <h4 className="font-semibold text-base text-[#18181B]">
+          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
             Decline {selectedVolIds.length} volunteer applications?
           </h4>
         </div>
-        <p className="text-xs text-zinc-500 mb-6 leading-relaxed">
+        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-6 leading-relaxed">
           These applicants will be notified via email and their profiles will be moved to Not approved.
         </p>
-        <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#EAE8E1]">
+        <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#EAE8E1] dark:border-[#302E29]">
           <Button
             type="button"
             onClick={() => setShowBulkDeclineModal(false)}
@@ -1387,7 +1387,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
             onClick={handleBulkDecline}
             loading={submittingBulkDecline}
             disabled={submittingBulkDecline}
-            className="bg-zinc-800 hover:bg-zinc-900 text-white px-5 py-2 text-xs font-semibold rounded-xl focus:outline-none"
+            className="bg-zinc-800 hover:bg-zinc-900 dark:bg-[#262520] dark:hover:bg-[#2A2926] text-white px-5 py-2 text-xs font-semibold rounded-xl focus:outline-none"
           >
             Decline volunteers
           </Button>
@@ -1404,19 +1404,19 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
         className="fixed inset-0 bg-black/50"
         style={{ backdropFilter: 'blur(2px)' }}
       />
-      <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
         <div className="flex items-center gap-3 text-red-600 mb-4">
           <Trash2 className="w-5 h-5 shrink-0" />
-          <h4 className="font-semibold text-base text-[#18181B]">
+          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
             Remove {selectedVolIds.length} volunteers?
           </h4>
         </div>
-        <p className="text-xs text-zinc-500 mb-4 leading-relaxed">
+        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-4 leading-relaxed">
           These volunteers will no longer appear under Active Volunteers. Their event serving history and audit records will be kept. You can restore them at any time from the Removed tab.
         </p>
         <form onSubmit={handleBulkRemove} className="space-y-4">
           <div>
-            <label className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block mb-1">
+            <label className="text-[10px] font-semibold text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block mb-1">
               Reason (optional)
             </label>
             <input
@@ -1424,10 +1424,10 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
               value={bulkRemoveReason}
               onChange={(e) => setBulkRemoveReason(e.target.value)}
               placeholder="e.g., Stepping down for this season"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27] text-zinc-800"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] focus:outline-none focus:border-[#C59B27] text-zinc-800 dark:text-[#F0EBE3]"
             />
           </div>
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
             <Button
               type="button"
               onClick={() => setShowBulkRemoveModal(false)}
@@ -1459,17 +1459,17 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
         className="fixed inset-0 bg-black/50"
         style={{ backdropFilter: 'blur(2px)' }}
       />
-      <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
         <div className="flex items-center gap-3 text-emerald-600 mb-4">
           <RotateCcw className="w-5 h-5 shrink-0" />
-          <h4 className="font-semibold text-base text-[#18181B]">
+          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
             Restore {selectedVolIds.length} volunteers?
           </h4>
         </div>
-        <p className="text-xs text-zinc-500 mb-6 leading-relaxed">
+        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-6 leading-relaxed">
           These volunteers will be restored and will appear under Active Volunteers again.
         </p>
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
           <Button
             type="button"
             onClick={() => setShowBulkRestoreModal(false)}
@@ -1501,19 +1501,19 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
         className="fixed inset-0 bg-black/50"
         style={{ backdropFilter: 'blur(2px)' }}
       />
-      <div className="relative bg-[#FFFDF9] border border-red-200 rounded-3xl w-full max-w-md shadow-2xl p-6 space-y-4">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-red-200 dark:border-red-900/40 rounded-3xl w-full max-w-md shadow-2xl p-6 space-y-4">
         <div className="flex items-center gap-2 text-red-600">
           <Trash2 className="w-5 h-5 shrink-0" />
-          <h3 className="font-semibold text-base text-[#18181B]">
+          <h3 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
             Delete {selectedVolIds.length} volunteers permanently?
           </h3>
         </div>
-        <p className="text-xs text-zinc-600 leading-relaxed">
+        <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
           These profiles and their associated personal information will be permanently removed and cannot be restored.
         </p>
         <form onSubmit={handleBulkPurge} className="space-y-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-600 block">
+            <label className="text-xs font-medium text-zinc-600 dark:text-[#B8B0A5] block">
               Type <span className="font-mono font-bold text-red-600">DELETE</span> to continue
             </label>
             <input
@@ -1522,11 +1522,11 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
               value={bulkPurgeConfirmText}
               onChange={(e) => setBulkPurgeConfirmText(e.target.value)}
               placeholder="DELETE"
-              className="w-full px-3 py-2 text-xs font-mono border border-zinc-200 bg-zinc-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-600/10 focus:border-red-400 transition-all text-zinc-800"
+              className="w-full px-3 py-2 text-xs font-mono border border-zinc-200 dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] rounded-xl focus:outline-none focus:ring-2 focus:ring-red-600/10 focus:border-red-400 transition-all text-zinc-800 dark:text-[#F0EBE3]"
               id="bulk-vol-purge-confirm-input"
             />
           </div>
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
             <Button
               type="button"
               onClick={() => setShowBulkPurgeModal(false)}
@@ -1571,12 +1571,12 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
       {bulkPurgeModal}
 
       {/* 1. Header */}
-      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 pb-4 border-b border-[#EAE8E1]">
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 pb-4 border-b border-[#EAE8E1] dark:border-[#302E29]">
         <div>
-          <h1 className="type-h1-app text-[#18181B]">
+          <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
             Volunteers
           </h1>
-          <p className="text-xs text-zinc-500 mt-1">Manage volunteers, team assignments and approvals.</p>
+          <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Manage volunteers, team assignments and approvals.</p>
         </div>
         <Button
           onClick={() => setShowAddVolunteerModal(true)}
@@ -1589,29 +1589,29 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
       </div>
 
       {/* 2. Compact summary strip */}
-      <div className="bg-white border border-[#EAE8E1] rounded-2xl px-6 py-4">
-        <div className="flex items-center divide-x divide-[#EAE8E1]">
+      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl px-6 py-4">
+        <div className="flex items-center divide-x divide-[#EAE8E1] dark:divide-[#302E29]">
           <div className="pr-8">
-            <p className="text-[10px] text-zinc-400 mb-0.5">Volunteers</p>
-            <p className="text-lg font-semibold text-[#18181B]">{stats.totalVolunteers}</p>
+            <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-0.5">Volunteers</p>
+            <p className="text-lg font-semibold text-[#18181B] dark:text-[#F0EBE3]">{stats.totalVolunteers}</p>
           </div>
           <div className="px-8">
-            <p className="text-[10px] text-zinc-400 mb-0.5">Awaiting review</p>
-            <p className="text-lg font-semibold text-amber-600">{stats.pendingReview}</p>
+            <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-0.5">Awaiting review</p>
+            <p className="text-lg font-semibold text-amber-600 dark:text-amber-400">{stats.pendingReview}</p>
           </div>
           <div className="px-8">
-            <p className="text-[10px] text-zinc-400 mb-0.5">Active</p>
-            <p className="text-lg font-semibold text-emerald-600">{stats.approvedVolunteers}</p>
+            <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-0.5">Active</p>
+            <p className="text-lg font-semibold text-emerald-600 dark:text-emerald-400">{stats.approvedVolunteers}</p>
           </div>
           <div className="pl-8">
-            <p className="text-[10px] text-zinc-400 mb-0.5">Teams</p>
-            <p className="text-lg font-semibold text-zinc-700">{stats.assignedTeams}</p>
+            <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-0.5">Teams</p>
+            <p className="text-lg font-semibold text-zinc-700 dark:text-[#B8B0A5]">{stats.assignedTeams}</p>
           </div>
         </div>
       </div>
 
       {/* 3. Tabs */}
-      <div className="flex border-b border-[#EAE8E1]" id="volunteers-list-tabs">
+      <div className="flex border-b border-[#EAE8E1] dark:border-[#302E29]" id="volunteers-list-tabs">
         {tabs.map(tab => {
           const count =
             tab.id === 'active'
@@ -1628,8 +1628,8 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
               onClick={() => handleTabChange(tab.id)}
               className={`px-4 py-2.5 text-xs font-medium transition-all border-b-2 cursor-pointer focus:outline-none flex items-center gap-1.5 ${
                 activeTab === tab.id
-                  ? 'border-[#C59B27] text-[#18181B]'
-                  : 'border-transparent text-zinc-400 hover:text-zinc-600'
+                  ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3]'
+                  : 'border-transparent text-zinc-400 dark:text-[#5A5550] hover:text-zinc-600 dark:hover:text-[#B8B0A5]'
               }`}
               id={`tab-${tab.id}-volunteers`}
             >
@@ -1637,10 +1637,10 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
               <span
                 className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
                   tab.id === 'pending' && count > 0
-                    ? 'bg-amber-100 text-amber-700'
+                    ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400'
                     : activeTab === tab.id
-                    ? 'bg-zinc-100 text-zinc-900'
-                    : 'bg-zinc-100/70 text-zinc-500'
+                    ? 'bg-zinc-100 dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3]'
+                    : 'bg-zinc-100/70 dark:bg-[#262520]/60 text-zinc-500 dark:text-[#5A5550]'
                 }`}
               >
                 {count}
@@ -1651,22 +1651,22 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
       </div>
 
       {/* 4. Filters & Search */}
-      <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 flex flex-col md:flex-row gap-3 items-center">
+      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 flex flex-col md:flex-row gap-3 items-center">
         <div className="relative w-full md:flex-1">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 dark:text-[#5A5550]" />
           <input
             type="text"
             placeholder="Search volunteers by name, email, or phone..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-xs rounded-xl border border-[#EAE8E1] focus:outline-none focus:border-[#C59B27] transition-all bg-zinc-50/50"
+            className="w-full pl-10 pr-4 py-2 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] focus:outline-none focus:border-[#C59B27] transition-all bg-zinc-50/50 dark:bg-[#262520] dark:text-[#F0EBE3] dark:placeholder-[#5A5550]"
           />
         </div>
         <div className="flex flex-wrap w-full md:w-auto items-center gap-2">
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-1.5 text-xs rounded-xl border border-[#EAE8E1] focus:outline-none focus:border-[#C59B27] bg-[#FAF9F6] text-zinc-700 cursor-pointer"
+            className="px-3 py-1.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] focus:outline-none focus:border-[#C59B27] bg-[#FAF9F6] dark:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] cursor-pointer"
           >
             <option value="">Status</option>
             <option value="pending_review">Awaiting review</option>
@@ -1676,7 +1676,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
           <select
             value={teamFilter}
             onChange={(e) => setTeamFilter(e.target.value)}
-            className="px-3 py-1.5 text-xs rounded-xl border border-[#EAE8E1] focus:outline-none focus:border-[#C59B27] bg-[#FAF9F6] text-zinc-700 cursor-pointer"
+            className="px-3 py-1.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] focus:outline-none focus:border-[#C59B27] bg-[#FAF9F6] dark:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] cursor-pointer"
           >
             <option value="">Team</option>
             {teamOptions.map(opt => (
@@ -1686,7 +1686,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
           {(searchQuery || statusFilter || teamFilter) && (
             <button
               onClick={() => { setSearchQuery(''); setStatusFilter(''); setTeamFilter(''); }}
-              className="text-xs text-zinc-400 hover:text-zinc-700 transition-colors focus:outline-none"
+              className="text-xs text-zinc-400 dark:text-[#5A5550] hover:text-zinc-700 dark:hover:text-[#B8B0A5] transition-colors focus:outline-none"
             >
               Clear
             </button>
@@ -1696,15 +1696,15 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
 
       {/* Contextual Action Bar */}
       {selectedVolIds.length > 0 && (
-        <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-2xl px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs animate-fade-in mb-4">
+        <div className="bg-[#FAF9F5] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs animate-fade-in mb-4">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="font-semibold text-[#18181B] whitespace-nowrap">
+            <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] whitespace-nowrap">
               {selectedVolIds.length} selected
             </span>
             {activeTab !== 'removed' && (
               <>
                 <div className="h-4 w-px bg-[#EAE8E1] hidden sm:block" />
-                <span className="text-zinc-500 font-medium">
+                <span className="text-zinc-500 dark:text-[#7A7570] font-medium">
                   {canBeApprovedVolunteers.length > 0 && activeVolunteers.length > 0
                     ? `${canBeApprovedVolunteers.length} can be approved · ${activeVolunteers.length} already active`
                     : canBeApprovedVolunteers.length > 0
@@ -1717,7 +1717,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
             {activeTab === 'removed' && (
               <>
                 <div className="h-4 w-px bg-[#EAE8E1] hidden sm:block" />
-                <span className="text-zinc-500 font-medium">
+                <span className="text-zinc-500 dark:text-[#7A7570] font-medium">
                   {selectedVolIds.length} removed {selectedVolIds.length === 1 ? 'record' : 'records'}
                 </span>
               </>
@@ -1742,7 +1742,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                     <button
                       type="button"
                       onClick={() => setShowBulkAssignModal(true)}
-                      className="px-3.5 py-1.5 rounded-xl bg-white border border-[#EAE8E1] text-zinc-700 font-medium hover:bg-zinc-50 transition-colors focus:outline-none cursor-pointer"
+                      className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] text-zinc-700 dark:text-[#B8B0A5] font-medium hover:bg-zinc-50 dark:hover:bg-[#2A2926] transition-colors focus:outline-none cursor-pointer"
                     >
                       Assign team{activeVolunteers.length < selectedVolIds.length ? ` (${activeVolunteers.length})` : ''}
                     </button>
@@ -1751,7 +1751,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                     <button
                       type="button"
                       onClick={() => setShowBulkDeclineModal(true)}
-                      className="px-3.5 py-1.5 rounded-xl bg-white border border-[#EAE8E1] text-zinc-700 font-medium hover:bg-zinc-50 transition-colors focus:outline-none cursor-pointer"
+                      className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] text-zinc-700 dark:text-[#B8B0A5] font-medium hover:bg-zinc-50 dark:hover:bg-[#2A2926] transition-colors focus:outline-none cursor-pointer"
                     >
                       Decline{pendingVolunteers.length < selectedVolIds.length ? ` ${pendingVolunteers.length}` : ''}
                     </button>
@@ -1761,20 +1761,20 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                       <button
                         type="button"
                         onClick={() => setBulkMoreDropdownOpen(!bulkMoreDropdownOpen)}
-                        className="px-3 py-1.5 rounded-xl bg-white border border-[#EAE8E1] text-zinc-700 font-medium hover:bg-zinc-50 transition-colors focus:outline-none cursor-pointer flex items-center gap-1"
+                        className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] text-zinc-700 dark:text-[#B8B0A5] font-medium hover:bg-zinc-50 dark:hover:bg-[#2A2926] transition-colors focus:outline-none cursor-pointer flex items-center gap-1"
                       >
                         <span>More</span>
                         <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
                       </button>
                       {bulkMoreDropdownOpen && (
-                        <div className="absolute left-0 mt-1 w-36 bg-white border border-[#EAE8E1] rounded-2xl shadow-lg py-1 z-30 animate-fade-in text-left">
+                        <div className="absolute left-0 mt-1 w-36 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl shadow-lg py-1 z-30 animate-fade-in text-left">
                           <button
                             type="button"
                             onClick={() => {
                               setBulkMoreDropdownOpen(false);
                               setShowBulkRemoveModal(true);
                             }}
-                            className="w-full text-left px-3.5 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors cursor-pointer"
+                            className="w-full text-left px-3.5 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2 transition-colors cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5 text-red-600" />
                             <span>Remove</span>
@@ -1801,13 +1801,13 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                       <button
                         type="button"
                         onClick={() => setBulkMoreDropdownOpen(!bulkMoreDropdownOpen)}
-                        className="px-3 py-1.5 rounded-xl bg-white border border-[#EAE8E1] text-zinc-700 font-medium hover:bg-zinc-50 transition-colors focus:outline-none cursor-pointer flex items-center gap-1"
+                        className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] text-zinc-700 dark:text-[#B8B0A5] font-medium hover:bg-zinc-50 dark:hover:bg-[#2A2926] transition-colors focus:outline-none cursor-pointer flex items-center gap-1"
                       >
                         <span>More</span>
                         <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
                       </button>
                       {bulkMoreDropdownOpen && (
-                        <div className="absolute left-0 mt-1 w-44 bg-white border border-[#EAE8E1] rounded-2xl shadow-lg py-1 z-30 animate-fade-in text-left">
+                        <div className="absolute left-0 mt-1 w-44 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl shadow-lg py-1 z-30 animate-fade-in text-left">
                           <button
                             type="button"
                             onClick={() => {
@@ -1815,7 +1815,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                               setBulkPurgeConfirmText('');
                               setShowBulkPurgeModal(true);
                             }}
-                            className="w-full text-left px-3.5 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors cursor-pointer"
+                            className="w-full text-left px-3.5 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2 transition-colors cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5 text-red-600" />
                             <span>Delete permanently</span>
@@ -1831,7 +1831,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
           <button
             type="button"
             onClick={() => setSelectedVolIds([])}
-            className="text-zinc-500 hover:text-[#18181B] text-xs font-medium underline-offset-4 hover:underline transition-colors cursor-pointer"
+            className="text-zinc-500 dark:text-[#7A7570] hover:text-[#18181B] dark:hover:text-[#F0EBE3] text-xs font-medium underline-offset-4 hover:underline transition-colors cursor-pointer"
           >
             Clear selection
           </button>
@@ -1839,22 +1839,22 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
       )}
 
       {/* 5. Volunteer table */}
-      <div className="bg-white border border-[#EAE8E1] rounded-3xl overflow-hidden shadow-xs">
+      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl overflow-hidden shadow-xs">
         {loading ? (
           <div className="p-8">
             <KoinoniaInlineLoader variant="skeleton" size="lg" label="Loading volunteers..." centered />
           </div>
         ) : volunteers.length === 0 ? (
-          <div className="text-center py-16 text-zinc-400 space-y-2">
-            <Users className="w-7 h-7 stroke-[1.5] mx-auto text-zinc-300" />
-            <p className="text-sm text-zinc-500 font-medium">{emptyStateMessage[activeTab]}</p>
+          <div className="text-center py-16 text-zinc-400 dark:text-[#5A5550] space-y-2">
+            <Users className="w-7 h-7 stroke-[1.5] mx-auto text-zinc-300 dark:text-[#3A3835]" />
+            <p className="text-sm text-zinc-500 dark:text-[#7A7570] font-medium">{emptyStateMessage[activeTab]}</p>
           </div>
         ) : (
           <>
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-left text-xs">
                 <thead>
-                  <tr className="bg-[#FAF9F6] border-b border-[#EAE8E1] text-zinc-500">
+                  <tr className="bg-[#FAF9F6] dark:bg-[#21211E] border-b border-[#EAE8E1] dark:border-[#302E29] text-zinc-500 dark:text-[#7A7570]">
                     <th className="p-4 pl-6 w-10 text-center">
                       <AdminSelectionCheckbox
                         checked={isAllVisibleSelected}
@@ -1871,7 +1871,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                     <th className="p-4 pr-6 text-right text-[11px] font-semibold">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#EAE8E1]">
+                <tbody className="divide-y divide-[#EAE8E1] dark:divide-[#302E29]">
                   {volunteers.map((vol) => {
                     const sLabel = statusLabel(vol);
                     const statusCls =
@@ -1889,7 +1889,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                     return (
                       <tr
                         key={vol.id}
-                        className={`transition-colors ${isSelected ? 'bg-[#FAF8F2]' : 'hover:bg-zinc-50/50'}`}
+                        className={`transition-colors ${isSelected ? 'bg-[#FAF8F2] dark:bg-[#262520]/70' : 'hover:bg-zinc-50/50 dark:hover:bg-[#262520]/30'}`}
                         data-volunteer-row-id={vol.id}
                       >
                         {/* Checkbox */}
@@ -1912,22 +1912,22 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                                 className="w-9 h-9 rounded-xl object-cover border border-zinc-200 shrink-0"
                               />
                             ) : (
-                              <div className="w-9 h-9 rounded-xl bg-[#FAF9F6] border border-[#EAE8E1] flex items-center justify-center text-zinc-400 font-semibold shrink-0 text-sm uppercase">
+                              <div className="w-9 h-9 rounded-xl bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] flex items-center justify-center text-zinc-400 dark:text-[#5A5550] font-semibold shrink-0 text-sm uppercase">
                                 {getInitials(vol.fullName || vol.name)}
                               </div>
                             )}
                             <div className="min-w-0">
-                              <span className="font-medium text-[#18181B] block text-xs leading-snug truncate">{vol.fullName || vol.name || 'Volunteer'}</span>
-                              <span className="text-[10px] text-zinc-400 block truncate">{vol.email || 'No email'}</span>
+                              <span className="font-medium text-[#18181B] dark:text-[#F0EBE3] block text-xs leading-snug truncate">{vol.fullName || vol.name || 'Volunteer'}</span>
+                              <span className="text-[10px] text-zinc-400 dark:text-[#5A5550] block truncate">{vol.email || 'No email'}</span>
                             </div>
                           </div>
                         </td>
 
                         {/* Contact */}
                         <td className="p-4">
-                          <span className="block text-zinc-700 font-medium">{vol.phone || 'N/A'}</span>
+                          <span className="block text-zinc-700 dark:text-[#B8B0A5] font-medium">{vol.phone || 'N/A'}</span>
                           {vol.whatsapp && (
-                            <span className="text-[10px] text-zinc-400 flex items-center gap-1 mt-0.5">
+                            <span className="text-[10px] text-zinc-400 dark:text-[#5A5550] flex items-center gap-1 mt-0.5">
                               <MessageSquare className="w-3 h-3 text-emerald-500 shrink-0" />
                               WhatsApp available
                             </span>
@@ -1948,7 +1948,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                               )}
                             </div>
                           ) : (
-                            <span className="text-zinc-400 text-[11px]">Regular</span>
+                            <span className="text-zinc-400 dark:text-[#5A5550] text-[11px]">Regular</span>
                           )}
                         </td>
 
@@ -1970,20 +1970,26 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                                   showError('Update failed', parsed.message);
                                 }
                               }}
-                              className="px-2 py-1 text-xs rounded-lg border border-[#EAE8E1] bg-[#FAF9F6] text-zinc-700 cursor-pointer focus:outline-none focus:border-[#C59B27]"
+                              className="px-2 py-1 text-xs rounded-lg border border-[#EAE8E1] dark:border-[#3A3835] bg-[#FAF9F6] dark:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] cursor-pointer focus:outline-none focus:border-[#C59B27]"
                             >
                               {teamOptions.map(opt => (
                                 <option key={opt.value} value={opt.value}>{opt.label}</option>
                               ))}
                             </select>
                           ) : (
-                            <span className="text-zinc-400 text-[11px] italic">{teamLabel(vol.preferredTeam)}</span>
+                            <span className="text-zinc-400 dark:text-[#5A5550] text-[11px] italic">{teamLabel(vol.preferredTeam)}</span>
                           )}
                         </td>
 
                         {/* Status */}
                         <td className="p-4">
-                          <span className={`text-xs font-medium ${statusCls}`}>
+                          <span className={`text-xs font-medium ${
+                            (vol.status === 'approved' || vol.status === 'active')
+                              ? 'text-emerald-700 dark:text-emerald-400'
+                              : (vol.status === 'pending_review' || vol.status === 'pending')
+                              ? 'text-amber-700 dark:text-amber-400'
+                              : 'text-zinc-500 dark:text-[#7A7570]'
+                          }`}>
                             {sLabel}
                           </span>
                         </td>
@@ -2020,7 +2026,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                                       <MoreHorizontal className="w-4 h-4" />
                                     </button>
                                     {openActionMenuId === vol.id && (
-                                      <div className="absolute right-0 top-8 z-[200] bg-white border border-[#EAE8E1] rounded-2xl shadow-xl p-1.5 min-w-[160px] flex flex-col gap-0.5 animate-fade-in text-left">
+                                      <div className="absolute right-0 top-8 z-[200] bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl shadow-xl p-1.5 min-w-[160px] flex flex-col gap-0.5 animate-fade-in text-left">
                                         <button
                                           onClick={() => {
                                             setOpenActionMenuId(null);
@@ -2062,7 +2068,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                                       className="fixed inset-0 z-[100]"
                                       onClick={() => setOpenActionMenuId(null)}
                                     />
-                                    <div className="absolute right-0 top-8 z-[200] bg-white border border-[#EAE8E1] rounded-2xl shadow-xl p-1.5 min-w-[160px] flex flex-col gap-0.5">
+                                    <div className="absolute right-0 top-8 z-[200] bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl shadow-xl p-1.5 min-w-[160px] flex flex-col gap-0.5">
                                       <button
                                         onClick={() => { setOpenActionMenuId(null); setVolToRemove(vol); }}
                                         className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-2 font-medium"
@@ -2086,20 +2092,20 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between border-t border-[#EAE8E1] px-6 py-4 bg-white rounded-b-3xl">
+              <div className="flex items-center justify-between border-t border-[#EAE8E1] dark:border-[#302E29] px-6 py-4 bg-white dark:bg-[#1D1D1A] rounded-b-3xl">
                 <p className="text-xs text-zinc-400">
                   Showing{' '}
-                  <span className="font-medium text-zinc-700">{((currentPage - 1) * limit) + 1}</span>
+                  <span className="font-medium text-zinc-700 dark:text-[#B8B0A5]">{((currentPage - 1) * limit) + 1}</span>
                   {' '}to{' '}
-                  <span className="font-medium text-zinc-700">{Math.min(currentPage * limit, totalCount)}</span>
+                  <span className="font-medium text-zinc-700 dark:text-[#B8B0A5]">{Math.min(currentPage * limit, totalCount)}</span>
                   {' '}of{' '}
-                  <span className="font-medium text-zinc-700">{totalCount}</span>
+                  <span className="font-medium text-zinc-700 dark:text-[#B8B0A5]">{totalCount}</span>
                 </p>
                 <nav className="inline-flex -space-x-px rounded-md shadow-xs">
                   <button
                     onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
                     disabled={currentPage === 1 || loading}
-                    className="relative inline-flex items-center rounded-l-xl px-2 py-2 text-zinc-400 ring-1 ring-inset ring-[#EAE8E1] hover:bg-zinc-50 disabled:opacity-40"
+                    className="relative inline-flex items-center rounded-l-xl px-2 py-2 text-zinc-400 dark:text-[#5A5550] ring-1 ring-inset ring-[#EAE8E1] dark:ring-[#302E29] hover:bg-zinc-50 dark:hover:bg-[#262520] disabled:opacity-40"
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
@@ -2110,7 +2116,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                       className={`relative inline-flex items-center px-4 py-2 text-xs font-medium ${
                         currentPage === p
                           ? 'bg-[#C59B27] text-white'
-                          : 'text-zinc-600 ring-1 ring-inset ring-[#EAE8E1] hover:bg-zinc-50'
+                          : 'text-zinc-600 dark:text-[#B8B0A5] ring-1 ring-inset ring-[#EAE8E1] dark:ring-[#302E29] hover:bg-zinc-50 dark:hover:bg-[#262520]'
                       }`}
                     >
                       {p}
@@ -2119,7 +2125,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                   <button
                     onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
                     disabled={currentPage === totalPages || loading}
-                    className="relative inline-flex items-center rounded-r-xl px-2 py-2 text-zinc-400 ring-1 ring-inset ring-[#EAE8E1] hover:bg-zinc-50 disabled:opacity-40"
+                    className="relative inline-flex items-center rounded-r-xl px-2 py-2 text-zinc-400 dark:text-[#5A5550] ring-1 ring-inset ring-[#EAE8E1] dark:ring-[#302E29] hover:bg-zinc-50 dark:hover:bg-[#262520] disabled:opacity-40"
                   >
                     <ChevronRight className="h-4 w-4" />
                   </button>

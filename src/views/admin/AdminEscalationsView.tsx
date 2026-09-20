@@ -416,21 +416,21 @@ export const AdminEscalationsView: React.FC = () => {
 
   if (mainError) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] text-stone-800 p-6 bg-[#FAF9F5]">
-        <div className="bg-white border border-stone-200 rounded-2xl p-8 max-w-md w-full shadow-xs text-center space-y-4">
-          <div className="mx-auto w-12 h-12 bg-red-50 text-red-600 rounded-full flex items-center justify-center border border-red-100">
+      <div className="flex flex-col items-center justify-center min-h-[400px] text-stone-800 dark:text-[#F0EBE3] p-6 bg-[#FAF9F5] dark:bg-[#19191A]">
+        <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-2xl p-8 max-w-md w-full shadow-xs text-center space-y-4">
+          <div className="mx-auto w-12 h-12 bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center border border-red-100 dark:border-red-900/40">
             <AlertTriangle className="w-6 h-6" />
           </div>
           <div>
-            <h2 className="text-base font-semibold text-stone-900">{mainError}</h2>
-            <p className="text-stone-500 text-xs mt-1.5 leading-relaxed">
+            <h2 className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">{mainError}</h2>
+            <p className="text-stone-500 dark:text-[#7A7570] text-xs mt-1.5 leading-relaxed">
               Please check your connection and try again.
             </p>
           </div>
           <div className="pt-2">
             <button
               onClick={() => loadModuleData(selectedEventId, false)}
-              className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-semibold cursor-pointer"
+              className="px-4 py-2 bg-stone-900 hover:bg-stone-800 dark:bg-[#262520] dark:hover:bg-[#2A2926] text-white dark:text-[#F0EBE3] border border-transparent dark:border-[#3A3835] rounded-xl text-xs font-semibold cursor-pointer"
             >
               Try again
             </button>
@@ -453,25 +453,25 @@ export const AdminEscalationsView: React.FC = () => {
   const actionableWarnings = getActionableWarnings();
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto p-4 md:p-6 text-stone-900 bg-[#FAF9F5]" id="escalations-view">
+    <div className="space-y-6 max-w-7xl mx-auto p-4 md:p-6 text-stone-900 dark:text-[#F0EBE3] bg-[#FAF9F5] dark:bg-[#19191A]" id="escalations-view">
       
       {/* 1. Header Banner & Global Controls (Prompt Section 20, 21, 22) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200 pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200 dark:border-[#302E29] pb-5">
         <div className="space-y-1">
-          <h1 className="type-h1-app text-stone-900">
+          <h1 className="type-h1-app text-stone-900 dark:text-[#F0EBE3]">
             Safety response rules
           </h1>
-          <p className="text-xs text-stone-600 max-w-2xl leading-relaxed">
+          <p className="text-xs text-stone-600 dark:text-[#7A7570] max-w-2xl leading-relaxed">
             Set what should happen when a safety concern needs further attention.
           </p>
           
           {/* Clean Event Selector (Prompt Section 22) */}
           <div className="pt-2 flex items-center gap-2">
-            <span className="text-xs text-stone-500 font-medium">Event:</span>
+            <span className="text-xs text-stone-500 dark:text-[#7A7570] font-medium">Event:</span>
             <select
               value={selectedEventId}
               onChange={(e) => handleEventChange(e.target.value)}
-              className="bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1 text-xs text-stone-800 outline-none focus:border-[#9E7D3B]"
+              className="bg-stone-50 dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg px-2.5 py-1 text-xs text-stone-800 dark:text-[#F0EBE3] outline-none focus:border-[#9E7D3B] dark:focus:border-amber-400"
             >
               {events.length === 0 ? (
                 <option value="event-ga-2026">No events available</option>
@@ -488,15 +488,15 @@ export const AdminEscalationsView: React.FC = () => {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-stone-200 hover:bg-stone-50 rounded-xl text-xs font-medium text-stone-700 transition-colors cursor-pointer min-h-[38px]"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-white dark:bg-[#21211E] border border-stone-200 dark:border-[#302E29] hover:bg-stone-50 dark:hover:bg-[#262520] rounded-xl text-xs font-medium text-stone-700 dark:text-[#B8B0A5] hover:text-stone-900 dark:hover:text-[#F0EBE3] transition-colors cursor-pointer min-h-[38px]"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-stone-500' : 'text-stone-500'}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-stone-500 dark:text-amber-400' : 'text-stone-500 dark:text-[#7A7570]'}`} />
             <span>Refresh</span>
           </button>
           {!isEditing && (
             <button
               onClick={handleCreateNew}
-              className="flex items-center gap-1.5 px-4 py-2 bg-[#9E7D3B] hover:bg-[#8A6D33] text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer min-h-[38px]"
+              className="flex items-center gap-1.5 px-4 py-2 bg-[#9E7D3B] hover:bg-[#8A6D33] dark:bg-[#C59B27] dark:hover:bg-[#B08621] text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer min-h-[38px]"
             >
               <Plus className="w-4 h-4" />
               <span>Create rule</span>
@@ -507,16 +507,16 @@ export const AdminEscalationsView: React.FC = () => {
 
       {/* 2. Actionable Setup Warnings - "Before the event" (Prompt Section 23, 24) */}
       {!isEditing && actionableWarnings.length > 0 && (
-        <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-4 space-y-2.5 text-left">
-          <span className="text-xs font-semibold text-amber-900 block">
+        <div className="bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-900/40 rounded-xl p-4 space-y-2.5 text-left">
+          <span className="text-xs font-semibold text-amber-900 dark:text-amber-300 block">
             Before the event
           </span>
           <div className="space-y-2">
             {actionableWarnings.map((warn, i) => (
               <div key={i} className="text-xs space-y-0.5">
-                <span className="font-medium text-amber-950 block">{warn.title}</span>
+                <span className="font-medium text-amber-950 dark:text-amber-200 block">{warn.title}</span>
                 {warn.supporting && (
-                  <p className="text-amber-800 text-[11px] leading-relaxed">{warn.supporting}</p>
+                  <p className="text-amber-800 dark:text-amber-400/80 text-[11px] leading-relaxed">{warn.supporting}</p>
                 )}
               </div>
             ))}
@@ -527,15 +527,15 @@ export const AdminEscalationsView: React.FC = () => {
       {/* 3. Main Working Layout */}
       {isEditing ? (
         /* Create / Edit Rule Form (Prompt Section 30, 31, 32) */
-        <form onSubmit={handleSave} className="bg-white border border-stone-200 rounded-xl p-5 md:p-6 shadow-xs space-y-5 text-left">
-          <div className="flex items-center justify-between border-b border-stone-100 pb-3">
-            <h2 className="text-sm font-semibold text-stone-900">
+        <form onSubmit={handleSave} className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-5 md:p-6 shadow-xs space-y-5 text-left">
+          <div className="flex items-center justify-between border-b border-stone-100 dark:border-[#302E29] pb-3">
+            <h2 className="text-sm font-semibold text-stone-900 dark:text-[#F0EBE3]">
               {editingPolicyId ? 'Edit response rule' : 'Create response rule'}
             </h2>
             <button
               type="button"
               onClick={() => setIsEditing(false)}
-              className="text-xs text-stone-500 hover:text-stone-800 cursor-pointer"
+              className="text-xs text-stone-500 dark:text-[#7A7570] hover:text-stone-800 dark:hover:text-[#F0EBE3] cursor-pointer"
             >
               Cancel
             </button>
@@ -543,11 +543,11 @@ export const AdminEscalationsView: React.FC = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1">
-              <label className="block text-xs font-medium text-stone-700">Rule name *</label>
+              <label className="block text-xs font-medium text-stone-700 dark:text-[#B8B0A5]">Rule name *</label>
               <input
                 type="text"
                 required
-                className="w-full px-3 py-2 rounded-lg border border-stone-200 text-xs text-stone-800 outline-none focus:border-[#9E7D3B]"
+                className="w-full px-3 py-2 rounded-lg border border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#262520] text-xs text-stone-800 dark:text-[#F0EBE3] outline-none focus:border-[#9E7D3B] dark:focus:border-amber-400"
                 value={policyForm.name}
                 onChange={e => setPolicyForm({ ...policyForm, name: e.target.value })}
                 placeholder="e.g. Missing child response"
@@ -555,9 +555,9 @@ export const AdminEscalationsView: React.FC = () => {
             </div>
 
             <div className="space-y-1">
-              <label className="block text-xs font-medium text-stone-700">When should this rule apply?</label>
+              <label className="block text-xs font-medium text-stone-700 dark:text-[#B8B0A5]">When should this rule apply?</label>
               <select
-                className="w-full px-3 py-2 rounded-lg border border-stone-200 text-xs text-stone-700 outline-none bg-white focus:border-[#9E7D3B]"
+                className="w-full px-3 py-2 rounded-lg border border-stone-200 dark:border-[#3A3835] text-xs text-stone-700 dark:text-[#F0EBE3] outline-none bg-white dark:bg-[#262520] focus:border-[#9E7D3B] dark:focus:border-amber-400"
                 value={policyForm.condition_key}
                 onChange={e => setPolicyForm({ ...policyForm, condition_key: e.target.value })}
               >
@@ -569,9 +569,9 @@ export const AdminEscalationsView: React.FC = () => {
             </div>
 
             <div className="space-y-1">
-              <label className="block text-xs font-medium text-stone-700">Concern type</label>
+              <label className="block text-xs font-medium text-stone-700 dark:text-[#B8B0A5]">Concern type</label>
               <select
-                className="w-full px-3 py-2 rounded-lg border border-stone-200 text-xs text-stone-700 outline-none bg-white focus:border-[#9E7D3B]"
+                className="w-full px-3 py-2 rounded-lg border border-stone-200 dark:border-[#3A3835] text-xs text-stone-700 dark:text-[#F0EBE3] outline-none bg-white dark:bg-[#262520] focus:border-[#9E7D3B] dark:focus:border-amber-400"
                 value={policyForm.policy_scope === 'event_default' ? 'all' : policyForm.category_key}
                 onChange={e => {
                   const val = e.target.value;
@@ -592,7 +592,7 @@ export const AdminEscalationsView: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2 pt-5">
-              <label className="flex items-center gap-2 text-xs font-medium text-stone-700 cursor-pointer">
+              <label className="flex items-center gap-2 text-xs font-medium text-stone-700 dark:text-[#B8B0A5] cursor-pointer">
                 <input
                   type="checkbox"
                   className="rounded border-stone-300 text-[#9E7D3B] focus:ring-[#9E7D3B]"
@@ -605,13 +605,13 @@ export const AdminEscalationsView: React.FC = () => {
           </div>
 
           {/* Response Sequence Steps */}
-          <div className="space-y-3 pt-4 border-t border-stone-100">
+          <div className="space-y-3 pt-4 border-t border-stone-100 dark:border-[#302E29]">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold text-stone-700">Response steps</h3>
+              <h3 className="text-xs font-semibold text-stone-700 dark:text-[#B8B0A5]">Response steps</h3>
               <button
                 type="button"
                 onClick={handleAddStep}
-                className="inline-flex items-center gap-1 text-xs text-[#9E7D3B] hover:text-[#8A6D33] font-medium cursor-pointer"
+                className="inline-flex items-center gap-1 text-xs text-[#9E7D3B] dark:text-amber-400 hover:text-[#8A6D33] dark:hover:text-amber-300 font-medium cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add step</span>
@@ -620,16 +620,16 @@ export const AdminEscalationsView: React.FC = () => {
 
             <div className="space-y-3">
               {policyForm.steps.map((step: any, index: number) => (
-                <div key={index} className="bg-stone-50 border border-stone-200/70 rounded-lg p-3.5 space-y-3">
+                <div key={index} className="bg-stone-50 dark:bg-[#21211E] border border-stone-200/70 dark:border-[#302E29] rounded-lg p-3.5 space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-stone-700">
+                    <span className="text-xs font-semibold text-stone-700 dark:text-[#F0EBE3]">
                       {index === 0 ? 'First response' : 'If there is still no response'}
                     </span>
                     {policyForm.steps.length > 1 && (
                       <button
                         type="button"
                         onClick={() => handleRemoveStep(index)}
-                        className="text-stone-400 hover:text-red-600 p-1 cursor-pointer"
+                        className="text-stone-400 dark:text-[#7A7570] hover:text-red-600 dark:hover:text-red-400 p-1 cursor-pointer"
                         title="Remove step"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -639,11 +639,11 @@ export const AdminEscalationsView: React.FC = () => {
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                     <div className="space-y-1">
-                      <label className="block text-[11px] font-medium text-stone-600">
+                      <label className="block text-[11px] font-medium text-stone-600 dark:text-[#7A7570]">
                         {index === 0 ? 'If no response within' : 'After additional'}
                       </label>
                       <select
-                        className="w-full px-2.5 py-1.5 rounded border border-stone-200 bg-white text-xs text-stone-700 outline-none"
+                        className="w-full px-2.5 py-1.5 rounded border border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#262520] text-xs text-stone-700 dark:text-[#F0EBE3] outline-none"
                         value={step.wait_seconds}
                         onChange={e => handleStepChange(index, 'wait_seconds', parseInt(e.target.value) || 30)}
                       >
@@ -656,9 +656,9 @@ export const AdminEscalationsView: React.FC = () => {
                     </div>
 
                     <div className="space-y-1">
-                      <label className="block text-[11px] font-medium text-stone-600">Notify</label>
+                      <label className="block text-[11px] font-medium text-stone-600 dark:text-[#7A7570]">Notify</label>
                       <select
-                        className="w-full px-2.5 py-1.5 rounded border border-stone-200 bg-white text-xs text-stone-700 outline-none"
+                        className="w-full px-2.5 py-1.5 rounded border border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#262520] text-xs text-stone-700 dark:text-[#F0EBE3] outline-none"
                         value={step.target_team_key || step.target_responsibility_key || 'Admins'}
                         onChange={e => {
                           const val = e.target.value;
@@ -679,11 +679,11 @@ export const AdminEscalationsView: React.FC = () => {
                     </div>
 
                     <div className="space-y-1">
-                      <label className="block text-[11px] font-medium text-stone-600">Contact by</label>
+                      <label className="block text-[11px] font-medium text-stone-600 dark:text-[#7A7570]">Contact by</label>
                       <input
                         type="text"
                         required
-                        className="w-full px-2.5 py-1.5 rounded border border-stone-200 bg-white text-xs text-stone-700 outline-none"
+                        className="w-full px-2.5 py-1.5 rounded border border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#262520] text-xs text-stone-700 dark:text-[#F0EBE3] outline-none"
                         value={step.channels}
                         onChange={e => handleStepChange(index, 'channels', e.target.value)}
                         placeholder="push, email"
@@ -695,17 +695,17 @@ export const AdminEscalationsView: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-stone-100">
+          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-stone-100 dark:border-[#302E29]">
             <button
               type="button"
               onClick={() => setIsEditing(false)}
-              className="px-3.5 py-2 border border-stone-200 rounded-lg text-xs font-medium text-stone-600 hover:bg-stone-50 cursor-pointer"
+              className="px-3.5 py-2 border border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#21211E] rounded-lg text-xs font-medium text-stone-600 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#262520] dark:hover:text-[#F0EBE3] cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-[#9E7D3B] hover:bg-[#8A6D33] text-white rounded-lg text-xs font-semibold cursor-pointer"
+              className="px-4 py-2 bg-[#9E7D3B] hover:bg-[#8A6D33] dark:bg-[#C59B27] dark:hover:bg-[#B08621] text-white rounded-lg text-xs font-semibold cursor-pointer"
             >
               Save rule
             </button>
@@ -714,13 +714,13 @@ export const AdminEscalationsView: React.FC = () => {
       ) : (
         /* Tabs (Prompt Section 25: Response rules, Needs follow-up, History) */
         <div className="space-y-5 text-left">
-          <div className="flex border-b border-stone-200 gap-6 text-xs">
+          <div className="flex border-b border-stone-200 dark:border-[#302E29] gap-6 text-xs">
             <button
               onClick={() => setViewTab('policies')}
               className={`pb-3 border-b-2 font-medium transition-colors cursor-pointer ${
-                viewTab === 'policies' 
-                  ? 'border-stone-900 text-stone-900' 
-                  : 'border-transparent text-stone-500 hover:text-stone-800'
+                viewTab === 'policies'
+                  ? 'border-stone-900 dark:border-amber-400 text-stone-900 dark:text-amber-400'
+                  : 'border-transparent text-stone-500 dark:text-[#7A7570] hover:text-stone-800 dark:hover:text-[#F0EBE3]'
               }`}
             >
               Response rules ({policies.length})
@@ -728,9 +728,9 @@ export const AdminEscalationsView: React.FC = () => {
             <button
               onClick={() => setViewTab('cycles')}
               className={`pb-3 border-b-2 font-medium transition-colors cursor-pointer ${
-                viewTab === 'cycles' 
-                  ? 'border-stone-900 text-stone-900' 
-                  : 'border-transparent text-stone-500 hover:text-stone-800'
+                viewTab === 'cycles'
+                  ? 'border-stone-900 dark:border-amber-400 text-stone-900 dark:text-amber-400'
+                  : 'border-transparent text-stone-500 dark:text-[#7A7570] hover:text-stone-800 dark:hover:text-[#F0EBE3]'
               }`}
             >
               Needs follow-up ({cycles.length})
@@ -738,9 +738,9 @@ export const AdminEscalationsView: React.FC = () => {
             <button
               onClick={() => setViewTab('history')}
               className={`pb-3 border-b-2 font-medium transition-colors cursor-pointer ${
-                viewTab === 'history' 
-                  ? 'border-stone-900 text-stone-900' 
-                  : 'border-transparent text-stone-500 hover:text-stone-800'
+                viewTab === 'history'
+                  ? 'border-stone-900 dark:border-amber-400 text-stone-900 dark:text-amber-400'
+                  : 'border-transparent text-stone-500 dark:text-[#7A7570] hover:text-stone-800 dark:hover:text-[#F0EBE3]'
               }`}
             >
               History ({history.length})
@@ -751,14 +751,14 @@ export const AdminEscalationsView: React.FC = () => {
           {viewTab === 'policies' && (
             <div className="space-y-4">
               {policies.length === 0 ? (
-                <div className="bg-white border border-stone-200 rounded-xl p-10 text-center space-y-3 max-w-md mx-auto my-6">
-                  <h3 className="text-sm font-semibold text-stone-900">No response rules yet</h3>
-                  <p className="text-xs text-stone-500 leading-relaxed">
+                <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-10 text-center space-y-3 max-w-md mx-auto my-6">
+                  <h3 className="text-sm font-semibold text-stone-900 dark:text-[#F0EBE3]">No response rules yet</h3>
+                  <p className="text-xs text-stone-500 dark:text-[#7A7570] leading-relaxed">
                     Create a rule to decide who should be contacted when a safety concern needs additional attention.
                   </p>
                   <button
                     onClick={handleCreateNew}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#9E7D3B] hover:bg-[#8A6D33] text-white rounded-lg text-xs font-semibold cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#9E7D3B] hover:bg-[#8A6D33] dark:bg-[#C59B27] dark:hover:bg-[#B08621] text-white rounded-lg text-xs font-semibold cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Create rule</span>
@@ -769,15 +769,15 @@ export const AdminEscalationsView: React.FC = () => {
                   {policies.map((policy) => {
                     const firstStep = policy.steps && policy.steps[0];
                     return (
-                      <div key={policy.id} className="bg-white border border-stone-200 rounded-xl p-4 md:p-5 shadow-xs space-y-3 text-left">
+                      <div key={policy.id} className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-4 md:p-5 shadow-xs space-y-3 text-left hover:border-stone-300 dark:hover:border-[#3A3835] transition-all">
                         
                         {/* Header: Title & Restrained status line */}
                         <div className="flex items-start justify-between gap-3">
                           <div className="space-y-0.5">
-                            <h3 className="text-sm font-semibold text-stone-900">
+                            <h3 className="text-sm font-semibold text-stone-900 dark:text-[#F0EBE3]">
                               {humanizeRuleTitle(policy.name)}
                             </h3>
-                            <span className="text-[11px] text-stone-500 block">
+                            <span className="text-[11px] text-stone-500 dark:text-[#7A7570] block">
                               {policy.is_enabled === 1 || policy.is_enabled === true ? 'Active' : 'Paused'} · {policy.priority >= 20 ? 'Critical priority' : policy.priority >= 10 ? 'High priority' : 'Standard priority'}
                             </span>
                           </div>
@@ -785,19 +785,19 @@ export const AdminEscalationsView: React.FC = () => {
                           <div className="flex items-center gap-1">
                             <button
                               onClick={() => setPreviewPolicy(policy)}
-                              className="px-2.5 py-1 text-xs text-stone-600 hover:text-stone-900 font-medium rounded hover:bg-stone-50 cursor-pointer"
+                              className="px-2.5 py-1 text-xs text-stone-600 dark:text-[#B8B0A5] hover:text-stone-900 dark:hover:text-[#F0EBE3] font-medium rounded hover:bg-stone-50 dark:hover:bg-[#262520] cursor-pointer"
                             >
                               View
                             </button>
                             <button
                               onClick={() => handleEdit(policy)}
-                              className="px-2.5 py-1 text-xs text-stone-600 hover:text-stone-900 font-medium rounded hover:bg-stone-50 cursor-pointer"
+                              className="px-2.5 py-1 text-xs text-stone-600 dark:text-[#B8B0A5] hover:text-stone-900 dark:hover:text-[#F0EBE3] font-medium rounded hover:bg-stone-50 dark:hover:bg-[#262520] cursor-pointer"
                             >
                               Edit
                             </button>
                             <button
                               onClick={() => setDeletingPolicyId(policy.id)}
-                              className="px-2.5 py-1 text-xs text-stone-400 hover:text-red-700 font-medium rounded hover:bg-red-50 cursor-pointer"
+                              className="px-2.5 py-1 text-xs text-stone-400 dark:text-[#7A7570] hover:text-red-700 dark:hover:text-red-400 font-medium rounded hover:bg-red-50 dark:hover:bg-red-950/20 cursor-pointer"
                             >
                               Delete
                             </button>
@@ -805,14 +805,14 @@ export const AdminEscalationsView: React.FC = () => {
                         </div>
 
                         {/* Summary lines: When & Next (Prompt Section 27, 41) */}
-                        <div className="space-y-1.5 text-xs text-stone-700 bg-stone-50 border border-stone-200/70 rounded-lg p-3">
+                        <div className="space-y-1.5 text-xs text-stone-700 dark:text-[#B8B0A5] bg-stone-50 dark:bg-[#21211E] border border-stone-200/70 dark:border-[#302E29] rounded-lg p-3">
                           <div>
-                            <span className="font-medium text-stone-800">When: </span>
+                            <span className="font-medium text-stone-800 dark:text-[#F0EBE3]">When: </span>
                             <span>{getHumanTrigger(policy.condition_key)}</span>
                           </div>
                           {firstStep && (
                             <div>
-                              <span className="font-medium text-stone-800">Next: </span>
+                              <span className="font-medium text-stone-800 dark:text-[#F0EBE3]">Next: </span>
                               <span>
                                 If no one responds within {firstStep.wait_seconds} seconds, notify {humanizeTarget(firstStep.target_team_key || firstStep.target_responsibility_key)}.
                               </span>
@@ -832,35 +832,35 @@ export const AdminEscalationsView: React.FC = () => {
           {viewTab === 'cycles' && (
             <div className="space-y-4">
               {partialCyclesError && (
-                <div className="bg-red-50 border border-red-100 text-red-700 text-xs p-3 rounded-lg">
+                <div className="bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/40 text-red-700 dark:text-red-400 text-xs p-3 rounded-lg">
                   Could not load active follow-up items.
                 </div>
               )}
 
               {cycles.length === 0 ? (
-                <div className="bg-white border border-stone-200 rounded-xl p-10 text-center text-stone-500 space-y-1 max-w-md mx-auto my-6">
-                  <h3 className="text-sm font-semibold text-stone-800">Nothing needs follow-up right now.</h3>
-                  <p className="text-xs text-stone-400">
+                <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-10 text-center text-stone-500 dark:text-[#7A7570] space-y-1 max-w-md mx-auto my-6">
+                  <h3 className="text-sm font-semibold text-stone-800 dark:text-[#F0EBE3]">Nothing needs follow-up right now.</h3>
+                  <p className="text-xs text-stone-400 dark:text-[#7A7570]">
                     When a safety concern goes unanswered, it will appear here for follow-up.
                   </p>
                 </div>
               ) : (
                 <div className="space-y-3">
                   {cycles.map((cycle) => (
-                    <div key={cycle.id} className="bg-white border border-stone-200 rounded-xl p-4 md:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div key={cycle.id} className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-4 md:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div className="space-y-1 text-left">
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200/60 px-2 py-0.5 rounded">
+                          <span className="text-[10px] font-medium bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/50 px-2 py-0.5 rounded">
                             Needs response
                           </span>
-                          <span className="text-xs text-stone-400">
+                          <span className="text-xs text-stone-400 dark:text-[#7A7570]">
                             Started {new Date(cycle.started_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
-                        <h4 className="text-sm font-semibold text-stone-900">
+                        <h4 className="text-sm font-semibold text-stone-900 dark:text-[#F0EBE3]">
                           {cycle.alert_title || 'Safety concern'}
                         </h4>
-                        <p className="text-xs text-stone-600">
+                        <p className="text-xs text-stone-600 dark:text-[#B8B0A5]">
                           Step #{cycle.current_step_order} · Next check at {new Date(cycle.next_due_at || Date.now()).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
                         </p>
                       </div>
@@ -868,19 +868,19 @@ export const AdminEscalationsView: React.FC = () => {
                       <div className="flex items-center gap-2 shrink-0">
                         <button
                           onClick={() => handleNotifyBackup(cycle.id)}
-                          className="px-3 py-1.5 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-medium cursor-pointer"
+                          className="px-3 py-1.5 bg-stone-900 hover:bg-stone-800 dark:bg-[#C59B27] dark:hover:bg-[#B08621] text-white rounded-lg text-xs font-medium cursor-pointer"
                         >
                           Notify backup
                         </button>
                         <button
                           onClick={() => handleRestartCycle(cycle.id)}
-                          className="px-3 py-1.5 border border-stone-200 hover:bg-stone-50 text-stone-700 rounded-lg text-xs font-medium cursor-pointer"
+                          className="px-3 py-1.5 border border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#21211E] hover:bg-stone-50 dark:hover:bg-[#262520] text-stone-700 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] rounded-lg text-xs font-medium cursor-pointer"
                         >
                           Restart
                         </button>
                         <button
                           onClick={() => handleCancelCycle(cycle.id)}
-                          className="px-3 py-1.5 border border-stone-200 hover:bg-red-50 text-stone-500 hover:text-red-700 rounded-lg text-xs font-medium cursor-pointer"
+                          className="px-3 py-1.5 border border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#21211E] hover:bg-red-50 dark:hover:bg-red-950/20 text-stone-500 dark:text-[#7A7570] hover:text-red-700 dark:hover:text-red-400 rounded-lg text-xs font-medium cursor-pointer"
                         >
                           Cancel
                         </button>
@@ -896,28 +896,28 @@ export const AdminEscalationsView: React.FC = () => {
           {viewTab === 'history' && (
             <div className="space-y-4">
               {partialHistoryError && (
-                <div className="bg-red-50 border border-red-100 text-red-700 text-xs p-3 rounded-lg">
+                <div className="bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/40 text-red-700 dark:text-red-400 text-xs p-3 rounded-lg">
                   Could not load history entries.
                 </div>
               )}
 
-              <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-xs space-y-3">
+              <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-5 shadow-xs space-y-3">
                 {history.length === 0 ? (
-                  <p className="text-xs text-stone-400 py-6 text-center">No response activity yet.</p>
+                  <p className="text-xs text-stone-400 dark:text-[#7A7570] py-6 text-center">No response activity yet.</p>
                 ) : (
                   <div className="space-y-3">
                     {history.map((log) => (
-                      <div key={log.id} className="border-l-2 border-stone-200 pl-3 py-0.5 space-y-0.5">
-                        <div className="flex items-center gap-2 text-stone-500 text-[11px]">
+                      <div key={log.id} className="border-l-2 border-stone-200 dark:border-[#3A3835] pl-3 py-0.5 space-y-0.5">
+                        <div className="flex items-center gap-2 text-stone-500 dark:text-[#7A7570] text-[11px]">
                           <span className="tabular-nums">
                             {new Date(log.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
                           </span>
                           <span>·</span>
-                          <span className="font-medium text-stone-800 capitalize">
+                          <span className="font-medium text-stone-800 dark:text-[#F0EBE3] capitalize">
                             {(log.action_type || 'Activity').replace(/_/g, ' ')}
                           </span>
                         </div>
-                        <p className="text-xs text-stone-700 leading-relaxed">{log.safe_summary}</p>
+                        <p className="text-xs text-stone-700 dark:text-[#B8B0A5] leading-relaxed">{log.safe_summary}</p>
                       </div>
                     ))}
                   </div>
@@ -931,11 +931,11 @@ export const AdminEscalationsView: React.FC = () => {
 
       {/* Delete Rule Confirmation Modal (Prompt Section 36) */}
       {deletingPolicyId && (
-        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white border border-stone-200 rounded-2xl p-6 shadow-xl max-w-sm w-full space-y-4 text-left">
+        <div className="fixed inset-0 bg-stone-900/40 dark:bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white dark:bg-[#21211E] border border-stone-200 dark:border-[#302E29] rounded-2xl p-6 shadow-xl max-w-sm w-full space-y-4 text-left">
             <div className="space-y-1.5">
-              <h3 className="text-base font-semibold text-stone-900">Delete this response rule?</h3>
-              <p className="text-xs text-stone-500 leading-relaxed">
+              <h3 className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">Delete this response rule?</h3>
+              <p className="text-xs text-stone-500 dark:text-[#7A7570] leading-relaxed">
                 This rule will no longer be used for future safety concerns.
               </p>
             </div>
@@ -943,14 +943,14 @@ export const AdminEscalationsView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setDeletingPolicyId(null)}
-                className="px-3.5 py-2 border border-stone-200 rounded-lg text-xs font-medium text-stone-600 hover:bg-stone-50 cursor-pointer"
+                className="px-3.5 py-2 border border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#262520] rounded-lg text-xs font-medium text-stone-600 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#2A2926] dark:hover:text-[#F0EBE3] cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => confirmDeletePolicy(deletingPolicyId)}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold cursor-pointer"
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-600 text-white rounded-lg text-xs font-semibold cursor-pointer"
               >
                 Delete rule
               </button>
@@ -961,37 +961,37 @@ export const AdminEscalationsView: React.FC = () => {
 
       {/* Rule Preview Modal (Prompt Section 27, 29) */}
       {previewPolicy && (
-        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white border border-stone-200 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-xl text-left">
-            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+        <div className="fixed inset-0 bg-stone-900/40 dark:bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white dark:bg-[#21211E] border border-stone-200 dark:border-[#302E29] rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-xl text-left">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-[#302E29]">
               <div>
-                <h3 className="text-base font-semibold text-stone-900">
+                <h3 className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">
                   {humanizeRuleTitle(previewPolicy.name)}
                 </h3>
-                <span className="text-[11px] text-stone-500 block">Response sequence preview</span>
+                <span className="text-[11px] text-stone-500 dark:text-[#7A7570] block">Response sequence preview</span>
               </div>
               <button
                 onClick={() => setPreviewPolicy(null)}
-                className="text-stone-400 hover:text-stone-600 p-1 cursor-pointer"
+                className="text-stone-400 dark:text-[#7A7570] hover:text-stone-600 dark:hover:text-[#F0EBE3] p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="space-y-3 text-xs">
-              <div className="p-3 bg-stone-50 rounded-lg border border-stone-200/70 space-y-1">
-                <span className="font-medium text-stone-800 block">When this happens:</span>
-                <p className="text-stone-600">{getHumanTrigger(previewPolicy.condition_key)}</p>
+              <div className="p-3 bg-stone-50 dark:bg-[#1D1D1A] rounded-lg border border-stone-200/70 dark:border-[#302E29] space-y-1">
+                <span className="font-medium text-stone-800 dark:text-[#F0EBE3] block">When this happens:</span>
+                <p className="text-stone-600 dark:text-[#B8B0A5]">{getHumanTrigger(previewPolicy.condition_key)}</p>
               </div>
 
               <div className="space-y-2">
-                <span className="font-medium text-stone-800 block">Response steps:</span>
+                <span className="font-medium text-stone-800 dark:text-[#F0EBE3] block">Response steps:</span>
                 {previewPolicy.steps && previewPolicy.steps.map((step: any, idx: number) => (
-                  <div key={idx} className="p-3 bg-stone-50 rounded-lg border border-stone-200/70 space-y-1">
-                    <span className="font-semibold text-stone-700 block">
+                  <div key={idx} className="p-3 bg-stone-50 dark:bg-[#1D1D1A] rounded-lg border border-stone-200/70 dark:border-[#302E29] space-y-1">
+                    <span className="font-semibold text-stone-700 dark:text-[#F0EBE3] block">
                       {idx === 0 ? 'First response' : 'If there is still no response'}
                     </span>
-                    <p className="text-stone-600">
+                    <p className="text-stone-600 dark:text-[#B8B0A5]">
                       If no one responds within {step.wait_seconds} seconds, notify {humanizeTarget(step.target_team_key || step.target_responsibility_key)} by {humanizeChannels(step.channels)}.
                     </p>
                   </div>
@@ -999,10 +999,10 @@ export const AdminEscalationsView: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex justify-end pt-3 border-t border-stone-100">
+            <div className="flex justify-end pt-3 border-t border-stone-100 dark:border-[#302E29]">
               <button
                 onClick={() => setPreviewPolicy(null)}
-                className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold cursor-pointer"
+                className="px-4 py-2 bg-stone-900 hover:bg-stone-800 dark:bg-[#262520] dark:hover:bg-[#2A2926] text-white dark:text-[#F0EBE3] border border-transparent dark:border-[#3A3835] rounded-lg text-xs font-semibold cursor-pointer"
               >
                 Close
               </button>

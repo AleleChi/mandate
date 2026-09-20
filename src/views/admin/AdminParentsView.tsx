@@ -321,19 +321,19 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
         className="fixed inset-0 bg-black/50"
         style={{ backdropFilter: 'blur(2px)' }}
       />
-      <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
-        <div className="flex items-center gap-3 mb-4 text-amber-600">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
+        <div className="flex items-center gap-3 mb-4 text-amber-600 dark:text-amber-400">
           <AlertTriangle className="w-5 h-5 shrink-0" />
-          <h4 className="font-semibold text-base text-[#18181B]">
+          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
             Remove this parent?
           </h4>
         </div>
-        <p className="text-xs text-zinc-500 mb-4 leading-relaxed">
+        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-4 leading-relaxed">
           Their account will move to Removed and can be restored later.
         </p>
         <form onSubmit={handleRemoveParentSubmit} className="space-y-4">
           <div>
-            <label className="text-zinc-500 text-[10px] font-semibold uppercase tracking-wider block mb-1.5">
+            <label className="text-zinc-500 dark:text-[#7A7570] text-[10px] font-semibold uppercase tracking-wider block mb-1.5">
               Reason for removal (optional)
             </label>
             <textarea
@@ -341,10 +341,10 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
               value={removeReason}
               onChange={(e) => setRemoveReason(e.target.value)}
               rows={3}
-              className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] focus:outline-none focus:border-red-400 transition-all bg-zinc-50 resize-none text-zinc-700"
+              className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] focus:outline-none focus:border-red-400 transition-all bg-zinc-50 dark:bg-[#262520] resize-none text-zinc-700 dark:text-[#F0EBE3]"
             />
           </div>
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
             <Button
               type="button"
               onClick={() => setParentToRemove(null)}
@@ -375,17 +375,17 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
         className="fixed inset-0 bg-black/50"
         style={{ backdropFilter: 'blur(2px)' }}
       />
-      <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
         <div className="flex items-center gap-3 text-emerald-600 mb-4">
           <RotateCcw className="w-5 h-5 shrink-0" />
-          <h4 className="font-semibold text-base text-[#18181B]">
+          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
             Restore this parent?
           </h4>
         </div>
-        <p className="text-xs text-zinc-500 mb-6 leading-relaxed">
+        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-6 leading-relaxed">
           This parent will be restored and will appear under Active parents again.
         </p>
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
           <Button
             onClick={() => setParentToRestore(null)}
             variant="secondary"
@@ -414,17 +414,17 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
         onClick={() => !submittingDelete && setParentToDelete(null)}
         style={{ backdropFilter: 'blur(2px)' }}
       />
-      <div className="relative bg-[#FFFDF9] border border-red-200 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-red-200 dark:border-red-900/40 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
         <div className="flex items-center gap-2 text-red-600">
           <Trash2 className="w-5 h-5 shrink-0" />
-          <h3 className="font-semibold text-base text-[#18181B]">
+          <h3 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
             Delete {getDisplayName(parentToDelete)} permanently?
           </h3>
         </div>
-        <p className="text-xs text-zinc-600 leading-relaxed">
+        <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
           This cannot be undone. The selected parent record will be permanently removed.
         </p>
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
           <Button
             type="button"
             onClick={() => setParentToDelete(null)}
@@ -456,17 +456,17 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
         className="fixed inset-0 bg-black/50"
         style={{ backdropFilter: 'blur(2px)' }}
       />
-      <div className="relative bg-[#FFFDF9] border border-red-200 rounded-3xl w-full max-w-md shadow-2xl p-6 space-y-4">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-red-200 dark:border-red-900/40 rounded-3xl w-full max-w-md shadow-2xl p-6 space-y-4">
         <div className="flex items-center gap-2 text-red-600">
           <Trash2 className="w-5 h-5 shrink-0" />
-          <h3 className="font-semibold text-base text-[#18181B]">
+          <h3 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
             Delete {selectedParentIds.length} parents permanently?
           </h3>
         </div>
-        <p className="text-xs text-zinc-600 leading-relaxed">
+        <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
           This cannot be undone. The selected parent records will be permanently removed.
         </p>
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
           <Button
             type="button"
             onClick={() => setShowBulkPurgeModal(false)}
@@ -498,19 +498,19 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
         className="fixed inset-0 bg-black/50"
         style={{ backdropFilter: 'blur(2px)' }}
       />
-      <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
         <div className="flex items-center gap-3 text-red-600 mb-4">
           <Trash2 className="w-5 h-5 shrink-0" />
-          <h4 className="font-semibold text-base text-[#18181B]">
+          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
             Remove {selectedParentIds.length} parents?
           </h4>
         </div>
-        <p className="text-xs text-zinc-500 mb-4 leading-relaxed">
+        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-4 leading-relaxed">
           These parents will be moved to the Removed tab. All linked children, event registrations, attendance records, and audit history will be safely preserved. You can restore these parents at any time.
         </p>
         <form onSubmit={handleBulkRemoveSubmit} className="space-y-4">
           <div>
-            <label className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block mb-1">
+            <label className="text-[10px] font-semibold text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block mb-1">
               Reason (optional)
             </label>
             <input
@@ -518,10 +518,10 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
               value={bulkRemoveReason}
               onChange={(e) => setBulkRemoveReason(e.target.value)}
               placeholder="e.g., Requested account closure"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-[#EAE8E1] bg-white focus:outline-none focus:border-[#C59B27] text-zinc-800"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] focus:outline-none focus:border-[#C59B27] text-zinc-800 dark:text-[#F0EBE3]"
             />
           </div>
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
             <Button
               type="button"
               onClick={() => setShowBulkRemoveModal(false)}
@@ -553,17 +553,17 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
         className="fixed inset-0 bg-black/50"
         style={{ backdropFilter: 'blur(2px)' }}
       />
-      <div className="relative bg-[#FFFDF9] border border-[#EAE8E1] rounded-3xl w-full max-w-md shadow-2xl p-6">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
         <div className="flex items-center gap-3 text-emerald-600 mb-4">
           <RotateCcw className="w-5 h-5 shrink-0" />
-          <h4 className="font-semibold text-base text-[#18181B]">
+          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
             Restore {selectedParentIds.length} parents?
           </h4>
         </div>
-        <p className="text-xs text-zinc-500 mb-6 leading-relaxed">
+        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-6 leading-relaxed">
           These parent profiles will be restored and will appear under Active parents again.
         </p>
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1]">
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
           <Button
             type="button"
             onClick={() => setShowBulkRestoreModal(false)}
@@ -574,7 +574,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
             Cancel
           </Button>
           <Button
-            type="button"
+            type="submit"
             onClick={handleBulkRestoreSubmit}
             loading={submittingBulkRestore}
             disabled={submittingBulkRestore}
@@ -603,12 +603,12 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       {bulkPurgeModal}
 
       {/* 1. Header */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 pb-4 border-b border-[#EAE8E1]">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 pb-4 border-b border-[#EAE8E1] dark:border-[#302E29]">
         <div>
-          <h1 className="type-h1-app text-[#18181B]">
+          <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
             Parents
           </h1>
-          <p className="text-xs text-zinc-500 mt-1">
+          <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">
             View parent details, contact information and the children connected to each account.
           </p>
         </div>
@@ -623,39 +623,39 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       </div>
 
       {/* 2. Restrained Summary Strip */}
-      <div className="bg-white border border-[#EAE8E1] rounded-2xl px-6 py-4">
-        <div className="flex items-center divide-x divide-[#EAE8E1] overflow-x-auto">
+      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl px-6 py-4">
+        <div className="flex items-center divide-x divide-[#EAE8E1] dark:divide-[#302E29] overflow-x-auto">
           <div className="pr-8 shrink-0">
-            <p className="text-[10px] text-zinc-400 mb-0.5">Parents</p>
-            <p className="text-lg font-semibold text-[#18181B]">{stats.parents}</p>
+            <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-0.5">Parents</p>
+            <p className="text-lg font-semibold text-[#18181B] dark:text-[#F0EBE3]">{stats.parents}</p>
           </div>
           <div className="px-8 shrink-0">
-            <p className="text-[10px] text-zinc-400 mb-0.5">Children linked</p>
-            <p className="text-lg font-semibold text-zinc-700">{stats.childrenLinked}</p>
+            <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-0.5">Children linked</p>
+            <p className="text-lg font-semibold text-zinc-700 dark:text-[#B8B0A5]">{stats.childrenLinked}</p>
           </div>
           <div className="px-8 shrink-0">
-            <p className="text-[10px] text-zinc-400 mb-0.5">Team members</p>
-            <p className="text-lg font-semibold text-zinc-700">{stats.teamMembers}</p>
+            <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-0.5">Team members</p>
+            <p className="text-lg font-semibold text-zinc-700 dark:text-[#B8B0A5]">{stats.teamMembers}</p>
           </div>
           <div className="px-8 shrink-0">
-            <p className="text-[10px] text-zinc-400 mb-0.5">WhatsApp numbers</p>
-            <p className="text-lg font-semibold text-zinc-700">{stats.whatsAppNumbers}</p>
+            <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-0.5">WhatsApp numbers</p>
+            <p className="text-lg font-semibold text-zinc-700 dark:text-[#B8B0A5]">{stats.whatsAppNumbers}</p>
           </div>
           <div className="pl-8 shrink-0">
-            <p className="text-[10px] text-zinc-400 mb-0.5">Opted in</p>
-            <p className="text-lg font-semibold text-zinc-700">{stats.whatsAppOptedIn}</p>
+            <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-0.5">Opted in</p>
+            <p className="text-lg font-semibold text-zinc-700 dark:text-[#B8B0A5]">{stats.whatsAppOptedIn}</p>
           </div>
         </div>
       </div>
 
       {/* 3. Text Tabs */}
-      <div className="flex border-b border-[#EAE8E1]" id="parents-directory-tabs">
+      <div className="flex border-b border-[#EAE8E1] dark:border-[#302E29]" id="parents-directory-tabs">
         <button
           onClick={() => handleTabChange('active')}
           className={`px-4 py-2.5 text-xs font-medium transition-all border-b-2 cursor-pointer focus:outline-none ${
             activeTab === 'active'
-              ? 'border-[#C59B27] text-[#18181B]'
-              : 'border-transparent text-zinc-400 hover:text-zinc-600'
+              ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3]'
+              : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5]'
           }`}
           id="tab-active-parents"
         >
@@ -665,8 +665,8 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
           onClick={() => handleTabChange('removed')}
           className={`px-4 py-2.5 text-xs font-medium transition-all border-b-2 cursor-pointer focus:outline-none ${
             activeTab === 'removed'
-              ? 'border-[#C59B27] text-[#18181B]'
-              : 'border-transparent text-zinc-400 hover:text-zinc-600'
+              ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3]'
+              : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5]'
           }`}
           id="tab-removed-parents"
         >
@@ -675,21 +675,21 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       </div>
 
       {/* 4. Search Filter */}
-      <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 flex gap-3 items-center">
+      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 flex gap-3 items-center">
         <div className="relative w-full">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 dark:text-[#7A7570]" />
           <input
             type="text"
             placeholder="Search by name, email or phone"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-xs rounded-xl border border-[#EAE8E1] focus:outline-none focus:border-[#C59B27] transition-all bg-zinc-50/50"
+            className="w-full pl-10 pr-4 py-2 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] focus:outline-none focus:border-[#C59B27] transition-all bg-zinc-50/50 dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#5A5550]"
           />
         </div>
         {searchQuery && (
           <button
             onClick={() => setSearchQuery('')}
-            className="text-xs text-zinc-400 hover:text-zinc-700 transition-colors shrink-0 ml-1 cursor-pointer focus:outline-none"
+            className="text-xs text-zinc-400 dark:text-[#7A7570] hover:text-zinc-700 dark:hover:text-[#F0EBE3] transition-colors shrink-0 ml-1 cursor-pointer focus:outline-none"
           >
             Clear
           </button>
@@ -698,18 +698,18 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
 
       {/* Contextual Action Bar */}
       {selectedParentIds.length > 0 && (
-        <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-2xl px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs animate-fade-in mb-4">
+        <div className="bg-[#FAF9F5] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs animate-fade-in mb-4">
           <div className="flex items-center gap-3">
-            <span className="font-semibold text-[#18181B] whitespace-nowrap">
+            <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] whitespace-nowrap">
               {selectedParentIds.length} selected
             </span>
-            <div className="h-4 w-px bg-[#EAE8E1] hidden sm:block" />
+            <div className="h-4 w-px bg-[#EAE8E1] dark:bg-[#302E29] hidden sm:block" />
             <div className="flex flex-wrap items-center gap-2">
               {activeTab === 'active' ? (
                 <button
                   type="button"
                   onClick={() => setShowBulkRemoveModal(true)}
-                  className="px-3.5 py-1.5 rounded-xl bg-white border border-red-200 text-red-600 font-medium hover:bg-red-50 transition-colors focus:outline-none cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-[#262520] border border-red-200 dark:border-red-900/40 text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors focus:outline-none cursor-pointer"
                 >
                   Remove
                 </button>
@@ -732,10 +732,10 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                         setShowBulkPurgeModal(true);
                       }}
                       disabled={submittingBulkPurge}
-                      className="px-3.5 py-1.5 rounded-xl bg-white border border-red-200 text-red-600 font-medium hover:bg-red-50 transition-colors focus:outline-none cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                      className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-[#262520] border border-red-200 dark:border-red-900/40 text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors focus:outline-none cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
                       id="bulk-parent-permanent-delete-btn"
                     >
-                      <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                      <Trash2 className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
                       <span>Delete permanently</span>
                     </button>
                   )}
@@ -746,7 +746,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
           <button
             type="button"
             onClick={() => setSelectedParentIds([])}
-            className="text-zinc-500 hover:text-[#18181B] text-xs font-medium underline-offset-4 hover:underline transition-colors cursor-pointer"
+            className="text-zinc-500 dark:text-[#7A7570] hover:text-[#18181B] dark:hover:text-[#F0EBE3] text-xs font-medium underline-offset-4 hover:underline transition-colors cursor-pointer"
           >
             Clear selection
           </button>
@@ -754,7 +754,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       )}
 
       {/* 5. Parent Table */}
-      <div className="bg-white border border-[#EAE8E1] rounded-3xl overflow-hidden shadow-xs">
+      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl overflow-hidden shadow-xs">
         {loading ? (
           <div className="p-8">
             <KoinoniaInlineLoader
@@ -765,20 +765,20 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
             />
           </div>
         ) : parents.length === 0 ? (
-          <div className="text-center py-16 text-zinc-400 space-y-2">
-            <Users className="w-7 h-7 stroke-[1.5] mx-auto text-zinc-300" />
-            <p className="text-sm text-zinc-500 font-medium">
+          <div className="text-center py-16 text-zinc-400 dark:text-[#5A5550] space-y-2">
+            <Users className="w-7 h-7 stroke-[1.5] mx-auto text-zinc-300 dark:text-[#5A5550]" />
+            <p className="text-sm text-zinc-500 dark:text-[#B8B0A5] font-medium">
               {activeTab === 'active' ? 'No active parents found.' : 'No removed parents.'}
             </p>
             {searchQuery && (
-              <p className="text-xs text-zinc-400">No results matching "{searchQuery}".</p>
+              <p className="text-xs text-zinc-400 dark:text-[#7A7570]">No results matching "{searchQuery}".</p>
             )}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left text-xs">
               <thead>
-                <tr className="bg-[#FAF9F6] border-b border-[#EAE8E1] text-zinc-500">
+                <tr className="bg-[#FAF9F6] dark:bg-[#21211E] border-b border-[#EAE8E1] dark:border-[#302E29] text-zinc-500 dark:text-[#7A7570]">
                   <th className="p-4 pl-6 w-10 text-center">
                     <AdminSelectionCheckbox
                       checked={isAllVisibleSelected}
@@ -794,7 +794,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                   <th className="p-4 pr-6 text-right text-[11px] font-semibold">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#EAE8E1]">
+              <tbody className="divide-y divide-[#EAE8E1] dark:divide-[#302E29]">
                 {parents.map((p) => {
                   const displayName = getDisplayName(p);
                   const isRemoved = p.isDeleted || activeTab === 'removed';
@@ -803,7 +803,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                   return (
                     <tr
                       key={p.id}
-                      className={`transition-colors ${isSelected ? 'bg-[#FAF8F2]' : 'hover:bg-zinc-50/50'}`}
+                      className={`transition-colors ${isSelected ? 'bg-[#FAF8F2] dark:bg-[#262520]' : 'hover:bg-zinc-50/50 dark:hover:bg-[#21211E]/60'}`}
                       data-parent-row-id={p.id}
                     >
                       {/* Checkbox */}
@@ -823,18 +823,18 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                               src={p.photoUrl}
                               alt={displayName}
                               referrerPolicy="no-referrer"
-                              className="w-9 h-9 rounded-xl object-cover border border-[#EAE8E1] shrink-0"
+                              className="w-9 h-9 rounded-xl object-cover border border-[#EAE8E1] dark:border-[#3A3835] shrink-0"
                             />
                           ) : (
-                            <div className="w-9 h-9 rounded-xl bg-[#FAF9F6] border border-[#EAE8E1] flex items-center justify-center text-zinc-400 font-semibold shrink-0 text-sm uppercase">
+                            <div className="w-9 h-9 rounded-xl bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] flex items-center justify-center text-zinc-400 dark:text-[#7A7570] font-semibold shrink-0 text-sm uppercase">
                               {getInitials(displayName)}
                             </div>
                           )}
                           <div className="min-w-0">
-                            <span className="font-medium text-[#18181B] block text-xs leading-snug truncate">
+                            <span className="font-medium text-[#18181B] dark:text-[#F0EBE3] block text-xs leading-snug truncate">
                               {displayName}
                             </span>
-                            <span className="text-[10px] text-zinc-400 block truncate">
+                            <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block truncate">
                               {p.email || 'No email provided'}
                             </span>
                           </div>
@@ -843,7 +843,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
 
                       {/* Linked Children */}
                       <td className="p-4">
-                        <span className="text-zinc-600 text-xs">
+                        <span className="text-zinc-600 dark:text-[#B8B0A5] text-xs">
                           {formatChildrenCount(Number(p.childrenCount || 0))}
                         </span>
                       </td>
@@ -851,19 +851,19 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                       {/* Role */}
                       <td className="p-4">
                         {p.isKoinoniaWorker ? (
-                          <span className="text-xs font-medium text-[#C59B27]">
+                          <span className="text-xs font-medium text-[#C59B27] dark:text-amber-400">
                             Team member{p.department ? ` • ${p.department}` : ''}
                           </span>
                         ) : (
-                          <span className="text-xs text-zinc-500">Parent</span>
+                          <span className="text-xs text-zinc-500 dark:text-[#7A7570]">Parent</span>
                         )}
                       </td>
 
                       {/* Location */}
-                      <td className="p-4 text-zinc-500 text-xs">
+                      <td className="p-4 text-zinc-500 dark:text-[#7A7570] text-xs">
                         {p.city
                           ? `${p.city}${p.stateRegion ? `, ${p.stateRegion}` : ''}`
-                          : <span className="text-zinc-400 italic">Not provided</span>}
+                          : <span className="text-zinc-400 dark:text-[#5A5550] italic">Not provided</span>}
                       </td>
 
                       {/* Action buttons */}
@@ -871,7 +871,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                         <div className="inline-flex items-center gap-1.5 justify-end">
                           <button
                             onClick={() => onNavigate(`/admin/parents/${p.id}` as AppRoute)}
-                            className="px-3 py-1.5 text-xs font-medium text-[#18181B] bg-white hover:bg-zinc-50 border border-[#EAE8E1] hover:border-zinc-300 rounded-xl transition-all cursor-pointer focus:outline-none"
+                            className="px-3 py-1.5 text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] hover:border-zinc-300 dark:hover:border-[#4A4740] rounded-xl transition-all cursor-pointer focus:outline-none"
                           >
                             View profile
                           </button>
@@ -880,21 +880,21 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                           <div className="relative inline-block text-left" ref={openActionMenuId === p.id ? actionMenuRef : undefined}>
                             <button
                               onClick={() => setOpenActionMenuId(openActionMenuId === p.id ? null : p.id)}
-                              className="p-1.5 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer focus:outline-none"
+                              className="p-1.5 text-zinc-400 dark:text-[#7A7570] hover:text-zinc-700 dark:hover:text-[#F0EBE3] hover:bg-zinc-100 dark:hover:bg-[#262520] rounded-lg transition-colors cursor-pointer focus:outline-none"
                               aria-label="More options"
                             >
                               <MoreHorizontal className="w-4 h-4" />
                             </button>
 
                             {openActionMenuId === p.id && (
-                              <div className="absolute right-0 mt-1 w-44 bg-white border border-[#EAE8E1] rounded-2xl shadow-lg py-1 z-30 animate-fade-in text-left">
+                              <div className="absolute right-0 mt-1 w-44 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl shadow-lg py-1 z-30 animate-fade-in text-left">
                                 {!isRemoved ? (
                                   <button
                                     onClick={() => {
                                       setOpenActionMenuId(null);
                                       setParentToRemove(p);
                                     }}
-                                    className="w-full text-left px-3.5 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors cursor-pointer"
+                                    className="w-full text-left px-3.5 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2 transition-colors cursor-pointer"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                     <span>Remove parent</span>
@@ -906,21 +906,21 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                                         setOpenActionMenuId(null);
                                         setParentToRestore(p);
                                       }}
-                                      className="w-full text-left px-3.5 py-2 text-xs text-emerald-700 hover:bg-emerald-50 flex items-center gap-2 transition-colors cursor-pointer"
+                                      className="w-full text-left px-3.5 py-2 text-xs text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 flex items-center gap-2 transition-colors cursor-pointer"
                                     >
                                       <RotateCcw className="w-3.5 h-3.5" />
                                       <span>Restore parent</span>
                                     </button>
                                     {isSuperAdmin && (
                                       <>
-                                        <div className="h-px bg-zinc-100 my-1" />
+                                        <div className="h-px bg-zinc-100 dark:bg-[#302E29] my-1" />
                                         <button
                                           onClick={() => {
                                             setOpenActionMenuId(null);
                                             setParentToDelete(p);
                                             setDeleteConfirmationText('');
                                           }}
-                                          className="w-full text-left px-3.5 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors cursor-pointer"
+                                          className="w-full text-left px-3.5 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2 transition-colors cursor-pointer"
                                         >
                                           <Trash2 className="w-3.5 h-3.5" />
                                           <span>Delete permanently</span>

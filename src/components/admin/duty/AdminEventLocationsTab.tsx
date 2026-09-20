@@ -637,26 +637,26 @@ export default function AdminEventLocationsTab({
 
       {/* TOP SUMMARY (Section 9): Practical operational metrics */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 space-y-1 shadow-2xs">
-          <span className="text-[11px] font-sans font-medium text-zinc-500 block">
+        <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 space-y-1 shadow-2xs">
+          <span className="text-[11px] font-sans font-medium text-zinc-500 dark:text-[#7A7570] block">
             Locations
           </span>
-          <span className="text-2xl font-bold font-sans text-[#18181B] dark:text-[#F7F4ED] block">
+          <span className="text-2xl font-bold font-sans text-[#18181B] dark:text-[#F0EBE3] block">
             {summary.locations}
           </span>
         </div>
 
-        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 space-y-1 shadow-2xs">
-          <span className="text-[11px] font-sans font-medium text-zinc-500 block">
+        <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 space-y-1 shadow-2xs">
+          <span className="text-[11px] font-sans font-medium text-zinc-500 dark:text-[#7A7570] block">
             Volunteers assigned
           </span>
-          <span className="text-2xl font-bold font-sans text-[#18181B] dark:text-[#F7F4ED] block">
+          <span className="text-2xl font-bold font-sans text-[#18181B] dark:text-[#F0EBE3] block">
             {summary.volunteersAssigned}
           </span>
         </div>
 
-        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 space-y-1 shadow-2xs">
-          <span className="text-[11px] font-sans font-medium text-zinc-500 block">
+        <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 space-y-1 shadow-2xs">
+          <span className="text-[11px] font-sans font-medium text-zinc-500 dark:text-[#7A7570] block">
             Currently on duty
           </span>
           <span className="text-2xl font-bold font-sans text-emerald-700 dark:text-emerald-400 block">
@@ -664,11 +664,11 @@ export default function AdminEventLocationsTab({
           </span>
         </div>
 
-        <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 space-y-1 shadow-2xs">
-          <span className="text-[11px] font-sans font-medium text-zinc-500 block">
+        <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 space-y-1 shadow-2xs">
+          <span className="text-[11px] font-sans font-medium text-zinc-500 dark:text-[#7A7570] block">
             Still expected
           </span>
-          <span className="text-2xl font-bold font-sans text-[#A47E1F] dark:text-[#C59B27] block">
+          <span className="text-2xl font-bold font-sans text-[#A47E1F] dark:text-amber-400 block">
             {summary.stillExpected}
           </span>
         </div>
@@ -682,8 +682,8 @@ export default function AdminEventLocationsTab({
             onClick={() => setFilterType('all')}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-sans font-medium transition-all cursor-pointer whitespace-nowrap ${
               filterType === 'all'
-                ? 'bg-[#18181B] text-white shadow-2xs'
-                : 'bg-white border border-[#EAE8E1] text-zinc-600 hover:text-zinc-900'
+                ? 'bg-[#18181B] dark:bg-[#2A2926] text-white dark:text-[#F0EBE3] dark:border dark:border-[#3A3835] shadow-2xs'
+                : 'bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] text-zinc-600 dark:text-[#B8B0A5] hover:text-zinc-900 dark:hover:text-[#F0EBE3]'
             }`}
           >
             All locations
@@ -693,8 +693,8 @@ export default function AdminEventLocationsTab({
             onClick={() => setFilterType('rooms')}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-sans font-medium transition-all cursor-pointer whitespace-nowrap ${
               filterType === 'rooms'
-                ? 'bg-[#18181B] text-white shadow-2xs'
-                : 'bg-white border border-[#EAE8E1] text-zinc-600 hover:text-zinc-900'
+                ? 'bg-[#18181B] dark:bg-[#2A2926] text-white dark:text-[#F0EBE3] dark:border dark:border-[#3A3835] shadow-2xs'
+                : 'bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] text-zinc-600 dark:text-[#B8B0A5] hover:text-zinc-900 dark:hover:text-[#F0EBE3]'
             }`}
           >
             Rooms
@@ -704,8 +704,8 @@ export default function AdminEventLocationsTab({
             onClick={() => setFilterType('entry')}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-sans font-medium transition-all cursor-pointer whitespace-nowrap ${
               filterType === 'entry'
-                ? 'bg-[#18181B] text-white shadow-2xs'
-                : 'bg-white border border-[#EAE8E1] text-zinc-600 hover:text-zinc-900'
+                ? 'bg-[#18181B] dark:bg-[#2A2926] text-white dark:text-[#F0EBE3] dark:border dark:border-[#3A3835] shadow-2xs'
+                : 'bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] text-zinc-600 dark:text-[#B8B0A5] hover:text-zinc-900 dark:hover:text-[#F0EBE3]'
             }`}
           >
             Entry points
@@ -715,8 +715,8 @@ export default function AdminEventLocationsTab({
             onClick={() => setFilterType('pickup')}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-sans font-medium transition-all cursor-pointer whitespace-nowrap ${
               filterType === 'pickup'
-                ? 'bg-[#18181B] text-white shadow-2xs'
-                : 'bg-white border border-[#EAE8E1] text-zinc-600 hover:text-zinc-900'
+                ? 'bg-[#18181B] dark:bg-[#2A2926] text-white dark:text-[#F0EBE3] dark:border dark:border-[#3A3835] shadow-2xs'
+                : 'bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] text-zinc-600 dark:text-[#B8B0A5] hover:text-zinc-900 dark:hover:text-[#F0EBE3]'
             }`}
           >
             Pickup points
@@ -724,13 +724,13 @@ export default function AdminEventLocationsTab({
         </div>
 
         <div className="relative w-full sm:w-64">
-          <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Search locations"
-            className="w-full pl-9 pr-3.5 py-1.5 bg-white border border-[#EAE8E1] rounded-xl text-xs font-sans text-zinc-800 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27] shadow-2xs"
+            className="w-full pl-9 pr-3.5 py-1.5 bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-xs font-sans text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 shadow-2xs"
           />
         </div>
       </div>
@@ -739,7 +739,7 @@ export default function AdminEventLocationsTab({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
         {/* LEFT PANEL: Clean Location List (Section 10) */}
-        <div className="lg:col-span-5 bg-white border border-[#EAE8E1] rounded-2xl divide-y divide-[#EAE8E1] overflow-hidden shadow-xs">
+        <div className="lg:col-span-5 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl divide-y divide-[#EAE8E1] dark:divide-[#302E29] overflow-hidden shadow-xs">
           {loading && locations.length === 0 ? (
             <div className="p-8 text-center space-y-2 text-xs text-zinc-400">
               <RefreshCw className="w-4 h-4 animate-spin mx-auto text-[#C59B27]" />
@@ -747,10 +747,10 @@ export default function AdminEventLocationsTab({
             </div>
           ) : filteredLocations.length === 0 ? (
             <div className="p-8 text-center space-y-3">
-              <MapPin className="w-6 h-6 text-zinc-300 mx-auto" />
+              <MapPin className="w-6 h-6 text-zinc-300 dark:text-[#7A7570] mx-auto" />
               <div className="space-y-1">
-                <p className="text-xs font-medium text-zinc-800">No duty locations yet</p>
-                <p className="text-[11px] text-zinc-500 max-w-xs mx-auto">
+                <p className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">No duty locations yet</p>
+                <p className="text-[11px] text-zinc-500 dark:text-[#B8B0A5] max-w-xs mx-auto">
                   Add rooms, entry points or pickup areas volunteers will use during this event.
                 </p>
               </div>
@@ -771,30 +771,30 @@ export default function AdminEventLocationsTab({
                   onClick={() => setSelectedLocation(loc)}
                   className={`p-4 transition-all cursor-pointer select-none space-y-1.5 ${
                     isSelected
-                      ? 'bg-[#FAF9F6] border-l-4 border-l-[#C59B27]'
-                      : 'hover:bg-zinc-50/80 border-l-4 border-l-transparent'
+                      ? 'bg-[#FAF9F6] dark:bg-amber-950/20 border-l-4 border-l-[#C59B27]'
+                      : 'hover:bg-zinc-50/80 dark:hover:bg-[#262520] border-l-4 border-l-transparent'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <h3 className="text-sm font-sans font-semibold text-[#18181B]">
+                      <h3 className="text-sm font-sans font-semibold text-[#18181B] dark:text-[#F0EBE3]">
                         {loc.name}
                       </h3>
-                      <p className="text-xs font-sans text-zinc-500 mt-0.5">
+                      <p className="text-xs font-sans text-zinc-500 dark:text-[#B8B0A5] mt-0.5">
                         {loc.ageGroupKey || 'All ages'}
                         {loc.capacity ? ` · ${loc.capacity} child cap` : ''}
                       </p>
                     </div>
 
                     <span className="flex items-center space-x-1.5 shrink-0 text-[11px] font-sans">
-                      <span className={`w-1.5 h-1.5 rounded-full ${loc.isActive ? 'bg-emerald-500' : 'bg-zinc-300'}`} />
-                      <span className={loc.isActive ? 'text-zinc-700 font-medium' : 'text-zinc-400'}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${loc.isActive ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-600'}`} />
+                      <span className={loc.isActive ? 'text-zinc-700 dark:text-[#B8B0A5] font-medium' : 'text-zinc-400 dark:text-[#7A7570]'}>
                         {loc.isActive ? 'Open' : 'Closed'}
                       </span>
                     </span>
                   </div>
 
-                  <div className="text-xs font-sans text-zinc-600 pt-0.5">
+                  <div className="text-xs font-sans text-zinc-600 dark:text-[#7A7570] pt-0.5">
                     <span>{loc.assignedCount || 0} / {loc.volunteerCapacity ?? '—'} assigned · {loc.presentCount || 0} on duty</span>
                   </div>
                 </div>
@@ -806,15 +806,15 @@ export default function AdminEventLocationsTab({
         {/* RIGHT PANEL: Location Details (Section 11, 12, 14) */}
         <div className="lg:col-span-7">
           {selectedLocation ? (
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-5 sm:p-6 space-y-6 shadow-xs">
+            <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-5 sm:p-6 space-y-6 shadow-xs">
 
               {/* DETAIL HEADER */}
-              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-5 border-b border-[#EAE8E1]">
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-5 border-b border-[#EAE8E1] dark:border-[#302E29]">
                 <div className="space-y-1">
-                  <h2 className="text-2xl font-bold font-sans text-[#18181B] dark:text-[#F7F4ED] tracking-tight">
+                  <h2 className="text-2xl font-bold font-sans text-[#18181B] dark:text-[#F0EBE3] tracking-tight">
                     {selectedLocation.name}
                   </h2>
-                  <div className="text-xs font-sans text-zinc-600">
+                  <div className="text-xs font-sans text-zinc-600 dark:text-[#B8B0A5]">
                     <span>{selectedLocation.ageGroupKey || 'All ages'}</span>
                     <span> · </span>
                     <span>Child capacity: {selectedLocation.capacity ? selectedLocation.capacity : '—'}</span>
@@ -825,7 +825,7 @@ export default function AdminEventLocationsTab({
                     <span> · </span>
                     <span>Team {selectedLocation.teamKey || 'General'}</span>
                   </div>
-                  <div className="text-xs font-sans font-medium text-emerald-800 pt-0.5">
+                  <div className="text-xs font-sans font-medium text-emerald-800 dark:text-emerald-400 pt-0.5">
                     On duty: {onDutyResponders.length} of {assignedResponders.length} present
                   </div>
                 </div>
@@ -834,18 +834,18 @@ export default function AdminEventLocationsTab({
                   <button
                     type="button"
                     onClick={() => openEditModal(selectedLocation)}
-                    className="px-3 py-1.5 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 text-xs font-semibold rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 shadow-2xs"
+                    className="px-3 py-1.5 bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#B8B0A5] text-xs font-semibold rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 shadow-2xs"
                   >
-                    <Edit className="w-3.5 h-3.5 text-zinc-500" />
+                    <Edit className="w-3.5 h-3.5 text-zinc-500 dark:text-[#7A7570]" />
                     <span>Edit</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setShowQRModal(true)}
-                    className="px-3 py-1.5 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 text-xs font-semibold rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 shadow-2xs"
+                    className="px-3 py-1.5 bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#B8B0A5] text-xs font-semibold rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 shadow-2xs"
                   >
-                    <Printer className="w-3.5 h-3.5 text-zinc-500" />
+                    <Printer className="w-3.5 h-3.5 text-zinc-500 dark:text-[#7A7570]" />
                     <span>Print QR</span>
                   </button>
 
@@ -854,18 +854,18 @@ export default function AdminEventLocationsTab({
                     onClick={() => setLocToToggleActive(selectedLocation)}
                     className={`px-3 py-1.5 border rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center space-x-1.5 shadow-2xs ${
                       selectedLocation.isActive
-                        ? 'bg-zinc-50 border-[#EAE8E1] hover:bg-zinc-100 text-zinc-700'
-                        : 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100 text-emerald-800'
+                        ? 'bg-zinc-50 dark:bg-[#262520] border-[#EAE8E1] dark:border-[#3A3835] hover:bg-zinc-100 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#B8B0A5]'
+                        : 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300'
                     }`}
                   >
                     {selectedLocation.isActive ? (
                       <>
-                        <Pause className="w-3.5 h-3.5 text-zinc-500" />
+                        <Pause className="w-3.5 h-3.5 text-zinc-500 dark:text-[#7A7570]" />
                         <span>Close location</span>
                       </>
                     ) : (
                       <>
-                        <Play className="w-3.5 h-3.5 text-emerald-600" />
+                        <Play className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                         <span>Reopen location</span>
                       </>
                     )}
@@ -874,42 +874,42 @@ export default function AdminEventLocationsTab({
               </div>
 
               {/* STAFF ON-DUTY SECTION (Section 14) */}
-              <div className="space-y-4 pb-5 border-b border-[#EAE8E1]">
+              <div className="space-y-4 pb-5 border-b border-[#EAE8E1] dark:border-[#302E29]">
                 {/* On duty now */}
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-zinc-700">
+                    <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-zinc-700 dark:text-[#F0EBE3]">
                       On duty now
                     </h3>
-                    <span className="text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                    <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 px-2 py-0.5 rounded-full">
                       {onDutyResponders.length} present
                     </span>
                   </div>
 
                   {coverageLoading ? (
-                    <div className="p-4 text-center text-xs text-zinc-400 space-y-1">
+                    <div className="p-4 text-center text-xs text-zinc-400 dark:text-[#7A7570] space-y-1">
                       <RefreshCw className="w-3.5 h-3.5 animate-spin mx-auto text-[#C59B27]" />
                       <span>Checking presence…</span>
                     </div>
                   ) : onDutyResponders.length === 0 ? (
-                    <p className="text-xs text-zinc-500 font-sans italic bg-[#FAF9F6] p-3 rounded-xl border border-[#EAE8E1]">
+                    <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] font-sans italic bg-[#FAF9F6] dark:bg-[#1D1D1A] p-3 rounded-xl border border-[#EAE8E1] dark:border-[#302E29]">
                       No volunteers currently on duty at this location.
                     </p>
                   ) : (
-                    <div className="divide-y divide-zinc-100 border border-[#EAE8E1] rounded-xl overflow-hidden">
+                    <div className="divide-y divide-zinc-100 dark:divide-[#302E29] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl overflow-hidden">
                       {onDutyResponders.map((resp: any) => (
-                        <div key={resp.id || resp.userId} className="p-3 flex items-center justify-between text-xs font-sans bg-white hover:bg-zinc-50/50">
+                        <div key={resp.id || resp.userId} className="p-3 flex items-center justify-between text-xs font-sans bg-white dark:bg-[#1D1D1A] hover:bg-zinc-50/50 dark:hover:bg-[#262520]">
                           <div>
-                            <div className="font-semibold text-[#18181B]">{resp.fullName || 'Volunteer'}</div>
-                            <div className="text-[11px] text-zinc-500 flex items-center space-x-1 pt-0.5">
-                              <Clock className="w-3 h-3 text-zinc-400" />
+                            <div className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">{resp.fullName || 'Volunteer'}</div>
+                            <div className="text-[11px] text-zinc-500 dark:text-[#7A7570] flex items-center space-x-1 pt-0.5">
+                              <Clock className="w-3 h-3 text-zinc-400 dark:text-[#7A7570]" />
                               <span>Reported {formatDisplayTime(resp.startedAt)}</span>
                             </div>
                           </div>
                           <button
                             type="button"
                             onClick={() => handleModifyPresence(resp.userId, 'end_duty')}
-                            className="px-2.5 py-1 text-zinc-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center space-x-1"
+                            className="px-2.5 py-1 text-zinc-500 hover:text-rose-700 hover:bg-rose-50 dark:text-[#7A7570] dark:hover:text-red-400 dark:hover:bg-red-950/20 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center space-x-1"
                             title="End duty for this volunteer"
                           >
                             <LogOut className="w-3 h-3" />
@@ -924,30 +924,30 @@ export default function AdminEventLocationsTab({
                 {/* Still expected */}
                 <div className="space-y-2.5 pt-2">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-zinc-700">
+                    <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-zinc-700 dark:text-[#F0EBE3]">
                       Still expected
                     </h3>
-                    <span className="text-xs font-medium text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full">
+                    <span className="text-xs font-medium text-zinc-500 dark:text-[#B8B0A5] bg-zinc-100 dark:bg-[#262520] px-2 py-0.5 rounded-full">
                       {stillExpectedResponders.length} expected
                     </span>
                   </div>
 
                   {stillExpectedResponders.length === 0 ? (
-                    <p className="text-xs text-zinc-500 font-sans italic bg-[#FAF9F6] p-3 rounded-xl border border-[#EAE8E1]">
+                    <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] font-sans italic bg-[#FAF9F6] dark:bg-[#1D1D1A] p-3 rounded-xl border border-[#EAE8E1] dark:border-[#302E29]">
                       All assigned volunteers have reported.
                     </p>
                   ) : (
-                    <div className="divide-y divide-zinc-100 border border-[#EAE8E1] rounded-xl overflow-hidden">
+                    <div className="divide-y divide-zinc-100 dark:divide-[#302E29] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl overflow-hidden">
                       {stillExpectedResponders.map((resp: any) => (
-                        <div key={resp.id || resp.userId} className="p-3 flex items-center justify-between text-xs font-sans bg-white hover:bg-zinc-50/50">
+                        <div key={resp.id || resp.userId} className="p-3 flex items-center justify-between text-xs font-sans bg-white dark:bg-[#1D1D1A] hover:bg-zinc-50/50 dark:hover:bg-[#262520]">
                           <div>
-                            <div className="font-semibold text-[#18181B]">{resp.fullName || 'Volunteer'}</div>
-                            <div className="text-[11px] text-zinc-500">{resp.responsibilityKey || 'General Response'}</div>
+                            <div className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">{resp.fullName || 'Volunteer'}</div>
+                            <div className="text-[11px] text-zinc-500 dark:text-[#7A7570]">{resp.responsibilityKey || 'General Response'}</div>
                           </div>
                           <button
                             type="button"
                             onClick={() => handleModifyPresence(resp.userId, 'check_in')}
-                            className="px-2.5 py-1 text-[#C59B27] hover:text-[#A47E1F] hover:bg-[#C59B27]/10 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center space-x-1"
+                            className="px-2.5 py-1 text-[#C59B27] hover:text-[#A47E1F] dark:text-amber-400 dark:hover:text-amber-300 hover:bg-[#C59B27]/10 dark:hover:bg-amber-950/20 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center space-x-1"
                             title="Mark volunteer arrived manually"
                           >
                             <UserCheck className="w-3 h-3" />
@@ -964,7 +964,7 @@ export default function AdminEventLocationsTab({
                     <button
                       type="button"
                       onClick={() => onNavigateTab('event_team')}
-                      className="text-xs text-[#C59B27] hover:text-[#A47E1F] font-sans font-medium transition-colors cursor-pointer"
+                      className="text-xs text-[#C59B27] hover:text-[#A47E1F] dark:text-amber-400 dark:hover:text-amber-300 font-sans font-medium transition-colors cursor-pointer"
                     >
                       Manage team assignments ›
                     </button>
@@ -973,36 +973,36 @@ export default function AdminEventLocationsTab({
               </div>
 
               {/* LOCATION DETAILS SECTION (Section 11) */}
-              <div className="space-y-3 pb-5 border-b border-[#EAE8E1]">
-                <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-zinc-700">
+              <div className="space-y-3 pb-5 border-b border-[#EAE8E1] dark:border-[#302E29]">
+                <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-zinc-700 dark:text-[#F0EBE3]">
                   Duty instructions
                 </h3>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs font-sans">
                   <div>
-                    <span className="text-zinc-500 block">Age group</span>
-                    <span className="font-semibold text-[#18181B] mt-0.5 block">
+                    <span className="text-zinc-500 dark:text-[#7A7570] block">Age group</span>
+                    <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5 block">
                       {selectedLocation.ageGroupKey || 'All ages'}
                     </span>
                   </div>
 
                   <div>
-                    <span className="text-zinc-500 block">Child capacity</span>
-                    <span className="font-semibold text-[#18181B] mt-0.5 block">
+                    <span className="text-zinc-500 dark:text-[#7A7570] block">Child capacity</span>
+                    <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5 block">
                       {selectedLocation.capacity ? `${selectedLocation.capacity} children` : 'No limit set'}
                     </span>
                   </div>
 
                   <div>
-                    <span className="text-zinc-500 block">Volunteer capacity</span>
-                    <span className="font-semibold text-[#18181B] mt-0.5 block">
+                    <span className="text-zinc-500 dark:text-[#7A7570] block">Volunteer capacity</span>
+                    <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5 block">
                       {selectedLocation.volunteerCapacity ? `${selectedLocation.volunteerCapacity} duty staff (${selectedLocation.assignedCount || 0} / ${selectedLocation.volunteerCapacity} assigned)` : 'No limit set'}
                     </span>
                   </div>
 
                   <div>
-                    <span className="text-zinc-500 block">Assigned team</span>
-                    <span className="font-semibold text-[#18181B] mt-0.5 block">
+                    <span className="text-zinc-500 dark:text-[#7A7570] block">Assigned team</span>
+                    <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5 block">
                       {selectedLocation.teamKey || 'General Response'}
                     </span>
                   </div>
@@ -1010,8 +1010,8 @@ export default function AdminEventLocationsTab({
 
                 {selectedLocation.description && (
                   <div className="pt-2">
-                    <span className="text-zinc-500 text-xs block">Description</span>
-                    <p className="text-xs text-zinc-700 font-sans mt-1 leading-relaxed bg-[#FAF9F6] p-3 rounded-xl border border-[#EAE8E1]">
+                    <span className="text-zinc-500 dark:text-[#7A7570] text-xs block">Description</span>
+                    <p className="text-xs text-zinc-700 dark:text-[#B8B0A5] font-sans mt-1 leading-relaxed bg-[#FAF9F6] dark:bg-[#1D1D1A] p-3 rounded-xl border border-[#EAE8E1] dark:border-[#302E29]">
                       {selectedLocation.description}
                     </p>
                   </div>
@@ -1019,8 +1019,8 @@ export default function AdminEventLocationsTab({
 
                 {selectedLocation.instructions && (
                   <div className="pt-1">
-                    <span className="text-zinc-500 text-xs block">Special instructions</span>
-                    <p className="text-xs text-zinc-700 font-sans mt-1 leading-relaxed bg-amber-50/40 p-3 rounded-xl border border-amber-200/60 whitespace-pre-line">
+                    <span className="text-zinc-500 dark:text-[#7A7570] text-xs block">Special instructions</span>
+                    <p className="text-xs text-zinc-700 dark:text-[#B8B0A5] font-sans mt-1 leading-relaxed bg-amber-50/40 dark:bg-amber-950/20 p-3 rounded-xl border border-amber-200/60 dark:border-amber-900/40 whitespace-pre-line">
                       {selectedLocation.instructions}
                     </p>
                   </div>
@@ -1029,11 +1029,11 @@ export default function AdminEventLocationsTab({
 
               {/* LOCATION SIGN-IN QR SECTION (Section 12) */}
               <div className="space-y-2.5">
-                <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-zinc-700">
+                <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-zinc-700 dark:text-[#F0EBE3]">
                   Location sign-in QR
                 </h3>
 
-                <p className="text-xs text-zinc-600 font-sans leading-relaxed">
+                <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] font-sans leading-relaxed">
                   Display this QR at the location so assigned volunteers can report for duty.
                 </p>
 
@@ -1050,16 +1050,16 @@ export default function AdminEventLocationsTab({
                   <button
                     type="button"
                     onClick={handlePrintSingleQR}
-                    className="px-3.5 py-2 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 text-xs font-semibold rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 shadow-2xs"
+                    className="px-3.5 py-2 bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#B8B0A5] text-xs font-semibold rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 shadow-2xs"
                   >
-                    <Printer className="w-3.5 h-3.5 text-zinc-500" />
+                    <Printer className="w-3.5 h-3.5 text-zinc-500 dark:text-[#7A7570]" />
                     <span>Print QR</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setConfirmReplaceModal(true)}
-                    className="px-3.5 py-2 text-zinc-500 hover:text-zinc-800 text-xs font-medium rounded-xl transition-all cursor-pointer"
+                    className="px-3.5 py-2 text-zinc-500 hover:text-zinc-800 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] text-xs font-medium rounded-xl transition-all cursor-pointer"
                   >
                     Replace QR
                   </button>
@@ -1068,11 +1068,11 @@ export default function AdminEventLocationsTab({
 
             </div>
           ) : (
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-12 text-center space-y-3">
-              <MapPin className="w-8 h-8 text-zinc-300 mx-auto" />
+            <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-12 text-center space-y-3">
+              <MapPin className="w-8 h-8 text-zinc-300 dark:text-[#7A7570] mx-auto" />
               <div className="space-y-1">
-                <h3 className="text-sm font-semibold text-zinc-800">Select a location</h3>
-                <p className="text-xs text-zinc-500">Choose a location to view duty details and manage QR codes.</p>
+                <h3 className="text-sm font-semibold text-zinc-800 dark:text-[#F0EBE3]">Select a location</h3>
+                <p className="text-xs text-zinc-500 dark:text-[#B8B0A5]">Choose a location to view duty details and manage QR codes.</p>
               </div>
             </div>
           )}
@@ -1082,29 +1082,29 @@ export default function AdminEventLocationsTab({
       {/* MODAL 1: EDIT / ADD LOCATION FORM */}
       {showFormModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 w-full max-w-lg shadow-xl space-y-5">
-            <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-4">
-              <h3 className="text-xl font-bold font-sans text-[#18181B] dark:text-[#F7F4ED] tracking-tight">
+          <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-6 w-full max-w-lg shadow-xl space-y-5">
+            <div className="flex items-center justify-between border-b border-[#EAE8E1] dark:border-[#302E29] pb-4">
+              <h3 className="text-xl font-bold font-sans text-[#18181B] dark:text-[#F0EBE3] tracking-tight">
                 {isEditing ? 'Edit location' : 'Add location'}
               </h3>
               <button
                 type="button"
                 onClick={() => setShowFormModal(false)}
-                className="p-1.5 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                className="p-1.5 hover:bg-zinc-100 dark:hover:bg-[#262520] rounded-lg text-zinc-400 hover:text-zinc-600 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {formError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-sans">
+              <div className="p-3 bg-rose-50 dark:bg-red-950/20 border border-rose-200 dark:border-red-900/40 text-rose-700 dark:text-red-300 rounded-xl text-xs font-sans">
                 {formError}
               </div>
             )}
 
             <form onSubmit={handleSaveLocation} className="space-y-4 text-xs font-sans">
               <div>
-                <label className="block text-zinc-700 font-medium mb-1">
+                <label className="block text-zinc-700 dark:text-[#F0EBE3] font-medium mb-1">
                   Location name *
                 </label>
                 <input
@@ -1113,19 +1113,19 @@ export default function AdminEventLocationsTab({
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   placeholder="e.g. Grace Hall Primary"
-                  className="w-full px-3.5 py-2 border border-[#EAE8E1] rounded-xl text-zinc-800 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                  className="w-full px-3.5 py-2 border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] rounded-xl text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-zinc-700 font-medium mb-1">
+                  <label className="block text-zinc-700 dark:text-[#F0EBE3] font-medium mb-1">
                     Location type
                   </label>
                   <select
                     value={formType}
                     onChange={(e) => setFormType(e.target.value)}
-                    className="w-full px-3.5 py-2 border border-[#EAE8E1] rounded-xl text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] bg-white"
+                    className="w-full px-3.5 py-2 border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 bg-white dark:bg-[#262520]"
                   >
                     <option value="room">Room</option>
                     <option value="hall">Main Hall</option>
@@ -1137,7 +1137,7 @@ export default function AdminEventLocationsTab({
                 </div>
 
                 <div>
-                  <label className="block text-zinc-700 font-medium mb-1">
+                  <label className="block text-zinc-700 dark:text-[#F0EBE3] font-medium mb-1">
                     Child capacity
                   </label>
                   <input
@@ -1146,14 +1146,14 @@ export default function AdminEventLocationsTab({
                     value={formCapacity}
                     onChange={(e) => setFormCapacity(e.target.value)}
                     placeholder="e.g. 40 (children)"
-                    className="w-full px-3.5 py-2 border border-[#EAE8E1] rounded-xl text-zinc-800 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                    className="w-full px-3.5 py-2 border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] rounded-xl text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-zinc-700 font-medium mb-1">
+                  <label className="block text-zinc-700 dark:text-[#F0EBE3] font-medium mb-1">
                     Volunteer capacity
                   </label>
                   <input
@@ -1162,20 +1162,20 @@ export default function AdminEventLocationsTab({
                     value={formVolunteerCapacity}
                     onChange={(e) => setFormVolunteerCapacity(e.target.value)}
                     placeholder="e.g. 10 (duty staff)"
-                    className="w-full px-3.5 py-2 border border-[#EAE8E1] rounded-xl text-zinc-800 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                    className="w-full px-3.5 py-2 border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] rounded-xl text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-zinc-700 font-medium mb-1">
+                  <label className="block text-zinc-700 dark:text-[#F0EBE3] font-medium mb-1">
                     Age group
                   </label>
                   <select
                     value={formAgeGroup}
                     onChange={(e) => setFormAgeGroup(e.target.value)}
-                    className="w-full px-3.5 py-2 border border-[#EAE8E1] rounded-xl text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] bg-white"
+                    className="w-full px-3.5 py-2 border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 bg-white dark:bg-[#262520]"
                   >
                     <option value="Ages 4 to 6">Ages 4 to 6</option>
                     <option value="Ages 7 to 9">Ages 7 to 9</option>
@@ -1186,13 +1186,13 @@ export default function AdminEventLocationsTab({
                 </div>
 
                 <div>
-                  <label className="block text-zinc-700 font-medium mb-1">
+                  <label className="block text-zinc-700 dark:text-[#F0EBE3] font-medium mb-1">
                     Assigned team
                   </label>
                   <select
                     value={formTeamKey}
                     onChange={(e) => setFormTeamKey(e.target.value)}
-                    className="w-full px-3.5 py-2 border border-[#EAE8E1] rounded-xl text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#C59B27] bg-white"
+                    className="w-full px-3.5 py-2 border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 bg-white dark:bg-[#262520]"
                   >
                     <option value="General Response">General Response</option>
                     <option value="Child Care">Child Care</option>
@@ -1204,7 +1204,7 @@ export default function AdminEventLocationsTab({
               </div>
 
               <div>
-                <label className="block text-zinc-700 font-medium mb-1">
+                <label className="block text-zinc-700 dark:text-[#F0EBE3] font-medium mb-1">
                   Description
                 </label>
                 <input
@@ -1212,12 +1212,12 @@ export default function AdminEventLocationsTab({
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
                   placeholder="e.g. Ground floor west wing room"
-                  className="w-full px-3.5 py-2 border border-[#EAE8E1] rounded-xl text-zinc-800 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                  className="w-full px-3.5 py-2 border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] rounded-xl text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40"
                 />
               </div>
 
               <div>
-                <label className="block text-zinc-700 font-medium mb-1">
+                <label className="block text-zinc-700 dark:text-[#F0EBE3] font-medium mb-1">
                   Duty instructions
                 </label>
                 <textarea
@@ -1225,15 +1225,15 @@ export default function AdminEventLocationsTab({
                   value={formInstructions}
                   onChange={(e) => setFormInstructions(e.target.value)}
                   placeholder="e.g. Ensure all children have name tags before entry."
-                  className="w-full px-3.5 py-2 border border-[#EAE8E1] rounded-xl text-zinc-800 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                  className="w-full px-3.5 py-2 border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] rounded-xl text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40"
                 />
               </div>
 
-              <div className="flex items-center justify-end space-x-2 pt-2 border-t border-[#EAE8E1]">
+              <div className="flex items-center justify-end space-x-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
                 <button
                   type="button"
                   onClick={() => setShowFormModal(false)}
-                  className="px-4 py-2 border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 rounded-xl font-medium cursor-pointer transition-all"
+                  className="px-4 py-2 border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#B8B0A5] rounded-xl font-medium cursor-pointer transition-all"
                 >
                   Cancel
                 </button>
@@ -1253,12 +1253,12 @@ export default function AdminEventLocationsTab({
       {/* MODAL 2: VIEW QR PREVIEW (Section 13) */}
       {showQRModal && selectedLocation && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 sm:p-8 w-full max-w-sm shadow-xl space-y-5 text-center">
+          <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-6 sm:p-8 w-full max-w-sm shadow-xl space-y-5 text-center">
             <div className="flex items-center justify-end">
               <button
                 type="button"
                 onClick={() => setShowQRModal(false)}
-                className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                className="p-1 hover:bg-zinc-100 dark:hover:bg-[#262520] rounded-lg text-zinc-400 hover:text-zinc-600 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1266,16 +1266,16 @@ export default function AdminEventLocationsTab({
 
             {/* Clean Editorial Poster Header */}
             <div className="space-y-1">
-              <div className="text-[11px] font-sans font-bold uppercase tracking-[0.2em] text-[#A47E1F]">
+              <div className="text-[11px] font-sans font-bold uppercase tracking-[0.2em] text-[#A47E1F] dark:text-amber-400">
                 Koinonia
               </div>
-              <div className="text-xs font-sans text-zinc-500 font-medium">
+              <div className="text-xs font-sans text-zinc-500 dark:text-[#B8B0A5] font-medium">
                 Children &amp; Teens
               </div>
-              <h3 className="text-2xl font-bold font-sans text-[#18181B] tracking-tight pt-2">
+              <h3 className="text-2xl font-bold font-sans text-[#18181B] dark:text-[#F0EBE3] tracking-tight pt-2">
                 {selectedLocation.name}
               </h3>
-              <p className="text-xs text-zinc-600 font-sans pt-1">
+              <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] font-sans pt-1">
                 Scan to report for duty
               </p>
             </div>
@@ -1293,19 +1293,19 @@ export default function AdminEventLocationsTab({
 
             {/* Event Dates & Notice */}
             <div className="space-y-1 font-sans">
-              <p className="text-xs font-semibold text-zinc-800">
+              <p className="text-xs font-semibold text-zinc-800 dark:text-[#F0EBE3]">
                 The General Assembly
               </p>
-              <p className="text-[11px] text-zinc-500">
+              <p className="text-[11px] text-zinc-500 dark:text-[#B8B0A5]">
                 18–22 November 2026
               </p>
-              <p className="text-[10px] text-zinc-400 pt-1">
+              <p className="text-[10px] text-zinc-400 dark:text-[#7A7570] pt-1">
                 For assigned team members only.
               </p>
             </div>
 
             {/* Action Buttons */}
-            <div className="flex flex-col gap-2 pt-2 border-t border-[#EAE8E1]">
+            <div className="flex flex-col gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
               <button
                 type="button"
                 onClick={handlePrintSingleQR}
@@ -1320,16 +1320,16 @@ export default function AdminEventLocationsTab({
                   type="button"
                   onClick={handleDownloadQR}
                   disabled={!qrDataUrl}
-                  className="py-2.5 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-700 font-sans font-semibold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5 shadow-2xs disabled:opacity-50"
+                  className="py-2.5 bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#B8B0A5] font-sans font-semibold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5 shadow-2xs disabled:opacity-50"
                 >
-                  <Download className="w-3.5 h-3.5 text-zinc-500" />
+                  <Download className="w-3.5 h-3.5 text-zinc-500 dark:text-[#7A7570]" />
                   <span>Download</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setShowQRModal(false)}
-                  className="py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-sans font-semibold text-xs rounded-xl transition-all cursor-pointer"
+                  className="py-2.5 bg-zinc-100 dark:bg-[#262520] hover:bg-zinc-200 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#B8B0A5] font-sans font-semibold text-xs rounded-xl transition-all cursor-pointer"
                 >
                   Close
                 </button>
@@ -1342,25 +1342,25 @@ export default function AdminEventLocationsTab({
       {/* MODAL 3: CONFIRM REPLACE QR CODE (Section 12) */}
       {confirmReplaceModal && selectedLocation && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 w-full max-w-sm shadow-xl space-y-4 text-center">
-            <div className="w-11 h-11 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+          <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-6 w-full max-w-sm shadow-xl space-y-4 text-center">
+            <div className="w-11 h-11 rounded-full bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto">
               <AlertTriangle className="w-5 h-5" />
             </div>
 
             <div className="space-y-1.5">
-              <h4 className="text-xl font-bold font-sans text-[#18181B] dark:text-[#F7F4ED] tracking-tight">
+              <h4 className="text-xl font-bold font-sans text-[#18181B] dark:text-[#F0EBE3] tracking-tight">
                 Replace QR?
               </h4>
-              <p className="text-xs text-zinc-600 font-sans leading-relaxed">
+              <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] font-sans leading-relaxed">
                 The current QR will stop working and a new one will be created.
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-100">
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-100 dark:border-[#302E29]">
               <button
                 type="button"
                 onClick={() => setConfirmReplaceModal(false)}
-                className="py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-xl text-xs font-semibold cursor-pointer transition-all"
+                className="py-2.5 bg-zinc-100 dark:bg-[#262520] hover:bg-zinc-200 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#B8B0A5] rounded-xl text-xs font-semibold cursor-pointer transition-all"
               >
                 Cancel
               </button>
@@ -1380,34 +1380,34 @@ export default function AdminEventLocationsTab({
       {/* MODAL 4: CONFIRM CLOSE / REOPEN LOCATION (Section 19) */}
       {locToToggleActive && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 w-full max-w-sm shadow-xl space-y-4 text-center">
-            <div className="w-11 h-11 rounded-full bg-zinc-100 text-zinc-700 flex items-center justify-center mx-auto">
-              {locToToggleActive.isActive ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 text-emerald-600" />}
+          <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-6 w-full max-w-sm shadow-xl space-y-4 text-center">
+            <div className="w-11 h-11 rounded-full bg-zinc-100 dark:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] flex items-center justify-center mx-auto">
+              {locToToggleActive.isActive ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />}
             </div>
 
             <div className="space-y-1.5">
-              <h4 className="text-xl font-bold font-sans text-[#18181B] dark:text-[#F7F4ED] tracking-tight">
+              <h4 className="text-xl font-bold font-sans text-[#18181B] dark:text-[#F0EBE3] tracking-tight">
                 {locToToggleActive.isActive ? 'Close location?' : 'Reopen location?'}
               </h4>
-              <p className="text-xs text-zinc-600 font-sans leading-relaxed">
+              <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] font-sans leading-relaxed">
                 {locToToggleActive.isActive
                   ? 'Volunteers will no longer be able to report for duty at this location.'
                   : 'Volunteers will be able to report for duty at this location.'}
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-100">
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-100 dark:border-[#302E29]">
               <button
                 type="button"
                 onClick={() => setLocToToggleActive(null)}
-                className="py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-xl text-xs font-semibold cursor-pointer transition-all"
+                className="py-2.5 bg-zinc-100 dark:bg-[#262520] hover:bg-zinc-200 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#B8B0A5] rounded-xl text-xs font-semibold cursor-pointer transition-all"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => handleToggleLocationActive(locToToggleActive)}
-                className="py-2.5 bg-[#18181B] hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold cursor-pointer transition-all shadow-xs"
+                className="py-2.5 bg-[#18181B] dark:bg-[#2A2926] hover:bg-zinc-800 dark:hover:bg-[#3A3835] text-white dark:text-[#F0EBE3] dark:border dark:border-[#3A3835] rounded-xl text-xs font-semibold cursor-pointer transition-all shadow-xs"
               >
                 {locToToggleActive.isActive ? 'Close location' : 'Reopen location'}
               </button>
@@ -1419,42 +1419,42 @@ export default function AdminEventLocationsTab({
       {/* MODAL 5: BATCH PRINT VENUE POSTERS */}
       {showBatchPrintModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 w-full max-w-md shadow-xl space-y-4 text-center">
+          <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-6 w-full max-w-md shadow-xl space-y-4 text-center">
             <div className="space-y-1">
-              <h3 className="text-2xl font-bold font-sans text-[#18181B] dark:text-[#F7F4ED] tracking-tight">
+              <h3 className="text-2xl font-bold font-sans text-[#18181B] dark:text-[#F0EBE3] tracking-tight">
                 Print duty QR codes
               </h3>
-              <p className="text-xs text-zinc-500 font-sans">
+              <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] font-sans">
                 Print physical venue posters for all active duty locations.
               </p>
             </div>
 
             {batchLoading ? (
-              <div className="py-8 space-y-2 text-xs text-zinc-500">
+              <div className="py-8 space-y-2 text-xs text-zinc-500 dark:text-[#7A7570]">
                 <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#C59B27]" />
                 <p>Generating location codes…</p>
               </div>
             ) : (
               <div className="space-y-3 py-2 text-left">
-                <p className="text-xs text-zinc-600 font-sans">
+                <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] font-sans">
                   Ready to print posters for {locations.filter(l => l.isActive).length} active locations:
                 </p>
-                <div className="max-h-48 overflow-y-auto divide-y divide-zinc-100 border border-[#EAE8E1] rounded-xl">
+                <div className="max-h-48 overflow-y-auto divide-y divide-zinc-100 dark:divide-[#302E29] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl">
                   {locations.filter(l => l.isActive).map(loc => (
                     <div key={loc.id} className="p-2.5 flex items-center justify-between text-xs">
-                      <span className="font-medium text-zinc-800">{loc.name}</span>
-                      <span className="text-[11px] text-zinc-500">{loc.ageGroupKey || 'All ages'}</span>
+                      <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">{loc.name}</span>
+                      <span className="text-[11px] text-zinc-500 dark:text-[#7A7570]">{loc.ageGroupKey || 'All ages'}</span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#EAE8E1]">
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
               <button
                 type="button"
                 onClick={() => setShowBatchPrintModal(false)}
-                className="py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-xl text-xs font-semibold cursor-pointer transition-all"
+                className="py-2.5 bg-zinc-100 dark:bg-[#262520] hover:bg-zinc-200 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#B8B0A5] rounded-xl text-xs font-semibold cursor-pointer transition-all"
               >
                 Close
               </button>

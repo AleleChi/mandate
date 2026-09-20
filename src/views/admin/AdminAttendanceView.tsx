@@ -161,27 +161,27 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
     switch (status) {
       case 'checked_in':
         return (
-          <span className="inline-flex items-center space-x-1 text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-md text-[11px] font-medium">
+          <span className="inline-flex items-center space-x-1 text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 px-2 py-0.5 rounded-md text-[11px] font-medium">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 animate-pulse" />
             Checked in
           </span>
         );
       case 'picked_up':
         return (
-          <span className="inline-flex items-center space-x-1 text-zinc-600 bg-zinc-100 border border-zinc-200 px-2 py-0.5 rounded-md text-[11px] font-medium">
+          <span className="inline-flex items-center space-x-1 text-zinc-600 dark:text-[#B8B0A5] bg-zinc-100 dark:bg-[#262520] border border-zinc-200 dark:border-[#3A3835] px-2 py-0.5 rounded-md text-[11px] font-medium">
             Picked up
           </span>
         );
       case 'needs_attention':
         return (
-          <span className="inline-flex items-center space-x-1 text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md text-[11px] font-medium">
-            <AlertTriangle className="w-3 h-3 mr-0.5 text-amber-600" />
+          <span className="inline-flex items-center space-x-1 text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 px-2 py-0.5 rounded-md text-[11px] font-medium">
+            <AlertTriangle className="w-3 h-3 mr-0.5 text-amber-600 dark:text-amber-400" />
             Needs attention
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center space-x-1 text-zinc-500 bg-zinc-50 border border-zinc-200 px-2 py-0.5 rounded-md text-[11px] font-medium">
+          <span className="inline-flex items-center space-x-1 text-zinc-500 dark:text-[#7A7570] bg-zinc-50 dark:bg-[#262520]/50 border border-zinc-200 dark:border-[#3A3835] px-2 py-0.5 rounded-md text-[11px] font-medium">
             Not arrived
           </span>
         );
@@ -191,27 +191,27 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
   // Helper for location label rendering
   const getLocationLabel = (loc: string | null) => {
     if (loc === 'inside') {
-      return <span className="text-[#C59B27] font-medium bg-[#C59B27]/5 px-2 py-0.5 rounded-md text-[11px] border border-[#C59B27]/10">Inside</span>;
+      return <span className="text-[#C59B27] dark:text-amber-400 font-medium bg-[#C59B27]/5 dark:bg-amber-950/20 px-2 py-0.5 rounded-md text-[11px] border border-[#C59B27]/10 dark:border-amber-900/40">Inside</span>;
     }
     if (loc === 'picked_up') {
-      return <span className="text-zinc-500 font-medium bg-zinc-50 px-2 py-0.5 rounded-md text-[11px] border border-zinc-200">Picked up</span>;
+      return <span className="text-zinc-500 dark:text-[#7A7570] font-medium bg-zinc-50 dark:bg-[#262520] px-2 py-0.5 rounded-md text-[11px] border border-zinc-200 dark:border-[#3A3835]">Picked up</span>;
     }
-    return <span className="text-zinc-400">—</span>;
+    return <span className="text-zinc-400 dark:text-[#5A5550]">—</span>;
   };
 
   // Helper for notes styling
   const getNotesElement = (notes: string, status: string) => {
     if (!notes || notes === 'No care note') {
-      return <span className="text-zinc-400 text-xs">No care note</span>;
+      return <span className="text-zinc-400 dark:text-[#7A7570] text-xs">No care note</span>;
     }
     if (status === 'needs_attention') {
       return (
-        <span className="text-rose-600 font-semibold bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-md text-[10px]">
+        <span className="text-rose-600 dark:text-red-400 font-semibold bg-rose-50 dark:bg-red-950/20 border border-rose-100 dark:border-red-900/40 px-2 py-0.5 rounded-md text-[10px]">
           {notes}
         </span>
       );
     }
-    return <span className="text-amber-700 font-medium bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-md text-[10px]">{notes}</span>;
+    return <span className="text-amber-700 dark:text-amber-400 font-medium bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/40 px-2 py-0.5 rounded-md text-[10px]">{notes}</span>;
   };
 
   // Age group sums compute
@@ -246,26 +246,26 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
       data-view-version="admin-attendance-v2-stitch-complete"
     >
       {/* HEADER SECTION */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#EAE8E1] pb-5">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#EAE8E1] dark:border-[#302E29] pb-5">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="type-h1-app text-[#18181B]">
+          <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
             Attendance
           </h1>
           {/* Static Event Selector dropdown matching screenshot */}
           <div className="relative inline-block text-left">
             <select 
               disabled
-              className="bg-white border border-[#EAE8E1] text-[#18181B] text-xs font-semibold px-3 py-1.5 pr-8 rounded-xl appearance-none focus:outline-hidden cursor-not-allowed shadow-3xs"
+              className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] text-[#18181B] dark:text-[#F0EBE3] text-xs font-semibold px-3 py-1.5 pr-8 rounded-xl appearance-none focus:outline-hidden cursor-not-allowed shadow-3xs"
             >
               <option>The General Assembly</option>
             </select>
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-zinc-500">
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-zinc-500 dark:text-[#7A7570]">
               <ChevronRight className="w-3.5 h-3.5 rotate-90" />
             </div>
           </div>
 
           {refreshing && (
-            <span className="flex items-center space-x-1.5 text-xs text-[#C59B27] font-semibold">
+            <span className="flex items-center space-x-1.5 text-xs text-[#C59B27] dark:text-amber-400 font-semibold">
               <RefreshCw className="w-3.5 h-3.5 animate-spin" />
               <span>Updating...</span>
             </span>
@@ -275,18 +275,18 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
         {/* Search & Actions (Desktop) */}
         <div className="flex items-center gap-3 w-full md:w-auto">
           <div className="relative flex-1 md:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 dark:text-[#7A7570]" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search child, parent, phone..."
-              className="w-full bg-white border border-[#EAE8E1] rounded-xl pl-9 pr-8 py-2 text-xs text-[#18181B] placeholder-zinc-400 focus:outline-hidden focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] transition-all font-medium"
+              className="w-full bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl pl-9 pr-8 py-2 text-xs text-[#18181B] dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-hidden focus:border-[#C59B27] dark:focus:border-amber-400/50 focus:ring-1 focus:ring-[#C59B27] transition-all font-medium"
             />
             {searchQuery && (
               <button 
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:text-[#7A7570] dark:hover:text-[#F0EBE3]"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -299,7 +299,7 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
             size="sm"
             onClick={handleExport}
             disabled={rows.length === 0}
-            className="flex items-center gap-1.5 border-[#EAE8E1] text-xs font-semibold"
+            className="flex items-center gap-1.5 border-[#EAE8E1] dark:border-[#302E29] text-xs font-semibold"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Export</span>
@@ -310,7 +310,7 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
             variant="secondary"
             size="sm"
             onClick={() => loadAttendanceData(true)}
-            className="p-2 border-[#EAE8E1]"
+            className="p-2 border-[#EAE8E1] dark:border-[#302E29]"
             title="Refresh logs"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
@@ -324,23 +324,23 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
         data-component-version="admin-attendance-stats-v2"
       >
         {[
-          { label: 'Expected', count: stats.expected, color: 'border-zinc-200' },
-          { label: 'Checked in', count: stats.checkedIn, color: 'border-zinc-200' },
-          { label: 'Inside', count: stats.inside, color: 'border-[#C59B27]' },
-          { label: 'Picked up', count: stats.pickedUp, color: 'border-zinc-200' },
-          { label: 'Not arrived', count: stats.notArrived, color: 'border-zinc-200' },
-          { label: 'Needs attention', count: stats.needsAttention, color: 'border-amber-400', isAlert: true }
+          { label: 'Expected', count: stats.expected, color: 'border-zinc-200 dark:border-l-[#3A3835]' },
+          { label: 'Checked in', count: stats.checkedIn, color: 'border-zinc-200 dark:border-l-[#3A3835]' },
+          { label: 'Inside', count: stats.inside, color: 'border-[#C59B27] dark:border-l-amber-500' },
+          { label: 'Picked up', count: stats.pickedUp, color: 'border-zinc-200 dark:border-l-[#3A3835]' },
+          { label: 'Not arrived', count: stats.notArrived, color: 'border-zinc-200 dark:border-l-[#3A3835]' },
+          { label: 'Needs attention', count: stats.needsAttention, color: 'border-amber-400 dark:border-l-amber-400', isAlert: true }
         ].map((card, idx) => (
           <div
             key={idx}
-            className={`bg-white border border-[#EAE8E1] rounded-2xl p-4 shadow-3xs border-l-4 ${card.color} ${
-              card.isAlert && card.count > 0 ? 'bg-amber-50/20' : ''
+            className={`bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 shadow-3xs border-l-4 ${card.color} ${
+              card.isAlert && card.count > 0 ? 'bg-amber-50/20 dark:bg-amber-950/15' : ''
             }`}
           >
-            <span className="text-zinc-500 block text-xs font-medium mb-1">
+            <span className="text-zinc-500 dark:text-[#7A7570] block text-xs font-medium mb-1">
               {card.label}
             </span>
-            <span className="text-2xl sm:text-3xl font-semibold text-[#18181B] tracking-tight">
+            <span className="text-2xl sm:text-3xl font-semibold text-[#18181B] dark:text-[#F0EBE3] tracking-tight">
               {card.count}
             </span>
           </div>
@@ -349,7 +349,7 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
 
       {/* ATTENDANCE FILTERS & NAVIGATION TABS */}
       <div 
-        className="border-b border-[#EAE8E1] pb-px flex flex-wrap items-center justify-between gap-4"
+        className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-px flex flex-wrap items-center justify-between gap-4"
         data-component-version="admin-attendance-tabs-v2"
       >
         <div className="flex space-x-6 overflow-x-auto scrollbar-none">
@@ -366,9 +366,9 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                 key={tab.id}
                 onClick={() => setActiveStatus(tab.id)}
                 className={`py-3 text-xs font-semibold relative transition-all whitespace-nowrap ${
-                  active 
-                    ? 'text-[#C59B27]' 
-                    : 'text-zinc-500 hover:text-[#18181B]'
+                  active
+                    ? 'text-[#C59B27] dark:text-amber-400'
+                    : 'text-zinc-500 dark:text-[#7A7570] hover:text-[#18181B] dark:hover:text-[#F0EBE3]'
                 }`}
               >
                 <span>{tab.label}</span>
@@ -378,7 +378,7 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                   </span>
                 )}
                 {active && (
-                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#C59B27]" />
+                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#C59B27] dark:bg-amber-400" />
                 )}
               </button>
             );
@@ -394,11 +394,11 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
           
           {/* LIVE ATTENDANCE LIST SECTION */}
           <div 
-            className="bg-white border border-[#EAE8E1] rounded-2xl overflow-hidden shadow-3xs"
+            className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl overflow-hidden shadow-3xs"
             data-component-version="admin-live-attendance-table-v2"
           >
-            <div className="p-5 border-b border-[#EAE8E1] flex items-center justify-between">
-              <h3 className="text-base font-semibold text-[#18181B]">
+            <div className="p-5 border-b border-[#EAE8E1] dark:border-[#302E29] flex items-center justify-between">
+              <h3 className="text-base font-semibold text-[#18181B] dark:text-[#F0EBE3]">
                 Live attendance
               </h3>
               <button
@@ -406,7 +406,7 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                   setSearchQuery('');
                   setActiveStatus('all');
                 }}
-                className="text-xs font-semibold text-[#C59B27] hover:text-[#b58c22] transition-colors"
+                className="text-xs font-semibold text-[#C59B27] dark:text-amber-400 hover:text-[#b58c22] transition-colors"
               >
                 View all
               </button>
@@ -427,7 +427,7 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                 <div className="hidden sm:block overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="border-b border-[#EAE8E1] bg-[#FAF9F6] text-xs font-medium text-zinc-500">
+                      <tr className="border-b border-[#EAE8E1] dark:border-[#302E29] bg-[#FAF9F6] dark:bg-[#21211E] text-xs font-medium text-zinc-500 dark:text-[#7A7570]">
                         <th className="py-3 px-4 font-medium">Child</th>
                         <th className="py-3 px-4 font-medium">Age group</th>
                         <th className="py-3 px-4 font-medium">Parent / guardian</th>
@@ -437,10 +437,10 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                         <th className="py-3 px-4 font-medium">Last activity</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-[#FAF9F6]">
+                    <tbody className="divide-y divide-[#FAF9F6] dark:divide-[#262520]">
                       {rows.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="py-8 text-center text-xs text-zinc-400">
+                          <td colSpan={7} className="py-8 text-center text-xs text-zinc-400 dark:text-[#7A7570]">
                             No attendance records found for this filter.
                           </td>
                         </tr>
@@ -449,31 +449,31 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                           <tr 
                             key={row.id}
                             onClick={() => handleRowClick(row.applicationId)}
-                            className="hover:bg-[#FAF9F6] transition-colors cursor-pointer text-xs"
+                            className="hover:bg-[#FAF9F6] dark:hover:bg-[#262520] transition-colors cursor-pointer text-xs"
                           >
-                            <td className="py-3.5 px-4 font-semibold text-zinc-800 hover:text-[#C59B27] transition-colors">
+                            <td className="py-3.5 px-4 font-semibold text-zinc-800 dark:text-[#F0EBE3] hover:text-[#C59B27] dark:hover:text-amber-400 transition-colors">
                               {row.childName}
                               {row.status === 'needs_attention' && (
                                 <span className="ml-1 text-rose-500 font-bold" title="Care flag active">⚠️</span>
                               )}
                             </td>
-                            <td className="py-3.5 px-4 text-zinc-500">
+                            <td className="py-3.5 px-4 text-zinc-500 dark:text-[#7A7570]">
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span>{row.ageGroup}</span>
                                 {row.needsAgeReview && (
-                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40">
                                     Age review needed
                                   </span>
                                 )}
                               </div>
                             </td>
-                            <td className="py-3.5 px-4 text-zinc-600 font-medium">{row.parentName}</td>
+                            <td className="py-3.5 px-4 text-zinc-600 dark:text-[#B8B0A5] font-medium">{row.parentName}</td>
                             <td className="py-3.5 px-4">{getStatusBadge(row.status)}</td>
                             <td className="py-3.5 px-4">{getLocationLabel(row.location)}</td>
                             <td className="py-3.5 px-4 max-w-[140px] truncate">
                               {getNotesElement(row.notes, row.status)}
                             </td>
-                            <td className="py-3.5 px-4 text-xs text-zinc-500">
+                            <td className="py-3.5 px-4 text-xs text-zinc-500 dark:text-[#7A7570]">
                               {row.lastActivityLabel}
                             </td>
                           </tr>
@@ -485,11 +485,11 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
 
                 {/* MOBILE LIST OF CARDS */}
                 <div 
-                  className="sm:hidden divide-y divide-[#EAE8E1]"
+                  className="sm:hidden divide-y divide-[#EAE8E1] dark:divide-[#302E29]"
                   data-component-version="admin-attendance-mobile-cards-v2"
                 >
                   {rows.length === 0 ? (
-                    <div className="py-12 text-center text-xs text-zinc-400 bg-white">
+                    <div className="py-12 text-center text-xs text-zinc-400 dark:text-[#7A7570] bg-white dark:bg-[#1D1D1A]">
                       No attendance records found for this filter.
                     </div>
                   ) : (
@@ -497,20 +497,20 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                       <div 
                         key={row.id}
                         onClick={() => handleRowClick(row.applicationId)}
-                        className="p-4 space-y-3 bg-white hover:bg-[#FAF9F6] active:bg-zinc-50 transition-all cursor-pointer"
+                        className="p-4 space-y-3 bg-white dark:bg-[#1D1D1A] hover:bg-[#FAF9F6] dark:hover:bg-[#21211E] active:bg-zinc-50 dark:active:bg-[#262520] transition-all cursor-pointer"
                       >
                         <div className="flex items-start justify-between">
                           <div>
-                            <h4 className="font-semibold text-zinc-800 text-xs flex items-center">
+                            <h4 className="font-semibold text-zinc-800 dark:text-[#F0EBE3] text-xs flex items-center">
                               {row.childName}
                               {row.status === 'needs_attention' && (
                                 <span className="ml-1 text-rose-500">⚠️</span>
                               )}
                             </h4>
                             <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                              <span className="text-[10px] text-zinc-400 font-medium block">{row.ageGroup}</span>
+                              <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-medium block">{row.ageGroup}</span>
                               {row.needsAgeReview && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40">
                                   Age review needed
                                 </span>
                               )}
@@ -519,22 +519,22 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                           <div>{getStatusBadge(row.status)}</div>
                         </div>
 
-                        <div className="space-y-2 text-[11px] text-zinc-600 bg-[#FAF9F6] p-2.5 rounded-xl border border-zinc-100">
+                        <div className="space-y-2 text-[11px] text-zinc-600 dark:text-[#B8B0A5] bg-[#FAF9F6] dark:bg-[#21211E] p-2.5 rounded-xl border border-zinc-100 dark:border-[#302E29]">
                           <div className="flex justify-between">
-                            <span className="text-zinc-400">Parent:</span>
-                            <span className="font-medium text-zinc-700">{row.parentName}</span>
+                            <span className="text-zinc-400 dark:text-[#7A7570]">Parent:</span>
+                            <span className="font-medium text-zinc-700 dark:text-[#F0EBE3]">{row.parentName}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-zinc-400">Location:</span>
+                            <span className="text-zinc-400 dark:text-[#7A7570]">Location:</span>
                             <span>{getLocationLabel(row.location)}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-zinc-400">Notes:</span>
+                            <span className="text-zinc-400 dark:text-[#7A7570]">Notes:</span>
                             <span className="max-w-[180px] truncate">{getNotesElement(row.notes, row.status)}</span>
                           </div>
-                          <div className="flex justify-between border-t border-zinc-200/60 pt-1.5 mt-1">
-                            <span className="text-zinc-400">Activity:</span>
-                            <span className="text-[11px] text-zinc-500">{row.lastActivityLabel}</span>
+                          <div className="flex justify-between border-t border-zinc-200/60 dark:border-[#302E29] pt-1.5 mt-1">
+                            <span className="text-zinc-400 dark:text-[#7A7570]">Activity:</span>
+                            <span className="text-[11px] text-zinc-500 dark:text-[#7A7570]">{row.lastActivityLabel}</span>
                           </div>
                         </div>
 
@@ -548,7 +548,7 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                               e.stopPropagation();
                               handleRowClick(row.applicationId);
                             }}
-                            className="py-1.5 text-xs font-semibold"
+                            className="py-1.5 text-xs font-semibold border-[#EAE8E1] dark:border-[#302E29]"
                           >
                             View details
                           </Button>
@@ -563,11 +563,11 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
 
           {/* ATTENDANCE BY AGE GROUP SUMMARY SECTION */}
           <div 
-            className="bg-white border border-[#EAE8E1] rounded-2xl overflow-hidden shadow-3xs"
+            className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl overflow-hidden shadow-3xs"
             data-component-version="admin-attendance-age-groups-v2"
           >
-            <div className="p-5 border-b border-[#EAE8E1]">
-              <h3 className="text-base font-semibold text-[#18181B]">
+            <div className="p-5 border-b border-[#EAE8E1] dark:border-[#302E29]">
+              <h3 className="text-base font-semibold text-[#18181B] dark:text-[#F0EBE3]">
                 Attendance by age group
               </h3>
             </div>
@@ -581,14 +581,14 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                 />
               </div>
             ) : ageGroups.length === 0 ? (
-              <div className="py-8 text-center text-xs text-zinc-400">
+              <div className="py-8 text-center text-xs text-zinc-400 dark:text-[#7A7570]">
                 Age-group attendance is not available yet.
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
-                    <tr className="border-b border-[#EAE8E1] bg-[#FAF9F6] text-xs font-medium text-zinc-500">
+                    <tr className="border-b border-[#EAE8E1] dark:border-[#302E29] bg-[#FAF9F6] dark:bg-[#21211E] text-xs font-medium text-zinc-500 dark:text-[#7A7570]">
                       <th className="py-3 px-4 font-medium">Age group</th>
                       <th className="py-3 px-4 font-medium">Expected</th>
                       <th className="py-3 px-4 font-medium">Checked in</th>
@@ -597,25 +597,25 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                       <th className="py-3 px-4 font-medium">Not arrived</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#FAF9F6]">
+                  <tbody className="divide-y divide-[#FAF9F6] dark:divide-[#262520]">
                     {ageGroups.map((g, idx) => (
-                      <tr key={idx} className="hover:bg-zinc-50/50">
-                        <td className="py-3 px-4 font-medium text-zinc-800">{g.ageGroup}</td>
-                        <td className="py-3 px-4 tabular-nums text-zinc-600">{g.expected || 0}</td>
-                        <td className="py-3 px-4 tabular-nums text-emerald-600 font-medium">{g.checkedIn || 0}</td>
-                        <td className="py-3 px-4 tabular-nums text-[#C59B27] font-medium">{g.inside || 0}</td>
-                        <td className="py-3 px-4 tabular-nums text-zinc-600">{g.pickedUp || 0}</td>
-                        <td className="py-3 px-4 tabular-nums text-zinc-400">{g.notArrived || 0}</td>
+                      <tr key={idx} className="hover:bg-zinc-50/50 dark:hover:bg-[#262520]/50">
+                        <td className="py-3 px-4 font-medium text-zinc-800 dark:text-[#F0EBE3]">{g.ageGroup}</td>
+                        <td className="py-3 px-4 tabular-nums text-zinc-600 dark:text-[#B8B0A5]">{g.expected || 0}</td>
+                        <td className="py-3 px-4 tabular-nums text-emerald-600 dark:text-emerald-400 font-medium">{g.checkedIn || 0}</td>
+                        <td className="py-3 px-4 tabular-nums text-[#C59B27] dark:text-amber-400 font-medium">{g.inside || 0}</td>
+                        <td className="py-3 px-4 tabular-nums text-zinc-600 dark:text-[#B8B0A5]">{g.pickedUp || 0}</td>
+                        <td className="py-3 px-4 tabular-nums text-zinc-400 dark:text-[#7A7570]">{g.notArrived || 0}</td>
                       </tr>
                     ))}
                     {/* TOTAL COMPLETED ROW */}
-                    <tr className="bg-[#FAF9F6] font-semibold border-t-2 border-[#EAE8E1] text-zinc-800">
+                    <tr className="bg-[#FAF9F6] dark:bg-[#21211E] font-semibold border-t-2 border-[#EAE8E1] dark:border-[#302E29] text-zinc-800 dark:text-[#F0EBE3]">
                       <td className="py-3 px-4">Total</td>
                       <td className="py-3 px-4 tabular-nums">{totalExpected}</td>
-                      <td className="py-3 px-4 tabular-nums text-emerald-600">{totalCheckedIn}</td>
-                      <td className="py-3 px-4 tabular-nums text-[#C59B27]">{totalInside}</td>
+                      <td className="py-3 px-4 tabular-nums text-emerald-600 dark:text-emerald-400">{totalCheckedIn}</td>
+                      <td className="py-3 px-4 tabular-nums text-[#C59B27] dark:text-amber-400">{totalInside}</td>
                       <td className="py-3 px-4 tabular-nums">{totalPickedUp}</td>
-                      <td className="py-3 px-4 tabular-nums text-zinc-400">{totalNotArrived}</td>
+                      <td className="py-3 px-4 tabular-nums text-zinc-400 dark:text-[#7A7570]">{totalNotArrived}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -630,10 +630,10 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
           
           {/* QUICK ACTIONS PANEL */}
           <div 
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-3xs space-y-4"
+            className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-5 shadow-3xs space-y-4"
             data-component-version="admin-attendance-quick-actions-v2"
           >
-            <h4 className="text-sm font-semibold text-[#18181B] border-b border-[#FAF9F6] pb-2">
+            <h4 className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] border-b border-[#FAF9F6] dark:border-[#302E29] pb-2">
               Quick actions
             </h4>
             <div className="space-y-2">
@@ -642,8 +642,8 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                 onClick={() => setActiveStatus('inside')}
                 className={`w-full text-left px-3.5 py-2.5 rounded-xl border text-xs font-semibold transition-all flex items-center justify-between ${
                   activeStatus === 'inside'
-                    ? 'bg-[#C59B27]/5 text-[#C59B27] border-[#C59B27]/30'
-                    : 'bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50'
+                    ? 'bg-[#C59B27]/5 dark:bg-amber-950/20 text-[#C59B27] dark:text-amber-400 border-[#C59B27]/30 dark:border-amber-900/50'
+                    : 'bg-white dark:bg-[#21211E] text-zinc-700 dark:text-[#B8B0A5] border-zinc-200 dark:border-[#302E29] hover:bg-zinc-50 dark:hover:bg-[#262520]'
                 }`}
               >
                 <span>View children inside</span>
@@ -655,8 +655,8 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                 onClick={() => setActiveStatus('not_arrived')}
                 className={`w-full text-left px-3.5 py-2.5 rounded-xl border text-xs font-semibold transition-all flex items-center justify-between ${
                   activeStatus === 'not_arrived'
-                    ? 'bg-[#C59B27]/5 text-[#C59B27] border-[#C59B27]/30'
-                    : 'bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50'
+                    ? 'bg-[#C59B27]/5 dark:bg-amber-950/20 text-[#C59B27] dark:text-amber-400 border-[#C59B27]/30 dark:border-amber-900/50'
+                    : 'bg-white dark:bg-[#21211E] text-zinc-700 dark:text-[#B8B0A5] border-zinc-200 dark:border-[#302E29] hover:bg-zinc-50 dark:hover:bg-[#262520]'
                 }`}
               >
                 <span>View not arrived</span>
@@ -668,8 +668,8 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                 onClick={() => setActiveStatus('needs_attention')}
                 className={`w-full text-left px-3.5 py-2.5 rounded-xl border text-xs font-semibold transition-all flex items-center justify-between ${
                   activeStatus === 'needs_attention'
-                    ? 'bg-[#C59B27]/5 text-[#C59B27] border-[#C59B27]/30'
-                    : 'bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50'
+                    ? 'bg-[#C59B27]/5 dark:bg-amber-950/20 text-[#C59B27] dark:text-amber-400 border-[#C59B27]/30 dark:border-amber-900/50'
+                    : 'bg-white dark:bg-[#21211E] text-zinc-700 dark:text-[#B8B0A5] border-zinc-200 dark:border-[#302E29] hover:bg-zinc-50 dark:hover:bg-[#262520]'
                 }`}
               >
                 <span>View needs attention</span>
@@ -680,10 +680,10 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
 
           {/* RECENT SCANS PANEL */}
           <div 
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-3xs space-y-4"
+            className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-5 shadow-3xs space-y-4"
             data-component-version="admin-attendance-recent-scans-v2"
           >
-            <h4 className="text-sm font-semibold text-[#18181B] border-b border-[#FAF9F6] pb-2">
+            <h4 className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] border-b border-[#FAF9F6] dark:border-[#302E29] pb-2">
               Recent scans
             </h4>
             
@@ -696,7 +696,7 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                 />
               </div>
             ) : recentScans.length === 0 ? (
-              <p className="text-zinc-400 text-xs text-center py-4">No recent scans yet.</p>
+              <p className="text-zinc-400 dark:text-[#7A7570] text-xs text-center py-4">No recent scans yet.</p>
             ) : (
               <div className="space-y-3 max-h-72 overflow-y-auto pr-1 scrollbar-thin">
                 {recentScans.map((scan) => {
@@ -705,25 +705,25 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                     <div
                       key={scan.id}
                       onClick={() => appId ? handleRowClick(appId) : undefined}
-                      className={`flex items-start space-x-2.5 text-xs ${appId ? 'cursor-pointer hover:bg-zinc-50 p-1.5 -mx-1.5 rounded-lg transition-colors' : ''}`}
+                      className={`flex items-start space-x-2.5 text-xs ${appId ? 'cursor-pointer hover:bg-zinc-50 dark:hover:bg-[#21211E] p-1.5 -mx-1.5 rounded-lg transition-colors' : ''}`}
                     >
                       <span className="mt-1 flex-shrink-0">
                         {scan.type === 'pickup' ? (
-                          <span className="w-2 h-2 rounded-full bg-zinc-400 block" />
+                          <span className="w-2 h-2 rounded-full bg-zinc-400 dark:bg-[#7A7570] block" />
                         ) : (
                           <span className="w-2 h-2 rounded-full bg-emerald-500 block" />
                         )}
                       </span>
                       <div className="flex-1 min-w-0">
-                        <p className={`font-semibold text-zinc-800 truncate ${appId ? 'hover:text-[#C59B27] transition-colors' : ''}`}>
+                        <p className={`font-semibold text-zinc-800 dark:text-[#F0EBE3] truncate ${appId ? 'hover:text-[#C59B27] dark:hover:text-amber-400 transition-colors' : ''}`}>
                           {scan.childName}
                         </p>
-                        <p className="text-[10px] text-zinc-400 mt-0.5">
+                        <p className="text-[10px] text-zinc-400 dark:text-[#7A7570] mt-0.5">
                           {scan.type === 'pickup' ? 'Picked up' : 'Checked in'} · {scan.timeLabel}
                         </p>
                       </div>
                       {scan.flagged && (
-                        <span className="text-[10px] text-rose-500 font-semibold bg-rose-50 px-1 rounded-sm">Care</span>
+                        <span className="text-[10px] text-rose-500 dark:text-red-400 font-semibold bg-rose-50 dark:bg-red-950/20 px-1 rounded-sm">Care</span>
                       )}
                     </div>
                   );
@@ -734,10 +734,10 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
 
           {/* TEAM ACTIVITY PANEL */}
           <div 
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-5 shadow-3xs space-y-4"
+            className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-5 shadow-3xs space-y-4"
             data-component-version="admin-attendance-team-activity-v2"
           >
-            <h4 className="text-sm font-semibold text-[#18181B] border-b border-[#FAF9F6] pb-2">
+            <h4 className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] border-b border-[#FAF9F6] dark:border-[#302E29] pb-2">
               Team activity
             </h4>
 
@@ -750,17 +750,17 @@ export const AdminAttendanceView: React.FC<AdminAttendanceViewProps> = ({
                 />
               </div>
             ) : teamActivity.length === 0 ? (
-              <p className="text-zinc-400 text-xs text-center py-4">No team activity yet.</p>
+              <p className="text-zinc-400 dark:text-[#7A7570] text-xs text-center py-4">No team activity yet.</p>
             ) : (
               <div className="space-y-3.5 max-h-72 overflow-y-auto pr-1 scrollbar-thin">
                 {teamActivity.map((act, idx) => (
                   <div key={idx} className="text-xs space-y-0.5">
                     <div className="flex items-baseline justify-between gap-2">
-                      <span className="font-semibold text-zinc-800 truncate">{act.teamMemberName}</span>
-                      <span className="text-[11px] text-zinc-400 flex-shrink-0">{act.timeLabel}</span>
+                      <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3] truncate">{act.teamMemberName}</span>
+                      <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] flex-shrink-0">{act.timeLabel}</span>
                     </div>
-                    <p className="text-zinc-500 text-[11px]">
-                      {act.action} <strong className="font-medium text-zinc-700">{act.childName}</strong>
+                    <p className="text-zinc-500 dark:text-[#7A7570] text-[11px]">
+                      {act.action} <strong className="font-medium text-zinc-700 dark:text-[#B8B0A5]">{act.childName}</strong>
                     </p>
                   </div>
                 ))}

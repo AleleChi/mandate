@@ -194,7 +194,7 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6"
+      className="fixed inset-0 z-50 bg-stone-900/60 dark:bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="preview-modal-title"
@@ -203,19 +203,19 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
         ref={modalRef}
         data-preview-build="report-preview-v5-premium-canonical"
         data-component-version="generated-report-preview-v5-editorial"
-        className="bg-[#FAF9F6] border border-[#C59B27]/30 rounded-[24px] shadow-2xl w-full max-w-[1240px] max-h-[92dvh] flex flex-col overflow-hidden text-stone-900"
+        className="bg-[#FAF9F6] dark:bg-[#1D1D1A] border border-[#C59B27]/30 dark:border-[#302E29] rounded-[24px] shadow-2xl w-full max-w-[1240px] max-h-[92dvh] flex flex-col overflow-hidden text-stone-900 dark:text-[#F0EBE3]"
       >
         {/* Header Bar */}
-        <div className="bg-white border-b border-stone-200 px-6 py-4 flex items-center justify-between gap-4 shrink-0">
+        <div className="bg-white dark:bg-[#21211E] border-b border-stone-200 dark:border-[#302E29] px-6 py-4 flex items-center justify-between gap-4 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-[#FAF9F6] border border-[#C59B27]/30 flex items-center justify-center text-[#C59B27] shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-[#FAF9F6] dark:bg-[#262520] border border-[#C59B27]/30 dark:border-amber-900/50 flex items-center justify-center text-[#C59B27] dark:text-amber-400 shrink-0">
               <FileText className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <h2 id="preview-modal-title" className="text-base font-serif font-medium text-stone-900 truncate">
+              <h2 id="preview-modal-title" className="text-base font-serif font-medium text-stone-900 dark:text-[#F0EBE3] truncate">
                 {model?.reportTitle || reportTitle || 'Official Report'}
               </h2>
-              <p className="text-xs text-stone-500 truncate">
+              <p className="text-xs text-stone-500 dark:text-[#7A7570] truncate">
                 {model?.eventContext?.eventTitle || eventTitle || 'The General Assembly'}
               </p>
             </div>
@@ -236,7 +236,7 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
             <button
               onClick={onClose}
               aria-label="Close Preview Dialog"
-              className="w-9 h-9 flex items-center justify-center text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-full transition-all cursor-pointer"
+              className="w-9 h-9 flex items-center justify-center text-stone-400 dark:text-[#7A7570] hover:text-stone-700 dark:hover:text-[#F0EBE3] hover:bg-stone-100 dark:hover:bg-[#262520] rounded-full transition-all cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -244,24 +244,24 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
         </div>
 
         {/* Toolbar with Zoom Controls (Technical metadata removed) */}
-        <div className="bg-stone-50 border-b border-stone-200 px-6 py-2 flex flex-wrap items-center justify-between text-xs text-stone-600 gap-2 shrink-0">
+        <div className="bg-stone-50 dark:bg-[#1D1D1A] border-b border-stone-200 dark:border-[#302E29] px-6 py-2 flex flex-wrap items-center justify-between text-xs text-stone-600 dark:text-[#B8B0A5] gap-2 shrink-0">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-stone-600">Document view</span>
+            <span className="text-xs font-medium text-stone-600 dark:text-[#B8B0A5]">Document view</span>
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1 bg-white border border-stone-200 rounded-lg p-0.5">
+            <div className="flex items-center gap-1 bg-white dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg p-0.5">
               <button
                 onClick={() => setZoom(z => Math.max(z - 10, 70))}
-                className="p-1 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded cursor-pointer"
+                className="p-1 text-stone-500 dark:text-[#7A7570] hover:text-stone-900 dark:hover:text-[#F0EBE3] hover:bg-stone-100 dark:hover:bg-[#2A2926] rounded cursor-pointer"
                 title="Zoom Out"
               >
                 <ZoomOut className="w-3.5 h-3.5" />
               </button>
-              <span className="text-[11px] font-mono px-1.5 min-w-[3rem] text-center">{zoom}%</span>
+              <span className="text-[11px] font-mono px-1.5 min-w-[3rem] text-center text-stone-700 dark:text-[#F0EBE3]">{zoom}%</span>
               <button
                 onClick={() => setZoom(z => Math.min(z + 10, 140))}
-                className="p-1 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded cursor-pointer"
+                className="p-1 text-stone-500 dark:text-[#7A7570] hover:text-stone-900 dark:hover:text-[#F0EBE3] hover:bg-stone-100 dark:hover:bg-[#2A2926] rounded cursor-pointer"
                 title="Zoom In"
               >
                 <ZoomIn className="w-3.5 h-3.5" />
@@ -272,30 +272,30 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
 
         {/* Mobile Report Contents Dropdown */}
         {outlineItems.length > 0 && (
-          <div className="md:hidden bg-white border-b border-stone-200 px-4 py-2 shrink-0">
+          <div className="md:hidden bg-white dark:bg-[#21211E] border-b border-stone-200 dark:border-[#302E29] px-4 py-2 shrink-0">
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="w-full flex items-center justify-between text-xs font-medium text-stone-700 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-left"
+              className="w-full flex items-center justify-between text-xs font-medium text-stone-700 dark:text-[#F0EBE3] bg-stone-50 dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg px-3 py-2 text-left"
             >
               <div className="flex flex-col min-w-0 pr-2">
-                <span className="text-[10px] uppercase font-semibold text-stone-400 tracking-wider">Report contents</span>
-                <span className="truncate text-xs font-medium text-stone-800">
+                <span className="text-[10px] uppercase font-semibold text-stone-400 dark:text-[#7A7570] tracking-wider">Report contents</span>
+                <span className="truncate text-xs font-medium text-stone-800 dark:text-[#F0EBE3]">
                   {outlineItems.find(i => i.id === activeOutlineSection)?.title || 'Select section'}
                 </span>
               </div>
-              <ChevronDown className={`w-4 h-4 text-stone-400 shrink-0 transition-transform ${mobileMenuOpen ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`w-4 h-4 text-stone-400 dark:text-[#7A7570] shrink-0 transition-transform ${mobileMenuOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {mobileMenuOpen && (
-              <div className="mt-2 space-y-1 bg-white border border-stone-200 rounded-lg p-2 max-h-48 overflow-y-auto">
+              <div className="mt-2 space-y-1 bg-white dark:bg-[#21211E] border border-stone-200 dark:border-[#302E29] rounded-lg p-2 max-h-48 overflow-y-auto">
                 {outlineItems.map((item) => (
                   <button
                     key={item.id}
                     onClick={() => handleOutlineClick(item.id)}
                     className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors ${
                       activeOutlineSection === item.id
-                        ? 'bg-[#C59B27]/10 text-[#8C6D23] font-semibold border-l-2 border-[#C59B27]'
-                        : 'text-stone-600 hover:bg-stone-50'
+                        ? 'bg-[#C59B27]/10 dark:bg-amber-950/30 text-[#8C6D23] dark:text-amber-400 font-semibold border-l-2 border-[#C59B27] dark:border-amber-400'
+                        : 'text-stone-600 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#262520]'
                     }`}
                   >
                     {item.title}
@@ -310,8 +310,8 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
         <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
           {/* Dynamic Outline Sidebar (Desktop) */}
           {outlineItems.length > 0 && (
-            <div className="hidden md:block w-60 border-r border-stone-200 bg-[#FAF9F6] p-4 overflow-y-auto shrink-0 space-y-3">
-              <h3 className="text-[12px] font-medium tracking-[0.04em] text-stone-500 uppercase">
+            <div className="hidden md:block w-60 border-r border-stone-200 dark:border-[#302E29] bg-[#FAF9F6] dark:bg-[#21211E] p-4 overflow-y-auto shrink-0 space-y-3">
+              <h3 className="text-[12px] font-medium tracking-[0.04em] text-stone-500 dark:text-[#7A7570] uppercase">
                 Report contents
               </h3>
               <nav className="space-y-1">
@@ -323,8 +323,8 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
                       onClick={() => handleOutlineClick(item.id)}
                       className={`w-full text-left px-3 py-2.5 rounded-lg text-[14px] leading-5 font-normal transition-colors break-words cursor-pointer ${
                         isActive
-                          ? 'bg-[#C59B27]/10 text-[#8C6D23] font-medium border-l-2 border-[#C59B27]'
-                          : 'text-stone-600 hover:bg-stone-100/80 hover:text-stone-900'
+                          ? 'bg-[#C59B27]/10 dark:bg-amber-950/30 text-[#8C6D23] dark:text-amber-400 font-medium border-l-2 border-[#C59B27] dark:border-amber-400'
+                          : 'text-stone-600 dark:text-[#B8B0A5] hover:bg-stone-100/80 dark:hover:bg-[#262520] hover:text-stone-900 dark:hover:text-[#F0EBE3]'
                       }`}
                     >
                       {item.title}
@@ -335,23 +335,23 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
             </div>
           )}
 
-          {/* Premium React Editorial Document Viewer Area */}
-          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto bg-stone-100/70 p-4 sm:p-8 flex justify-center">
+          {/* Premium React Editorial Document Viewer Area - Dark frame around light document */}
+          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto bg-stone-100/70 dark:bg-[#141413] p-4 sm:p-8 flex justify-center">
             <div style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top center' }} className="transition-transform duration-150 w-full">
               {loading && <ReportPreviewSkeleton />}
 
               {error && (
-                <div className="max-w-md mx-auto my-12 bg-white border border-stone-200 rounded-2xl p-8 text-center space-y-4 shadow-sm">
-                  <div className="w-12 h-12 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto">
+                <div className="max-w-md mx-auto my-12 bg-white dark:bg-[#21211E] border border-stone-200 dark:border-[#302E29] rounded-2xl p-8 text-center space-y-4 shadow-sm">
+                  <div className="w-12 h-12 rounded-full bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto">
                     <AlertCircle className="w-6 h-6" />
                   </div>
                   <div>
-                    <h3 className="text-base font-serif font-semibold text-stone-900">Preview Unavailable</h3>
-                    <p className="text-xs text-stone-500 mt-1 leading-relaxed">{error}</p>
+                    <h3 className="text-base font-serif font-semibold text-stone-900 dark:text-[#F0EBE3]">Preview Unavailable</h3>
+                    <p className="text-xs text-stone-500 dark:text-[#7A7570] mt-1 leading-relaxed">{error}</p>
                   </div>
                   <button
                     onClick={onClose}
-                    className="bg-stone-900 hover:bg-black text-white text-xs font-semibold py-2 px-5 rounded-xl transition-all cursor-pointer"
+                    className="bg-stone-900 hover:bg-black dark:bg-[#262520] dark:hover:bg-[#2A2926] text-white dark:text-[#F0EBE3] border dark:border-[#3A3835] text-xs font-semibold py-2 px-5 rounded-xl transition-all cursor-pointer"
                   >
                     Close Preview
                   </button>

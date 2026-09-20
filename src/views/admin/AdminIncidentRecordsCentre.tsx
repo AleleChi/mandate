@@ -505,15 +505,15 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
   });
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto p-4 md:p-6 text-stone-900 bg-[#FAF9F5]" id="incidents-view">
+    <div className="space-y-6 max-w-7xl mx-auto p-4 md:p-6 text-stone-900 dark:text-[#F0EBE3] bg-[#FAF9F5] dark:bg-transparent" id="incidents-view">
       
       {/* 1. Page Header (Prompt Section 4, 5, 21) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200 pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200 dark:border-[#302E29] pb-5">
         <div className="space-y-1">
-          <h1 className="type-h1-app text-stone-900">
+          <h1 className="type-h1-app text-stone-900 dark:text-[#F0EBE3]">
             Incidents
           </h1>
-          <p className="text-xs text-stone-600 max-w-2xl leading-relaxed">
+          <p className="text-xs text-stone-600 dark:text-[#B8B0A5] max-w-2xl leading-relaxed">
             Record and follow up on matters that need attention during the event.
           </p>
         </div>
@@ -522,9 +522,9 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
           <button
             onClick={handleRefreshAll}
             disabled={refreshing}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-stone-200 hover:bg-stone-50 rounded-xl text-xs font-medium text-stone-700 transition-colors cursor-pointer min-h-[38px]"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-white dark:bg-[#21211E] border border-stone-200 dark:border-[#302E29] hover:bg-stone-50 dark:hover:bg-[#262520] rounded-xl text-xs font-medium text-stone-700 dark:text-[#F0EBE3] transition-colors cursor-pointer min-h-[38px]"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-stone-500' : 'text-stone-500'}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-stone-500 dark:text-[#7A7570]' : 'text-stone-500 dark:text-[#7A7570]'}`} />
             <span>Refresh</span>
           </button>
           <button
@@ -538,33 +538,33 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
       </div>
 
       {/* 2. Top Summary Strip (Prompt Section 6: One quiet summary strip, subtle dividers, no colored icons) */}
-      <div className="bg-white border border-stone-200 rounded-xl shadow-xs overflow-hidden">
-        <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-stone-200">
+      <div className="bg-white dark:bg-[#21211E] border border-stone-200 dark:border-[#302E29] rounded-xl shadow-xs overflow-hidden">
+        <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-stone-200 dark:divide-[#302E29]">
           
           <div className="p-4 md:p-5 text-left">
-            <span className="text-[11px] font-medium text-stone-500 block">All incidents</span>
-            <span className="text-xl md:text-2xl font-bold text-stone-900 tabular-nums mt-1 block">
+            <span className="text-[11px] font-medium text-stone-500 dark:text-[#7A7570] block">All incidents</span>
+            <span className="text-xl md:text-2xl font-bold text-stone-900 dark:text-[#F0EBE3] tabular-nums mt-1 block">
               {loadingStats ? '—' : stats.totalCount}
             </span>
           </div>
 
           <div className="p-4 md:p-5 text-left">
-            <span className="text-[11px] font-medium text-stone-500 block">Awaiting review</span>
-            <span className={`text-xl md:text-2xl font-bold tabular-nums mt-1 block ${(stats.submittedCount + stats.draftCount) > 0 ? 'text-amber-800' : 'text-stone-900'}`}>
+            <span className="text-[11px] font-medium text-stone-500 dark:text-[#7A7570] block">Awaiting review</span>
+            <span className={`text-xl md:text-2xl font-bold tabular-nums mt-1 block ${(stats.submittedCount + stats.draftCount) > 0 ? 'text-amber-800 dark:text-amber-400' : 'text-stone-900 dark:text-[#F0EBE3]'}`}>
               {loadingStats ? '—' : (stats.submittedCount + stats.draftCount)}
             </span>
           </div>
 
           <div className="p-4 md:p-5 text-left">
-            <span className="text-[11px] font-medium text-stone-500 block">Follow-up needed</span>
-            <span className={`text-xl md:text-2xl font-bold tabular-nums mt-1 block ${(stats.activeFollowUpCount + stats.needsRevisionCount) > 0 ? 'text-amber-800' : 'text-stone-900'}`}>
+            <span className="text-[11px] font-medium text-stone-500 dark:text-[#7A7570] block">Follow-up needed</span>
+            <span className={`text-xl md:text-2xl font-bold tabular-nums mt-1 block ${(stats.activeFollowUpCount + stats.needsRevisionCount) > 0 ? 'text-amber-800 dark:text-amber-400' : 'text-stone-900 dark:text-[#F0EBE3]'}`}>
               {loadingStats ? '—' : (stats.activeFollowUpCount + stats.needsRevisionCount)}
             </span>
           </div>
 
           <div className="p-4 md:p-5 text-left">
-            <span className="text-[11px] font-medium text-stone-500 block">Closed</span>
-            <span className="text-xl md:text-2xl font-bold text-stone-900 tabular-nums mt-1 block">
+            <span className="text-[11px] font-medium text-stone-500 dark:text-[#7A7570] block">Closed</span>
+            <span className="text-xl md:text-2xl font-bold text-stone-900 dark:text-[#F0EBE3] tabular-nums mt-1 block">
               {loadingStats ? '—' : stats.closedCount}
             </span>
           </div>
@@ -574,13 +574,13 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
 
       {/* 3. Global Zero Incidents State (Prompt Section 10: One wide calm empty state when 0 incidents exist) */}
       {!loading && stats.totalCount === 0 && incidents.length === 0 ? (
-        <div className="bg-white border border-stone-200 rounded-xl p-12 text-center space-y-4 max-w-xl mx-auto my-8">
-          <div className="mx-auto w-12 h-12 bg-stone-50 rounded-full flex items-center justify-center text-stone-400 border border-stone-100">
+        <div className="bg-white dark:bg-[#21211E] border border-stone-200 dark:border-[#302E29] rounded-xl p-12 text-center space-y-4 max-w-xl mx-auto my-8">
+          <div className="mx-auto w-12 h-12 bg-stone-50 dark:bg-[#262520] rounded-full flex items-center justify-center text-stone-400 dark:text-[#7A7570] border border-stone-100 dark:border-[#302E29]">
             <FileText className="w-5 h-5" />
           </div>
           <div className="space-y-1">
-            <h3 className="text-base font-semibold text-stone-900">No incidents recorded</h3>
-            <p className="text-xs text-stone-500 leading-relaxed max-w-sm mx-auto">
+            <h3 className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">No incidents recorded</h3>
+            <p className="text-xs text-stone-500 dark:text-[#7A7570] leading-relaxed max-w-sm mx-auto">
               Incidents reported during this event will appear here.
             </p>
           </div>
@@ -598,15 +598,15 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
           
           {/* Left Side: Incident List Panel */}
           <div className="xl:col-span-6 space-y-4">
-            <div className="bg-white border border-stone-200 p-4 md:p-5 rounded-xl space-y-4 shadow-xs">
+            <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] p-4 md:p-5 rounded-xl space-y-4 shadow-xs">
               
               {/* Filters Bar */}
-              <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between pb-3 border-b border-stone-100">
+              <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between pb-3 border-b border-stone-100 dark:border-[#302E29]">
                 <div className="flex items-center gap-2">
                   <select
                     value={statusFilter}
                     onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-                    className="bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs text-stone-700 outline-none focus:border-[#9E7D3B]"
+                    className="bg-stone-50 dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg px-2.5 py-1.5 text-xs text-stone-700 dark:text-[#F0EBE3] outline-none focus:border-[#9E7D3B] dark:focus:border-amber-400/50"
                   >
                     <option value="all">All statuses</option>
                     <option value="draft">New</option>
@@ -619,7 +619,7 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                   <select
                     value={categoryFilter}
                     onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
-                    className="bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs text-stone-700 outline-none focus:border-[#9E7D3B]"
+                    className="bg-stone-50 dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg px-2.5 py-1.5 text-xs text-stone-700 dark:text-[#F0EBE3] outline-none focus:border-[#9E7D3B] dark:focus:border-amber-400/50"
                   >
                     <option value="all">All categories</option>
                     <option value="behavioral">Child care</option>
@@ -631,13 +631,13 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                 </div>
 
                 <div className="relative flex-1 sm:max-w-xs">
-                  <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <Search className="w-3.5 h-3.5 text-stone-400 dark:text-[#7A7570] absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search incidents"
-                    className="w-full bg-stone-50 border border-stone-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-stone-800 placeholder-stone-400 outline-none focus:border-[#9E7D3B]"
+                    className="w-full bg-stone-50 dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg pl-8 pr-3 py-1.5 text-xs text-stone-800 dark:text-[#F0EBE3] placeholder-stone-400 dark:placeholder-[#7A7570] outline-none focus:border-[#9E7D3B] dark:focus:border-amber-400/50"
                   />
                 </div>
               </div>
@@ -647,8 +647,8 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                 <TableSkeleton rows={4} cols={3} />
               ) : filteredIncidents.length === 0 ? (
                 <div className="p-8 text-center space-y-1">
-                  <h4 className="text-xs font-semibold text-stone-700">No matching incidents</h4>
-                  <p className="text-xs text-stone-400">Try changing your filters or search.</p>
+                  <h4 className="text-xs font-semibold text-stone-700 dark:text-[#F0EBE3]">No matching incidents</h4>
+                  <p className="text-xs text-stone-400 dark:text-[#7A7570]">Try changing your filters or search.</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -659,30 +659,30 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                         key={inc.id}
                         onClick={() => handleSelectIncident(inc)}
                         className={`p-3.5 rounded-lg border transition-all cursor-pointer text-left ${
-                          isSelected 
-                            ? 'border-[#9E7D3B] bg-[#FBF9F4]' 
-                            : 'border-stone-200 hover:border-stone-300 bg-white'
+                          isSelected
+                            ? 'border-[#9E7D3B] bg-[#FBF9F4] dark:border-amber-500/60 dark:bg-amber-950/15'
+                            : 'border-stone-200 hover:border-stone-300 bg-white dark:border-[#302E29] dark:hover:border-[#3A3835] dark:bg-[#21211E] dark:hover:bg-[#262520]'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="space-y-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-[10px] font-medium text-stone-600 bg-stone-100 px-2 py-0.5 rounded">
+                              <span className="text-[10px] font-medium text-stone-600 dark:text-[#B8B0A5] bg-stone-100 dark:bg-[#262520] px-2 py-0.5 rounded">
                                 {getHumanCategory(inc.category)}
                               </span>
-                              <span className="text-[10px] font-medium text-stone-500">
+                              <span className="text-[10px] font-medium text-stone-500 dark:text-[#7A7570]">
                                 ·
                               </span>
-                              <span className="text-[10px] font-medium text-stone-600">
+                              <span className="text-[10px] font-medium text-stone-600 dark:text-[#B8B0A5]">
                                 {getHumanStatus(inc.status)}
                               </span>
                             </div>
 
-                            <h4 className="text-xs font-semibold text-stone-900 truncate">
+                            <h4 className="text-xs font-semibold text-stone-900 dark:text-[#F0EBE3] truncate">
                               {inc.title || 'Untitled Incident'}
                             </h4>
 
-                            <div className="flex items-center gap-3 text-[11px] text-stone-500">
+                            <div className="flex items-center gap-3 text-[11px] text-stone-500 dark:text-[#7A7570]">
                               <span>
                                 {new Date(inc.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                               </span>
@@ -693,7 +693,7 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                             </div>
                           </div>
 
-                          <ChevronRight className={`w-4 h-4 shrink-0 transition-transform ${isSelected ? 'text-[#9E7D3B] translate-x-0.5' : 'text-stone-300'}`} />
+                          <ChevronRight className={`w-4 h-4 shrink-0 transition-transform ${isSelected ? 'text-[#9E7D3B] dark:text-amber-400 translate-x-0.5' : 'text-stone-300 dark:text-[#5A5550]'}`} />
                         </div>
                       </div>
                     );
@@ -703,21 +703,21 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
 
               {/* Pagination */}
               {totalPages > 1 && (
-                <div className="flex items-center justify-between pt-3 border-t border-stone-100 text-xs text-stone-600">
+                <div className="flex items-center justify-between pt-3 border-t border-stone-100 dark:border-[#302E29] text-xs text-stone-600 dark:text-[#B8B0A5]">
                   <button
                     disabled={page <= 1}
                     onClick={() => setPage(p => Math.max(1, p - 1))}
-                    className="px-2.5 py-1 rounded border border-stone-200 disabled:opacity-40 cursor-pointer"
+                    className="px-2.5 py-1 rounded border border-stone-200 dark:border-[#3A3835] dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#262520] disabled:opacity-40 cursor-pointer"
                   >
                     Previous
                   </button>
-                  <span className="text-[11px] text-stone-500 tabular-nums">
+                  <span className="text-[11px] text-stone-500 dark:text-[#7A7570] tabular-nums">
                     Page {page} of {totalPages}
                   </span>
                   <button
                     disabled={page >= totalPages}
                     onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                    className="px-2.5 py-1 rounded border border-stone-200 disabled:opacity-40 cursor-pointer"
+                    className="px-2.5 py-1 rounded border border-stone-200 dark:border-[#3A3835] dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#262520] disabled:opacity-40 cursor-pointer"
                   >
                     Next
                   </button>
@@ -730,26 +730,26 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
           {/* Right Side: Incident Details Panel */}
           <div className="xl:col-span-6">
             {selectedIncident ? (
-              <div className="bg-white border border-stone-200 rounded-xl overflow-hidden shadow-xs flex flex-col min-h-[500px]">
+              <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl overflow-hidden shadow-xs flex flex-col min-h-[500px]">
                 
                 {/* Header */}
-                <div className="p-4 md:p-5 border-b border-stone-100 bg-[#FAF9F6] flex justify-between items-start gap-4">
+                <div className="p-4 md:p-5 border-b border-stone-100 dark:border-[#302E29] bg-[#FAF9F6] dark:bg-[#21211E] flex justify-between items-start gap-4">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[10px] font-medium text-stone-700 bg-stone-100 px-2 py-0.5 rounded">
+                      <span className="text-[10px] font-medium text-stone-700 dark:text-[#B8B0A5] bg-stone-100 dark:bg-[#262520] px-2 py-0.5 rounded">
                         {getHumanCategory(selectedIncident.category)}
                       </span>
-                      <span className="text-[10px] font-medium text-stone-600">
+                      <span className="text-[10px] font-medium text-stone-600 dark:text-[#B8B0A5]">
                         {getHumanStatus(selectedIncidentDetail?.status || selectedIncident.status)}
                       </span>
                     </div>
-                    <h3 className="text-sm md:text-base font-semibold text-stone-900 leading-snug">
+                    <h3 className="text-sm md:text-base font-semibold text-stone-900 dark:text-[#F0EBE3] leading-snug">
                       {selectedIncident.title}
                     </h3>
                   </div>
                   <button 
                     onClick={() => setSelectedIncident(null)}
-                    className="text-stone-400 hover:text-stone-600 p-1 cursor-pointer"
+                    className="text-stone-400 hover:text-stone-600 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] p-1 cursor-pointer"
                     title="Close details"
                   >
                     <X className="w-4 h-4" />
@@ -765,33 +765,33 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                     
                     {/* Summary Section */}
                     <div className="space-y-2">
-                      <h4 className="text-xs font-semibold text-stone-700">What happened</h4>
-                      <p className="text-xs text-stone-700 bg-stone-50 border border-stone-200/70 rounded-lg p-3.5 leading-relaxed">
+                      <h4 className="text-xs font-semibold text-stone-700 dark:text-[#B8B0A5]">What happened</h4>
+                      <p className="text-xs text-stone-700 dark:text-[#F0EBE3] bg-stone-50 dark:bg-[#21211E] border border-stone-200/70 dark:border-[#302E29] rounded-lg p-3.5 leading-relaxed">
                         {selectedIncidentDetail.description || 'No detailed narrative provided.'}
                       </p>
                     </div>
 
                     {/* Immediate Actions / Sensitive Notes */}
                     {(selectedIncidentDetail.firstAid || selectedIncidentDetail.parentContact || selectedIncidentDetail.security) && (
-                      <div className="space-y-2 pt-2 border-t border-stone-100">
-                        <h4 className="text-xs font-semibold text-stone-700">Immediate action taken</h4>
+                      <div className="space-y-2 pt-2 border-t border-stone-100 dark:border-[#302E29]">
+                        <h4 className="text-xs font-semibold text-stone-700 dark:text-[#B8B0A5]">Immediate action taken</h4>
                         <div className="space-y-2 text-xs">
                           {selectedIncidentDetail.firstAid && (
-                            <div className="p-3 bg-stone-50 rounded-lg border border-stone-200/70">
-                              <span className="text-[10px] font-semibold text-stone-600 block">First aid care</span>
-                              <p className="text-stone-700 mt-0.5">{selectedIncidentDetail.firstAid}</p>
+                            <div className="p-3 bg-stone-50 dark:bg-[#21211E] rounded-lg border border-stone-200/70 dark:border-[#302E29]">
+                              <span className="text-[10px] font-semibold text-stone-600 dark:text-[#7A7570] block">First aid care</span>
+                              <p className="text-stone-700 dark:text-[#F0EBE3] mt-0.5">{selectedIncidentDetail.firstAid}</p>
                             </div>
                           )}
                           {selectedIncidentDetail.parentContact && (
-                            <div className="p-3 bg-stone-50 rounded-lg border border-stone-200/70">
-                              <span className="text-[10px] font-semibold text-stone-600 block">Parent communication</span>
-                              <p className="text-stone-700 mt-0.5">{selectedIncidentDetail.parentContact}</p>
+                            <div className="p-3 bg-stone-50 dark:bg-[#21211E] rounded-lg border border-stone-200/70 dark:border-[#302E29]">
+                              <span className="text-[10px] font-semibold text-stone-600 dark:text-[#7A7570] block">Parent communication</span>
+                              <p className="text-stone-700 dark:text-[#F0EBE3] mt-0.5">{selectedIncidentDetail.parentContact}</p>
                             </div>
                           )}
                           {selectedIncidentDetail.security && (
-                            <div className="p-3 bg-stone-50 rounded-lg border border-stone-200/70">
-                              <span className="text-[10px] font-semibold text-stone-600 block">Security action</span>
-                              <p className="text-stone-700 mt-0.5">{selectedIncidentDetail.security}</p>
+                            <div className="p-3 bg-stone-50 dark:bg-[#21211E] rounded-lg border border-stone-200/70 dark:border-[#302E29]">
+                              <span className="text-[10px] font-semibold text-stone-600 dark:text-[#7A7570] block">Security action</span>
+                              <p className="text-stone-700 dark:text-[#F0EBE3] mt-0.5">{selectedIncidentDetail.security}</p>
                             </div>
                           )}
                         </div>
@@ -799,22 +799,22 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                     )}
 
                     {/* Follow-up Section (Prompt Section 15) */}
-                    <div className="space-y-3 pt-2 border-t border-stone-100">
+                    <div className="space-y-3 pt-2 border-t border-stone-100 dark:border-[#302E29]">
                       <div className="flex justify-between items-center">
-                        <h4 className="text-xs font-semibold text-stone-700">Follow-up needed</h4>
-                        <span className="text-[11px] text-stone-500 tabular-nums">
+                        <h4 className="text-xs font-semibold text-stone-700 dark:text-[#B8B0A5]">Follow-up needed</h4>
+                        <span className="text-[11px] text-stone-500 dark:text-[#7A7570] tabular-nums">
                           {selectedIncidentDetail.followUpActions?.filter((f: any) => f.status === 'pending').length || 0} remaining
                         </span>
                       </div>
 
                       <div className="space-y-2">
                         {selectedIncidentDetail.followUpActions?.map((act: any) => (
-                          <div key={act.id} className="p-3 bg-stone-50 border border-stone-200/70 rounded-lg text-xs space-y-2">
+                          <div key={act.id} className="p-3 bg-stone-50 dark:bg-[#21211E] border border-stone-200/70 dark:border-[#302E29] rounded-lg text-xs space-y-2">
                             <div className="flex items-start justify-between gap-2">
                               <div className="space-y-0.5">
-                                <span className="font-medium text-stone-900 block">{act.title}</span>
+                                <span className="font-medium text-stone-900 dark:text-[#F0EBE3] block">{act.title}</span>
                                 {act.assignedToUserId && (
-                                  <span className="text-[10px] text-stone-500 block">
+                                  <span className="text-[10px] text-stone-500 dark:text-[#7A7570] block">
                                     Assigned to staff
                                   </span>
                                 )}
@@ -822,12 +822,12 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                               {act.status === 'pending' ? (
                                 <button
                                   onClick={() => setCompletingFollowUpId(act.id)}
-                                  className="px-2 py-1 bg-stone-800 hover:bg-stone-900 text-white rounded text-[10px] font-medium cursor-pointer"
+                                  className="px-2 py-1 bg-stone-800 hover:bg-stone-900 dark:bg-[#302E29] dark:hover:bg-[#3A3835] text-white rounded text-[10px] font-medium cursor-pointer"
                                 >
                                   Mark complete
                                 </button>
                               ) : (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-full">
+                                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-900/40 px-2 py-0.5 rounded-full">
                                   <Check className="w-3 h-3" />
                                   Done
                                 </span>
@@ -835,24 +835,24 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                             </div>
 
                             {completingFollowUpId === act.id && (
-                              <div className="p-2.5 bg-white border border-stone-200 rounded-lg space-y-2 mt-2">
+                              <div className="p-2.5 bg-white dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg space-y-2 mt-2">
                                 <textarea
                                   value={followUpCompletionNote}
                                   onChange={(e) => setFollowUpCompletionNote(e.target.value)}
                                   placeholder="Note what was done (e.g. spoken with parent)..."
-                                  className="w-full border border-stone-200 rounded p-2 text-xs outline-none focus:border-[#9E7D3B]"
+                                  className="w-full border border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#1D1D1A] rounded p-2 text-xs text-stone-800 dark:text-[#F0EBE3] placeholder-stone-400 dark:placeholder-[#7A7570] outline-none focus:border-[#9E7D3B] dark:focus:border-amber-400/50"
                                   rows={2}
                                 />
                                 <div className="flex justify-end gap-2">
                                   <button 
                                     onClick={() => setCompletingFollowUpId(null)}
-                                    className="px-2 py-1 border border-stone-200 rounded text-[10px] text-stone-600"
+                                    className="px-2 py-1 border border-stone-200 dark:border-[#3A3835] rounded text-[10px] text-stone-600 dark:text-[#B8B0A5]"
                                   >
                                     Cancel
                                   </button>
                                   <button
                                     onClick={() => handleCompleteFollowUp(act.id)}
-                                    className="px-2.5 py-1 bg-emerald-700 text-white font-medium rounded text-[10px]"
+                                    className="px-2.5 py-1 bg-emerald-700 dark:bg-emerald-600 text-white font-medium rounded text-[10px]"
                                   >
                                     Save
                                   </button>
@@ -861,7 +861,7 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                             )}
 
                             {act.status === 'completed' && act.completedNote && (
-                              <p className="text-[10px] text-stone-600 italic bg-white p-2 rounded border border-stone-100">
+                              <p className="text-[10px] text-stone-600 dark:text-[#B8B0A5] italic bg-white dark:bg-[#1D1D1A] p-2 rounded border border-stone-100 dark:border-[#302E29]">
                                 {act.completedNote}
                               </p>
                             )}
@@ -869,21 +869,21 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                         ))}
 
                         {/* Add Follow-Up Form */}
-                        <form onSubmit={handleAddFollowUp} className="bg-stone-50 border border-stone-200/70 rounded-lg p-3 space-y-2">
-                          <span className="text-[11px] font-medium text-stone-700 block">Add follow-up</span>
+                        <form onSubmit={handleAddFollowUp} className="bg-stone-50 dark:bg-[#21211E] border border-stone-200/70 dark:border-[#302E29] rounded-lg p-3 space-y-2">
+                          <span className="text-[11px] font-medium text-stone-700 dark:text-[#B8B0A5] block">Add follow-up</span>
                           <input
                             type="text"
                             required
                             value={followUpTitle}
                             onChange={(e) => setFollowUpTitle(e.target.value)}
                             placeholder="e.g. Call parent to check how the child is doing..."
-                            className="w-full bg-white border border-stone-200 rounded-lg p-2 text-xs outline-none focus:border-[#9E7D3B]"
+                            className="w-full bg-white dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg p-2 text-xs text-stone-800 dark:text-[#F0EBE3] placeholder-stone-400 dark:placeholder-[#7A7570] outline-none focus:border-[#9E7D3B] dark:focus:border-amber-400/50"
                           />
                           <div className="flex gap-2">
                             <select
                               value={followUpAssignee}
                               onChange={(e) => setFollowUpAssignee(e.target.value)}
-                              className="bg-white border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs text-stone-700 flex-1 outline-none"
+                              className="bg-white dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg px-2.5 py-1.5 text-xs text-stone-700 dark:text-[#F0EBE3] flex-1 outline-none"
                             >
                               <option value="">Assign to team member (optional)</option>
                               {eligibleVolunteers.map(v => (
@@ -893,7 +893,7 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                             <button
                               type="submit"
                               disabled={submittingAction || !followUpTitle.trim()}
-                              className="bg-stone-800 hover:bg-stone-900 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer"
+                              className="bg-stone-800 hover:bg-stone-900 dark:bg-[#302E29] dark:hover:bg-[#3A3835] disabled:opacity-40 text-white px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer"
                             >
                               Add
                             </button>
@@ -904,11 +904,11 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
 
                     {/* Closure Checklist (Prompt Section 16) */}
                     {selectedIncidentDetail.status !== 'closed' && selectedIncidentDetail.status !== 'voided' && (
-                      <div className="space-y-3 pt-2 border-t border-stone-100">
-                        <h4 className="text-xs font-semibold text-stone-700">Closure checklist</h4>
+                      <div className="space-y-3 pt-2 border-t border-stone-100 dark:border-[#302E29]">
+                        <h4 className="text-xs font-semibold text-stone-700 dark:text-[#B8B0A5]">Closure checklist</h4>
                         
-                        <div className="space-y-2 bg-stone-50 border border-stone-200/70 rounded-lg p-3.5">
-                          <label className="flex items-center gap-2.5 cursor-pointer text-xs text-stone-700">
+                        <div className="space-y-2 bg-stone-50 dark:bg-[#21211E] border border-stone-200/70 dark:border-[#302E29] rounded-lg p-3.5">
+                          <label className="flex items-center gap-2.5 cursor-pointer text-xs text-stone-700 dark:text-[#B8B0A5]">
                             <input
                               type="checkbox"
                               checked={chkParentNotified}
@@ -918,7 +918,7 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                             Parents / guardians notified
                           </label>
 
-                          <label className="flex items-center gap-2.5 cursor-pointer text-xs text-stone-700">
+                          <label className="flex items-center gap-2.5 cursor-pointer text-xs text-stone-700 dark:text-[#B8B0A5]">
                             <input
                               type="checkbox"
                               checked={chkSafeguardingReview}
@@ -928,7 +928,7 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                             Safeguarding review completed
                           </label>
 
-                          <label className="flex items-center gap-2.5 cursor-pointer text-xs text-stone-700">
+                          <label className="flex items-center gap-2.5 cursor-pointer text-xs text-stone-700 dark:text-[#B8B0A5]">
                             <input
                               type="checkbox"
                               checked={chkFollowUpsClosed}
@@ -938,7 +938,7 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                             All required follow-up actions completed
                           </label>
 
-                          <label className="flex items-center gap-2.5 cursor-pointer text-xs text-stone-700">
+                          <label className="flex items-center gap-2.5 cursor-pointer text-xs text-stone-700 dark:text-[#B8B0A5]">
                             <input
                               type="checkbox"
                               checked={chkSignedOff}
@@ -948,18 +948,18 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                             Admin sign-off confirmed
                           </label>
 
-                          <div className="flex gap-2.5 pt-2 border-t border-stone-200/60 mt-2">
+                          <div className="flex gap-2.5 pt-2 border-t border-stone-200/60 dark:border-[#302E29] mt-2">
                             <button
                               onClick={handleSaveChecklist}
                               disabled={submittingAction}
-                              className="bg-white border border-stone-200 hover:bg-stone-50 text-stone-700 font-medium py-1.5 px-3 rounded-lg text-xs cursor-pointer flex-1"
+                              className="bg-white dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] hover:bg-stone-50 dark:hover:bg-[#302E29] text-stone-700 dark:text-[#F0EBE3] font-medium py-1.5 px-3 rounded-lg text-xs cursor-pointer flex-1"
                             >
                               Save checklist
                             </button>
                             <button
                               onClick={() => setShowCloseConfirmModal(true)}
                               disabled={submittingAction}
-                              className="bg-stone-900 hover:bg-stone-800 text-white font-medium py-1.5 px-3 rounded-lg text-xs cursor-pointer flex-1"
+                              className="bg-stone-900 hover:bg-stone-800 dark:bg-[#9E7D3B] dark:hover:bg-[#8A6D33] text-white font-medium py-1.5 px-3 rounded-lg text-xs cursor-pointer flex-1"
                             >
                               Close incident
                             </button>
@@ -969,11 +969,11 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                     )}
 
                     {/* Other Operational Actions */}
-                    <div className="pt-2 border-t border-stone-100 flex gap-2 flex-wrap text-xs">
+                    <div className="pt-2 border-t border-stone-100 dark:border-[#302E29] flex gap-2 flex-wrap text-xs">
                       {selectedIncidentDetail.status === 'submitted' && !showRevisionForm && (
                         <button
                           onClick={() => setShowRevisionForm(true)}
-                          className="px-3 py-1.5 rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-50 font-medium"
+                          className="px-3 py-1.5 rounded-lg border border-stone-200 dark:border-[#3A3835] text-stone-700 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#262520] font-medium"
                         >
                           Request follow-up
                         </button>
@@ -982,7 +982,7 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                       {selectedIncidentDetail.status !== 'closed' && selectedIncidentDetail.status !== 'voided' && !showReasonForm && (
                         <button
                           onClick={() => setShowReasonForm('void')}
-                          className="px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:text-red-700 hover:border-red-200 font-medium"
+                          className="px-3 py-1.5 rounded-lg border border-stone-200 dark:border-[#3A3835] text-stone-600 dark:text-[#7A7570] hover:text-red-700 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-900/40 font-medium"
                         >
                           Void incident
                         </button>
@@ -991,7 +991,7 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                       {selectedIncidentDetail.status === 'closed' && !showReasonForm && (
                         <button
                           onClick={() => setShowReasonForm('reopen')}
-                          className="px-3 py-1.5 rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-50 font-medium"
+                          className="px-3 py-1.5 rounded-lg border border-stone-200 dark:border-[#3A3835] text-stone-700 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#262520] font-medium"
                         >
                           Reopen incident
                         </button>
@@ -1003,7 +1003,7 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                             setEditingIncidentId(selectedIncidentDetail.id);
                             setEditingAlertId(selectedIncidentDetail.alert_id);
                           }}
-                          className="px-3 py-1.5 rounded-lg bg-stone-100 text-stone-700 hover:bg-stone-200 font-medium"
+                          className="px-3 py-1.5 rounded-lg bg-stone-100 dark:bg-[#262520] text-stone-700 dark:text-[#F0EBE3] hover:bg-stone-200 dark:hover:bg-[#302E29] font-medium"
                         >
                           Edit draft
                         </button>
@@ -1011,25 +1011,25 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                     </div>
 
                     {showRevisionForm && (
-                      <div className="p-3.5 bg-stone-50 border border-stone-200 rounded-lg space-y-2">
-                        <span className="text-[11px] font-medium text-stone-700 block">Follow-up request note</span>
+                      <div className="p-3.5 bg-stone-50 dark:bg-[#21211E] border border-stone-200 dark:border-[#302E29] rounded-lg space-y-2">
+                        <span className="text-[11px] font-medium text-stone-700 dark:text-[#B8B0A5] block">Follow-up request note</span>
                         <textarea
                           value={revisionNotes}
                           onChange={(e) => setRevisionNotes(e.target.value)}
                           placeholder="Describe what additional details or actions are needed..."
-                          className="w-full bg-white border border-stone-200 rounded-lg p-2.5 text-xs text-stone-800 outline-none"
+                          className="w-full bg-white dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg p-2.5 text-xs text-stone-800 dark:text-[#F0EBE3] placeholder-stone-400 dark:placeholder-[#7A7570] outline-none"
                           rows={2}
                         />
                         <div className="flex gap-2 justify-end">
                           <button 
                             onClick={() => setShowRevisionForm(false)}
-                            className="px-2.5 py-1 rounded border border-stone-200 text-xs text-stone-600 bg-white"
+                            className="px-2.5 py-1 rounded border border-stone-200 dark:border-[#3A3835] text-xs text-stone-600 dark:text-[#B8B0A5] bg-white dark:bg-[#262520]"
                           >
                             Cancel
                           </button>
                           <button
                             onClick={handleAddChangeRequest}
-                            className="bg-stone-800 text-white px-3 py-1 rounded text-xs font-medium"
+                            className="bg-stone-800 dark:bg-[#302E29] dark:hover:bg-[#3A3835] text-white px-3 py-1 rounded text-xs font-medium"
                           >
                             Send request
                           </button>
@@ -1038,27 +1038,27 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                     )}
 
                     {showReasonForm && (
-                      <div className="p-3.5 bg-stone-50 border border-stone-200 rounded-lg space-y-2">
-                        <span className="text-[11px] font-medium text-stone-700 block">
+                      <div className="p-3.5 bg-stone-50 dark:bg-[#21211E] border border-stone-200 dark:border-[#302E29] rounded-lg space-y-2">
+                        <span className="text-[11px] font-medium text-stone-700 dark:text-[#B8B0A5] block">
                           Reason to {showReasonForm === 'reopen' ? 'reopen' : 'void'} this incident
                         </span>
                         <textarea
                           value={administrativeReason}
                           onChange={(e) => setAdministrativeReason(e.target.value)}
                           placeholder="Provide a reason..."
-                          className="w-full bg-white border border-stone-200 rounded-lg p-2.5 text-xs text-stone-800 outline-none"
+                          className="w-full bg-white dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg p-2.5 text-xs text-stone-800 dark:text-[#F0EBE3] placeholder-stone-400 dark:placeholder-[#7A7570] outline-none"
                           rows={2}
                         />
                         <div className="flex gap-2 justify-end">
                           <button 
                             onClick={() => setShowReasonForm(null)}
-                            className="px-2.5 py-1 rounded border border-stone-200 text-xs text-stone-600 bg-white"
+                            className="px-2.5 py-1 rounded border border-stone-200 dark:border-[#3A3835] text-xs text-stone-600 dark:text-[#B8B0A5] bg-white dark:bg-[#262520]"
                           >
                             Cancel
                           </button>
                           <button
                             onClick={showReasonForm === 'reopen' ? handleReopenIncident : handleVoidIncident}
-                            className="bg-stone-800 text-white px-3 py-1 rounded text-xs font-medium"
+                            className="bg-stone-800 dark:bg-[#302E29] dark:hover:bg-[#3A3835] text-white px-3 py-1 rounded text-xs font-medium"
                           >
                             Confirm
                           </button>
@@ -1067,25 +1067,25 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                     )}
 
                     {/* History Section (Prompt Section 17) */}
-                    <div className="space-y-3 pt-2 border-t border-stone-100">
-                      <h4 className="text-xs font-semibold text-stone-700">History</h4>
+                    <div className="space-y-3 pt-2 border-t border-stone-100 dark:border-[#302E29]">
+                      <h4 className="text-xs font-semibold text-stone-700 dark:text-[#B8B0A5]">History</h4>
                       {historyLogs.length === 0 ? (
-                        <p className="text-xs text-stone-400">No history recorded yet.</p>
+                        <p className="text-xs text-stone-400 dark:text-[#7A7570]">No history recorded yet.</p>
                       ) : (
                         <div className="space-y-2.5">
                           {historyLogs.map((log, index) => (
-                            <div key={log.id || index} className="text-xs space-y-0.5 border-l-2 border-stone-200 pl-3 py-0.5">
-                              <div className="flex items-center gap-2 text-stone-500 text-[11px]">
+                            <div key={log.id || index} className="text-xs space-y-0.5 border-l-2 border-stone-200 dark:border-[#302E29] pl-3 py-0.5">
+                              <div className="flex items-center gap-2 text-stone-500 dark:text-[#7A7570] text-[11px]">
                                 <span className="tabular-nums">
                                   {new Date(log.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
                                 </span>
                                 <span>·</span>
-                                <span className="font-medium text-stone-800 capitalize">
+                                <span className="font-medium text-stone-800 dark:text-[#F0EBE3] capitalize">
                                   {(log.action_type || 'update').replace(/_/g, ' ')}
                                 </span>
                               </div>
                               {log.notes && (
-                                <p className="text-stone-600 text-xs mt-0.5">{log.notes}</p>
+                                <p className="text-stone-600 dark:text-[#B8B0A5] text-xs mt-0.5">{log.notes}</p>
                               )}
                             </div>
                           ))}
@@ -1099,9 +1099,9 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
               </div>
             ) : (
               /* Quiet Empty Selection State (Prompt Section 9: Remove "Audit Desk Ready") */
-              <div className="bg-white border border-stone-200 rounded-xl p-10 text-center space-y-2 shadow-xs">
-                <h4 className="text-xs font-semibold text-stone-700">Select an incident</h4>
-                <p className="text-xs text-stone-400 max-w-xs mx-auto leading-relaxed">
+              <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-10 text-center space-y-2 shadow-xs">
+                <h4 className="text-xs font-semibold text-stone-700 dark:text-[#F0EBE3]">Select an incident</h4>
+                <p className="text-xs text-stone-400 dark:text-[#7A7570] max-w-xs mx-auto leading-relaxed">
                   Choose an incident to review the details and follow-up.
                 </p>
               </div>
@@ -1113,14 +1113,14 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
 
       {/* Record Incident Modal (Prompt Section 11) */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white border border-stone-200 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl text-left max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
-              <h3 className="text-base font-semibold text-stone-900">Record incident</h3>
+        <div className="fixed inset-0 bg-stone-900/40 dark:bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white dark:bg-[#21211E] border border-stone-200 dark:border-[#302E29] rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl text-left max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-[#302E29]">
+              <h3 className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">Record incident</h3>
               <button
                 type="button"
                 onClick={() => setShowCreateModal(false)}
-                className="text-stone-400 hover:text-stone-600 p-1 cursor-pointer"
+                className="text-stone-400 hover:text-stone-600 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1128,24 +1128,24 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
 
             <form onSubmit={handleCreateIncident} className="space-y-3.5">
               <div className="space-y-1">
-                <label className="block text-xs font-medium text-stone-700">What happened? *</label>
+                <label className="block text-xs font-medium text-stone-700 dark:text-[#B8B0A5]">What happened? *</label>
                 <input
                   type="text"
                   required
                   value={createForm.title}
                   onChange={(e) => setCreateForm({ ...createForm, title: e.target.value })}
                   placeholder="e.g. Scraped knee during outdoor play"
-                  className="w-full border border-stone-200 rounded-lg p-2.5 text-xs text-stone-800 outline-none focus:border-[#9E7D3B]"
+                  className="w-full border border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#262520] rounded-lg p-2.5 text-xs text-stone-800 dark:text-[#F0EBE3] placeholder-stone-400 dark:placeholder-[#7A7570] outline-none focus:border-[#9E7D3B] dark:focus:border-amber-400/50"
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="block text-xs font-medium text-stone-700">Category</label>
+                  <label className="block text-xs font-medium text-stone-700 dark:text-[#B8B0A5]">Category</label>
                   <select
                     value={createForm.category}
                     onChange={(e) => setCreateForm({ ...createForm, category: e.target.value })}
-                    className="w-full border border-stone-200 rounded-lg p-2 text-xs text-stone-700 outline-none bg-white"
+                    className="w-full border border-stone-200 dark:border-[#3A3835] rounded-lg p-2 text-xs text-stone-700 dark:text-[#F0EBE3] outline-none bg-white dark:bg-[#262520]"
                   >
                     <option value="behavioral">Child care</option>
                     <option value="medical">Medical</option>
@@ -1156,55 +1156,55 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                 </div>
 
                 <div className="space-y-1">
-                  <label className="block text-xs font-medium text-stone-700">Location</label>
+                  <label className="block text-xs font-medium text-stone-700 dark:text-[#B8B0A5]">Location</label>
                   <input
                     type="text"
                     value={createForm.location}
                     onChange={(e) => setCreateForm({ ...createForm, location: e.target.value })}
                     placeholder="e.g. Main Hall / Toddlers Room"
-                    className="w-full border border-stone-200 rounded-lg p-2 text-xs text-stone-800 outline-none focus:border-[#9E7D3B]"
+                    className="w-full border border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#262520] rounded-lg p-2 text-xs text-stone-800 dark:text-[#F0EBE3] placeholder-stone-400 dark:placeholder-[#7A7570] outline-none focus:border-[#9E7D3B] dark:focus:border-amber-400/50"
                   />
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="block text-xs font-medium text-stone-700">Details</label>
+                <label className="block text-xs font-medium text-stone-700 dark:text-[#B8B0A5]">Details</label>
                 <textarea
                   value={createForm.description}
                   onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
                   placeholder="Describe the incident objectively..."
-                  className="w-full border border-stone-200 rounded-lg p-2.5 text-xs text-stone-800 outline-none focus:border-[#9E7D3B]"
+                  className="w-full border border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#262520] rounded-lg p-2.5 text-xs text-stone-800 dark:text-[#F0EBE3] placeholder-stone-400 dark:placeholder-[#7A7570] outline-none focus:border-[#9E7D3B] dark:focus:border-amber-400/50"
                   rows={3}
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="block text-xs font-medium text-stone-700">Immediate action taken</label>
+                <label className="block text-xs font-medium text-stone-700 dark:text-[#B8B0A5]">Immediate action taken</label>
                 <textarea
                   value={createForm.firstAid}
                   onChange={(e) => setCreateForm({ ...createForm, firstAid: e.target.value })}
                   placeholder="Any immediate care, first aid or steps taken..."
-                  className="w-full border border-stone-200 rounded-lg p-2 text-xs text-stone-800 outline-none focus:border-[#9E7D3B]"
+                  className="w-full border border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#262520] rounded-lg p-2 text-xs text-stone-800 dark:text-[#F0EBE3] placeholder-stone-400 dark:placeholder-[#7A7570] outline-none focus:border-[#9E7D3B] dark:focus:border-amber-400/50"
                   rows={2}
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="block text-xs font-medium text-stone-700">Parent communication</label>
+                <label className="block text-xs font-medium text-stone-700 dark:text-[#B8B0A5]">Parent communication</label>
                 <input
                   type="text"
                   value={createForm.parentContact}
                   onChange={(e) => setCreateForm({ ...createForm, parentContact: e.target.value })}
                   placeholder="e.g. Mother notified at collection"
-                  className="w-full border border-stone-200 rounded-lg p-2 text-xs text-stone-800 outline-none focus:border-[#9E7D3B]"
+                  className="w-full border border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#262520] rounded-lg p-2 text-xs text-stone-800 dark:text-[#F0EBE3] placeholder-stone-400 dark:placeholder-[#7A7570] outline-none focus:border-[#9E7D3B] dark:focus:border-amber-400/50"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-stone-100">
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-stone-100 dark:border-[#302E29]">
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="px-3.5 py-2 border border-stone-200 rounded-lg text-xs font-medium text-stone-600 hover:bg-stone-50 cursor-pointer"
+                  className="px-3.5 py-2 border border-stone-200 dark:border-[#3A3835] rounded-lg text-xs font-medium text-stone-600 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#262520] cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -1224,11 +1224,11 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
 
       {/* Close Incident Confirmation Modal (Prompt Section 16) */}
       {showCloseConfirmModal && (
-        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white border border-stone-200 rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-xl text-left">
+        <div className="fixed inset-0 bg-stone-900/40 dark:bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white dark:bg-[#21211E] border border-stone-200 dark:border-[#302E29] rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-xl text-left">
             <div className="space-y-1.5">
-              <h3 className="text-base font-semibold text-stone-900">Close this incident?</h3>
-              <p className="text-xs text-stone-500 leading-relaxed">
+              <h3 className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">Close this incident?</h3>
+              <p className="text-xs text-stone-500 dark:text-[#7A7570] leading-relaxed">
                 Use this when the required follow-up has been completed.
               </p>
             </div>
@@ -1236,7 +1236,7 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
               <button
                 type="button"
                 onClick={() => setShowCloseConfirmModal(false)}
-                className="px-3.5 py-2 border border-stone-200 rounded-lg text-xs font-medium text-stone-600 hover:bg-stone-50 cursor-pointer"
+                className="px-3.5 py-2 border border-stone-200 dark:border-[#3A3835] rounded-lg text-xs font-medium text-stone-600 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#262520] cursor-pointer"
               >
                 Cancel
               </button>
@@ -1244,7 +1244,7 @@ export const AdminIncidentRecordsCentre: React.FC<AdminIncidentRecordsCentreProp
                 type="button"
                 onClick={handleCloseIncident}
                 disabled={submittingAction}
-                className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+                className="px-4 py-2 bg-stone-900 hover:bg-stone-800 dark:bg-[#9E7D3B] dark:hover:bg-[#8A6D33] text-white rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
               >
                 {submittingAction ? 'Closing...' : 'Close incident'}
               </button>

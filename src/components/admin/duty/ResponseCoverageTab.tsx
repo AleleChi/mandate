@@ -38,12 +38,12 @@ function getHumanCoverageStatus(cat: CoverageCategory): {
 } {
   const totalAssigned = cat.primaryResponders.length + cat.backupResponders.length;
   if (cat.primaryResponders.length > 0 && cat.backupResponders.length > 0) {
-    return { label: 'Covered', textClass: 'text-emerald-700', dotClass: 'bg-emerald-500' };
+    return { label: 'Covered', textClass: 'text-emerald-700 dark:text-emerald-400', dotClass: 'bg-emerald-500' };
   }
   if (totalAssigned >= 1) {
-    return { label: 'Needs one more person', textClass: 'text-amber-700', dotClass: 'bg-amber-500' };
+    return { label: 'Needs one more person', textClass: 'text-amber-700 dark:text-amber-400', dotClass: 'bg-amber-500' };
   }
-  return { label: 'Not covered', textClass: 'text-rose-600', dotClass: 'bg-rose-500' };
+  return { label: 'Not covered', textClass: 'text-rose-600 dark:text-rose-400', dotClass: 'bg-rose-500' };
 }
 
 export default function ResponseCoverageTab({
@@ -152,14 +152,14 @@ export default function ResponseCoverageTab({
     <div className="space-y-5 animate-fade-in" data-view-version="admin-team-coverage-v5">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-950 rounded-xl flex items-center justify-between text-xs font-medium animate-fade-in shadow-2xs">
+        <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 text-emerald-950 dark:text-emerald-300 rounded-xl flex items-center justify-between text-xs font-medium animate-fade-in shadow-2xs">
           <div className="flex items-center space-x-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
             <span>{toastMessage}</span>
           </div>
           <button 
             onClick={() => setToastMessage(null)}
-            className="text-emerald-700 hover:text-emerald-900 cursor-pointer p-1"
+            className="text-emerald-700 hover:text-emerald-900 dark:text-emerald-400 dark:hover:text-emerald-200 cursor-pointer p-1"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -167,24 +167,24 @@ export default function ResponseCoverageTab({
       )}
 
       {error && (
-        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-950 rounded-xl flex items-center justify-between space-x-2 text-xs font-medium animate-fade-in shadow-2xs">
+        <div className="p-3.5 bg-rose-50 dark:bg-red-950/20 border border-rose-200 dark:border-red-900/40 text-rose-950 dark:text-red-300 rounded-xl flex items-center justify-between space-x-2 text-xs font-medium animate-fade-in shadow-2xs">
           <div className="flex items-center space-x-2">
-            <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <XCircle className="w-4 h-4 text-rose-600 dark:text-red-400 shrink-0" />
             <span>{error}</span>
           </div>
-          <button onClick={() => setError(null)} className="text-rose-700 hover:text-rose-900 cursor-pointer p-1">
+          <button onClick={() => setError(null)} className="text-rose-700 hover:text-rose-900 dark:text-red-400 dark:hover:text-red-200 cursor-pointer p-1">
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
       {/* 1. Header Row */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EAE8E1] pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EAE8E1] dark:border-[#302E29] pb-4">
         <div>
-          <h2 className="text-xl font-bold text-[#18181B] tracking-tight">
+          <h2 className="text-xl font-bold text-[#18181B] dark:text-[#F0EBE3] tracking-tight">
             Team Coverage
           </h2>
-          <p className="text-xs text-zinc-500 mt-0.5 font-normal">
+          <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mt-0.5 font-normal">
             Check that each event area has the people it needs.
           </p>
         </div>
@@ -193,7 +193,7 @@ export default function ResponseCoverageTab({
             onClick={() => fetchCoverageReport(true)}
             disabled={loading || refreshing}
             aria-label="Refresh coverage"
-            className="flex items-center space-x-2 px-3 py-1.5 bg-white hover:bg-zinc-50 border border-[#EAE8E1] text-xs font-medium text-[#18181B] rounded-lg transition-all shadow-2xs cursor-pointer disabled:opacity-50"
+            className="flex items-center space-x-2 px-3 py-1.5 bg-white dark:bg-[#21211E] hover:bg-zinc-50 dark:hover:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] rounded-lg transition-all shadow-2xs cursor-pointer disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-[#C59B27] ${(loading || refreshing) ? 'animate-spin' : ''}`} />
             <span>{refreshing ? 'Refreshing…' : 'Refresh'}</span>
@@ -210,31 +210,31 @@ export default function ResponseCoverageTab({
 
       {/* 2. Restrained Summary Row (Prompt Section 29) */}
       {!loading && !error && totalAreas > 0 && (
-        <div className="bg-white border border-[#EAE8E1] rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xs">
-          <div className="flex items-center divide-x divide-[#EAE8E1]">
+        <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xs">
+          <div className="flex items-center divide-x divide-[#EAE8E1] dark:divide-[#302E29]">
             <div className="pr-6">
-              <span className="text-[11px] text-zinc-400 font-medium block">Areas</span>
-              <span className="text-lg font-bold text-zinc-900">{totalAreas}</span>
+              <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] font-medium block">Areas</span>
+              <span className="text-lg font-bold text-zinc-900 dark:text-[#F0EBE3]">{totalAreas}</span>
             </div>
             <div className="px-6">
-              <span className="text-[11px] text-zinc-400 font-medium block">Covered</span>
-              <span className="text-lg font-bold text-emerald-700">{coveredAreas}</span>
+              <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] font-medium block">Covered</span>
+              <span className="text-lg font-bold text-emerald-700 dark:text-emerald-400">{coveredAreas}</span>
             </div>
             <div className="pl-6">
-              <span className="text-[11px] text-zinc-400 font-medium block">Need support</span>
-              <span className="text-lg font-bold text-amber-700">{needSupport}</span>
+              <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] font-medium block">Need support</span>
+              <span className="text-lg font-bold text-amber-700 dark:text-amber-400">{needSupport}</span>
             </div>
           </div>
 
           <div className="text-xs font-medium self-start sm:self-center">
             {needSupport === 0 ? (
-              <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg inline-flex items-center space-x-1.5">
+              <span className="text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 px-3 py-1.5 rounded-lg inline-flex items-center space-x-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 <span>All areas are covered.</span>
               </span>
             ) : (
-              <span className="text-amber-800 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg inline-flex items-center space-x-1.5">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+              <span className="text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 px-3 py-1.5 rounded-lg inline-flex items-center space-x-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                 <span>
                   {needSupport === 1
                     ? '1 area needs additional team members.'
@@ -247,15 +247,15 @@ export default function ResponseCoverageTab({
       )}
 
       {/* 3. Search and Status Filters */}
-      <div className="p-3 bg-white border border-[#EAE8E1] rounded-xl flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shadow-2xs">
+      <div className="p-3 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shadow-2xs">
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Search areas or roles…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full text-xs pl-8 pr-3 py-1.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] text-zinc-900 placeholder:text-zinc-400 font-normal"
+            className="w-full text-xs pl-8 pr-3 py-1.5 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 text-zinc-900 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] font-normal"
           />
         </div>
 
@@ -264,7 +264,7 @@ export default function ResponseCoverageTab({
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             aria-label="Filter by coverage status"
-            className="text-xs px-2.5 py-1.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] text-zinc-700 font-medium cursor-pointer"
+            className="text-xs px-2.5 py-1.5 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C59B27] dark:focus:ring-amber-500/40 text-zinc-700 dark:text-[#F0EBE3] font-medium cursor-pointer"
           >
             <option value="all">All statuses</option>
             <option value="covered">Covered</option>
@@ -276,21 +276,21 @@ export default function ResponseCoverageTab({
 
       {/* 4. Table / List of Areas */}
       {loading && categories.length === 0 ? (
-        <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl">
+        <div className="p-12 text-center text-xs text-zinc-500 dark:text-[#7A7570] bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl">
           <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-[#C59B27]" />
           <span>Loading team coverage…</span>
         </div>
       ) : error && categories.length === 0 ? (
-        <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-rose-200 rounded-2xl space-y-3 shadow-2xs">
-          <AlertTriangle className="w-6 h-6 mx-auto text-rose-500" />
+        <div className="p-12 text-center text-xs text-zinc-500 dark:text-[#B8B0A5] bg-white dark:bg-[#21211E] border border-rose-200 dark:border-red-900/40 rounded-2xl space-y-3 shadow-2xs">
+          <AlertTriangle className="w-6 h-6 mx-auto text-rose-500 dark:text-red-400" />
           <div>
-            <h3 className="font-semibold text-zinc-800 text-sm">{error}</h3>
-            <p className="text-zinc-500 text-xs mt-0.5">Please check your connection or try loading team coverage again.</p>
+            <h3 className="font-semibold text-zinc-800 dark:text-[#F0EBE3] text-sm">{error}</h3>
+            <p className="text-zinc-500 dark:text-[#B8B0A5] text-xs mt-0.5">Please check your connection or try loading team coverage again.</p>
           </div>
           <div className="pt-1">
             <button
               onClick={() => fetchCoverageReport(false)}
-              className="px-3.5 py-1.5 bg-white border border-[#EAE8E1] text-zinc-700 text-xs font-medium rounded-xl hover:bg-zinc-50 cursor-pointer shadow-2xs"
+              className="px-3.5 py-1.5 bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] text-zinc-700 dark:text-[#B8B0A5] text-xs font-medium rounded-xl cursor-pointer shadow-2xs"
             >
               Try again
             </button>
@@ -298,11 +298,11 @@ export default function ResponseCoverageTab({
         </div>
       ) : categories.length === 0 ? (
         /* Empty State (Section 30) */
-        <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl space-y-3">
-          <MapPin className="w-6 h-6 mx-auto text-zinc-400" />
+        <div className="p-12 text-center text-xs text-zinc-500 dark:text-[#B8B0A5] bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl space-y-3">
+          <MapPin className="w-6 h-6 mx-auto text-zinc-400 dark:text-[#7A7570]" />
           <div>
-            <h3 className="font-semibold text-zinc-800 text-sm">No event areas have been added yet</h3>
-            <p className="text-zinc-500 text-xs mt-0.5">
+            <h3 className="font-semibold text-zinc-800 dark:text-[#F0EBE3] text-sm">No event areas have been added yet</h3>
+            <p className="text-zinc-500 dark:text-[#B8B0A5] text-xs mt-0.5">
               Add the locations used during the event before assigning team coverage.
             </p>
           </div>
@@ -316,26 +316,26 @@ export default function ResponseCoverageTab({
           </div>
         </div>
       ) : filteredCategories.length === 0 ? (
-        <div className="p-12 text-center text-xs text-zinc-500 bg-white border border-[#EAE8E1] rounded-2xl space-y-2">
-          <Users className="w-6 h-6 mx-auto text-zinc-400" />
-          <h3 className="font-semibold text-zinc-800 text-sm">No matching areas found</h3>
-          <p className="text-zinc-500 text-xs">Try changing your filters or search.</p>
+        <div className="p-12 text-center text-xs text-zinc-500 dark:text-[#B8B0A5] bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl space-y-2">
+          <Users className="w-6 h-6 mx-auto text-zinc-400 dark:text-[#7A7570]" />
+          <h3 className="font-semibold text-zinc-800 dark:text-[#F0EBE3] text-sm">No matching areas found</h3>
+          <p className="text-zinc-500 dark:text-[#B8B0A5] text-xs">Try changing your filters or search.</p>
           <div className="pt-2">
             <button
               onClick={clearFilters}
-              className="px-3.5 py-1.5 bg-white border border-[#EAE8E1] rounded-xl text-zinc-700 text-xs font-medium hover:bg-zinc-50 cursor-pointer"
+              className="px-3.5 py-1.5 bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-zinc-700 dark:text-[#B8B0A5] text-xs font-medium cursor-pointer"
             >
               Clear filters
             </button>
           </div>
         </div>
       ) : (
-        <div className="bg-white border border-[#EAE8E1] rounded-xl overflow-hidden shadow-2xs">
+        <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl overflow-hidden shadow-2xs">
           {/* Desktop Table View */}
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="bg-[#FAF9F5] border-b border-[#EAE8E1] text-zinc-500 font-medium text-[11px]">
+                <tr className="bg-[#FAF9F5] dark:bg-[#1D1D1A] border-b border-[#EAE8E1] dark:border-[#302E29] text-zinc-500 dark:text-[#7A7570] font-medium text-[11px]">
                   <th className="p-3.5 pl-4 font-medium min-w-[200px]">Area</th>
                   <th className="p-3.5 font-medium w-[220px]">Required</th>
                   <th className="p-3.5 font-medium min-w-[220px]">Assigned</th>
@@ -343,19 +343,19 @@ export default function ResponseCoverageTab({
                   <th className="p-3.5 pr-4 font-medium text-right w-[140px]">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-100 text-zinc-700">
+              <tbody className="divide-y divide-zinc-100 dark:divide-[#302E29] text-zinc-700 dark:text-[#B8B0A5]">
                 {filteredCategories.map((cat) => {
                   const statusInfo = getHumanCoverageStatus(cat);
                   const allAssigned = [...cat.primaryResponders, ...cat.backupResponders];
 
                   return (
-                    <tr key={cat.id} className="hover:bg-zinc-50/60 transition-colors">
+                    <tr key={cat.id} className="hover:bg-zinc-50/60 dark:hover:bg-[#262520] transition-colors">
                       {/* Area */}
                       <td className="p-3.5 pl-4">
-                        <div className="font-semibold text-zinc-900 text-xs">
+                        <div className="font-semibold text-zinc-900 dark:text-[#F0EBE3] text-xs">
                           {cat.name}
                         </div>
-                        <div className="text-[11px] text-zinc-400 mt-0.5">
+                        <div className="text-[11px] text-zinc-400 dark:text-[#7A7570] mt-0.5">
                           {cat.severity} priority
                         </div>
                       </td>
@@ -366,7 +366,7 @@ export default function ResponseCoverageTab({
                           {cat.expectedRoles.map((role, idx) => (
                             <span
                               key={idx}
-                              className="px-2 py-0.5 bg-zinc-100 border border-zinc-200 text-zinc-700 rounded-md text-[11px] font-medium"
+                              className="px-2 py-0.5 bg-zinc-100 dark:bg-[#262520] border border-zinc-200 dark:border-[#3A3835] text-zinc-700 dark:text-[#B8B0A5] rounded-md text-[11px] font-medium"
                             >
                               {formatRoleName(role)}
                             </span>
@@ -377,7 +377,7 @@ export default function ResponseCoverageTab({
                       {/* Assigned */}
                       <td className="p-3.5">
                         {allAssigned.length === 0 ? (
-                          <span className="text-zinc-400 text-xs italic">
+                          <span className="text-zinc-400 dark:text-[#7A7570] text-xs italic">
                             No one assigned yet
                           </span>
                         ) : (
@@ -387,18 +387,18 @@ export default function ResponseCoverageTab({
                                 <div
                                   key={i}
                                   title={`${r.name} (${r.responsibility})`}
-                                  className="w-6 h-6 rounded-full bg-[#C59B27]/10 text-[#C59B27] border border-white flex items-center justify-center font-medium text-[10px] shrink-0"
+                                  className="w-6 h-6 rounded-full bg-[#C59B27]/10 text-[#C59B27] border border-white dark:border-[#21211E] flex items-center justify-center font-medium text-[10px] shrink-0"
                                 >
                                   {getInitials(r.name)}
                                 </div>
                               ))}
                               {allAssigned.length > 4 && (
-                                <div className="w-6 h-6 rounded-full bg-zinc-100 text-zinc-600 border border-white flex items-center justify-center font-medium text-[9px] shrink-0">
+                                <div className="w-6 h-6 rounded-full bg-zinc-100 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] border border-white dark:border-[#21211E] flex items-center justify-center font-medium text-[9px] shrink-0">
                                   +{allAssigned.length - 4}
                                 </div>
                               )}
                             </div>
-                            <div className="text-[11px] text-zinc-600 truncate max-w-xs">
+                            <div className="text-[11px] text-zinc-600 dark:text-[#B8B0A5] truncate max-w-xs">
                               {allAssigned.map((r) => r.name).join(', ')}
                             </div>
                           </div>
@@ -427,7 +427,7 @@ export default function ResponseCoverageTab({
                         ) : (
                           <button
                             onClick={() => onNavigateTab?.('event_team')}
-                            className="text-xs text-zinc-500 hover:text-zinc-800 font-medium px-2 py-1 rounded-lg hover:bg-zinc-100 cursor-pointer"
+                            className="text-xs text-zinc-500 hover:text-zinc-800 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] font-medium px-2 py-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-[#262520] cursor-pointer"
                           >
                             View team
                           </button>
@@ -441,7 +441,7 @@ export default function ResponseCoverageTab({
           </div>
 
           {/* Mobile Cards View */}
-          <div className="block md:hidden divide-y divide-zinc-100">
+          <div className="block md:hidden divide-y divide-zinc-100 dark:divide-[#302E29]">
             {filteredCategories.map((cat) => {
               const statusInfo = getHumanCoverageStatus(cat);
               const allAssigned = [...cat.primaryResponders, ...cat.backupResponders];
@@ -450,8 +450,8 @@ export default function ResponseCoverageTab({
                 <div key={cat.id} className="p-4 space-y-2.5">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <div className="font-semibold text-zinc-900 text-xs">{cat.name}</div>
-                      <div className="text-[11px] text-zinc-400">{cat.severity} priority</div>
+                      <div className="font-semibold text-zinc-900 dark:text-[#F0EBE3] text-xs">{cat.name}</div>
+                      <div className="text-[11px] text-zinc-400 dark:text-[#7A7570]">{cat.severity} priority</div>
                     </div>
                     <div className="flex items-center space-x-1.5">
                       <span className={`w-1.5 h-1.5 rounded-full ${statusInfo.dotClass}`} />
@@ -461,12 +461,12 @@ export default function ResponseCoverageTab({
                     </div>
                   </div>
 
-                  <div className="p-2.5 bg-[#FAF9F5] border border-[#EAE8E1] rounded-lg text-xs space-y-1.5">
+                  <div className="p-2.5 bg-[#FAF9F5] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-lg text-xs space-y-1.5">
                     <div>
-                      <span className="text-zinc-400 text-[11px] block">Required roles</span>
+                      <span className="text-zinc-400 dark:text-[#7A7570] text-[11px] block">Required roles</span>
                       <div className="flex flex-wrap gap-1 mt-0.5">
                         {cat.expectedRoles.map((r, i) => (
-                          <span key={i} className="text-[11px] text-zinc-700 bg-white border border-[#EAE8E1] px-1.5 py-0.5 rounded">
+                          <span key={i} className="text-[11px] text-zinc-700 dark:text-[#B8B0A5] bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] px-1.5 py-0.5 rounded">
                             {formatRoleName(r)}
                           </span>
                         ))}
@@ -474,8 +474,8 @@ export default function ResponseCoverageTab({
                     </div>
 
                     <div>
-                      <span className="text-zinc-400 text-[11px] block">Assigned team</span>
-                      <span className="text-zinc-800 text-xs font-medium">
+                      <span className="text-zinc-400 dark:text-[#7A7570] text-[11px] block">Assigned team</span>
+                      <span className="text-zinc-800 dark:text-[#F0EBE3] text-xs font-medium">
                         {allAssigned.length > 0 ? allAssigned.map(r => r.name).join(', ') : 'None'}
                       </span>
                     </div>
