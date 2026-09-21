@@ -2402,6 +2402,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             onRefresh={fetchSafetyAlerts}
             onOpenAlertDetail={(alert) => setActiveAlertDetail(alert)}
             adminUser={adminUser}
+            onNavigateToOperations={() => handleTabChange('operations')}
           />
 
           {/* TAB 1: OVERVIEW DASHBOARD */}
@@ -2868,21 +2869,18 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                   {/* Refined Overview Emergency Banner (Requirement 14) */}
                   {safetyAlerts.filter((a: any) => a.status !== 'resolved').length > 0 && !showCommandCenter && (
                     <div
-                      className="bg-white border border-zinc-200/90 border-l-4 border-l-red-600 rounded-2xl p-4 mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs animate-fade-in"
+                      className="bg-white dark:bg-[#1A1917] border border-zinc-200/90 dark:border-[#2A2926] border-l-4 border-l-red-600 rounded-2xl p-4 mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs animate-fade-in"
                       data-component-version="emergency-active-top-banner-v2"
                     >
-                      <div className="flex items-center space-x-3 text-left">
-                        <div className="h-2 w-2 rounded-full bg-red-600 shrink-0" />
-                        <div>
-                          <p className="font-bold text-zinc-900 text-sm">
-                            Emergency care alert
-                          </p>
-                          <p className="text-xs text-zinc-500 font-medium">
-                            {safetyAlerts.filter((a: any) => a.status === 'open').length === 1
-                              ? '1 alert needs a response'
-                              : `${safetyAlerts.filter((a: any) => a.status === 'open').length} alerts need a response`}
-                          </p>
-                        </div>
+                      <div className="text-left">
+                        <p className="font-bold text-zinc-900 dark:text-[#F7F4ED] text-sm">
+                          Emergency care alert
+                        </p>
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">
+                          {safetyAlerts.filter((a: any) => a.status === 'open').length === 1
+                            ? '1 alert needs a response'
+                            : `${safetyAlerts.filter((a: any) => a.status === 'open').length} alerts need a response`}
+                        </p>
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
                         <Button

@@ -21,7 +21,8 @@ import {
   Users,
   MapPin,
   Calendar,
-  AlertCircle
+  AlertCircle,
+  ArrowRight
 } from 'lucide-react';
 import { api, extractApiError } from '../../../services/api';
 import { useNotification } from '../../../context/NotificationContext';
@@ -31,6 +32,8 @@ export interface UrgentAlertTriageWorkspaceProps {
   onRefresh: () => Promise<void> | void;
   onOpenAlertDetail: (alert: any) => void;
   adminUser?: any;
+  onNavigateToOperations?: () => void;
+  onViewAll?: () => void;
 }
 
 export type TriageFilter =
@@ -45,15 +48,21 @@ export type TriageFilter =
 export type TriageSort = 'severity' | 'newest' | 'oldest' | 'updated';
 
 const PAGE_SIZE = 25;
+const OVERVIEW_MAX_ROWS = 5;
 const STORAGE_KEY = 'koinonia-admin-alert-triage-collapsed';
 
 export const UrgentAlertTriageWorkspace: React.FC<UrgentAlertTriageWorkspaceProps> = ({
   alerts,
   onRefresh,
   onOpenAlertDetail,
-  adminUser
+  adminUser,
+  onNavigateToOperations,
+  onViewAll
 }) => {
   const { showSuccess, showError, showInfo } = useNotification();
+
+  // Full workspace modal dialog state
+  const [isFullWorkspaceModalOpen, setIsFullWorkspaceModalOpen] = useState(false);
 
   // Collapsible workspace state & preference persistence
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
@@ -268,6 +277,15 @@ export const UrgentAlertTriageWorkspace: React.FC<UrgentAlertTriageWorkspaceProp
 
     return list;
   }, [unresolvedAlerts, activeFilter, searchQuery, sortOrder, duplicateAlertIdSet]);
+
+  // Overview preview CTA count & visibility semantics
+  const isFilterOrSearchActive = activeFilter !== 'all' || Boolean(searchQuery.trim());
+  const showOverviewCta = isFilterOrSearchActive
+    ? filteredAlerts.length > OVERVIEW_MAX_ROWS
+    : unresolvedAlerts.length > OVERVIEW_MAX_ROWS;
+  const overviewCtaCount = isFilterOrSearchActive
+    ? filteredAlerts.length
+    : unresolvedAlerts.length;
 
   // 5. Pagination
   const totalPages = Math.max(1, Math.ceil(filteredAlerts.length / PAGE_SIZE));
@@ -549,6 +567,132 @@ export const UrgentAlertTriageWorkspace: React.FC<UrgentAlertTriageWorkspaceProp
     }
   }, [unresolvedAlerts]);
 
+  // Shared alert row renderer for Overview preview and Full Workspace modal
+  const renderAlertRow = (alert: any) => {
+    const isSelected = selectedIds.has(alert.id);
+    const isStale = Date.now() - new Date(alert.created_at).getTime() > 24 * 60 * 60 * 1000;
+    const isUrgent = alert.severity === 'urgent';
+    const isAck = alert.status === 'acknowledged';
+
+    return (
+      <div
+        key={alert.id}
+        className={`px-3.5 py-3 rounded-xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 ${
+          isSelected
+            ? 'bg-red-50/40 dark:bg-red-950/20 border-red-300 dark:border-red-900/60'
+            : 'bg-white dark:bg-[#1E1E1C] border-[#EAE8E1] dark:border-[#2A2926] hover:border-zinc-300 dark:hover:border-zinc-700'
+        }`}
+      >
+        <div className="flex items-start gap-2.5 overflow-hidden">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => handleToggleSelect(alert.id)}
+            className="rounded border-zinc-300 text-red-600 focus:ring-red-500 cursor-pointer mt-1"
+          />
+
+          <div className="space-y-1 overflow-hidden">
+            <div className="flex items-center gap-2 flex-wrap text-xs">
+              {/* Title */}
+              <span className="font-bold text-zinc-900 dark:text-[#F7F4ED] truncate">
+                {alert.title || 'Safety Alert'}
+              </span>
+
+              {/* Category badge */}
+              <span className="text-[10px] font-semibold px-2 py-0.2 rounded-md bg-zinc-100 dark:bg-[#2A2926] text-zinc-600 dark:text-[#938C81] uppercase tracking-wider">
+                {alert.category || 'care'}
+              </span>
+
+              {/* Status badge */}
+              <span
+                className={`text-[10px] font-bold px-2 py-0.2 rounded-md uppercase tracking-wider ${
+                  isAck
+                    ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300'
+                    : 'bg-red-100 dark:bg-red-950/60 text-red-800 dark:text-red-300'
+                }`}
+              >
+                {isAck ? 'Acknowledged' : 'Needs Response'}
+              </span>
+
+              {/* Stale badge */}
+              {isStale && (
+                <span className="text-[10px] font-bold px-2 py-0.2 rounded-md bg-zinc-200/80 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
+                  Stale &gt;24h
+                </span>
+              )}
+
+              {/* Duplicate indicator */}
+              {duplicateAlertIdSet.has(alert.id) && (
+                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                  Possible Dup
+                </span>
+              )}
+            </div>
+
+            {/* Snippet */}
+            {alert.message && (
+              <p className="text-[11px] text-zinc-600 dark:text-[#938C81] line-clamp-1 italic">
+                "{alert.message}"
+              </p>
+            )}
+
+            {/* Reporter / Location / Age */}
+            <div className="flex items-center gap-3 text-[11px] text-zinc-500 dark:text-[#938C81] flex-wrap">
+              <span>
+                Reporter: <strong className="text-zinc-700 dark:text-zinc-300">{alert.raised_by_name || 'Volunteer'}</strong>
+              </span>
+              {alert.location_label && (
+                <span>
+                  Location: <strong className="text-zinc-700 dark:text-zinc-300">{alert.location_label}</strong>
+                </span>
+              )}
+              {alert.child_name && (
+                <span>
+                  Child: <strong className="text-zinc-700 dark:text-zinc-300">{alert.child_name}</strong>
+                </span>
+              )}
+              <span>· {formatTimeAgo(alert.created_at)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+          {!isAck && (
+            <button
+              type="button"
+              onClick={() => handleAcknowledgeSingle(alert.id)}
+              disabled={processingActionId === alert.id}
+              className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-900/40 transition-colors cursor-pointer"
+            >
+              {processingActionId === alert.id ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                'Acknowledge'
+              )}
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => onOpenAlertDetail(alert)}
+            className="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-white dark:bg-[#20201E] hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#F7F4ED] border border-zinc-200 dark:border-[#2A2926] transition-colors cursor-pointer"
+          >
+            Open
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleOpenBulkResolveModal([alert])}
+            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors cursor-pointer shadow-2xs"
+          >
+            Resolve
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   // Presentation toggle handler: persists admin preference locally
   const handleToggleCollapse = () => {
     setIsCollapsed((prev) => {
@@ -686,34 +830,23 @@ export const UrgentAlertTriageWorkspace: React.FC<UrgentAlertTriageWorkspaceProp
           </div>
 
           <div className="flex items-center gap-2.5 self-end sm:self-auto flex-wrap">
-            {/* View mode toggle */}
-            <div className="inline-flex rounded-xl p-0.5 bg-zinc-100 dark:bg-[#20201E] border border-zinc-200 dark:border-[#2A2926] text-xs font-medium">
+            {/* Duplicate Groups shortcut */}
+            {duplicateGroups.length > 0 && (
               <button
                 type="button"
-                onClick={() => setViewMode('list')}
-                className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${viewMode === 'list'
-                    ? 'bg-white dark:bg-[#2A2926] text-zinc-900 dark:text-[#F7F4ED] shadow-2xs font-semibold'
-                    : 'text-zinc-600 dark:text-[#938C81] hover:text-zinc-900 dark:hover:text-[#F7F4ED]'
-                  }`}
+                onClick={() => {
+                  setViewMode('groups');
+                  setIsFullWorkspaceModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50 text-xs font-semibold hover:bg-amber-100 dark:hover:bg-amber-900/60 transition-colors cursor-pointer"
               >
-                List View
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('groups')}
-                className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${viewMode === 'groups'
-                    ? 'bg-white dark:bg-[#2A2926] text-zinc-900 dark:text-[#F7F4ED] shadow-2xs font-semibold'
-                    : 'text-zinc-600 dark:text-[#938C81] hover:text-zinc-900 dark:hover:text-[#F7F4ED]'
-                  }`}
-              >
+                <Copy className="w-3.5 h-3.5 text-amber-600" />
                 <span>Duplicate Groups</span>
-                {duplicateGroups.length > 0 && (
-                  <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-700 dark:text-amber-300 text-[10px] font-bold rounded-full">
-                    {duplicateGroups.length}
-                  </span>
-                )}
+                <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-700 dark:text-amber-300 text-[10px] font-bold rounded-full">
+                  {duplicateGroups.length}
+                </span>
               </button>
-            </div>
+            )}
 
             {/* Hide urgent alerts button */}
             <button
@@ -934,336 +1067,36 @@ export const UrgentAlertTriageWorkspace: React.FC<UrgentAlertTriageWorkspaceProp
               </div>
             </div>
 
-            {/* 4. DUPLICATE GROUPS VIEW */}
-            {viewMode === 'groups' && duplicateGroups.length > 0 && (
-              <div className="space-y-4 pt-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-zinc-700 dark:text-[#F7F4ED] uppercase tracking-wider flex items-center gap-1.5">
-                    <Copy className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Deterministic Grouping Suggestions ({duplicateGroups.length} groups)</span>
-                  </h3>
-                  <span className="text-[11px] text-zinc-400">
-                    Human review required before resolving
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                  {duplicateGroups.map((group) => {
-                    const isAllGroupSelected = group.alerts.every((a) => selectedIds.has(a.id));
-                    const isSomeGroupSelected = group.alerts.some((a) => selectedIds.has(a.id));
-                    const isExpanded = expandedGroupKeys.has(group.key);
-
-                    return (
-                      <div
-                        key={group.key}
-                        className="bg-zinc-50/70 dark:bg-[#1E1E1C] border border-amber-200/80 dark:border-amber-900/40 rounded-xl p-4 space-y-3 transition-all"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={isAllGroupSelected}
-                              ref={(el) => {
-                                if (el) el.indeterminate = !isAllGroupSelected && isSomeGroupSelected;
-                              }}
-                              onChange={() => handleSelectGroup(group.alerts)}
-                              className="rounded border-zinc-300 text-red-600 focus:ring-red-500 cursor-pointer"
-                            />
-                            <div>
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 rounded-md">
-                                Possible duplicate group
-                              </span>
-                              <h4 className="text-xs font-bold text-zinc-900 dark:text-[#F7F4ED] mt-1">
-                                "{group.title}"
-                              </h4>
-                            </div>
-                          </div>
-                          <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300 bg-white dark:bg-[#20201E] px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-[#2A2926] shrink-0">
-                            {group.count} alerts
-                          </span>
-                        </div>
-
-                        {group.sampleMessage && (
-                          <p className="text-[11px] text-zinc-600 dark:text-[#938C81] italic line-clamp-2 bg-white/60 dark:bg-[#20201E]/60 p-2 rounded-lg border border-zinc-200/60 dark:border-[#2A2926]">
-                            "{group.sampleMessage}"
-                          </p>
-                        )}
-
-                        <div className="space-y-1 text-[11px] text-zinc-500 dark:text-[#938C81]">
-                          <div className="flex items-center gap-1.5">
-                            <Clock className="w-3 h-3 text-zinc-400" />
-                            <span>
-                              First: {formatTimeAgo(group.firstRaised)} · Latest: {formatTimeAgo(group.latestRaised)}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <Users className="w-3 h-3 text-zinc-400" />
-                            <span>Reporters: {group.reporters.join(', ') || 'Volunteers'}</span>
-                          </div>
-                          {group.locations.length > 0 && (
-                            <div className="flex items-center gap-1.5">
-                              <MapPin className="w-3 h-3 text-zinc-400" />
-                              <span>Locations: {group.locations.join(', ')}</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Group Action Buttons */}
-                        <div className="flex items-center justify-between pt-2 border-t border-zinc-200/60 dark:border-[#2A2926] text-xs">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setExpandedGroupKeys((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(group.key)) next.delete(group.key);
-                                else next.add(group.key);
-                                return next;
-                              });
-                            }}
-                            className="text-zinc-600 dark:text-[#938C81] hover:text-zinc-900 dark:hover:text-[#F7F4ED] font-medium flex items-center gap-1 cursor-pointer"
-                          >
-                            {isExpanded ? 'Hide items' : `Review items (${group.count})`}
-                            <ChevronDown className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleOpenBulkResolveModal(group.alerts)}
-                            className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 dark:bg-[#F7F4ED] dark:hover:bg-zinc-200 text-white dark:text-zinc-900 text-[11px] font-semibold rounded-lg transition-colors cursor-pointer"
-                          >
-                            Resolve group ({group.count})
-                          </button>
-                        </div>
-
-                        {/* Expanded group alerts */}
-                        {isExpanded && (
-                          <div className="pt-2 space-y-1.5 border-t border-zinc-200/40 dark:border-[#2A2926]">
-                            {group.alerts.map((a) => (
-                              <div
-                                key={a.id}
-                                className="p-2 bg-white dark:bg-[#20201E] rounded-lg border border-zinc-200/70 dark:border-[#2A2926] flex items-center justify-between text-xs"
-                              >
-                                <div className="flex items-center gap-2 overflow-hidden">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedIds.has(a.id)}
-                                    onChange={() => handleToggleSelect(a.id)}
-                                    className="rounded border-zinc-300 text-red-600 focus:ring-red-500 cursor-pointer"
-                                  />
-                                  <div className="truncate">
-                                    <span className="font-semibold text-zinc-900 dark:text-[#F7F4ED]">
-                                      {a.title}
-                                    </span>
-                                    <span className="text-[10px] text-zinc-400 ml-1.5">
-                                      {formatTimeAgo(a.created_at)}
-                                    </span>
-                                  </div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => onOpenAlertDetail(a)}
-                                  className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline shrink-0 cursor-pointer ml-2"
-                                >
-                                  Details
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* 5. COMPACT ALERT ROW LIST */}
+            {/* 4. OVERVIEW ALERT PREVIEW (Maximum 5 rows, NO nested scrollbar) */}
             <div className="space-y-2 pt-2">
-              {/* Table / List Header */}
-              <div className="flex items-center justify-between px-3 py-2 bg-zinc-100/70 dark:bg-[#20201E] rounded-xl text-[11px] font-semibold text-zinc-500 dark:text-[#938C81]">
-                <div className="flex items-center gap-2.5">
-                  <input
-                    type="checkbox"
-                    checked={
-                      currentPageAlerts.length > 0 &&
-                      currentPageAlerts.every((a) => selectedIds.has(a.id))
-                    }
-                    onChange={handleSelectPage}
-                    className="rounded border-zinc-300 text-red-600 focus:ring-red-500 cursor-pointer"
-                  />
-                  <span>Select page ({currentPageAlerts.length})</span>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <span>
-                    Showing {filteredAlerts.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1}-
-                    {Math.min(currentPage * PAGE_SIZE, filteredAlerts.length)} of {filteredAlerts.length}
-                  </span>
-                </div>
-              </div>
-
               {filteredAlerts.length === 0 ? (
                 <div className="p-8 text-center bg-zinc-50 dark:bg-[#20201E] rounded-xl border border-dashed border-zinc-200 dark:border-[#2A2926] text-xs text-zinc-500 dark:text-[#938C81]">
                   No alerts match your current filter or search criteria.
                 </div>
               ) : (
                 <div className="space-y-1.5">
-                  {currentPageAlerts.map((alert: any) => {
-                    const isSelected = selectedIds.has(alert.id);
-                    const isStale = Date.now() - new Date(alert.created_at).getTime() > 24 * 60 * 60 * 1000;
-                    const isUrgent = alert.severity === 'urgent';
-                    const isAck = alert.status === 'acknowledged';
-
-                    return (
-                      <div
-                        key={alert.id}
-                        className={`px-3.5 py-3 rounded-xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 ${isSelected
-                            ? 'bg-red-50/40 dark:bg-red-950/20 border-red-300 dark:border-red-900/60'
-                            : 'bg-white dark:bg-[#1E1E1C] border-[#EAE8E1] dark:border-[#2A2926] hover:border-zinc-300 dark:hover:border-zinc-700'
-                          }`}
-                      >
-                        <div className="flex items-start gap-3 overflow-hidden">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => handleToggleSelect(alert.id)}
-                            className="rounded border-zinc-300 text-red-600 focus:ring-red-500 cursor-pointer mt-1"
-                          />
-
-                          <div className="space-y-1 overflow-hidden">
-                            <div className="flex items-center gap-2 flex-wrap text-xs">
-                              {/* Severity indicator */}
-                              <span
-                                className={`w-2 h-2 rounded-full shrink-0 ${isUrgent ? 'bg-red-600 animate-pulse' : 'bg-amber-500'
-                                  }`}
-                              />
-
-                              {/* Title */}
-                              <span className="font-bold text-zinc-900 dark:text-[#F7F4ED] truncate">
-                                {alert.title || 'Safety Alert'}
-                              </span>
-
-                              {/* Category badge */}
-                              <span className="text-[10px] font-semibold px-2 py-0.2 rounded-md bg-zinc-100 dark:bg-[#2A2926] text-zinc-600 dark:text-[#938C81] uppercase tracking-wider">
-                                {alert.category || 'care'}
-                              </span>
-
-                              {/* Status badge */}
-                              <span
-                                className={`text-[10px] font-bold px-2 py-0.2 rounded-md uppercase tracking-wider ${isAck
-                                    ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300'
-                                    : 'bg-red-100 dark:bg-red-950/60 text-red-800 dark:text-red-300'
-                                  }`}
-                              >
-                                {isAck ? 'Acknowledged' : 'Needs Response'}
-                              </span>
-
-                              {/* Stale badge */}
-                              {isStale && (
-                                <span className="text-[10px] font-bold px-2 py-0.2 rounded-md bg-zinc-200/80 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
-                                  Stale &gt;24h
-                                </span>
-                              )}
-
-                              {/* Duplicate indicator */}
-                              {duplicateAlertIdSet.has(alert.id) && (
-                                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300">
-                                  Possible Dup
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Snippet */}
-                            {alert.message && (
-                              <p className="text-[11px] text-zinc-600 dark:text-[#938C81] line-clamp-1 italic">
-                                "{alert.message}"
-                              </p>
-                            )}
-
-                            {/* Reporter / Location / Age */}
-                            <div className="flex items-center gap-3 text-[11px] text-zinc-500 dark:text-[#938C81] flex-wrap">
-                              <span>
-                                Reporter: <strong className="text-zinc-700 dark:text-zinc-300">{alert.raised_by_name || 'Volunteer'}</strong>
-                              </span>
-                              {alert.location_label && (
-                                <span>
-                                  Location: <strong className="text-zinc-700 dark:text-zinc-300">{alert.location_label}</strong>
-                                </span>
-                              )}
-                              {alert.child_name && (
-                                <span>
-                                  Child: <strong className="text-zinc-700 dark:text-zinc-300">{alert.child_name}</strong>
-                                </span>
-                              )}
-                              <span>· {formatTimeAgo(alert.created_at)}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
-                          {!isAck && (
-                            <button
-                              type="button"
-                              onClick={() => handleAcknowledgeSingle(alert.id)}
-                              disabled={processingActionId === alert.id}
-                              className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-900/40 transition-colors cursor-pointer"
-                            >
-                              {processingActionId === alert.id ? (
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                              ) : (
-                                'Acknowledge'
-                              )}
-                            </button>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={() => onOpenAlertDetail(alert)}
-                            className="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-white dark:bg-[#20201E] hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#F7F4ED] border border-zinc-200 dark:border-[#2A2926] transition-colors cursor-pointer"
-                          >
-                            Open
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleOpenBulkResolveModal([alert])}
-                            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors cursor-pointer shadow-2xs"
-                          >
-                            Resolve
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {filteredAlerts.slice(0, OVERVIEW_MAX_ROWS).map(renderAlertRow)}
                 </div>
               )}
 
-              {/* Pagination Navigation */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between pt-3 text-xs text-zinc-600 dark:text-[#938C81]">
+              {/* View all urgent alerts action */}
+              {showOverviewCta && (
+                <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-[#EAE8E1] dark:border-[#2A2926]">
+                  <p className="text-xs text-zinc-500 dark:text-[#938C81]">
+                    Showing top {Math.min(OVERVIEW_MAX_ROWS, filteredAlerts.length)} of {filteredAlerts.length} {filteredAlerts.length === 1 ? 'alert' : 'alerts'} on Overview
+                  </p>
                   <button
                     type="button"
-                    disabled={currentPage === 1}
-                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                    className="px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-[#2A2926] bg-white dark:bg-[#20201E] hover:bg-zinc-50 dark:hover:bg-[#2A2926] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1"
+                    onClick={() => {
+                      if (onViewAll) {
+                        onViewAll();
+                      } else {
+                        setIsFullWorkspaceModalOpen(true);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl bg-red-600 hover:bg-red-700 text-white transition-colors cursor-pointer shadow-xs"
                   >
-                    <ChevronLeft className="w-3.5 h-3.5" />
-                    <span>Previous</span>
-                  </button>
-
-                  <span className="font-medium">
-                    Page {currentPage} of {totalPages}
-                  </span>
-
-                  <button
-                    type="button"
-                    disabled={currentPage === totalPages}
-                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                    className="px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-[#2A2926] bg-white dark:bg-[#20201E] hover:bg-zinc-50 dark:hover:bg-[#2A2926] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1"
-                  >
-                    <span>Next</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
+                    <span>View all {overviewCtaCount} urgent alerts →</span>
                   </button>
                 </div>
               )}
@@ -1272,9 +1105,9 @@ export const UrgentAlertTriageWorkspace: React.FC<UrgentAlertTriageWorkspaceProp
         </div>
       </div>
 
-      {/* 6. PERSISTENT BULK ACTION BAR (Hidden when triage workspace is collapsed) */}
-      {!isCollapsed && selectedIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-zinc-900/95 dark:bg-[#181817]/95 backdrop-blur-md text-white border border-zinc-700/80 dark:border-[#2A2926] rounded-2xl px-5 py-3.5 shadow-2xl flex items-center gap-4 animate-fade-in max-w-xl w-[90vw]">
+      {/* 5. PERSISTENT BULK ACTION BAR */}
+      {selectedIds.size > 0 && (!isCollapsed || isFullWorkspaceModalOpen) && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-zinc-900/95 dark:bg-[#181817]/95 backdrop-blur-md text-white border border-zinc-700/80 dark:border-[#2A2926] rounded-2xl px-5 py-3.5 shadow-2xl flex items-center gap-4 animate-fade-in max-w-xl w-[90vw]">
           <div className="flex items-center gap-2 font-semibold text-xs shrink-0">
             <span className="bg-red-600 text-white px-2 py-0.5 rounded-full text-[11px] font-bold">
               {selectedIds.size}
@@ -1313,9 +1146,496 @@ export const UrgentAlertTriageWorkspace: React.FC<UrgentAlertTriageWorkspaceProp
         </div>
       )}
 
+      {/* 6. FULL WORKSPACE MODAL DIALOG */}
+      {isFullWorkspaceModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white dark:bg-[#181817] border border-[#EAE8E1] dark:border-[#2A2926] rounded-2xl w-full max-w-6xl max-h-[92vh] flex flex-col shadow-2xl animate-fade-in overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-[#EAE8E1] dark:border-[#2A2926] flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0 bg-zinc-50/50 dark:bg-[#1C1C1A]">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 rounded-xl border border-red-200/80 dark:border-red-900/50 shrink-0">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <h2 className="text-base font-bold text-zinc-900 dark:text-[#F7F4ED]">
+                      Urgent Attention — Full Triage Workspace
+                    </h2>
+                    <span className="bg-red-100 dark:bg-red-950/80 text-red-800 dark:text-red-300 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider border border-red-200/60 dark:border-red-900/60">
+                      {summaryMetrics.total} unresolved {summaryMetrics.total === 1 ? 'alert' : 'alerts'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-500 dark:text-[#938C81] mt-0.5">
+                    Complete safety alert queue, duplicate grouping, and bulk response workflows
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 self-end sm:self-auto flex-wrap">
+                {/* View mode toggle */}
+                <div className="inline-flex rounded-xl p-0.5 bg-zinc-100 dark:bg-[#20201E] border border-zinc-200 dark:border-[#2A2926] text-xs font-medium">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('list')}
+                    className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                      viewMode === 'list'
+                        ? 'bg-white dark:bg-[#2A2926] text-zinc-900 dark:text-[#F7F4ED] shadow-2xs font-semibold'
+                        : 'text-zinc-600 dark:text-[#938C81] hover:text-zinc-900 dark:hover:text-[#F7F4ED]'
+                    }`}
+                  >
+                    List View
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('groups')}
+                    className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
+                      viewMode === 'groups'
+                        ? 'bg-white dark:bg-[#2A2926] text-zinc-900 dark:text-[#F7F4ED] shadow-2xs font-semibold'
+                        : 'text-zinc-600 dark:text-[#938C81] hover:text-zinc-900 dark:hover:text-[#F7F4ED]'
+                    }`}
+                  >
+                    <span>Duplicate Groups</span>
+                    {duplicateGroups.length > 0 && (
+                      <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-700 dark:text-amber-300 text-[10px] font-bold rounded-full">
+                        {duplicateGroups.length}
+                      </span>
+                    )}
+                  </button>
+                </div>
+
+                {/* Optional: Go to Event Operations Dashboard */}
+                {onNavigateToOperations && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsFullWorkspaceModalOpen(false);
+                      onNavigateToOperations();
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-[#20201E] dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#F7F4ED] border border-zinc-200 dark:border-[#2A2926] transition-colors cursor-pointer"
+                  >
+                    <span>Event Operations</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
+
+                {/* Close Modal Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsFullWorkspaceModalOpen(false)}
+                  aria-label="Close full triage workspace"
+                  className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-lg hover:bg-zinc-100 dark:hover:bg-[#20201E] transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Scrollable Body */}
+            <div className="overflow-y-auto p-4 sm:p-6 space-y-6 flex-1">
+              {/* Summary Metric Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setActiveFilter('critical')}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    activeFilter === 'critical'
+                      ? 'bg-red-50/80 dark:bg-red-950/30 border-red-300 dark:border-red-900/80 ring-1 ring-red-500/30'
+                      : 'bg-zinc-50/70 dark:bg-[#1E1E1C] border-[#EAE8E1] dark:border-[#2A2926] hover:border-zinc-300 dark:hover:border-zinc-700'
+                  }`}
+                >
+                  <div className="text-[10px] font-semibold text-zinc-500 dark:text-[#938C81] uppercase tracking-wider">
+                    Critical
+                  </div>
+                  <div className="text-lg font-bold text-red-600 dark:text-red-400 mt-0.5">
+                    {summaryMetrics.critical}
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveFilter('unacknowledged')}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    activeFilter === 'unacknowledged'
+                      ? 'bg-amber-50/80 dark:bg-amber-950/30 border-amber-300 dark:border-amber-900/80 ring-1 ring-amber-500/30'
+                      : 'bg-zinc-50/70 dark:bg-[#1E1E1C] border-[#EAE8E1] dark:border-[#2A2926] hover:border-zinc-300 dark:hover:border-zinc-700'
+                  }`}
+                >
+                  <div className="text-[10px] font-semibold text-zinc-500 dark:text-[#938C81] uppercase tracking-wider">
+                    Needs Ack
+                  </div>
+                  <div className="text-lg font-bold text-amber-600 dark:text-amber-400 mt-0.5">
+                    {summaryMetrics.needsAck}
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveFilter('assigned')}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    activeFilter === 'assigned'
+                      ? 'bg-blue-50/80 dark:bg-blue-950/30 border-blue-300 dark:border-blue-900/80 ring-1 ring-blue-500/30'
+                      : 'bg-zinc-50/70 dark:bg-[#1E1E1C] border-[#EAE8E1] dark:border-[#2A2926] hover:border-zinc-300 dark:hover:border-zinc-700'
+                  }`}
+                >
+                  <div className="text-[10px] font-semibold text-zinc-500 dark:text-[#938C81] uppercase tracking-wider">
+                    Assigned
+                  </div>
+                  <div className="text-lg font-bold text-blue-600 dark:text-blue-400 mt-0.5">
+                    {summaryMetrics.assigned}
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveFilter('escalated')}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    activeFilter === 'escalated'
+                      ? 'bg-purple-50/80 dark:bg-purple-950/30 border-purple-300 dark:border-purple-900/80 ring-1 ring-purple-500/30'
+                      : 'bg-zinc-50/70 dark:bg-[#1E1E1C] border-[#EAE8E1] dark:border-[#2A2926] hover:border-zinc-300 dark:hover:border-zinc-700'
+                  }`}
+                >
+                  <div className="text-[10px] font-semibold text-zinc-500 dark:text-[#938C81] uppercase tracking-wider">
+                    Escalated
+                  </div>
+                  <div className="text-lg font-bold text-purple-600 dark:text-purple-400 mt-0.5">
+                    {summaryMetrics.escalated}
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveFilter('stale')}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    activeFilter === 'stale'
+                      ? 'bg-zinc-200/80 dark:bg-zinc-800 border-zinc-400 dark:border-zinc-600 ring-1 ring-zinc-400/30'
+                      : 'bg-zinc-50/70 dark:bg-[#1E1E1C] border-[#EAE8E1] dark:border-[#2A2926] hover:border-zinc-300 dark:hover:border-zinc-700'
+                  }`}
+                >
+                  <div className="text-[10px] font-semibold text-zinc-500 dark:text-[#938C81] uppercase tracking-wider">
+                    Older &gt;24h
+                  </div>
+                  <div className="text-lg font-bold text-zinc-700 dark:text-zinc-300 mt-0.5">
+                    {summaryMetrics.stale}
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveFilter('duplicates');
+                    setViewMode('groups');
+                  }}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    activeFilter === 'duplicates'
+                      ? 'bg-amber-50/80 dark:bg-amber-950/30 border-amber-300 dark:border-amber-900/80 ring-1 ring-amber-500/30'
+                      : 'bg-zinc-50/70 dark:bg-[#1E1E1C] border-[#EAE8E1] dark:border-[#2A2926] hover:border-zinc-300 dark:hover:border-zinc-700'
+                  }`}
+                >
+                  <div className="text-[10px] font-semibold text-zinc-500 dark:text-[#938C81] uppercase tracking-wider">
+                    Duplicates
+                  </div>
+                  <div className="text-lg font-bold text-amber-600 dark:text-amber-400 mt-0.5">
+                    {summaryMetrics.duplicates}
+                  </div>
+                </button>
+              </div>
+
+              {/* Filters, Search, Sort Controls */}
+              <div className="space-y-3 pt-2">
+                <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                  <div className="relative flex-1">
+                    <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        setCurrentPage(1);
+                      }}
+                      placeholder="Search alert, reporter, location, child, category..."
+                      className="w-full pl-9 pr-4 py-2 bg-zinc-50 dark:bg-[#20201E] border border-zinc-200 dark:border-[#2A2926] rounded-xl text-xs text-zinc-900 dark:text-[#F7F4ED] placeholder-zinc-400 focus:outline-none focus:border-red-500 transition-colors"
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[11px] font-medium text-zinc-500 dark:text-[#938C81]">
+                      Sort:
+                    </span>
+                    <select
+                      value={sortOrder}
+                      onChange={(e) => setSortOrder(e.target.value as TriageSort)}
+                      className="text-xs py-2 px-3 bg-zinc-50 dark:bg-[#20201E] border border-zinc-200 dark:border-[#2A2926] rounded-xl text-zinc-800 dark:text-[#F7F4ED] focus:outline-none cursor-pointer"
+                    >
+                      <option value="severity">Severity (Urgent first)</option>
+                      <option value="newest">Newest first</option>
+                      <option value="oldest">Oldest first</option>
+                      <option value="updated">Recently updated</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Filter Pills */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+                  {[
+                    { id: 'all', label: 'All', count: summaryMetrics.total },
+                    { id: 'critical', label: 'Critical', count: summaryMetrics.critical },
+                    { id: 'unacknowledged', label: 'Unacknowledged', count: summaryMetrics.needsAck },
+                    { id: 'assigned', label: 'Assigned', count: summaryMetrics.assigned },
+                    { id: 'escalated', label: 'Escalated', count: summaryMetrics.escalated },
+                    { id: 'stale', label: 'Older >24h', count: summaryMetrics.stale },
+                    { id: 'duplicates', label: 'Possible Duplicates', count: summaryMetrics.duplicates }
+                  ].map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        setActiveFilter(item.id as TriageFilter);
+                        setCurrentPage(1);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
+                        activeFilter === item.id
+                          ? 'bg-zinc-900 dark:bg-[#F7F4ED] text-white dark:text-zinc-900 font-semibold'
+                          : 'bg-zinc-100 dark:bg-[#20201E] text-zinc-600 dark:text-[#938C81] hover:bg-zinc-200 dark:hover:bg-[#2A2926]'
+                      }`}
+                    >
+                      <span>{item.label}</span>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                          activeFilter === item.id
+                            ? 'bg-white/20 dark:bg-black/20 text-white dark:text-zinc-900'
+                            : 'bg-zinc-200 dark:bg-[#2A2926] text-zinc-700 dark:text-zinc-300'
+                        }`}
+                      >
+                        {item.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* View Mode: Groups */}
+              {viewMode === 'groups' && duplicateGroups.length > 0 && (
+                <div className="space-y-4 pt-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-zinc-700 dark:text-[#F7F4ED] uppercase tracking-wider flex items-center gap-1.5">
+                      <Copy className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Deterministic Grouping Suggestions ({duplicateGroups.length} groups)</span>
+                    </h3>
+                    <span className="text-[11px] text-zinc-400">
+                      Human review required before resolving
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    {duplicateGroups.map((group) => {
+                      const isAllGroupSelected = group.alerts.every((a) => selectedIds.has(a.id));
+                      const isSomeGroupSelected = group.alerts.some((a) => selectedIds.has(a.id));
+                      const isExpanded = expandedGroupKeys.has(group.key);
+
+                      return (
+                        <div
+                          key={group.key}
+                          className="bg-zinc-50/70 dark:bg-[#1E1E1C] border border-amber-200/80 dark:border-amber-900/40 rounded-xl p-4 space-y-3 transition-all"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={isAllGroupSelected}
+                                ref={(el) => {
+                                  if (el) el.indeterminate = !isAllGroupSelected && isSomeGroupSelected;
+                                }}
+                                onChange={() => handleSelectGroup(group.alerts)}
+                                className="rounded border-zinc-300 text-red-600 focus:ring-red-500 cursor-pointer"
+                              />
+                              <div>
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 rounded-md">
+                                  Possible duplicate group
+                                </span>
+                                <h4 className="text-xs font-bold text-zinc-900 dark:text-[#F7F4ED] mt-1">
+                                  "{group.title}"
+                                </h4>
+                              </div>
+                            </div>
+                            <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300 bg-white dark:bg-[#20201E] px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-[#2A2926] shrink-0">
+                              {group.count} alerts
+                            </span>
+                          </div>
+
+                          {group.sampleMessage && (
+                            <p className="text-[11px] text-zinc-600 dark:text-[#938C81] italic line-clamp-2 bg-white/60 dark:bg-[#20201E]/60 p-2 rounded-lg border border-zinc-200/60 dark:border-[#2A2926]">
+                              "{group.sampleMessage}"
+                            </p>
+                          )}
+
+                          <div className="space-y-1 text-[11px] text-zinc-500 dark:text-[#938C81]">
+                            <div className="flex items-center gap-1.5">
+                              <Clock className="w-3 h-3 text-zinc-400" />
+                              <span>
+                                First: {formatTimeAgo(group.firstRaised)} · Latest: {formatTimeAgo(group.latestRaised)}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <Users className="w-3 h-3 text-zinc-400" />
+                              <span>Reporters: {group.reporters.join(', ') || 'Volunteers'}</span>
+                            </div>
+                            {group.locations.length > 0 && (
+                              <div className="flex items-center gap-1.5">
+                                <MapPin className="w-3 h-3 text-zinc-400" />
+                                <span>Locations: {group.locations.join(', ')}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between pt-2 border-t border-zinc-200/60 dark:border-[#2A2926] text-xs">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setExpandedGroupKeys((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(group.key)) next.delete(group.key);
+                                  else next.add(group.key);
+                                  return next;
+                                });
+                              }}
+                              className="text-zinc-600 dark:text-[#938C81] hover:text-zinc-900 dark:hover:text-[#F7F4ED] font-medium flex items-center gap-1 cursor-pointer"
+                            >
+                              {isExpanded ? 'Hide items' : `Review items (${group.count})`}
+                              <ChevronDown className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleOpenBulkResolveModal(group.alerts)}
+                              className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 dark:bg-[#F7F4ED] dark:hover:bg-zinc-200 text-white dark:text-zinc-900 text-[11px] font-semibold rounded-lg transition-colors cursor-pointer"
+                            >
+                              Resolve group ({group.count})
+                            </button>
+                          </div>
+
+                          {isExpanded && (
+                            <div className="pt-2 space-y-1.5 border-t border-zinc-200/40 dark:border-[#2A2926]">
+                              {group.alerts.map((a) => (
+                                <div
+                                  key={a.id}
+                                  className="p-2 bg-white dark:bg-[#20201E] rounded-lg border border-zinc-200/70 dark:border-[#2A2926] flex items-center justify-between text-xs"
+                                >
+                                  <div className="flex items-center gap-2 overflow-hidden">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedIds.has(a.id)}
+                                      onChange={() => handleToggleSelect(a.id)}
+                                      className="rounded border-zinc-300 text-red-600 focus:ring-red-500 cursor-pointer"
+                                    />
+                                    <div className="truncate">
+                                      <span className="font-semibold text-zinc-900 dark:text-[#F7F4ED]">
+                                        {a.title}
+                                      </span>
+                                      <span className="text-[10px] text-zinc-400 ml-1.5">
+                                        {formatTimeAgo(a.created_at)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => onOpenAlertDetail(a)}
+                                    className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline shrink-0 cursor-pointer ml-2"
+                                  >
+                                    Details
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* View Mode: List (Full paginated alert queue) */}
+              {viewMode === 'list' && (
+                <div className="space-y-2 pt-2">
+                  <div className="flex items-center justify-between px-3 py-2 bg-zinc-100/70 dark:bg-[#20201E] rounded-xl text-[11px] font-semibold text-zinc-500 dark:text-[#938C81]">
+                    <div className="flex items-center gap-2.5">
+                      <input
+                        type="checkbox"
+                        checked={
+                          currentPageAlerts.length > 0 &&
+                          currentPageAlerts.every((a) => selectedIds.has(a.id))
+                        }
+                        onChange={handleSelectPage}
+                        className="rounded border-zinc-300 text-red-600 focus:ring-red-500 cursor-pointer"
+                      />
+                      <span>Select page ({currentPageAlerts.length})</span>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      <span>
+                        Showing {filteredAlerts.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1}-
+                        {Math.min(currentPage * PAGE_SIZE, filteredAlerts.length)} of {filteredAlerts.length}
+                      </span>
+                    </div>
+                  </div>
+
+                  {filteredAlerts.length === 0 ? (
+                    <div className="p-8 text-center bg-zinc-50 dark:bg-[#20201E] rounded-xl border border-dashed border-zinc-200 dark:border-[#2A2926] text-xs text-zinc-500 dark:text-[#938C81]">
+                      No alerts match your current filter or search criteria.
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {currentPageAlerts.map(renderAlertRow)}
+                    </div>
+                  )}
+
+                  {/* Pagination Navigation */}
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between pt-3 text-xs text-zinc-600 dark:text-[#938C81]">
+                      <button
+                        type="button"
+                        disabled={currentPage === 1}
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        className="px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-[#2A2926] bg-white dark:bg-[#20201E] hover:bg-zinc-50 dark:hover:bg-[#2A2926] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                        <span>Previous</span>
+                      </button>
+
+                      <span className="font-medium">
+                        Page {currentPage} of {totalPages}
+                      </span>
+
+                      <button
+                        type="button"
+                        disabled={currentPage === totalPages}
+                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                        className="px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-[#2A2926] bg-white dark:bg-[#20201E] hover:bg-zinc-50 dark:hover:bg-[#2A2926] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1"
+                      >
+                        <span>Next</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 7. BULK RESOLUTION REVIEW MODAL (Sections 6, 7, 8, 9) */}
       {isBulkResolveOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div className="bg-white dark:bg-[#181817] border border-[#EAE8E1] dark:border-[#2A2926] rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl animate-fade-in overflow-hidden">
             {/* Modal Header */}
             <div className="p-5 border-b border-[#EAE8E1] dark:border-[#2A2926] flex items-center justify-between shrink-0">
