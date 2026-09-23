@@ -296,6 +296,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
   const [sendingInvite, setSendingInvite] = useState(false);
   const [inviteSuccessMsg, setInviteSuccessMsg] = useState('');
   const [inviteErrorMsg, setInviteErrorMsg] = useState('');
+  const [resendingInviteId, setResendingInviteId] = useState<string | null>(null);
 
   // Editing Team Member state
   const [editRoleValue, setEditRoleValue] = useState<string>('');
@@ -687,13 +688,35 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
         setInviteEmail('');
         fetchTeamDirectory();
       } else {
-        setInviteErrorMsg(res.message || 'Failed to send team invitation.');
+        setInviteErrorMsg(res.message || res.error || 'Failed to send team invitation.');
+        fetchTeamDirectory();
       }
     } catch (err: any) {
       console.error('Invite Team Member Error:', err);
       setInviteErrorMsg(err?.message || 'An error occurred during onboarding setup.');
     } finally {
       setSendingInvite(false);
+    }
+  };
+
+  // Resend Team Member Invitation
+  const handleResendInvite = async (member: any) => {
+    if (!member) return;
+    setResendingInviteId(member.id);
+    try {
+      const res = await api.admin.resendInvite({ userId: member.id, email: member.email });
+      if (res.success) {
+        showFeedback(res.message || `Invitation link resent successfully to ${member.email}.`);
+        fetchTeamDirectory();
+      } else {
+        showFeedback(res.message || res.error || 'Failed to resend team invitation.', 'error');
+        fetchTeamDirectory();
+      }
+    } catch (err: any) {
+      console.error('Resend Invite Error:', err);
+      showFeedback(err?.message || 'An error occurred while resending the invitation.', 'error');
+    } finally {
+      setResendingInviteId(null);
     }
   };
 
@@ -1260,15 +1283,36 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                   </span>
                                 </td>
                                 <td className="py-3 px-4 text-right">
-                                  <button 
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleSelectMember(member);
-                                    }}
-                                    className="text-zinc-400 dark:text-[#7A7570] group-hover:text-[#C59B27] p-1 hover:bg-zinc-100 dark:hover:bg-[#262520] rounded-lg transition-colors inline-flex cursor-pointer"
-                                  >
-                                    <Edit2 className="w-3.5 h-3.5" />
-                                  </button>
+                                  <div className="flex items-center justify-end space-x-1.5">
+                                    {member.status === 'invited' && (
+                                      <button
+                                        type="button"
+                                        title="Resend invitation"
+                                        disabled={resendingInviteId === member.id}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleResendInvite(member);
+                                        }}
+                                        className="text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 px-2 py-1 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-200 dark:border-amber-800/40 rounded-lg transition-colors inline-flex items-center space-x-1 text-[11px] font-medium cursor-pointer"
+                                      >
+                                        {resendingInviteId === member.id ? (
+                                          <Loader2 className="w-3 h-3 animate-spin" />
+                                        ) : (
+                                          <Mail className="w-3 h-3" />
+                                        )}
+                                        <span>Resend invitation</span>
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleSelectMember(member);
+                                      }}
+                                      className="text-zinc-400 dark:text-[#7A7570] group-hover:text-[#C59B27] p-1 hover:bg-zinc-100 dark:hover:bg-[#262520] rounded-lg transition-colors inline-flex cursor-pointer"
+                                    >
+                                      <Edit2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             ))}
@@ -1426,6 +1470,22 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                   {selectedMember.status || 'active'}
                                 </span>
                               </div>
+
+                              {selectedMember.status === 'invited' && (
+                                <button
+                                  type="button"
+                                  disabled={resendingInviteId === selectedMember.id}
+                                  onClick={() => handleResendInvite(selectedMember)}
+                                  className="w-full text-center px-3 py-2 text-xs font-semibold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-200 dark:border-amber-800/40 rounded-xl transition-colors cursor-pointer flex items-center justify-center space-x-2"
+                                >
+                                  {resendingInviteId === selectedMember.id ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <Mail className="w-3.5 h-3.5" />
+                                  )}
+                                  <span>Resend invitation</span>
+                                </button>
+                              )}
 
                               {isSuperAdmin && (
                                 <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-100 dark:border-[#302E29]">

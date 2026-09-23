@@ -515,9 +515,9 @@ router.post('/accept-invite', async (req, res) => {
       // Mark current token used
       await execute('UPDATE auth_tokens SET used_at = ? WHERE id = ?', [nowStr, dbToken.id]);
       
-      // Revoke any other unused invitation tokens for this user
+      // Revoke any other unused invitation tokens for this user safely
       await execute(
-        "UPDATE auth_tokens SET revoked_at = ?, used_at = 'revoked' WHERE user_id = ? AND id != ? AND used_at IS NULL",
+        "UPDATE auth_tokens SET revoked_at = ? WHERE user_id = ? AND id != ? AND used_at IS NULL AND revoked_at IS NULL",
         [nowStr, dbToken.user_id, dbToken.id]
       );
 
@@ -790,6 +790,7 @@ router.post('/invites', async (req: AuthenticatedRequest, res: Response) => {
     if (req.user?.role !== 'super_admin' && req.user?.role !== 'admin') {
       return res.status(403).json({
         success: false,
+        code: 'ADMIN_REQUIRED',
         error: 'Admin permission required to issue invitations.'
       });
     }
@@ -799,16 +800,25 @@ router.post('/invites', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(400).json({ success: false, error: 'Email and role are required.' });
     }
 
+    const cleanEmail = String(email).trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_EMAIL',
+        error: 'Please enter a valid email address.'
+      });
+    }
+
     // Role mapping & authorization rule: only super_admin can invite another super_admin
     if (role === 'super_admin' && req.user?.role !== 'super_admin') {
       return res.status(403).json({
         success: false,
         code: 'SUPER_ADMIN_REQUIRED',
-        error: 'Only Super Administrators can invite another Super Administrator.'
+        error: 'You do not have permission to invite a Super Admin.'
       });
     }
 
-    const cleanEmail = String(email).trim().toLowerCase();
     const nameForRecipient = recipientName || fullName || (firstName && lastName ? `${firstName} ${lastName}` : '') || 'Invited User';
 
     // Check existing user
@@ -821,15 +831,26 @@ router.post('/invites', async (req: AuthenticatedRequest, res: Response) => {
         if (existingUser.password_hash !== 'invited_pending') {
           return res.status(400).json({
             success: false,
-            code: 'ALREADY_ADMIN',
-            error: 'This email already has active admin access.'
+            code: 'ALREADY_ACTIVE_ADMIN',
+            error: 'This email already belongs to an active team member.'
           });
         }
-        // If user exists and is pending, reuse user ID and update role if changed
-        invitedUserId = existingUser.id;
-        if (existingUser.role !== role) {
-          await execute('UPDATE users SET role = ?, updated_at = ? WHERE id = ?', [role, nowStr, invitedUserId]);
+
+        // Check if there is an active pending unexpired invitation token
+        const activePendingToken = await queryOne(
+          "SELECT id FROM auth_tokens WHERE user_id = ? AND token_type = 'admin_invite' AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ?",
+          [existingUser.id, nowStr]
+        );
+        if (activePendingToken) {
+          return res.status(400).json({
+            success: false,
+            code: 'INVITATION_ALREADY_PENDING',
+            error: 'An invitation is already pending for this email.'
+          });
         }
+
+        // If user exists and is pending with expired/revoked/missing token, reuse user ID
+        invitedUserId = existingUser.id;
       } else {
         return res.status(400).json({
           success: false,
@@ -839,25 +860,7 @@ router.post('/invites', async (req: AuthenticatedRequest, res: Response) => {
       }
     } else {
       invitedUserId = crypto.randomUUID();
-      // Create user record
-      await execute(`
-        INSERT INTO users (id, email, password_hash, role, email_verified, created_at, updated_at)
-        VALUES (?, ?, 'invited_pending', ?, 0, ?, ?)
-      `, [invitedUserId, cleanEmail, role, nowStr, nowStr]);
-
-      // Create profile record with schema-valid columns
-      const profileId = crypto.randomUUID();
-      await execute(`
-        INSERT INTO parent_profiles (id, user_id, full_name, email, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `, [profileId, invitedUserId, nameForRecipient, cleanEmail, nowStr, nowStr]);
     }
-
-    // Revoke any previous pending invitation tokens for this user
-    await execute(
-      "UPDATE auth_tokens SET revoked_at = ?, revoked_by = ?, used_at = 'replaced' WHERE user_id = ? AND used_at IS NULL",
-      [nowStr, req.user?.id || null, invitedUserId]
-    );
 
     // Generate secure 72-hour invite token
     const rawToken = crypto.randomBytes(32).toString('hex');
@@ -866,15 +869,53 @@ router.post('/invites', async (req: AuthenticatedRequest, res: Response) => {
     const expiryHours = parseInt(process.env.INVITATION_EXPIRY_HOURS || '72', 10);
     const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString();
 
-    await execute(`
-      INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
-      VALUES (?, ?, ?, 'admin_invite', ?, ?)
-    `, [tokenId, invitedUserId, tokenHash, expiresAt, nowStr]);
+    // Atomic DB operations: user, profile, token revocation, token creation, and audit log
+    await transaction(async () => {
+      if (existingUser) {
+        if (existingUser.role !== role) {
+          await execute('UPDATE users SET role = ?, updated_at = ? WHERE id = ?', [role, nowStr, invitedUserId]);
+        }
+      } else {
+        // Create user record
+        await execute(`
+          INSERT INTO users (id, email, password_hash, role, email_verified, created_at, updated_at)
+          VALUES (?, ?, 'invited_pending', ?, 0, ?, ?)
+        `, [invitedUserId, cleanEmail, role, nowStr, nowStr]);
+
+        // Create profile record with schema-valid columns
+        const profileId = crypto.randomUUID();
+        await execute(`
+          INSERT INTO parent_profiles (id, user_id, full_name, email, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `, [profileId, invitedUserId, nameForRecipient, cleanEmail, nowStr, nowStr]);
+      }
+
+      // Revoke any previous pending invitation tokens for this user safely without invalid timestamp literals
+      await execute(
+        "UPDATE auth_tokens SET revoked_at = ?, revoked_by = ? WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL",
+        [nowStr, req.user?.id || null, invitedUserId]
+      );
+
+      // Persist auth token
+      await execute(`
+        INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
+        VALUES (?, ?, ?, 'admin_invite', ?, ?)
+      `, [tokenId, invitedUserId, tokenHash, expiresAt, nowStr]);
+
+      // Audit log inside transaction
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        crypto.randomUUID(), req.user?.id || 'system', req.user?.role || 'admin', 'SEND_INVITATION', 'user', invitedUserId,
+        JSON.stringify({ email: cleanEmail, role, expiresAt }), nowStr
+      ]);
+    });
 
     const inviteLink = buildPublicAppUrl(`/admin/accept-invite?token=${rawToken}`);
 
-    // Send invitation email with personalized greeting and expiry notice
-    await sendInvitationEmail({
+    // Send invitation email with personalized greeting and expiry notice (after commit)
+    const emailResult = await sendInvitationEmail({
       recipientEmail: cleanEmail,
       recipientName: nameForRecipient,
       preferredName,
@@ -884,18 +925,18 @@ router.post('/invites', async (req: AuthenticatedRequest, res: Response) => {
       expiresAt
     }).catch(err => {
       console.error('Error sending invitation email:', err);
+      return { success: false, error: err?.message || 'Email delivery failed' };
     });
 
-    // Audit log
-    try {
-      await execute(`
-        INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `, [
-        crypto.randomUUID(), req.user?.id || 'system', 'SEND_INVITATION', 'user', invitedUserId,
-        JSON.stringify({ email: cleanEmail, role, expiresAt }), nowStr
-      ]);
-    } catch (e) {}
+    if (!emailResult || !emailResult.success) {
+      return res.status(200).json({
+        success: false,
+        code: 'EMAIL_DELIVERY_FAILED',
+        error: 'Invitation created, but the email could not be sent. Try resending.',
+        message: 'Invitation created, but the email could not be sent. Try resending.',
+        inviteLink
+      });
+    }
 
     return res.json({
       success: true,
@@ -911,7 +952,7 @@ router.post('/invites', async (req: AuthenticatedRequest, res: Response) => {
 router.post('/invites/resend', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
-      return res.status(403).json({ success: false, error: 'Admin permission required.' });
+      return res.status(403).json({ success: false, code: 'ADMIN_REQUIRED', error: 'Admin permission required.' });
     }
 
     const { userId, email } = req.body;
@@ -924,17 +965,29 @@ router.post('/invites/resend', authMiddleware, async (req: AuthenticatedRequest,
     }
 
     if (!targetUser) {
-      return res.status(404).json({ success: false, error: 'User record not found.' });
+      return res.status(404).json({ success: false, code: 'USER_NOT_FOUND', error: 'User record not found.' });
+    }
+
+    // Role check: only super_admin can resend invite for a super_admin
+    if (targetUser.role === 'super_admin' && req.user.role !== 'super_admin') {
+      return res.status(403).json({
+        success: false,
+        code: 'SUPER_ADMIN_REQUIRED',
+        error: 'You do not have permission to resend an invitation for a Super Admin.'
+      });
+    }
+
+    // Verify user is actually pending
+    if (targetUser.password_hash !== 'invited_pending') {
+      return res.status(400).json({
+        success: false,
+        code: 'NOT_PENDING_INVITATION',
+        error: 'This user is already an active member and does not have a pending invitation.'
+      });
     }
 
     const cleanEmail = targetUser.email;
     const nowStr = new Date().toISOString();
-
-    // Revoke any previous pending tokens for this user
-    await execute(
-      "UPDATE auth_tokens SET revoked_at = ?, revoked_by = ?, used_at = 'replaced' WHERE user_id = ? AND used_at IS NULL",
-      [nowStr, req.user.id, targetUser.id]
-    );
 
     // Fetch profile for recipient name
     let recipientName = '';
@@ -956,14 +1009,32 @@ router.post('/invites/resend', authMiddleware, async (req: AuthenticatedRequest,
     const expiryHours = parseInt(process.env.INVITATION_EXPIRY_HOURS || '72', 10);
     const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString();
 
-    await execute(`
-      INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
-      VALUES (?, ?, ?, 'admin_invite', ?, ?)
-    `, [tokenId, targetUser.id, tokenHash, expiresAt, nowStr]);
+    // Atomic DB operations for resend
+    await transaction(async () => {
+      // Revoke any previous pending tokens for this user safely
+      await execute(
+        "UPDATE auth_tokens SET revoked_at = ?, revoked_by = ? WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL",
+        [nowStr, req.user.id, targetUser.id]
+      );
+
+      await execute(`
+        INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
+        VALUES (?, ?, ?, 'admin_invite', ?, ?)
+      `, [tokenId, targetUser.id, tokenHash, expiresAt, nowStr]);
+
+      // Audit log inside transaction
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        crypto.randomUUID(), req.user.id, req.user.role || 'admin', 'RESEND_INVITATION', 'user', targetUser.id,
+        JSON.stringify({ email: cleanEmail, role: targetUser.role, expiresAt }), nowStr
+      ]);
+    });
 
     const inviteLink = buildPublicAppUrl(`/admin/accept-invite?token=${rawToken}`);
 
-    await sendInvitationEmail({
+    const emailResult = await sendInvitationEmail({
       recipientEmail: cleanEmail,
       recipientName: recipientName || undefined,
       role: targetUser.role,
@@ -971,18 +1042,18 @@ router.post('/invites/resend', authMiddleware, async (req: AuthenticatedRequest,
       expiresAt
     }).catch(err => {
       console.error('Error sending resend invitation email:', err);
+      return { success: false, error: err?.message || 'Email delivery failed' };
     });
 
-    // Audit log
-    try {
-      await execute(`
-        INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `, [
-        crypto.randomUUID(), req.user.id, 'RESEND_INVITATION', 'user', targetUser.id,
-        JSON.stringify({ email: cleanEmail, role: targetUser.role }), nowStr
-      ]);
-    } catch (e) {}
+    if (!emailResult || !emailResult.success) {
+      return res.status(200).json({
+        success: false,
+        code: 'EMAIL_DELIVERY_FAILED',
+        error: 'Invitation renewed, but the email could not be sent. Try resending later.',
+        message: 'Invitation renewed, but the email could not be sent. Try resending later.',
+        inviteLink
+      });
+    }
 
     return res.json({
       success: true,
@@ -6524,7 +6595,7 @@ router.post('/team/remove-access', async (req: AuthenticatedRequest, res: Respon
 
     // Invalidate any pending invitation or active tokens
     await execute(
-      "UPDATE auth_tokens SET revoked_at = ?, revoked_by = ?, used_at = 'removed' WHERE user_id = ? AND used_at IS NULL",
+      "UPDATE auth_tokens SET revoked_at = ?, revoked_by = ? WHERE user_id = ? AND revoked_at IS NULL",
       [now, req.user?.id || null, userId]
     );
 

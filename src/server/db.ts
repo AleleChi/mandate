@@ -97,16 +97,22 @@ function convertPlaceholders(sql: string): string {
   return sql.replace(/\?/g, () => `$${idx++}`);
 }
 
+import { AsyncLocalStorage } from 'async_hooks';
+
+const pgTxStorage = new AsyncLocalStorage<any>();
+
 export async function query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
   const db = getDb();
   if (isPostgres && pgPool) {
     if (pgInitPromise) await pgInitPromise;
     const pgSql = convertPlaceholders(sql);
+    const txClient = pgTxStorage.getStore();
+    const runner = txClient || pgPool;
     try {
-      const res = await pgPool.query(pgSql, params);
+      const res = await runner.query(pgSql, params);
       return res.rows;
     } catch (err: any) {
-      if (err?.message?.includes('Connection terminated') || err?.message?.includes('connection closed')) {
+      if (!txClient && (err?.message?.includes('Connection terminated') || err?.message?.includes('connection closed'))) {
         console.warn('[db.query] Transient connection termination, retrying once...');
         const retryRes = await pgPool.query(pgSql, params);
         return retryRes.rows;
@@ -130,11 +136,13 @@ export async function execute(sql: string, params: any[] = []): Promise<{ change
   if (isPostgres && pgPool) {
     if (pgInitPromise) await pgInitPromise;
     const pgSql = convertPlaceholders(sql);
+    const txClient = pgTxStorage.getStore();
+    const runner = txClient || pgPool;
     try {
-      const res = await pgPool.query(pgSql, params);
+      const res = await runner.query(pgSql, params);
       return { changes: res.rowCount || 0 };
     } catch (err: any) {
-      if (err?.message?.includes('Connection terminated') || err?.message?.includes('connection closed')) {
+      if (!txClient && (err?.message?.includes('Connection terminated') || err?.message?.includes('connection closed'))) {
         console.warn('[db.execute] Transient connection termination, retrying once...');
         const retryRes = await pgPool.query(pgSql, params);
         return { changes: retryRes.rowCount || 0 };
@@ -158,7 +166,9 @@ export async function transaction<T>(fn: () => Promise<T> | T): Promise<T> {
     const client = await pgPool.connect();
     try {
       await client.query('BEGIN');
-      const res = await fn();
+      const res = await pgTxStorage.run(client, async () => {
+        return await fn();
+      });
       await client.query('COMMIT');
       return res;
     } catch (e) {
