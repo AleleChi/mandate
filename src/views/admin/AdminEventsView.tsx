@@ -61,6 +61,8 @@ interface EventData {
   totalCapacity?: number;
   applicationsCount?: number;
   selectedCount?: number;
+  minimumAge?: number | null;
+  maximumAge?: number | null;
 }
 
 const defaultAgeGroups: AgeGroup[] = [
@@ -115,6 +117,8 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
 
   const [formAgeGroups, setFormAgeGroups] = useState<AgeGroup[]>(defaultAgeGroups);
   const [formAllowOverlappingAges, setFormAllowOverlappingAges] = useState(true);
+  const [formMinimumAge, setFormMinimumAge] = useState<string>('');
+  const [formMaximumAge, setFormMaximumAge] = useState<string>('');
 
   useEffect(() => {
     fetchEvents();
@@ -164,6 +168,8 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
         setFormAllowMultipleChildren(evData.allowMultipleChildren ?? true);
         setFormAllowSaveAndContinue(evData.allowSaveAndContinue ?? true);
         setFormAllowEditAfterSubmission(evData.allowEditAfterSubmission ?? false);
+        setFormMinimumAge(evData.minimumAge !== undefined && evData.minimumAge !== null ? String(evData.minimumAge) : '');
+        setFormMaximumAge(evData.maximumAge !== undefined && evData.maximumAge !== null ? String(evData.maximumAge) : '');
 
         if (res.ageGroups && res.ageGroups.length > 0) {
           setFormAgeGroups(res.ageGroups);
@@ -205,6 +211,8 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
     setFormAllowMultipleChildren(true);
     setFormAllowSaveAndContinue(true);
     setFormAllowEditAfterSubmission(false);
+    setFormMinimumAge('');
+    setFormMaximumAge('');
 
     setFormAgeGroups(defaultAgeGroups);
     setFormAllowOverlappingAges(true);
@@ -302,6 +310,16 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
       }
     }
 
+    // Age eligibility validation
+    if (formMinimumAge !== '' && formMaximumAge !== '') {
+      const min = parseInt(formMinimumAge, 10);
+      const max = parseInt(formMaximumAge, 10);
+      if (min > max) {
+        showError('Validation Error', 'Minimum age cannot exceed maximum age.');
+        return false;
+      }
+    }
+
     // Age groups validation
     if (formAgeGroups.length === 0 && !isDraft) {
       showError('Validation Error', 'At least one age group is required to save an active event.');
@@ -374,6 +392,8 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
       allowMultipleChildren: formAllowMultipleChildren,
       allowSaveAndContinue: formAllowSaveAndContinue,
       allowEditAfterSubmission: formAllowEditAfterSubmission,
+      minimumAge: formMinimumAge !== '' ? parseInt(formMinimumAge, 10) : null,
+      maximumAge: formMaximumAge !== '' ? parseInt(formMaximumAge, 10) : null,
       ageGroups: formAgeGroups
     };
 
@@ -905,6 +925,47 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                       label="Allow changes after submission"
                       description="Parents can update details while their registration is being reviewed."
                     />
+                  </div>
+                </div>
+              </div>
+
+              {/* Card: AGE ELIGIBILITY */}
+              <div
+                className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302F2A] rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xs"
+                data-component-version="admin-event-age-eligibility-v1"
+              >
+                <div className="border-b border-[#EAE8E1]/60 dark:border-[#302F2A] pb-4">
+                  <h3 className="text-lg font-semibold text-[#18181B] dark:text-[#F0EBE3]">Age eligibility</h3>
+                  <p className="text-xs text-zinc-500 dark:text-[#7A7570]">Configure minimum and optional maximum eligible ages for children attending this event.</p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] mb-1.5">Minimum age</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="25"
+                      value={formMinimumAge}
+                      onChange={e => setFormMinimumAge(e.target.value)}
+                      placeholder="e.g. 3"
+                      className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3D3B35] bg-[#FAF9F6] dark:bg-[#24231F] dark:text-[#F0EBE3] dark:placeholder-[#5A5550] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                    />
+                    <p className="text-[11px] text-zinc-400 mt-1">Children below this age on the event date will not be eligible.</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] mb-1.5">Maximum age</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="25"
+                      value={formMaximumAge}
+                      onChange={e => setFormMaximumAge(e.target.value)}
+                      placeholder="Not set"
+                      className="w-full px-4 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3D3B35] bg-[#FAF9F6] dark:bg-[#24231F] dark:text-[#F0EBE3] dark:placeholder-[#5A5550] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                    />
+                    <p className="text-[11px] text-zinc-400 mt-1">Leave empty if no upper age limit is enforced.</p>
                   </div>
                 </div>
               </div>

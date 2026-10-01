@@ -13,6 +13,14 @@ import { resolveAlertRecipients, resolveUserDutyLocation } from './duty';
 import { cancelActiveEscalationCycles } from '../services/escalationService';
 import { buildPublicAppUrl } from '../utils/urlHelper';
 import { enqueueWhatsAppJob } from '../services/whatsapp/queue';
+import {
+  bindWristbandToChild,
+  lookupWristbandByNfcUid,
+  deactivateWristbandAssignment,
+  replaceWristband,
+  resolveEventChildIdentifier,
+  WristbandDomainError
+} from '../services/wristbandService';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -2498,6 +2506,30 @@ router.post('/pass/lookup', authMiddleware, async (req: AuthenticatedRequest, re
       }
     }
 
+    let activeWristband: any = null;
+    try {
+      const activeAssignment = await queryOne<{
+        wristband_id: string;
+        assigned_at: string;
+        wristband_code: string;
+        status: string;
+      }>(
+        `SELECT cwa.wristband_id, cwa.assigned_at, wb.wristband_code, wb.status
+         FROM child_wristband_assignments cwa
+         JOIN wristbands wb ON cwa.wristband_id = wb.id
+         WHERE cwa.child_event_entry_id = ? AND cwa.deactivated_at IS NULL`,
+        [entryId]
+      );
+      if (activeAssignment) {
+        activeWristband = {
+          id: activeAssignment.wristband_id,
+          wristbandCode: activeAssignment.wristband_code,
+          status: activeAssignment.status,
+          assignedAt: activeAssignment.assigned_at
+        };
+      }
+    } catch (_) {}
+
     res.json({
       success: true,
       child: {
@@ -2519,12 +2551,59 @@ router.post('/pass/lookup', authMiddleware, async (req: AuthenticatedRequest, re
         entryId: entry.id,
         entryStatus: entry.status,
         passReference: finalPassReference,
-        pickup
+        pickup,
+        activeWristband
       }
     });
   } catch (err) {
     console.error('Pass lookup error:', err);
     res.status(500).json({ error: 'Internal server error performing pass lookup' });
+  }
+});
+
+// 6.6 UNIFIED CHILD IDENTIFIER RESOLVER (Phase 3B)
+// POST /api/volunteer/children/resolve-identifier
+router.post('/children/resolve-identifier', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role === 'parent' && !req.volunteerProfile)) {
+      return res.status(403).json({ error: 'Access denied: Volunteer/Staff role required', code: 'FORBIDDEN' });
+    }
+
+    if (req.volunteerProfile && req.volunteerProfile.status === 'pending_review') {
+      return res.status(403).json({ error: 'Access denied: Your volunteer access is under review.', code: 'FORBIDDEN' });
+    }
+
+    const { eventId, identifier, identifierType } = req.body;
+    let targetEventId = eventId;
+    if (!targetEventId) {
+      targetEventId = await getCurrentEventId();
+    }
+
+    if (!targetEventId) {
+      return res.status(400).json({ error: 'No current event is available or eventId is missing.', code: 'EVENT_ID_REQUIRED' });
+    }
+
+    if (!identifier || typeof identifier !== 'string' || !identifier.trim()) {
+      return res.status(400).json({ error: 'Please provide a non-empty identifier', code: 'INVALID_IDENTIFIER' });
+    }
+
+    const result = await resolveEventChildIdentifier(targetEventId, identifier, {
+      identifierType,
+      throwOnError: true
+    });
+
+    return res.json(result);
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Unified identifier resolution error:', err);
+    return res.status(500).json({ success: false, error: 'Internal server error resolving identifier', code: 'INTERNAL_ERROR' });
   }
 });
 
@@ -2626,6 +2705,9 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
     const volunteerProfile = await queryOne('SELECT full_name FROM volunteer_profiles WHERE user_id = ?', [req.user.id]);
     const volunteerName = volunteerProfile ? volunteerProfile.full_name : (req.user.email || 'Event Worker');
 
+    const dutyLoc = await resolveUserDutyLocation(req.user.id, currentEventId);
+    const checkInLocation = (dutyLoc?.name as string) || null;
+
     // Handle Already Checked In
     if (entry.status === 'checked_in' || entry.status === 'inside') {
       const stats = await getEventStats(currentEventId);
@@ -2656,7 +2738,7 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
             id: entry.checked_in_by || req.user.id,
             fullName: volunteerName
           },
-          point: 'Entrance A'
+          point: checkInLocation || undefined
         },
         stats: {
           expected: stats.expected,
@@ -2676,6 +2758,36 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
       SET status = 'checked_in', checked_in_at = ?, checked_in_by = ?, updated_at = ?
       WHERE id = ?
     `, [now, req.user.id, now, entryId]);
+
+    // Write immutable attendance audit record idempotently
+    const idempotencyKey = req.body.idempotencyKey || `online_check_in_${entryId}`;
+    const existingAudit = await queryOne(
+      'SELECT id FROM attendance_records WHERE idempotency_key = ? OR (child_event_entry_id = ? AND action_type = ?)',
+      [idempotencyKey, entryId, 'check_in']
+    );
+    if (!existingAudit) {
+      const attendanceId = `att-${crypto.randomUUID()}`;
+      try {
+        await execute(`
+          INSERT INTO attendance_records (
+            id, child_event_entry_id, action_type, action_time, staff_user_id, gate_location, sync_source, idempotency_key, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          attendanceId,
+          entryId,
+          'check_in',
+          now,
+          req.user.id,
+          checkInLocation || null,
+          'online',
+          idempotencyKey,
+          now
+        ]);
+      } catch (auditErr: any) {
+        // Concurrency guard: UNIQUE constraint on idempotency_key guarantees only 1 record created
+        console.warn(`[CheckIn Audit] Concurrency deduplicated for entry ${entryId}:`, auditErr?.message || auditErr);
+      }
+    }
 
     const stats = await getEventStats(currentEventId);
 
@@ -2704,7 +2816,7 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
           id: req.user.id,
           fullName: volunteerName
         },
-        point: 'Entrance A'
+        point: checkInLocation || undefined
       },
       stats: {
         expected: stats.expected,
@@ -2746,6 +2858,179 @@ async function getLastPickedUp(eventId?: string | null) {
     pickedUpAt: row.picked_up_at
   };
 }
+
+// =============================================================================
+// TGA 2026 PHASE 2A: NFC WRISTBAND BINDING & LOOKUP (VOLUNTEER / CHECK-IN)
+// =============================================================================
+
+// POST /api/volunteer/wristbands/bind
+router.post('/wristbands/bind', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: 'Authentication required', code: 'UNAUTHORIZED' });
+    }
+
+    const { eventId, childEventEntryId, nfcUid, wristbandId, idempotencyKey } = req.body || {};
+
+    const result = await bindWristbandToChild({
+      eventId,
+      childEventEntryId,
+      nfcUid,
+      wristbandId,
+      idempotencyKey,
+      actor: {
+        id: req.user.id,
+        role: req.user.role,
+        email: req.user.email
+      }
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error in wristband binding route:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to bind wristband',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// POST & GET /api/volunteer/wristbands/lookup
+const handleVolunteerWristbandLookup = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: 'Authentication required', code: 'UNAUTHORIZED' });
+    }
+
+    const eventId = (req.body?.eventId || req.query?.eventId || '') as string;
+    const nfcUid = (req.body?.nfcUid || req.query?.nfcUid || '') as string;
+
+    const wristband = await lookupWristbandByNfcUid({
+      eventId,
+      rawUid: nfcUid
+    });
+
+    res.json({
+      success: true,
+      wristband
+    });
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error in volunteer wristband lookup route:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to lookup wristband',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+router.post('/wristbands/lookup', authMiddleware, handleVolunteerWristbandLookup);
+router.get('/wristbands/lookup', authMiddleware, handleVolunteerWristbandLookup);
+
+// POST /api/volunteer/wristbands/deactivate
+router.post('/wristbands/deactivate', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: 'Authentication required', code: 'UNAUTHORIZED' });
+    }
+
+    const { eventId, childEventEntryId, wristbandId, nfcUid, assignmentId, reason, resultingWristbandStatus, idempotencyKey } = req.body || {};
+
+    const result = await deactivateWristbandAssignment({
+      eventId,
+      childEventEntryId,
+      wristbandId,
+      nfcUid,
+      assignmentId,
+      reason,
+      resultingWristbandStatus,
+      idempotencyKey,
+      actor: {
+        id: req.user.id,
+        role: req.user.role,
+        email: req.user.email
+      }
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error in volunteer wristband deactivation route:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to deactivate wristband',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// POST /api/volunteer/wristbands/replace
+router.post('/wristbands/replace', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: 'Authentication required', code: 'UNAUTHORIZED' });
+    }
+
+    const { eventId, childEventEntryId, currentWristbandId, currentNfcUid, replacementWristbandId, replacementNfcUid, reason, idempotencyKey } = req.body || {};
+
+    const result = await replaceWristband({
+      eventId,
+      childEventEntryId,
+      currentWristbandId,
+      currentNfcUid,
+      replacementWristbandId,
+      replacementNfcUid,
+      reason,
+      idempotencyKey,
+      actor: {
+        id: req.user.id,
+        role: req.user.role,
+        email: req.user.email
+      }
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error in volunteer wristband replacement route:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to replace wristband',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
 
 // 8. CHECK OUT CHILD (PICKUP RELEASE)
 router.post('/check-out', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
@@ -2986,6 +3271,11 @@ router.post('/pickup/lookup', authMiddleware, async (req: AuthenticatedRequest, 
       cleanRef = `KOI-2026-${cleanRef}`;
     }
 
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({ success: false, error: 'No current event is available.' });
+    }
+
     const passRow = await queryOne('SELECT child_event_entry_id, status FROM event_passes WHERE pass_reference = ? OR id = ?', [cleanRef, passCode]);
     if (!passRow) {
       return res.status(404).json({
@@ -3003,9 +3293,13 @@ router.post('/pickup/lookup', authMiddleware, async (req: AuthenticatedRequest, 
     }
 
     const entryId = passRow.child_event_entry_id;
-    const entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [entryId]);
+    const entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ? AND event_id = ?', [entryId, currentEventId]);
     if (!entry) {
-      return res.status(404).json({ success: false, error: 'Event registration entry not found' });
+      return res.status(404).json({
+        success: false,
+        code: 'INVALID_PASS',
+        message: 'We could not find a child for this pass.'
+      });
     }
 
     const child = await queryOne('SELECT * FROM children WHERE id = ?', [entry.child_id]);

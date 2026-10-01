@@ -47,7 +47,7 @@ export function getDb() {
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
-    const dbPath = path.join(dataDir, 'koinonia-dev.sqlite');
+    const dbPath = process.env.TEST_SQLITE_PATH || path.join(dataDir, 'koinonia-dev.sqlite');
     try {
       sqliteDb = new Database(dbPath, { timeout: 10000 });
       sqliteDb.pragma('journal_mode = WAL');
@@ -268,6 +268,8 @@ function initSqliteSchema(db: Database.Database) {
       volunteer_registration_opens_at TEXT,
       volunteer_registration_closes_at TEXT,
       capacity INTEGER,
+      minimum_age INTEGER,
+      maximum_age INTEGER,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -1020,7 +1022,9 @@ function initSqliteSchema(db: Database.Database) {
     "description TEXT",
     "volunteer_registration_opens_at TEXT",
     "volunteer_registration_closes_at TEXT",
-    "capacity INTEGER"
+    "capacity INTEGER",
+    "minimum_age INTEGER",
+    "maximum_age INTEGER"
   ];
   for (const col of sqliteEventCols) {
     try {
@@ -1724,6 +1728,103 @@ function initSqliteSchema(db: Database.Database) {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_event_duty_location_presence_loc ON event_duty_location_presence(event_location_id);`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_event_location_codes_hash ON event_location_codes(token_hash);`);
   } catch (e) {}
+
+  // Phase 1B NFC Wristband Foundation (SQLite)
+  try {
+    // 1. Supporting unique index on child_event_entries to allow composite foreign key (child_event_entry_id, event_id)
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_child_event_entries_id_event ON child_event_entries(id, event_id);`);
+
+    // 2. Physical wristband inventory table
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS wristbands (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        wristband_code TEXT NOT NULL,
+        nfc_uid TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('prepared', 'available', 'active', 'lost', 'damaged', 'decommissioned')),
+        created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(event_id, wristband_code),
+        UNIQUE(event_id, nfc_uid),
+        UNIQUE(id, event_id)
+      );
+    `);
+
+    // 3. Child wristband assignment history table
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS child_wristband_assignments (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        child_event_entry_id TEXT NOT NULL,
+        wristband_id TEXT NOT NULL,
+        assigned_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        assigned_at TEXT NOT NULL,
+        deactivated_at TEXT,
+        deactivated_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        deactivation_reason TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (child_event_entry_id, event_id) REFERENCES child_event_entries(id, event_id) ON DELETE CASCADE,
+        FOREIGN KEY (wristband_id, event_id) REFERENCES wristbands(id, event_id) ON DELETE CASCADE
+      );
+    `);
+
+    // 4. Partial unique indexes enforcing core invariants
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_active_assignment_entry
+      ON child_wristband_assignments(child_event_entry_id)
+      WHERE deactivated_at IS NULL;
+    `);
+
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_active_assignment_wristband
+      ON child_wristband_assignments(wristband_id)
+      WHERE deactivated_at IS NULL;
+    `);
+
+    // 5. Query and historical audit indexes
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_wristbands_event_status ON wristbands(event_id, status);`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_assignments_child_entry_time ON child_wristband_assignments(child_event_entry_id, assigned_at);`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_assignments_event_time ON child_wristband_assignments(event_id, assigned_at);`);
+
+    // 6. Supporting tables for sequences and operation idempotency
+    db.exec(`CREATE TABLE IF NOT EXISTS event_wristband_sequences (event_id TEXT PRIMARY KEY, next_seq INTEGER NOT NULL DEFAULT 1);`);
+    db.exec(`CREATE TABLE IF NOT EXISTS wristband_binding_idempotency (idempotency_key TEXT PRIMARY KEY, event_id TEXT NOT NULL, child_event_entry_id TEXT NOT NULL, wristband_id TEXT NOT NULL, response_payload TEXT NOT NULL, created_at TEXT NOT NULL);`);
+    db.exec(`CREATE TABLE IF NOT EXISTS wristband_operation_idempotency (idempotency_key TEXT PRIMARY KEY, operation_type TEXT NOT NULL, event_id TEXT NOT NULL, request_payload_hash TEXT NOT NULL, response_payload TEXT NOT NULL, created_at TEXT NOT NULL);`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_wb_op_idempotency_event ON wristband_operation_idempotency(event_id);`);
+
+    // 7. Phase 4B1: Ensure SQLite wristbands CHECK constraint includes 'prepared'
+    try {
+      const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='wristbands'").get() as any;
+      if (tableInfo && tableInfo.sql && !tableInfo.sql.includes("'prepared'")) {
+        db.pragma('foreign_keys = OFF');
+        db.exec(`
+          CREATE TABLE wristbands_mig (
+            id TEXT PRIMARY KEY,
+            event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+            wristband_code TEXT NOT NULL,
+            nfc_uid TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('prepared', 'available', 'active', 'lost', 'damaged', 'decommissioned')),
+            created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(event_id, wristband_code),
+            UNIQUE(event_id, nfc_uid),
+            UNIQUE(id, event_id)
+          );
+          INSERT INTO wristbands_mig SELECT * FROM wristbands;
+          DROP TABLE wristbands;
+          ALTER TABLE wristbands_mig RENAME TO wristbands;
+          CREATE INDEX IF NOT EXISTS idx_wristbands_event_status ON wristbands(event_id, status);
+        `);
+        db.pragma('foreign_keys = ON');
+      }
+    } catch (migErr) {
+      console.warn('SQLite wristband status check migration note:', migErr);
+    }
+  } catch (e) {
+    console.error('Error creating wristband tables in SQLite:', e);
+  }
 
   // Seed real approved event
   const now = new Date().toISOString();

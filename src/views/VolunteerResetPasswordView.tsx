@@ -79,16 +79,16 @@ export const VolunteerResetPasswordView: React.FC<VolunteerResetPasswordViewProp
       {!token ? (
         <div className="space-y-6 text-center animate-fade-in">
           <div className="flex justify-center">
-            <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center text-red-600">
+            <div className="w-16 h-16 rounded-full bg-red-50 dark:bg-red-950/40 flex items-center justify-center text-red-600 dark:text-red-400">
               <AlertTriangle className="w-10 h-10 stroke-[1.5]" />
             </div>
           </div>
           
           <div className="space-y-2">
-            <h1 className="type-h1-app text-[#18181B]">
+            <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
               Reset link missing
             </h1>
-            <p className="text-sm text-[#52525B] leading-relaxed max-w-sm mx-auto">
+            <p className="text-sm text-[#52525B] dark:text-[#B8B0A5] leading-relaxed max-w-sm mx-auto">
               Please request a new password reset link to continue.
             </p>
           </div>
@@ -106,16 +106,16 @@ export const VolunteerResetPasswordView: React.FC<VolunteerResetPasswordViewProp
       ) : status === 'expired' ? (
         <div className="space-y-6 text-center animate-fade-in">
           <div className="flex justify-center">
-            <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center text-red-600">
+            <div className="w-16 h-16 rounded-full bg-red-50 dark:bg-red-950/40 flex items-center justify-center text-red-600 dark:text-red-400">
               <AlertTriangle className="w-10 h-10 stroke-[1.5]" />
             </div>
           </div>
           
           <div className="space-y-2">
-            <h1 className="type-h1-app text-[#18181B]">
+            <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
               Reset link expired
             </h1>
-            <p className="text-sm text-[#52525B] leading-relaxed max-w-sm mx-auto">
+            <p className="text-sm text-[#52525B] dark:text-[#B8B0A5] leading-relaxed max-w-sm mx-auto">
               This reset link has expired. Please request a new one.
             </p>
           </div>
@@ -133,16 +133,16 @@ export const VolunteerResetPasswordView: React.FC<VolunteerResetPasswordViewProp
       ) : status === 'success' ? (
         <div className="space-y-6 text-center animate-fade-in">
           <div className="flex justify-center">
-            <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
+            <div className="w-16 h-16 rounded-full bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
               <CheckCircle2 className="w-10 h-10 stroke-[1.5]" />
             </div>
           </div>
           
           <div className="space-y-2">
-            <h1 className="type-h1-app text-[#18181B]">
+            <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
               Password updated
             </h1>
-            <p className="text-sm text-[#52525B] leading-relaxed max-w-sm mx-auto font-medium">
+            <p className="text-sm text-[#52525B] dark:text-[#B8B0A5] leading-relaxed max-w-sm mx-auto font-medium">
               Your password has been updated. You can now sign in.
             </p>
           </div>
@@ -160,22 +160,22 @@ export const VolunteerResetPasswordView: React.FC<VolunteerResetPasswordViewProp
       ) : (
         <div className="space-y-6 animate-fade-in">
           <div className="flex justify-center">
-            <div className="w-14 h-14 rounded-2xl bg-[#FAF6EC] text-[#C59B27] flex items-center justify-center shadow-inner border border-[#E5D5AE]">
+            <div className="w-14 h-14 rounded-2xl bg-[#FAF6EC] dark:bg-[#21211E] text-[#C59B27] flex items-center justify-center shadow-inner border border-[#E5D5AE] dark:border-[#302E29]">
               <KeyRound className="w-7 h-7" />
             </div>
           </div>
 
           <div className="text-center space-y-2">
-            <h1 className="type-h1-app text-[#18181B]">
+            <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
               Create new password
             </h1>
-            <p className="text-sm text-[#52525B] leading-relaxed max-w-sm mx-auto">
+            <p className="text-sm text-[#52525B] dark:text-[#B8B0A5] leading-relaxed max-w-sm mx-auto">
               Choose a new password for your Volunteer Access.
             </p>
           </div>
 
           {error && (
-            <div className="bg-red-50/50 border border-red-200/60 text-red-600 p-3.5 rounded-2xl text-xs font-medium text-center">
+            <div className="bg-red-50/50 dark:bg-red-950/30 border border-red-200/60 dark:border-red-900/40 text-red-600 dark:text-red-400 p-3.5 rounded-2xl text-xs font-medium text-center">
               {error}
             </div>
           )}
@@ -233,10 +233,10 @@ export const VolunteerResetPasswordView: React.FC<VolunteerResetPasswordViewProp
       )}
 
       {/* Back link */}
-      <div className="pt-4 border-t border-[#EBE3D3] text-center shrink-0">
+      <div className="pt-4 border-t border-[#EBE3D3] dark:border-[#302E29] text-center shrink-0">
         <button
           onClick={() => onNavigate('/volunteer/sign-in')}
-          className="inline-flex items-center text-xs font-semibold text-[#6B7280] hover:text-[#262626] cursor-pointer focus:outline-none"
+          className="inline-flex items-center text-xs font-semibold text-[#6B7280] dark:text-[#B8B0A5] hover:text-[#262626] dark:hover:text-[#F0EBE3] cursor-pointer focus:outline-none"
         >
           <ChevronLeft className="w-3.5 h-3.5 mr-1" />
           Back to Volunteer Sign In

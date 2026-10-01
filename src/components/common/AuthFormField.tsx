@@ -42,7 +42,7 @@ export const AuthFormField: React.FC<AuthFormFieldProps> = ({
     <div className="w-full flex flex-col text-left">
       <label
         htmlFor={id}
-        className="text-sm font-medium text-[#18181B] mb-2 select-none"
+        className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3] mb-2 select-none"
       >
         {label}
       </label>
@@ -51,12 +51,12 @@ export const AuthFormField: React.FC<AuthFormFieldProps> = ({
         <input
           id={id}
           type={inputType}
-          className={`w-full h-12 rounded-xl bg-white text-sm text-[#18181B] placeholder-[#71717A]/60 px-4 transition-all duration-200 focus:outline-none ${
+          className={`w-full h-12 rounded-xl bg-white dark:bg-[#262520] text-sm text-[#18181B] dark:text-[#F0EBE3] placeholder-[#71717A]/60 dark:placeholder-[#7A7570] px-4 transition-all duration-200 focus:outline-none ${
             showError
-              ? 'border border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 bg-red-50/10'
+              ? 'border border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 bg-red-50/10 dark:bg-red-950/20'
               : showSuccess
-              ? 'border border-[#059669]/60 focus:border-[#C59B27] focus:ring-2 focus:ring-[#C59B27]/20'
-              : 'border border-[#D9D6CE] focus:border-[#C59B27] focus:ring-2 focus:ring-[#C59B27]/20'
+              ? 'border border-[#059669]/60 dark:border-[#059669] focus:border-[#C59B27] focus:ring-2 focus:ring-[#C59B27]/20'
+              : 'border border-[#D9D6CE] dark:border-[#3A3835] focus:border-[#C59B27] focus:ring-2 focus:ring-[#C59B27]/20'
           } ${isPassword || showSuccess ? 'pr-11' : ''} ${className}`}
           {...props}
         />
@@ -71,7 +71,7 @@ export const AuthFormField: React.FC<AuthFormFieldProps> = ({
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="text-[#71717A] hover:text-[#18181B] p-1 rounded-md focus:outline-none transition-colors"
+              className="text-[#71717A] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] p-1 rounded-md focus:outline-none transition-colors"
               aria-label={showPassword ? 'Hide password' : 'Show password'}
             >
               {showPassword ? (
@@ -86,19 +86,19 @@ export const AuthFormField: React.FC<AuthFormFieldProps> = ({
 
       {/* Helper Text or Error Message directly beneath input */}
       {showError ? (
-        <p className="text-xs text-red-600 font-medium mt-1.5 flex items-center gap-1.5 leading-snug">
+        <p className="text-xs text-red-600 dark:text-red-400 font-medium mt-1.5 flex items-center gap-1.5 leading-snug">
           <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
           <span>{error}</span>
         </p>
       ) : helperText ? (
-        <p className="text-xs text-[#71717A] mt-1.5 leading-snug">
+        <p className="text-xs text-[#71717A] dark:text-[#B8B0A5] mt-1.5 leading-snug">
           {helperText}
         </p>
       ) : null}
 
       {/* Interactive Suggestion Banner */}
       {suggestion && onApplySuggestion && (
-        <div className="mt-1.5 text-xs text-[#B89047] font-semibold bg-[#FAF6EC] border border-[#EBE3D3] p-2 px-3 rounded-xl flex items-center justify-between">
+        <div className="mt-1.5 text-xs text-[#B89047] dark:text-[#D4AF37] font-semibold bg-[#FAF6EC] dark:bg-[#21211E] border border-[#EBE3D3] dark:border-[#302E29] p-2 px-3 rounded-xl flex items-center justify-between">
           <span>Did you mean <strong>{suggestion}</strong>?</span>
           <button
             type="button"

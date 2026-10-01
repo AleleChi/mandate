@@ -153,10 +153,10 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
         <div className="space-y-6 py-6 flex flex-col items-center animate-pulse">
           <Loader2 className="w-12 h-12 text-[#C59B27] animate-spin stroke-[2]" />
           <div className="space-y-1">
-            <h1 className="type-h1-app text-xl text-[#18181B]">
+            <h1 className="type-h1-app text-xl text-[#18181B] dark:text-[#F0EBE3]">
               Confirming your email...
             </h1>
-            <p className="text-xs text-gray-500 animate-pulse">
+            <p className="text-xs text-gray-500 dark:text-[#B8B0A5] animate-pulse">
               Please wait while we confirm your email address for Volunteer Access.
             </p>
           </div>
@@ -166,15 +166,15 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
       {status === 'success' && (
         <div className="space-y-6 py-4 animate-fade-in text-center">
           <div className="flex justify-center">
-            <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
+            <div className="w-16 h-16 rounded-full bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
               <CheckCircle2 className="w-10 h-10 stroke-[1.5]" />
             </div>
           </div>
           <div className="space-y-2">
-            <h1 className="type-h1-app text-2xl text-[#18181B]">
+            <h1 className="type-h1-app text-2xl text-[#18181B] dark:text-[#F0EBE3]">
               Email Verified!
             </h1>
-            <p className="text-sm text-gray-500 leading-relaxed">
+            <p className="text-sm text-gray-500 dark:text-[#B8B0A5] leading-relaxed">
               Thank you! Your email is now successfully confirmed. You can now log into your Volunteer Access account.
             </p>
           </div>
@@ -191,32 +191,32 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
       {status === 'check_email' && (
         <div className="space-y-6 py-4 animate-fade-in text-center">
           <div className="flex justify-center">
-            <div className="w-16 h-16 rounded-full bg-amber-50 flex items-center justify-center text-[#C59B27]">
+            <div className="w-16 h-16 rounded-full bg-amber-50 dark:bg-[#21211E] flex items-center justify-center text-[#C59B27]">
               <Mail className="w-8 h-8 stroke-[1.5]" />
             </div>
           </div>
           
           <div className="space-y-2">
-            <h1 className="type-h1-app text-2xl sm:text-[28px] text-[#18181B]">
+            <h1 className="type-h1-app text-2xl sm:text-[28px] text-[#18181B] dark:text-[#F0EBE3]">
               Check your email
             </h1>
-            <div className="text-sm text-[#3F3F46] leading-relaxed max-w-[360px] mx-auto pt-1">
-              <p className="text-zinc-600">We sent a verification link to:</p>
-              <p className="font-semibold text-[#18181B] text-base mt-0.5 break-all">
+            <div className="text-sm text-[#3F3F46] dark:text-[#B8B0A5] leading-relaxed max-w-[360px] mx-auto pt-1">
+              <p className="text-zinc-600 dark:text-[#B8B0A5]">We sent a verification link to:</p>
+              <p className="font-semibold text-[#18181B] dark:text-[#F0EBE3] text-base mt-0.5 break-all">
                 {emailParam || emailInput || 'your email address'}
               </p>
             </div>
-            <p className="text-xs sm:text-sm text-zinc-600 pt-1 max-w-[340px] mx-auto leading-relaxed">
+            <p className="text-xs sm:text-sm text-zinc-600 dark:text-[#B8B0A5] pt-1 max-w-[340px] mx-auto leading-relaxed">
               Open the email and verify your address to continue.
             </p>
           </div>
 
           {/* Spam / Junk Helper Card */}
-          <div className="p-4 rounded-2xl bg-[#FAF9F6] border border-[#EAE8E1] text-left shadow-2xs">
+          <div className="p-4 rounded-2xl bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] text-left shadow-2xs">
             <div className="flex items-start gap-3">
-              <Info className="w-4 h-4 text-[#9A7326] shrink-0 mt-0.5" aria-hidden="true" />
-              <div className="text-xs text-zinc-600 leading-relaxed">
-                <span className="font-semibold text-zinc-900 block mb-0.5">Can't find it?</span>
+              <Info className="w-4 h-4 text-[#9A7326] dark:text-[#C59B27] shrink-0 mt-0.5" aria-hidden="true" />
+              <div className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+                <span className="font-semibold text-zinc-900 dark:text-[#F0EBE3] block mb-0.5">Can't find it?</span>
                 Check your Spam, Junk or Promotions folder. It may take a few minutes to arrive.
               </div>
             </div>
@@ -224,20 +224,20 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
 
           {/* RESEND FLOW NOTIFICATIONS */}
           {resendSuccess === 'sent' && (
-            <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl text-xs text-emerald-800 font-semibold text-center animate-fade-in">
+            <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/40 rounded-2xl text-xs text-emerald-800 dark:text-emerald-400 font-semibold text-center animate-fade-in">
               A fresh confirmation link has been sent. Please check your inbox and spam folder.
             </div>
           )}
 
           {resendSuccess === 'generic' && (
-            <div className="p-4 bg-[#F4F4F5] border border-gray-200 rounded-2xl text-xs text-gray-600 font-semibold text-center animate-fade-in">
+            <div className="p-4 bg-[#F4F4F5] dark:bg-[#21211E] border border-gray-200 dark:border-[#302E29] rounded-2xl text-xs text-gray-600 dark:text-[#B8B0A5] font-semibold text-center animate-fade-in">
               If this email is connected to Volunteer Access, a confirmation link will be sent.
             </div>
           )}
 
           {resendSuccess === 'already_verified' && (
-            <div className="p-5 bg-emerald-50 border border-emerald-100 rounded-2xl text-left space-y-3 animate-fade-in">
-              <div className="flex items-center gap-2 text-emerald-800 text-xs font-bold">
+            <div className="p-5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/40 rounded-2xl text-left space-y-3 animate-fade-in">
+              <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-400 text-xs font-bold">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 stroke-[2.5]" />
                 <span>This email is already confirmed. You can sign in.</span>
               </div>
@@ -252,9 +252,9 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
           )}
 
           {resendError && (
-            <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-xs text-red-600 font-medium text-left">
+            <div className="p-4 bg-red-50 dark:bg-red-950/40 border border-red-100 dark:border-red-900/40 rounded-2xl text-xs text-red-600 dark:text-red-400 font-medium text-left">
               <strong>{resendError.title}</strong>
-              <p className="mt-0.5 text-gray-500">{resendError.description}</p>
+              <p className="mt-0.5 text-gray-500 dark:text-[#B8B0A5]">{resendError.description}</p>
             </div>
           )}
 
@@ -262,7 +262,7 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
             <div className="space-y-3 pt-2">
               {(!emailParam || showEmailInput) && (
                 <div className="space-y-1 text-left">
-                  <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block ml-1">
+                  <label className="text-[11px] font-bold text-gray-500 dark:text-[#B8B0A5] uppercase tracking-wider block ml-1">
                     EMAIL ADDRESS
                   </label>
                   <input
@@ -273,7 +273,7 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
                       setEmailInput(e.target.value);
                       setEmailInputError(validateEmailInput(e.target.value));
                     }}
-                    className="w-full h-11 px-4 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:border-[#C59B27] bg-white"
+                    className="w-full h-11 px-4 rounded-2xl border border-gray-200 dark:border-[#3A3835] text-sm focus:outline-none focus:border-[#C59B27] bg-white dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3]"
                     disabled={resendLoading}
                   />
                   {emailInputError && (
@@ -299,7 +299,7 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
                 type="button"
                 onClick={() => handleSendNewLink()}
                 disabled={isButtonDisabled}
-                className="w-full h-11 bg-[#C59B27] hover:bg-[#B89047] disabled:bg-gray-200 text-white font-semibold rounded-2xl flex items-center justify-center space-x-2 transition-colors cursor-pointer focus:outline-none"
+                className="w-full h-11 bg-[#C59B27] hover:bg-[#B89047] disabled:bg-gray-200 dark:disabled:bg-[#262520] text-white font-semibold rounded-2xl flex items-center justify-center space-x-2 transition-colors cursor-pointer focus:outline-none"
               >
                 {resendLoading ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
@@ -319,14 +319,14 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
                     setShowEmailInput(true);
                   }
                 }}
-                className="text-xs font-semibold text-zinc-600 hover:text-[#18181B] block mx-auto cursor-pointer focus:outline-none"
+                className="text-xs font-semibold text-zinc-600 dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] block mx-auto cursor-pointer focus:outline-none"
               >
                 Use a different email
               </button>
 
               <button
                 onClick={() => onNavigate('/volunteer/sign-in')}
-                className="text-xs font-semibold text-[#6B7280] hover:text-[#262626] block mx-auto cursor-pointer focus:outline-none"
+                className="text-xs font-semibold text-[#6B7280] dark:text-[#B8B0A5] hover:text-[#262626] dark:hover:text-[#F0EBE3] block mx-auto cursor-pointer focus:outline-none"
               >
                 Back to Volunteer Sign In
               </button>
@@ -338,42 +338,42 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
       {status === 'error' && (
         <div className="space-y-6 py-4 animate-fade-in text-center">
           <div className="flex justify-center">
-            <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center text-red-600">
+            <div className="w-16 h-16 rounded-full bg-red-50 dark:bg-red-950/40 flex items-center justify-center text-red-600 dark:text-red-400">
               <XCircle className="w-10 h-10 stroke-[1.5]" />
             </div>
           </div>
           
           <div className="space-y-2">
-            <h1 className="type-h1-app text-xl text-[#18181B]">
+            <h1 className="type-h1-app text-xl text-[#18181B] dark:text-[#F0EBE3]">
               Confirmation Link Invalid
             </h1>
-            <p className="text-xs text-gray-500 leading-relaxed max-w-sm mx-auto">
+            <p className="text-xs text-gray-500 dark:text-[#B8B0A5] leading-relaxed max-w-sm mx-auto">
               The confirmation link is invalid, broken, or has expired. You can request a fresh link below.
             </p>
           </div>
 
           {errorMessage && (
-            <div className="p-4 bg-gray-50 border border-gray-100 rounded-2xl text-xs text-gray-600 font-medium text-left">
+            <div className="p-4 bg-gray-50 dark:bg-[#21211E] border border-gray-100 dark:border-[#302E29] rounded-2xl text-xs text-gray-600 dark:text-[#B8B0A5] font-medium text-left">
               {errorMessage}
             </div>
           )}
 
           {/* RESEND FLOW NOTIFICATIONS */}
           {resendSuccess === 'sent' && (
-            <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl text-xs text-emerald-800 font-semibold text-center animate-fade-in">
+            <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/40 rounded-2xl text-xs text-emerald-800 dark:text-emerald-400 font-semibold text-center animate-fade-in">
               A fresh confirmation link has been sent. Please check your inbox and spam folder.
             </div>
           )}
 
           {resendSuccess === 'generic' && (
-            <div className="p-4 bg-[#F4F4F5] border border-gray-200 rounded-2xl text-xs text-gray-600 font-semibold text-center animate-fade-in">
+            <div className="p-4 bg-[#F4F4F5] dark:bg-[#21211E] border border-gray-200 dark:border-[#302E29] rounded-2xl text-xs text-gray-600 dark:text-[#B8B0A5] font-semibold text-center animate-fade-in">
               If this email is connected to Volunteer Access, a confirmation link will be sent.
             </div>
           )}
 
           {resendSuccess === 'already_verified' && (
-            <div className="p-5 bg-emerald-50 border border-emerald-100 rounded-2xl text-left space-y-3 animate-fade-in">
-              <div className="flex items-center gap-2 text-emerald-800 text-xs font-bold">
+            <div className="p-5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/40 rounded-2xl text-left space-y-3 animate-fade-in">
+              <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-400 text-xs font-bold">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 stroke-[2.5]" />
                 <span>This email is already confirmed. You can sign in.</span>
               </div>
@@ -388,9 +388,9 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
           )}
 
           {resendError && (
-            <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-xs text-red-600 font-medium text-left animate-fade-in">
+            <div className="p-4 bg-red-50 dark:bg-red-950/40 border border-red-100 dark:border-red-900/40 rounded-2xl text-xs text-red-600 dark:text-red-400 font-medium text-left animate-fade-in">
               <strong>{resendError.title}</strong>
-              <p className="mt-0.5 text-gray-500">{resendError.description}</p>
+              <p className="mt-0.5 text-gray-500 dark:text-[#B8B0A5]">{resendError.description}</p>
             </div>
           )}
 
@@ -398,7 +398,7 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
             <div className="space-y-3 pt-2">
               {(!emailParam || showEmailInput) && (
                 <div className="space-y-1 text-left">
-                  <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block ml-1">
+                  <label className="text-[11px] font-bold text-gray-500 dark:text-[#B8B0A5] uppercase tracking-wider block ml-1">
                     EMAIL ADDRESS
                   </label>
                   <input
@@ -409,7 +409,7 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
                       setEmailInput(e.target.value);
                       setEmailInputError(validateEmailInput(e.target.value));
                     }}
-                    className="w-full h-11 px-4 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:border-[#C59B27] bg-white"
+                    className="w-full h-11 px-4 rounded-2xl border border-gray-200 dark:border-[#3A3835] text-sm focus:outline-none focus:border-[#C59B27] bg-white dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3]"
                     disabled={resendLoading}
                   />
                   {emailInputError && (
@@ -435,7 +435,7 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
                 type="button"
                 onClick={() => handleSendNewLink()}
                 disabled={isButtonDisabled}
-                className="w-full h-11 bg-[#C59B27] hover:bg-[#B89047] disabled:bg-gray-200 text-white font-semibold rounded-2xl flex items-center justify-center space-x-2 transition-colors cursor-pointer focus:outline-none"
+                className="w-full h-11 bg-[#C59B27] hover:bg-[#B89047] disabled:bg-gray-200 dark:disabled:bg-[#262520] text-white font-semibold rounded-2xl flex items-center justify-center space-x-2 transition-colors cursor-pointer focus:outline-none"
               >
                 {resendLoading ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
@@ -458,7 +458,7 @@ export const VolunteerVerifyEmailView: React.FC<VolunteerVerifyEmailViewProps> =
 
               <button
                 onClick={() => onNavigate('/volunteer/sign-in')}
-                className="text-xs font-semibold text-[#6B7280] hover:text-[#262626] block mx-auto cursor-pointer focus:outline-none"
+                className="text-xs font-semibold text-[#6B7280] dark:text-[#B8B0A5] hover:text-[#262626] dark:hover:text-[#F0EBE3] block mx-auto cursor-pointer focus:outline-none"
               >
                 Back to Volunteer Sign In
               </button>

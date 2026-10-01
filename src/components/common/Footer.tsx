@@ -74,10 +74,10 @@ export const Footer: React.FC = () => {
       <div className="max-w-7xl mx-auto pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-[#71717A]">
         <p>© {copyright.copyrightYear} {copyright.copyrightText}</p>
         <div className="flex items-center space-x-6 mt-4 sm:mt-0">
-          <a href="#/child-safety" className="hover:text-white transition-colors duration-200">Child Safety Policy</a>
-          <a href="#/terms" className="hover:text-white transition-colors duration-200">Parent Terms</a>
-          <a href="#/privacy" className="hover:text-white transition-colors duration-200">Privacy Notice</a>
-          <a href="#/contact" className="hover:text-white transition-colors duration-200">Contact Us</a>
+          <a href="/child-safety" className="hover:text-white transition-colors duration-200">Child Safety Policy</a>
+          <a href="/terms" className="hover:text-white transition-colors duration-200">Parent Terms</a>
+          <a href="/privacy" className="hover:text-white transition-colors duration-200">Privacy Notice</a>
+          <a href="/contact" className="hover:text-white transition-colors duration-200">Contact Us</a>
         </div>
       </div>
     </footer>

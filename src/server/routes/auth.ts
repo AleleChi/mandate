@@ -464,7 +464,7 @@ router.post('/test-email', async (req, res) => {
   }
 });
 
-router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
+router.post(['/sign-in', '/login'], async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {

@@ -320,11 +320,11 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
       <div className="space-y-5">
         {/* Intro text */}
         <div className="text-center space-y-1.5 mb-2">
-          <h1 className="text-2xl font-serif-koinonia font-bold text-[#18181B] leading-tight">
+          <h1 className="type-h1-app text-2xl text-[#18181B] dark:text-[#F0EBE3] leading-tight">
             {mode === 'edit' ? 'Edit details' : 'Set up your profile'}
           </h1>
           {mode !== 'edit' && (
-            <p className="text-xs sm:text-sm text-[#3F3F46] leading-relaxed max-w-sm mx-auto">
+            <p className="text-xs sm:text-sm text-[#3F3F46] dark:text-[#B8B0A5] leading-relaxed max-w-sm mx-auto">
               Add your details so the team can contact you when needed.
             </p>
           )}

@@ -187,7 +187,8 @@ export const SignInView: React.FC<SignInViewProps> = ({
         onSignInSuccess(res.user, res.profile);
       }
 
-      const searchParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+      const getSearchParams = () => new URLSearchParams(window.location.search || (window.location.hash.includes('?') ? window.location.hash.substring(window.location.hash.indexOf('?')) : ''));
+      const searchParams = getSearchParams();
       const nextRoute = searchParams.get('next');
 
       if (nextRoute) {
@@ -200,7 +201,7 @@ export const SignInView: React.FC<SignInViewProps> = ({
       
       if (code === 'ACCOUNT_NOT_FOUND') {
         const cleanEmail = email.trim().toLowerCase();
-        const searchParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+        const searchParams = new URLSearchParams(window.location.search || (window.location.hash.includes('?') ? window.location.hash.substring(window.location.hash.indexOf('?')) : ''));
         const nextRoute = searchParams.get('next');
         const nextParam = nextRoute ? `&next=${encodeURIComponent(nextRoute)}` : '';
         onNavigate(`/parent/create-account?email=${encodeURIComponent(cleanEmail)}${nextParam}` as AppRoute);
@@ -214,7 +215,7 @@ export const SignInView: React.FC<SignInViewProps> = ({
             onSignInSuccess(err.data.user, err.data.profile);
           }
         }
-        const searchParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+        const searchParams = new URLSearchParams(window.location.search || (window.location.hash.includes('?') ? window.location.hash.substring(window.location.hash.indexOf('?')) : ''));
         const nextRoute = searchParams.get('next');
         if (nextRoute) {
           onNavigate(decodeURIComponent(nextRoute) as AppRoute);
@@ -249,25 +250,25 @@ export const SignInView: React.FC<SignInViewProps> = ({
     >
       {/* Hero Heading */}
       <div className="text-center space-y-2">
-        <h1 className="type-h1-app text-[#18181B]">
+        <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
           Sign in
         </h1>
-        <p className="text-sm text-[#52525B]">
+        <p className="text-sm text-[#52525B] dark:text-[#B8B0A5]">
           Continue to your parent account.
         </p>
       </div>
 
       {/* Info Card */}
-      <div className="bg-[#FAF6EC] border border-[#EBE3D3] rounded-[16px] p-4 flex items-start space-x-3 shadow-sm">
+      <div className="bg-[#FAF6EC] dark:bg-[#21211E] border border-[#EBE3D3] dark:border-[#302E29] rounded-[16px] p-4 flex items-start space-x-3 shadow-sm">
         <Info className="w-5 h-5 text-[#B89047] shrink-0 mt-0.5" />
-        <p className="text-xs text-[#52525B] leading-relaxed">
+        <p className="text-xs text-[#52525B] dark:text-[#B8B0A5] leading-relaxed">
           You can view your children, follow their status, and keep passes ready when selected.
         </p>
       </div>
 
       {/* Error Banner */}
       {error && (
-        <div className="bg-red-50/50 border border-red-200/60 text-red-600 p-3.5 rounded-2xl text-xs font-medium text-center">
+        <div className="bg-red-50/50 dark:bg-red-950/20 border border-red-200/60 dark:border-red-900/40 text-red-600 dark:text-red-400 p-3.5 rounded-2xl text-xs font-medium text-center">
           {error}
         </div>
       )}
@@ -277,7 +278,7 @@ export const SignInView: React.FC<SignInViewProps> = ({
         
         {/* Email Field */}
         <div className="space-y-1.5">
-          <label htmlFor="email" className="block text-[10px] font-bold tracking-widest text-[#52525B] uppercase">
+          <label htmlFor="email" className="block text-[10px] font-bold tracking-widest text-[#52525B] dark:text-[#B8B0A5] uppercase">
             Email Address
           </label>
           <input
@@ -288,15 +289,15 @@ export const SignInView: React.FC<SignInViewProps> = ({
             value={email}
             onChange={handleEmailChange}
             onBlur={handleEmailBlur}
-            className={`w-full bg-white border rounded-xl py-3 px-4 text-[#18181B] placeholder-[#9CA3AF] text-sm font-normal focus:outline-none focus:ring-2 focus:ring-[#B89047]/40 focus:border-[#B89047] transition-all ${
-              emailError ? 'border-red-500 bg-red-50/30' : 'border-[#EAE8E1]'
+            className={`w-full bg-white dark:bg-[#262520] border rounded-xl py-3 px-4 text-[#18181B] dark:text-[#F0EBE3] placeholder-[#9CA3AF] dark:placeholder-[#7A7570] text-sm font-normal focus:outline-none focus:ring-2 focus:ring-[#B89047]/40 focus:border-[#B89047] transition-all ${
+              emailError ? 'border-red-500 bg-red-50/30 dark:bg-red-950/20' : 'border-[#EAE8E1] dark:border-[#3A3835]'
             }`}
           />
           {emailError && (
-            <p className="text-xs text-red-600 font-medium mt-1 pl-1">{emailError}</p>
+            <p className="text-xs text-red-600 dark:text-red-400 font-medium mt-1 pl-1">{emailError}</p>
           )}
           {suggestion && (
-            <div className="mt-1.5 text-xs text-[#B89047] font-semibold bg-[#FAF6EC] border border-[#EBE3D3] p-2 px-3 rounded-xl flex items-center justify-between">
+            <div className="mt-1.5 text-xs text-[#B89047] dark:text-[#D4AF37] font-semibold bg-[#FAF6EC] dark:bg-[#21211E] border border-[#EBE3D3] dark:border-[#302E29] p-2 px-3 rounded-xl flex items-center justify-between">
               <span>Did you mean <strong>{suggestion}</strong>?</span>
               <button
                 type="button"
@@ -315,7 +316,7 @@ export const SignInView: React.FC<SignInViewProps> = ({
 
         {/* Password Field */}
         <div className="space-y-1.5">
-          <label htmlFor="password" className="block text-[10px] font-bold tracking-widest text-[#52525B] uppercase">
+          <label htmlFor="password" className="block text-[10px] font-bold tracking-widest text-[#52525B] dark:text-[#B8B0A5] uppercase">
             Password
           </label>
           <div className="relative">
@@ -327,27 +328,27 @@ export const SignInView: React.FC<SignInViewProps> = ({
               value={password}
               onChange={handlePasswordChange}
               onBlur={handlePasswordBlur}
-              className={`w-full bg-white border rounded-xl py-3 pl-4 pr-11 text-[#18181B] placeholder-[#9CA3AF] text-sm font-normal focus:outline-none focus:ring-2 focus:ring-[#B89047]/40 focus:border-[#B89047] transition-all ${
-                passwordError ? 'border-red-500 bg-red-50/30' : 'border-[#EAE8E1]'
+              className={`w-full bg-white dark:bg-[#262520] border rounded-xl py-3 pl-4 pr-11 text-[#18181B] dark:text-[#F0EBE3] placeholder-[#9CA3AF] dark:placeholder-[#7A7570] text-sm font-normal focus:outline-none focus:ring-2 focus:ring-[#B89047]/40 focus:border-[#B89047] transition-all ${
+                passwordError ? 'border-red-500 bg-red-50/30 dark:bg-red-950/20' : 'border-[#EAE8E1] dark:border-[#3A3835]'
               }`}
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute inset-y-0 right-0 pr-4 flex items-center text-[#9CA3AF] hover:text-[#18181B] focus:outline-none"
+              className="absolute inset-y-0 right-0 pr-4 flex items-center text-[#9CA3AF] dark:text-[#7A7570] hover:text-[#18181B] dark:hover:text-[#F0EBE3] focus:outline-none"
             >
               {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
             </button>
           </div>
           {passwordError && (
-            <p className="text-xs text-red-600 font-medium mt-1 pl-1">{passwordError}</p>
+            <p className="text-xs text-red-600 dark:text-red-400 font-medium mt-1 pl-1">{passwordError}</p>
           )}
           
           <div className="flex justify-end pt-1">
             <button
               type="button"
               onClick={() => onNavigate('/parent/forgot-password')}
-              className="text-xs font-semibold text-[#B89047] hover:underline focus:outline-none"
+              className="text-xs font-semibold text-[#B89047] dark:text-[#D4AF37] hover:underline focus:outline-none"
             >
               Forgot password?
             </button>
@@ -375,9 +376,9 @@ export const SignInView: React.FC<SignInViewProps> = ({
 
         {/* Passkey Sign In */}
         <div className="relative flex py-2 items-center">
-          <div className="flex-grow border-t border-[#EAE8E1]"></div>
-          <span className="flex-shrink mx-4 text-[10px] text-zinc-400 font-semibold uppercase tracking-wider">or</span>
-          <div className="flex-grow border-t border-[#EAE8E1]"></div>
+          <div className="flex-grow border-t border-[#EAE8E1] dark:border-[#302E29]"></div>
+          <span className="flex-shrink mx-4 text-[10px] text-zinc-400 dark:text-[#7A7570] font-semibold uppercase tracking-wider">or</span>
+          <div className="flex-grow border-t border-[#EAE8E1] dark:border-[#302E29]"></div>
         </div>
 
         <div className="space-y-1 text-center">
@@ -389,7 +390,7 @@ export const SignInView: React.FC<SignInViewProps> = ({
             fullWidth
             size="lg"
             data-component-version="passkey-native-auth-prompt-v2"
-            className="border-[#C59B27] text-[#C59B27] hover:bg-[#FAF6EC] flex items-center justify-center space-x-1.5"
+            className="border-[#C59B27] text-[#C59B27] hover:bg-[#FAF6EC] dark:hover:bg-[#21211E] flex items-center justify-center space-x-1.5"
           >
             {passkeyLoading ? (
               <span className="flex items-center justify-center gap-2">
@@ -403,7 +404,7 @@ export const SignInView: React.FC<SignInViewProps> = ({
               </span>
             )}
           </Button>
-          <p className="text-[11px] text-[#71717A]">
+          <p className="text-[11px] text-[#71717A] dark:text-[#7A7570]">
             Use your fingerprint, face, screen lock or device PIN.
           </p>
         </div>
@@ -411,11 +412,11 @@ export const SignInView: React.FC<SignInViewProps> = ({
 
       {/* Create Account Link */}
       <div className="text-center pt-2">
-        <span className="text-xs text-[#52525B]">New here? </span>
+        <span className="text-xs text-[#52525B] dark:text-[#B8B0A5]">New here? </span>
         <button
           type="button"
           onClick={() => onNavigate('/parent/create-account')}
-          className="text-xs font-bold text-[#B89047] hover:underline focus:outline-none"
+          className="text-xs font-bold text-[#B89047] dark:text-[#D4AF37] hover:underline focus:outline-none"
         >
           Create parent account
         </button>

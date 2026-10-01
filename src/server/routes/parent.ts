@@ -5,7 +5,8 @@ import { authMiddleware, AuthenticatedRequest } from '../auth';
 import { sendChildReviewReceivedEmail } from '../services/email';
 import { validateParentProfile, validateChildDraftStep, validatePhoneNumber } from '../utils/validation';
 import { getPassesForParent, issuePassForChild, isChildPassAuthorized } from '../services/passService';
-import { getCurrentEvent, getCurrentEventId } from '../services/eventService';
+import { getCurrentEvent, getCurrentEventId, getEventById } from '../services/eventService';
+import { checkEventEligibility } from '../services/eligibilityService';
 
 const router = Router();
 router.use(authMiddleware);
@@ -279,6 +280,9 @@ async function mapChildToFrontend(
     : (rawChildGroup || calcAgeGroup);
   const effectiveAge = childRow.calculated_age !== null && childRow.calculated_age !== undefined ? childRow.calculated_age : calculatedAge;
 
+  const eventForEligibility = currentEventId ? await getEventById(currentEventId) : await getCurrentEvent();
+  const eventEligibility = eventForEligibility ? checkEventEligibility(childRow.date_of_birth, eventForEligibility) : undefined;
+
   return {
     id: childRow.id,
     name: childRow.full_name || '',
@@ -295,7 +299,8 @@ async function mapChildToFrontend(
     draftData,
     registeredForCurrentEvent: isRegisteredForCurrentEvent,
     currentEventId: currentEventId || null,
-    entryId: entryRow?.id || null
+    entryId: entryRow?.id || null,
+    eventEligibility
   };
 }
 
@@ -985,6 +990,18 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
         error: 'Registration for this event has closed.'
       });
     }
+  }
+
+  // Server-authoritative event age eligibility check evaluated on event date
+  const eligibility = checkEventEligibility(c.date_of_birth, currentEvent);
+  if (!eligibility.eligible) {
+    return res.status(400).json({
+      success: false,
+      code: 'CHILD_INELIGIBLE_FOR_EVENT',
+      message: eligibility.reason || 'This child does not meet the age eligibility requirements for this event.',
+      error: eligibility.reason || 'This child does not meet the age eligibility requirements for this event.',
+      eligibility
+    });
   }
 
   const now = new Date().toISOString();

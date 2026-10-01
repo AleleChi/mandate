@@ -351,13 +351,13 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
         maxWidth="md"
       >
         <div className="text-center space-y-3 mb-6">
-          <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-xs font-bold uppercase tracking-wider">
+          <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-[#FAF6EB] dark:bg-[#21211E] border border-[#E5D5AE] dark:border-[#302E29] text-[#9A7326] dark:text-[#C59B27] text-xs font-bold uppercase tracking-wider">
             <span>{isNotOpen ? 'Registration Not Open' : 'Registration Closed'}</span>
           </div>
-          <h1 className="type-h1-app text-[#18181B] leading-tight">
+          <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3] leading-tight">
             {isNotOpen ? 'Registration is not open yet' : 'Registration has closed'}
           </h1>
-          <p className="text-sm text-[#52525B] max-w-sm mx-auto leading-relaxed">
+          <p className="text-sm text-[#52525B] dark:text-[#B8B0A5] max-w-sm mx-auto leading-relaxed">
             {isNotOpen
               ? `Volunteer registration for ${eventName} has not started yet.${regStatus.volunteer?.opensAtFormatted ? ` Registration opens ${regStatus.volunteer.opensAtFormatted}.` : ''}`
               : `Volunteer registration for ${eventName} is now closed.`}
@@ -365,8 +365,8 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
         </div>
 
         <div className="space-y-6">
-          <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl p-4.5 text-xs text-zinc-600 leading-relaxed space-y-1.5 text-left">
-            <p className="font-semibold text-zinc-900">Already a volunteer?</p>
+          <div className="bg-[#FAF9F6] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4.5 text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed space-y-1.5 text-left">
+            <p className="font-semibold text-zinc-900 dark:text-[#F0EBE3]">Already a volunteer?</p>
             <p>
               If you already have a volunteer account, sign in to view your schedule and event assignments.
             </p>
@@ -384,7 +384,7 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
               type="button"
               variant="outline"
               onClick={() => onNavigate('/')}
-              className="w-full py-3.5 text-zinc-700 rounded-xl text-xs uppercase tracking-wider cursor-pointer"
+              className="w-full py-3.5 text-zinc-700 dark:text-[#F0EBE3] rounded-xl text-xs uppercase tracking-wider cursor-pointer"
             >
               Back to Home
             </Button>
@@ -402,8 +402,8 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
       maxWidth="lg"
     >
       <div className="text-center space-y-2">
-        <h1 className="type-h1-app text-[#18181B]">Volunteer Signup</h1>
-        <p className="text-sm text-[#52525B] leading-relaxed">Sign up to serve. All fields are verified securely.</p>
+        <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">Volunteer Signup</h1>
+        <p className="text-sm text-[#52525B] dark:text-[#B8B0A5] leading-relaxed">Sign up to serve. All fields are verified securely.</p>
       </div>
 
       {errorMsg && (
@@ -416,7 +416,7 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
         
         {/* PHOTO UPLOAD */}
         <div className="flex flex-col items-center justify-center space-y-2 pb-2">
-          <label className="text-xs font-semibold text-gray-700">Profile Photo (Required)</label>
+          <label className="text-xs font-semibold text-gray-700 dark:text-[#F0EBE3]">Profile Photo (Required)</label>
           <PhotoUploadBox
             value={photoRef}
             onUploaded={(savedRef) => setPhotoRef(savedRef)}
@@ -425,7 +425,7 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
             previewOnly={true}
             sizeVariant="w-28"
           />
-          <p className="text-[11px] text-[#71717A] text-center max-w-xs">
+          <p className="text-[11px] text-[#71717A] dark:text-[#B8B0A5] text-center max-w-xs">
             Please upload a clear headshot. Only JPG, PNG, and WebP are allowed.
           </p>
         </div>
@@ -483,13 +483,13 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
             {/* WHATSAPP */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-[#18181B] tracking-wider uppercase block">WhatsApp Number</label>
-                <label className="flex items-center space-x-1.5 text-xs text-[#52525B] cursor-pointer select-none font-medium">
+                <label className="text-xs font-bold text-[#18181B] dark:text-[#F0EBE3] tracking-wider uppercase block">WhatsApp Number</label>
+                <label className="flex items-center space-x-1.5 text-xs text-[#52525B] dark:text-[#B8B0A5] cursor-pointer select-none font-medium">
                   <input
                     type="checkbox"
                     checked={isWhatsappSame}
                     onChange={handleWhatsappSameChange}
-                    className="rounded text-[#C59B27] focus:ring-[#C59B27] border-gray-300"
+                    className="rounded text-[#C59B27] focus:ring-[#C59B27] border-gray-300 dark:border-[#3A3835] dark:bg-[#262520]"
                     disabled={loading}
                   />
                   <span>Same as phone</span>
@@ -528,16 +528,16 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
                     className={`w-4 h-4 mt-0.5 rounded border flex items-center justify-center transition-all shrink-0 ${
                       agreedToWhatsApp
                         ? 'bg-[#C59B27] border-[#C59B27] text-[#18181B]'
-                        : 'bg-white border-[#D9D6CE] group-hover:border-[#18181B]'
+                        : 'bg-white dark:bg-[#262520] border-[#D9D6CE] dark:border-[#3A3835] group-hover:border-[#18181B] dark:group-hover:border-[#F0EBE3]'
                     }`}
                   >
                     {agreedToWhatsApp && <Check className="w-3 h-3 stroke-[3] text-[#18181B]" />}
                   </div>
                   <div className="pt-0.5">
-                    <span className="text-xs text-zinc-700 leading-snug block">
+                    <span className="text-xs text-zinc-700 dark:text-[#F0EBE3] leading-snug block">
                       Send me important registration and event updates on WhatsApp
                     </span>
-                    <span className="text-[11px] text-zinc-400 block mt-0.5">
+                    <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] block mt-0.5">
                       You can turn this off later.
                     </span>
                   </div>
@@ -546,11 +546,11 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
             </div>
 
             {/* KOINONIA WORKER STATUS */}
-            <div className="p-4 bg-[#FAF6EC] border border-[#EBE3D3] rounded-2xl space-y-4">
+            <div className="p-4 bg-[#FAF6EC] dark:bg-[#21211E] border border-[#EBE3D3] dark:border-[#302E29] rounded-2xl space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-xs font-bold text-gray-800">Are you a Koinonia Worker?</h3>
-                  <p className="text-[11px] text-gray-500">Enable this if you serve in a Koinonia department.</p>
+                  <h3 className="text-xs font-bold text-gray-800 dark:text-[#F0EBE3]">Are you a Koinonia Worker?</h3>
+                  <p className="text-[11px] text-gray-500 dark:text-[#B8B0A5]">Enable this if you serve in a Koinonia department.</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
@@ -563,19 +563,19 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
                     className="sr-only peer"
                     disabled={loading}
                   />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#C59B27]"></div>
+                  <div className="w-11 h-6 bg-gray-200 dark:bg-[#262520] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 dark:after:border-[#3A3835] after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#C59B27]"></div>
                 </label>
               </div>
 
               {isKoinoniaWorker && (
                 <div className="space-y-1 pt-1">
-                  <label className="text-xs font-semibold text-gray-700 block">Department Name</label>
+                  <label className="text-xs font-semibold text-gray-700 dark:text-[#F0EBE3] block">Department Name</label>
                   <input
                     type="text"
                     placeholder="e.g. Protocol, Ushering, Media"
                     value={department}
                     onChange={(e) => setDepartment(e.target.value)}
-                    className="w-full h-10 px-4 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#C59B27] bg-white"
+                    className="w-full h-10 px-4 rounded-xl border border-gray-200 dark:border-[#3A3835] text-sm focus:outline-none focus:border-[#C59B27] bg-white dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder-gray-400 dark:placeholder-[#7A7570]"
                     disabled={loading}
                   />
                 </div>
@@ -584,11 +584,11 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
 
             {/* PREFERRED TEAM */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-[#18181B] tracking-wider uppercase block">Preferred Service Team</label>
+              <label className="text-xs font-bold text-[#18181B] dark:text-[#F0EBE3] tracking-wider uppercase block">Preferred Service Team</label>
               <select
                 value={preferredTeam}
                 onChange={(e) => setPreferredTeam(e.target.value)}
-                className="w-full h-11 px-4 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:border-[#C59B27] bg-white"
+                className="w-full h-11 px-4 rounded-2xl border border-gray-200 dark:border-[#3A3835] text-sm focus:outline-none focus:border-[#C59B27] bg-white dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3]"
                 disabled={loading}
               >
                 <option value="Check-in & Welcome">Check-in & Welcome</option>
@@ -600,10 +600,10 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
             </div>
 
             {/* EXPERIENCE SERVING CHILDREN */}
-            <div className="p-4 bg-[#FAF6EC] border border-[#EBE3D3] rounded-2xl flex items-center justify-between">
+            <div className="p-4 bg-[#FAF6EC] dark:bg-[#21211E] border border-[#EBE3D3] dark:border-[#302E29] rounded-2xl flex items-center justify-between">
               <div>
-                <h3 className="text-xs font-bold text-gray-800">Experience serving children?</h3>
-                <p className="text-[11px] text-gray-500">Do you have prior experience working with minors?</p>
+                <h3 className="text-xs font-bold text-gray-800 dark:text-[#F0EBE3]">Experience serving children?</h3>
+                <p className="text-[11px] text-gray-500 dark:text-[#B8B0A5]">Do you have prior experience working with minors?</p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
                 <input
@@ -613,19 +613,19 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
                   className="sr-only peer"
                   disabled={loading}
                 />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#C59B27]"></div>
+                <div className="w-11 h-6 bg-gray-200 dark:bg-[#262520] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 dark:after:border-[#3A3835] after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#C59B27]"></div>
               </label>
             </div>
 
             {/* NOTE ON EXPERIENCE / MOTIVATION */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-[#18181B] tracking-wider uppercase block">Experience / Serving Note (Optional)</label>
+              <label className="text-xs font-bold text-[#18181B] dark:text-[#F0EBE3] tracking-wider uppercase block">Experience / Serving Note (Optional)</label>
               <textarea
                 placeholder="Tell us briefly about yourself or any details you think we should know."
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 rows={3}
-                className="w-full p-4 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:border-[#C59B27] bg-white resize-none"
+                className="w-full p-4 rounded-2xl border border-gray-200 dark:border-[#3A3835] text-sm focus:outline-none focus:border-[#C59B27] bg-white dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder-gray-400 dark:placeholder-[#7A7570] resize-none"
                 disabled={loading}
               />
             </div>
@@ -633,7 +633,7 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
             {/* PASSWORD */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-[#18181B] tracking-wider uppercase block">Password</label>
+                <label className="text-xs font-bold text-[#18181B] dark:text-[#F0EBE3] tracking-wider uppercase block">Password</label>
                 <button
                   type="button"
                   onClick={handleSuggestPassword}
@@ -649,22 +649,22 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 onBlur={() => handleBlur('password')}
-                className="w-full h-11 px-4 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:border-[#C59B27] bg-white"
+                className="w-full h-11 px-4 rounded-2xl border border-gray-200 dark:border-[#3A3835] text-sm focus:outline-none focus:border-[#C59B27] bg-white dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder-gray-400 dark:placeholder-[#7A7570]"
                 disabled={loading}
               />
               {showPasswordNotice && (
-                <div className="mt-1.5 p-3 bg-amber-50 border border-amber-100 rounded-xl space-y-1.5">
-                  <p className="text-[11px] text-amber-800 font-medium">
+                <div className="mt-1.5 p-3 bg-amber-50 dark:bg-[#21211E] border border-amber-100 dark:border-[#302E29] rounded-xl space-y-1.5">
+                  <p className="text-[11px] text-amber-800 dark:text-[#B8B0A5] font-medium">
                     This password is safe and meets all complexity standards. Copy and save it safely:
                   </p>
                   <div className="flex items-center space-x-2">
-                    <code className="text-xs font-mono font-bold bg-white px-2 py-1 rounded border border-amber-200 flex-1 break-all select-all">
+                    <code className="text-xs font-mono font-bold bg-white dark:bg-[#262520] px-2 py-1 rounded border border-amber-200 dark:border-[#3A3835] text-zinc-900 dark:text-[#F0EBE3] flex-1 break-all select-all">
                       {password}
                     </code>
                     <button
                       type="button"
                       onClick={handleCopyPassword}
-                      className="px-2.5 py-1 text-[11px] font-bold text-amber-900 bg-amber-200/50 hover:bg-amber-200 rounded cursor-pointer"
+                      className="px-2.5 py-1 text-[11px] font-bold text-amber-900 dark:text-[#C59B27] bg-amber-200/50 dark:bg-[#262520] hover:bg-amber-200 rounded cursor-pointer"
                     >
                       Copy
                     </button>
@@ -678,14 +678,14 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
 
             {/* CONFIRM PASSWORD */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-[#18181B] tracking-wider uppercase block">Confirm Password</label>
+              <label className="text-xs font-bold text-[#18181B] dark:text-[#F0EBE3] tracking-wider uppercase block">Confirm Password</label>
               <input
                 type="password"
                 placeholder="Re-enter your password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 onBlur={() => handleBlur('confirmPassword')}
-                className="w-full h-11 px-4 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:border-[#C59B27] bg-white"
+                className="w-full h-11 px-4 rounded-2xl border border-gray-200 dark:border-[#3A3835] text-sm focus:outline-none focus:border-[#C59B27] bg-white dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder-gray-400 dark:placeholder-[#7A7570]"
                 disabled={loading}
               />
               {touched.confirmPassword && errors.confirmPassword && (
@@ -705,7 +705,7 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
               </Button>
             </div>
             {!canSubmit && (
-              <p className="text-xs text-gray-500 text-center mt-2 font-medium">
+              <p className="text-xs text-gray-500 dark:text-[#B8B0A5] text-center mt-2 font-medium">
                 {!selectedPhotoFile 
                   ? "Add a clear profile photo to continue."
                   : !requiredFieldsPresent
@@ -716,8 +716,8 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
             )}
           </form>
 
-          <div className="text-center pt-4 border-t border-[#EAE8E1]">
-            <p className="text-xs text-gray-500">
+          <div className="text-center pt-4 border-t border-[#EAE8E1] dark:border-[#302E29]">
+            <p className="text-xs text-gray-500 dark:text-[#B8B0A5]">
               Already have an account?{' '}
               <button
                 onClick={() => onNavigate('/volunteer/sign-in')}

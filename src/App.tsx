@@ -41,6 +41,7 @@ import { KoinoniaInlineLoader } from './components/common/KoinoniaInlineLoader';
 import { AppLoadingScreen } from './components/common/AppLoadingScreen';
 import { ModuleLoadingState } from './components/common/ModuleLoadingState';
 import { safeStorage } from './utils/storage';
+import { isValidRoute, getInitialRoute } from './utils/router';
 
 const AdminSignInView = React.lazy(() => import('./views/admin/AdminSignInView').then(m => ({ default: m.AdminSignInView })));
 const AdminForgotPasswordView = React.lazy(() => import('./views/admin/AdminForgotPasswordView').then(m => ({ default: m.AdminForgotPasswordView })));
@@ -256,7 +257,7 @@ function normalizeParentProfile(p: any): ParentProfile {
 
 export default function App() {
   const { showSuccess, showError, showWarning } = useNotification();
-  const [currentRoute, setCurrentRoute] = useState<AppRoute>('/');
+  const [currentRoute, setCurrentRoute] = useState<AppRoute>(getInitialRoute);
   const [parentEmail, setParentEmail] = useState<string>('');
   const [parentProfile, setParentProfile] = useState<ParentProfile>(initialParentProfile);
   const [volunteerProfile, setVolunteerProfile] = useState<any>(null);
@@ -273,34 +274,56 @@ export default function App() {
   const [activeTrainingSessionId, setActiveTrainingSessionId] = useState<string>('');
   const [trainingRole, setTrainingRole] = useState<string>('');
 
-  // Sync route with URL hash for easy browser bookmarking/testing
+  // Sync route with URL hash/pathname for clean HTML5 URLs, back/forward support, and legacy hash migration
   useEffect(() => {
-    const handleHashChange = () => {
-      let hash = window.location.hash || '';
-      // Strip all leading '#' and ensure there is exactly one leading '/'
-      hash = (hash || '').replace(/^#+/, '');
+    const handleLocationChange = () => {
+      if (typeof window === 'undefined') return;
+      const pathname = window.location.pathname || '';
+      let hash = (window.location.hash || '').replace(/^#+/, '');
+      if (hash && !hash.startsWith('/')) hash = '/' + hash;
 
-      // Fallback: If hash is empty or root, check if pathname provides a valid route (e.g. phone camera QR scans)
-      if ((!hash || hash === '/') && typeof window !== 'undefined' && window.location.pathname && window.location.pathname !== '/') {
-        const path = window.location.pathname;
-        if (isValidRoute(path)) {
-          hash = path + (window.location.search || '');
-          window.location.hash = hash;
+      // Case 1: Pathname provides a valid route (e.g. /parent/home, /admin/wristbands)
+      if (pathname && pathname !== '/' && isValidRoute(pathname)) {
+        // Strip duplicate or lingering hash (e.g. /parent/home#/parent/home or /parent/home#parent/home)
+        if (hash) {
+          const [hashRoute] = hash.split('?');
+          if (hashRoute === pathname || isValidRoute(hashRoute) || window.location.hash.startsWith('#' + pathname)) {
+            window.history.replaceState(null, '', pathname + (window.location.search || ''));
+          }
+        }
+        const [cleanPath] = pathname.split('?');
+        setCurrentRoute(cleanPath as AppRoute);
+        return;
+      }
+
+      // Case 2: Pathname is root '/', but an incoming/legacy hash route is present (e.g. /#/parent/home)
+      if (hash) {
+        const [hashRoute] = hash.split('?');
+        if (isValidRoute(hashRoute)) {
+          // Promote legacy hash route to clean HTML5 URL without creating extra history entry
+          const search = hash.includes('?') ? '?' + hash.split('?')[1] : (window.location.search || '');
+          window.history.replaceState(null, '', hashRoute + search);
+          setCurrentRoute(hashRoute as AppRoute);
+          return;
         }
       }
 
-      if (!hash.startsWith('/')) {
-        hash = '/' + hash;
-      }
-      const [routePath] = hash.split('?');
-      if (routePath && isValidRoute(routePath)) {
-        setCurrentRoute(routePath as AppRoute);
+      // Case 3: Root route '/'
+      if (pathname === '/' || !pathname) {
+        if (window.location.hash === '#' || window.location.hash === '#/') {
+          window.history.replaceState(null, '', '/' + (window.location.search || ''));
+        }
+        setCurrentRoute('/');
       }
     };
 
-    handleHashChange();
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    handleLocationChange();
+    window.addEventListener('popstate', handleLocationChange);
+    window.addEventListener('hashchange', handleLocationChange);
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('hashchange', handleLocationChange);
+    };
   }, []);
 
   const isProfileComplete = (p: ParentProfile | null | undefined): boolean => {
@@ -389,7 +412,8 @@ export default function App() {
         } else if (storedExp === 'parent' && (hasParentAccess || accessData.user.role === 'parent')) {
           setActiveExperience('parent');
         } else {
-          if (hasVolAccess && window.location.hash.includes('/volunteer')) {
+          const currentPath = typeof window !== 'undefined' ? (window.location.pathname + window.location.hash) : '';
+          if (hasVolAccess && currentPath.includes('/volunteer')) {
             setActiveExperience('volunteer');
           } else if (hasParentAccess) {
             setActiveExperience('parent');
@@ -511,60 +535,15 @@ export default function App() {
     };
   }, [user]);
 
-  const isValidRoute = (route: string): boolean => {
-    const cleanRoute = route.split('?')[0];
-    if (cleanRoute.startsWith('/parent/status/')) return true;
-    if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/status')) return true;
-    if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/edit')) return true;
-    if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/pass')) return true;
-    if (cleanRoute.startsWith('/volunteer/')) return true;
-    if (cleanRoute.startsWith('/admin/')) return true;
-    if (cleanRoute === '/admin') return true;
-    if (cleanRoute === '/parent/volunteer-request') return true;
-    if (cleanRoute.startsWith('/duty/location/')) return true;
-    if (cleanRoute.startsWith('/duty/scan/')) return true;
-    if (cleanRoute.startsWith('/event-duty/location-access/')) return true;
-    const validRoutes: string[] = [
-      '/',
-      '/parent/create-account',
-      '/parent/check-email',
-      '/parent/verify-email',
-      '/parent/sign-in',
-      '/parent/forgot-password',
-      '/parent/new-password',
-      '/parent/profile-setup',
-      '/parent/profile/edit',
-      '/parent/home',
-      '/parent/profile',
-      '/parent/children',
-      '/parent/children/new',
-      '/parent/children/new/care-details',
-      '/parent/children/new/health-and-support',
-      '/parent/children/new/health-and-care',
-      '/parent/children/new/pickup-person',
-      '/parent/children/new/review',
-      '/parent/children/review-sent',
-      '/parent/status',
-      '/parent/passes',
-      '/admin/sign-in',
-      '/admin/forgot-password',
-      '/admin/reset-password',
-      '/admin/overview',
-      '/admin/settings',
-      '/admin/applications',
-      '/admin/accept-invite',
-      '/privacy',
-      '/terms',
-      '/child-safety',
-      '/contact'
-    ];
-    return validRoutes.includes(cleanRoute);
-  };
-
   const navigate = (route: AppRoute | string) => {
     const [routePath] = route.split('?');
     setCurrentRoute(routePath as AppRoute);
-    window.location.hash = route;
+    if (typeof window !== 'undefined' && window.history?.pushState) {
+      const cleanRoute = route.startsWith('/') ? route : `/${route}`;
+      window.history.pushState(null, '', cleanRoute);
+    } else if (typeof window !== 'undefined') {
+      window.location.href = route;
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -1260,7 +1239,11 @@ export default function App() {
                                           ? 'escalations'
                                           : cleanRoute === '/admin/operations'
                                             ? 'operations'
-                                            : 'overview'
+                                            : cleanRoute === '/admin/wristbands/inventory'
+                                              ? 'wristbands_inventory'
+                                              : cleanRoute === '/admin/wristbands' || cleanRoute.startsWith('/admin/wristbands')
+                                                ? 'wristbands'
+                                                : 'overview'
               }
             />
           </AdminProtectedRoute>
@@ -1595,6 +1578,7 @@ export default function App() {
       case '/volunteer/pickup':
       case '/volunteer/team-alerts':
       case '/volunteer/readiness':
+      case '/volunteer/wristbands':
         return (
           <VolunteerProtectedRoute>
             <VolunteerEventDashboardView
@@ -1625,7 +1609,7 @@ export default function App() {
   const seoProps = getSeoPropsForRoute(currentRoute);
 
   return (
-    <div className="min-h-screen bg-[#FAF9F6] selection:bg-[#C59B27]/30 selection:text-[#18181B]">
+    <div className="min-h-screen bg-[#FAF9F6] dark:bg-[#19191A] text-[#18181B] dark:text-[#F0EBE3] selection:bg-[#C59B27]/30 selection:text-[#18181B]">
       {seoProps && <Seo {...seoProps} />}
       {isOffline && (
         <div className="bg-amber-600 text-white text-xs font-semibold py-2.5 px-4 text-center sticky top-0 z-[100] flex items-center justify-center gap-2 shadow-md">
@@ -1652,8 +1636,10 @@ export default function App() {
         />
       )}
 
-      {/* Only show DevNavigator on internal parent routes in local development mode, remove from public landing page & production builds */}
-      {import.meta.env.DEV && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && currentRoute !== '/' && (
+      {/* Screen Navigator strictly restricted: suppressed on ALL Parent & Volunteer experiences */}
+      {import.meta.env.DEV && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
+       currentRoute.startsWith('/admin') &&
+       !currentRoute.split('?')[0].startsWith('/admin/wristbands') && (
         <DevNavigator
           currentRoute={currentRoute}
           onNavigate={navigate}

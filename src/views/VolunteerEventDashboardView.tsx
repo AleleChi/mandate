@@ -4,8 +4,9 @@ import {
   ShieldCheck, Check, Home, Camera, CameraOff, X, Phone, MessageCircle, 
   ArrowRight, Sparkles, UserCheck, UserX, Clock, ChevronLeft, Calendar, Heart, Info, Keyboard,
   Settings, ChevronRight, Users, LogIn, History, MapPin, Bell, ShieldAlert, Smartphone, ChevronDown, Shield, CheckCircle2,
-  HelpCircle
+  HelpCircle, Tag
 } from 'lucide-react';
+import { WristbandAssignmentDesk } from '../components/wristbands/WristbandAssignmentDesk';
 import { AppRoute } from '../types';
 import { api, extractApiError } from '../services/api';
 import { buildApiUrl } from '../utils/urlHelper';
@@ -482,6 +483,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [isMarkingPickup, setIsMarkingPickup] = useState(false);
   const [lastVerifiedChild, setLastVerifiedChild] = useState<any | null>(null);
   const [lookedUpChild, setLookedUpChild] = useState<any | null>(null);
+  const [wristbandInitialChild, setWristbandInitialChild] = useState<any | null>(null);
+  const [unassignedWristbandInfo, setUnassignedWristbandInfo] = useState<{ rawInput: string; message: string } | null>(null);
+  const scannerInputRef = useRef<HTMLInputElement>(null);
   const [recentScans, setRecentScans] = useState<any[]>([]);
 
   // Check-in success states
@@ -1254,6 +1258,26 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [attentionError, setAttentionError] = useState<string | null>(null);
 
   const cleanRoute = currentRoute.split('?')[0];
+  const canAssignWristbands = React.useMemo(() => {
+    if (!volunteerProfile) return false;
+    if (volunteerProfile.role === 'admin' || volunteerProfile.role === 'super_admin') return true;
+    if (volunteerProfile.status === 'approved') {
+      if (currentDutyLocation) {
+        const key = (currentDutyLocation.responsibility_key || '').toLowerCase();
+        const team = (currentDutyLocation.team_key || '').toLowerCase();
+        return (
+          key.includes('check') ||
+          key.includes('gate') ||
+          key.includes('arrival') ||
+          key.includes('registration') ||
+          team.includes('check_in') ||
+          team.includes('gate')
+        );
+      }
+      return true;
+    }
+    return false;
+  }, [volunteerProfile, currentDutyLocation]);
 
   // Fetch standard dashboard data
   const fetchDashboardData = async (silent = false) => {
@@ -1458,6 +1482,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       setSelectedChildId(null);
     }
   }, [cleanRoute]);
+
+  // High-throughput autofocus for volunteer check-in scanner input
+  useEffect(() => {
+    if (cleanRoute === '/volunteer/scan' && !lookedUpChild && !checkedInSuccessChild) {
+      const timer = setTimeout(() => {
+        scannerInputRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [cleanRoute, lookedUpChild, checkedInSuccessChild]);
 
   // Poll safety alerts raised by this volunteer
   useEffect(() => {
@@ -1718,6 +1752,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     setCheckedInSuccessChild(null);
     setCheckedInSuccessEntry(null);
     setIsCheckingIn(false);
+    setUnassignedWristbandInfo(null);
     
     // Reset all lookup and deduplication refs
     isLookupInFlightRef.current = false;
@@ -1734,6 +1769,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     
     // Restart camera
     setCameraActive(true);
+
+    setTimeout(() => {
+      scannerInputRef.current?.focus();
+    }, 50);
   };
 
   const handlePassScanned = async (text: string) => {
@@ -1742,8 +1781,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
     const now = Date.now();
     
-    // Cooldown logic: if same code repeats within 4 seconds, ignore it
-    if (lastScannedCodeRef.current === trimmedText && (now - lastScanAtRef.current) < 4000) {
+    // Cooldown logic: if same code repeats within 3 seconds, ignore it
+    if (lastScannedCodeRef.current === trimmedText && (now - lastScanAtRef.current) < 3000) {
       console.debug('[scan] duplicate ignored within cooldown');
       return;
     }
@@ -1767,8 +1806,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     lastScannedCode.current = trimmedText;
 
     setScanLoading(true);
+    setUnassignedWristbandInfo(null);
     
-    // Stop scanning immediately on success to prevent multi-scans
+    // Stop scanning immediately on scan to prevent multi-scans
     stopScanning();
     setCameraActive(false);
 
@@ -1804,7 +1844,6 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           setPickupChild(childWithPickup);
           setCameraActive(false);
           hasSuccessfulScanRef.current = true;
-          // No "Child Found" toast popup to prevent stacking!
           if (navigator.vibrate) {
             navigator.vibrate([100]);
           }
@@ -1817,18 +1856,19 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           setCameraActive(true);
         }
       } else {
-        let passCode = trimmedText;
+        // Unified Volunteer Check-In Identification Flow (Phase 3C)
+        let cleanIdentifier = trimmedText;
         if (trimmedText.includes('/pass/')) {
-          passCode = trimmedText.split('/pass/')[1]?.split('?')[0] || trimmedText;
+          cleanIdentifier = trimmedText.split('/pass/')[1]?.split('?')[0] || trimmedText;
         } else if (trimmedText.includes('code=')) {
-          passCode = trimmedText.split('code=')[1]?.split('&')[0] || trimmedText;
+          cleanIdentifier = trimmedText.split('code=')[1]?.split('&')[0] || trimmedText;
         } else if (trimmedText.startsWith('KCT:')) {
-          passCode = trimmedText.substring(4);
+          cleanIdentifier = trimmedText.substring(4);
         }
-        passCode = passCode.trim().toUpperCase();
+        cleanIdentifier = cleanIdentifier.trim();
 
         if (offlineService.isOffline()) {
-          const pass = await offlineService.lookupLocalPass(passCode);
+          const pass = await offlineService.lookupLocalPass(cleanIdentifier.toUpperCase());
           if (pass) {
             const mockChild = {
               id: pass.child.id,
@@ -1848,7 +1888,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               parentPhone: pass.parent.phone,
               authorizedPickup: pass.pickup,
               entryStatus: pass.entryStatus,
-              isOfflineResult: true
+              isOfflineResult: true,
+              identificationSource: 'Pass'
             };
             setLookedUpChild(mockChild);
             hasSuccessfulScanRef.current = true;
@@ -1863,41 +1904,102 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             isLookupInFlight.current = false;
             lastScannedCode.current = '';
             setCameraActive(true);
+            setTimeout(() => scannerInputRef.current?.focus(), 50);
           }
           setScanLoading(false);
           return;
         }
 
-        const res = await api.volunteer.lookupPass({ passReference: passCode });
-        
-        if (res.success && res.child) {
-          setLookedUpChild(res.child);
-          hasSuccessfulScanRef.current = true;
-          
-          // Haptic feedback if available
-          if (navigator.vibrate) {
-            navigator.vibrate([100]);
-          }
+        // Online resolution: use Phase 3B unified child identifier resolver
+        const targetEventId = eventDetails?.id;
+        const resolveRes = await api.volunteer.resolveIdentifier({
+          identifier: cleanIdentifier,
+          eventId: targetEventId
+        });
 
-          // Reset inputs
-          setManualCode('');
+        if (resolveRes && resolveRes.success && resolveRes.childEventEntryId) {
+          // Resolve succeeded -> load full child data using existing lookupPass endpoint
+          const lookupRes = await api.volunteer.lookupPass({
+            childEventEntryId: resolveRes.childEventEntryId
+          });
+
+          if (lookupRes && lookupRes.success && lookupRes.child) {
+            const childData = {
+              ...lookupRes.child,
+              identificationSource: resolveRes.identifierType === 'pass' ? 'Pass' : 'Wristband',
+              resolvedIdentifierType: resolveRes.identifierType,
+              resolvedWristbandCode: resolveRes.wristbandCode
+            };
+            setLookedUpChild(childData);
+            hasSuccessfulScanRef.current = true;
+
+            // Haptic feedback if available
+            if (navigator.vibrate) {
+              navigator.vibrate([100]);
+            }
+
+            // Reset manual code input
+            setManualCode('');
+          } else {
+            showError('Not Found', 'No child was found for this pass or wristband.');
+            isLookupInFlightRef.current = false;
+            lastScannedCodeRef.current = null;
+            isLookupInFlight.current = false;
+            lastScannedCode.current = '';
+            setCameraActive(true);
+            setTimeout(() => scannerInputRef.current?.focus(), 50);
+          }
         } else {
-          showError('Not Found', 'We could not find this pass. Please contact the event desk.');
+          showError('Not Found', 'No child was found for this pass or wristband.');
           isLookupInFlightRef.current = false;
           lastScannedCodeRef.current = null;
           isLookupInFlight.current = false;
           lastScannedCode.current = '';
           setCameraActive(true);
+          setTimeout(() => scannerInputRef.current?.focus(), 50);
         }
       }
     } catch (err: any) {
-      const apiErr = extractApiError(err);
-      showError('Pass Error', apiErr.message || 'We could not find this pass. Please contact the event desk.');
+      // Map resolver errors to human messages (Section 8)
+      const errCode = err?.code || err?.data?.code || '';
+      console.warn('[Unified Identifier Scan Error]:', { errCode, err });
+
+      let title = 'Identifier Error';
+      let message = 'No child was found for this pass or wristband.';
+
+      if (errCode === 'WRISTBAND_UNASSIGNED') {
+        title = 'Wristband Unassigned';
+        message = 'This wristband has not been assigned yet.';
+        setUnassignedWristbandInfo({
+          rawInput: trimmedText,
+          message: 'This wristband has not been assigned yet.'
+        });
+      } else if (errCode === 'WRISTBAND_LOST') {
+        title = 'Wristband Lost';
+        message = 'This wristband was reported lost and cannot be used.';
+      } else if (errCode === 'WRISTBAND_DAMAGED') {
+        title = 'Wristband Damaged';
+        message = 'This wristband is marked as damaged.';
+      } else if (errCode === 'WRISTBAND_DECOMMISSIONED') {
+        title = 'Wristband Decommissioned';
+        message = 'This wristband is no longer in use.';
+      } else if (errCode === 'WRONG_EVENT') {
+        title = 'Not Valid';
+        message = 'This pass or wristband is not valid for the current event.';
+      } else if (errCode === 'PASS_REVOKED') {
+        title = 'Pass Inactive';
+        message = 'This pass has been revoked or is inactive.';
+      } else {
+        message = 'No child was found for this pass or wristband.';
+      }
+
+      showError(title, message);
       isLookupInFlightRef.current = false;
       lastScannedCodeRef.current = null;
       isLookupInFlight.current = false;
       lastScannedCode.current = '';
       setCameraActive(true);
+      setTimeout(() => scannerInputRef.current?.focus(), 50);
     } finally {
       setScanLoading(false);
     }
@@ -1910,7 +2012,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       return;
     }
     if (!manualCode.trim()) {
-      showWarning('Input required', 'Please enter a valid pass reference code.');
+      showWarning('Input required', 'Scan a child pass or wristband, or enter a reference.');
       return;
     }
     await handlePassScanned(manualCode.trim());
@@ -2393,7 +2495,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const teamName = volunteerProfile?.preferred_team || 'General Team';
 
   return (
-    <div className="min-h-screen bg-[#FAF9F6] font-sans flex flex-col pb-24" data-view-version="volunteer-dashboard-v9-handover-mobile-app">
+    <div className="min-h-screen bg-[#FAF9F6] font-sans flex flex-col pb-24 lg:pb-10" data-view-version="volunteer-dashboard-v9-handover-mobile-app">
       {/* Top Header Bar - Calm, Minimal, Premium Mobile Header */}
       <header 
         className="bg-[#FAF9F6] border-b border-[#EAE8E1]/60 sticky top-0 z-20 px-4 h-16 flex items-center justify-between"
@@ -2446,10 +2548,74 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             )}
           </div>
 
-          {/* Center: Page Title (omitted on home for a lightweight, calm header) */}
-          <div className="text-center">
+          {/* Center: Desktop Navigation Tabs (Hidden on mobile/tablet) */}
+          <nav className="hidden lg:flex items-center space-x-1" aria-label="Volunteer desktop navigation">
+            <button
+              type="button"
+              onClick={() => onNavigate('/volunteer/event')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium font-sans transition-colors cursor-pointer ${
+                cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup'
+                  ? 'bg-[#FAF6EB] text-[#C59B27] font-semibold'
+                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
+              }`}
+            >
+              Events
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCameraActive(true);
+                onNavigate('/volunteer/scan');
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium font-sans transition-colors cursor-pointer ${
+                cleanRoute === '/volunteer/scan'
+                  ? 'bg-[#FAF6EB] text-[#C59B27] font-semibold'
+                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
+              }`}
+            >
+              Scan
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate('/volunteer/children')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium font-sans transition-colors cursor-pointer ${
+                cleanRoute === '/volunteer/children'
+                  ? 'bg-[#FAF6EB] text-[#C59B27] font-semibold'
+                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
+              }`}
+            >
+              Children
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate('/volunteer/reports')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium font-sans transition-colors cursor-pointer ${
+                cleanRoute === '/volunteer/reports'
+                  ? 'bg-[#FAF6EB] text-[#C59B27] font-semibold'
+                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
+              }`}
+            >
+              Summary
+            </button>
+            {volunteerProfile && (
+              <button
+                type="button"
+                onClick={() => onNavigate('/volunteer/team-alerts')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium font-sans transition-colors cursor-pointer ${
+                  cleanRoute === '/volunteer/team-alerts'
+                    ? 'bg-[#FAF6EB] text-[#C59B27] font-semibold'
+                    : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
+                }`}
+              >
+                Safety
+              </button>
+            )}
+          </nav>
+
+          {/* Center: Contextual Page Title on Mobile/Tablet */}
+          <div className="text-center lg:hidden">
             {cleanRoute !== '/volunteer/event' && (
-              <span className="font-semibold text-sm text-zinc-900 tracking-tight">
+              <span className="font-semibold text-sm text-zinc-900 tracking-tight font-sans">
                 {(() => {
                   if (cleanRoute === '/volunteer/scan') {
                     if (checkedInSuccessChild) return 'Check-in confirmed';
@@ -2461,15 +2627,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   if (cleanRoute === '/volunteer/reports') return 'Summary';
                   if (cleanRoute === '/volunteer/team-alerts') return 'Safety';
                   if (cleanRoute === '/volunteer/profile') return 'Profile';
+                  if (cleanRoute === '/volunteer/readiness') return 'Device readiness';
+                  if (cleanRoute === '/volunteer/wristbands') return 'Wristbands';
                   return '';
                 })()}
               </span>
             )}
           </div>
 
-          {/* Right: Notifications & Profile Avatar */}
+          {/* Right: Notifications & Profile Avatar (Single Theme Switcher below) */}
           <div className="flex items-center space-x-2">
-            <ThemeSwitcher />
             {hasParentProfile && (
               <button
                 disabled={isSwitchingExperience}
@@ -2518,6 +2685,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 onUnreadCountChange={setUnreadNotifCount}
               />
             </div>
+
+            <ThemeSwitcher surface="volunteer" />
             
             <button
               onClick={() => onNavigate('/volunteer/profile')}
@@ -2904,7 +3073,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             </div>
 
             {/* 4. Primary Operational Actions */}
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
               <button
                 type="button"
                 onClick={() => {
@@ -2916,6 +3085,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               >
                 <QrCode className="w-4 h-4" />
                 <span>Start check-in</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigate('/volunteer/wristbands')}
+                className="py-3 px-4 bg-white border border-[#E5D5AE] hover:bg-[#FAF6EB] text-[#9A7326] font-sans font-medium text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <Tag className="w-4 h-4 text-[#C59B27]" />
+                <span>Wristband desk</span>
               </button>
               <button
                 type="button"
@@ -3386,7 +3563,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         {lookedUpChild.fullName}
                       </h3>
                       <span className="bg-[#FAF9F6] border border-[#EAE8E1] text-[#C59B27] px-2.5 py-0.5 text-[10px] font-bold uppercase rounded-md tracking-wider shrink-0 leading-none">
-                        Pass Ready
+                        {lookedUpChild.identificationSource || 'Pass'}
                       </span>
                     </div>
                     <p className="text-xs text-gray-500 font-medium" data-component-version="volunteer-child-age-display-v2-under-one">
@@ -3514,13 +3691,44 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       )}
                     </button>
 
+                    {/* Existing Wristband Notification */}
+                    {lookedUpChild.activeWristband && (
+                      <div className="bg-[#FAF6EB] border border-[#E5D5AE] rounded-2xl p-3.5 flex items-center justify-between text-xs">
+                        <div className="flex items-center space-x-2">
+                          <Tag className="w-4 h-4 text-[#C59B27]" />
+                          <span className="text-zinc-700 font-medium">Wristband:</span>
+                          <span className="font-mono font-bold text-[#C59B27]">
+                            {lookedUpChild.activeWristband.wristbandCode}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                          Active
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Quick Assign Wristband Action if eligible and unassigned */}
+                    {!lookedUpChild.activeWristband && ['selected', 'pass_ready', 'checked_in'].includes(lookedUpChild.entryStatus || lookedUpChild.status) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWristbandInitialChild(lookedUpChild);
+                          onNavigate('/volunteer/wristbands');
+                        }}
+                        className="w-full bg-[#FAF6EB] border border-[#E5D5AE] hover:bg-[#F5EED9] text-[#9A7326] font-bold tracking-widest py-3 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer flex items-center justify-center space-x-2"
+                      >
+                        <Tag className="h-4 w-4 text-[#C59B27]" />
+                        <span>ASSIGN WRISTBAND</span>
+                      </button>
+                    )}
+
                     <button
                       onClick={handleResetScannerState}
                       data-component-version="volunteer-scan-another-action-v4"
                       className="w-full border border-gray-300 hover:border-gray-400 text-gray-800 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white hover:bg-gray-50 flex items-center justify-center space-x-2"
                     >
                       <QrCode className="h-4 w-4 text-gray-600 stroke-[2]" />
-                      <span>SCAN ANOTHER PASS</span>
+                      <span>NEXT CHILD</span>
                     </button>
 
                     <button
@@ -3591,194 +3799,198 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </div>
             );
           })() : (
-            /* ==================== 2. SCANNER VIEW (Refined Clean Layout) ==================== */
-            <div className="max-w-md mx-auto space-y-4 w-full pb-20 px-4" data-view-version="volunteer-scan-refined-v7">
+            /* ==================== 2. SCANNER VIEW (Unified Identification Control) ==================== */
+            <div className="max-w-md mx-auto space-y-4 w-full pb-20 px-4" data-view-version="volunteer-scan-unified-v1">
               
-              {cameraUnavailable ? (
-                /* Camera is unavailable: calm fallback */
-                <div className="space-y-3" data-component-version="volunteer-scan-manual-fallback-v3">
-                  <div className="bg-stone-50 border border-stone-200/80 rounded-xl p-3.5 text-center space-y-1">
-                    <p className="font-sans font-medium text-xs text-stone-900">Camera unavailable</p>
-                    <p className="font-sans text-xs text-stone-500">
-                      You can still find the child using search or enter the pass code manually below.
-                    </p>
-                  </div>
+              {/* Human-facing Heading & Supporting Copy (Section 2) */}
+              <div className="text-center pt-2 pb-1 space-y-1" data-component-version="volunteer-unified-checkin-header">
+                <h2 className="text-2xl sm:text-3xl font-sans font-bold text-stone-900 dark:text-[#F0EBE3] tracking-tight">
+                  Find child
+                </h2>
+                <p className="text-xs sm:text-sm text-stone-500 font-sans">
+                  Scan a child pass or wristband, or enter a reference.
+                </p>
+              </div>
 
-                  <div className="bg-white border border-stone-200/80 p-4 rounded-xl space-y-3">
-                    <div className="flex items-center space-x-2 text-stone-900 pb-2 border-b border-stone-100">
-                      <Keyboard className="h-4 w-4 text-stone-400" />
-                      <h4 className="text-xs font-sans font-medium text-stone-900">Enter pass reference</h4>
-                    </div>
-                    
-                    <form onSubmit={handleManualVerifySubmit} className="space-y-3">
-                      <div className="relative">
-                        <input
-                          type="text"
-                          value={manualCode}
-                          onChange={(e) => setManualCode(e.target.value.toUpperCase())}
-                          placeholder="e.g. 6E80A7"
-                          disabled={scanLoading}
-                          className="w-full bg-stone-50/70 border border-stone-200 rounded-lg px-3.5 py-2.5 text-xs font-sans font-semibold tracking-wider placeholder:tracking-normal outline-none focus:border-stone-400 focus:bg-white transition-all disabled:opacity-60 text-center uppercase"
-                        />
-                        {manualCode && (
-                          <button
-                            type="button"
-                            onClick={() => setManualCode('')}
-                            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-600 rounded-full hover:bg-stone-100"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        )}
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={scanLoading || !manualCode}
-                        className="w-full py-2.5 bg-stone-900 hover:bg-stone-800 disabled:bg-stone-100 disabled:text-stone-400 text-white font-sans font-medium text-xs rounded-lg transition-colors cursor-pointer flex items-center justify-center"
-                      >
-                        {scanLoading ? (
-                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                        ) : (
-                          <span>Verify pass</span>
-                        )}
-                      </button>
-                    </form>
-                  </div>
-                </div>
-              ) : (
-                /* Camera is active/available: portrait card */
-                <div className="space-y-3" data-component-version="volunteer-scan-viewport-v4">
-                  <div className="bg-white border border-stone-200/80 rounded-xl overflow-hidden relative">
-                    <div className="aspect-[4/3] sm:aspect-[3/4] bg-stone-950 relative flex flex-col items-center justify-center overflow-hidden">
-                      {!cameraActive && (
-                        <div 
-                          className="absolute inset-0 bg-cover bg-center filter blur-xs opacity-35 scale-105"
-                          style={{ 
-                            backgroundImage: `url('https://images.unsplash.com/photo-1516627145497-ae6968895b74?auto=format&fit=crop&q=80&w=600')`
-                          }}
-                        />
-                      )}
-
-                      {cameraActive ? (
-                        <>
-                          <video
-                            ref={videoRef}
-                            className="w-full h-full object-cover"
-                            playsInline
-                            muted
-                          />
-                          
-                          {/* Overlay frame */}
-                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <div className="w-48 h-48 sm:w-56 sm:h-56 border border-white/30 rounded-2xl relative flex items-center justify-center">
-                              <div className="absolute -top-1 -left-1 w-5 h-5 border-t-3 border-l-3 border-[#C59B27] rounded-tl-md"></div>
-                              <div className="absolute -top-1 -right-1 w-5 h-5 border-t-3 border-r-3 border-[#C59B27] rounded-tr-md"></div>
-                              <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-3 border-l-3 border-[#C59B27] rounded-bl-md"></div>
-                              <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-3 border-r-3 border-[#C59B27] rounded-br-md"></div>
-                              
-                              <div className="absolute w-full h-0.5 bg-gradient-to-r from-transparent via-[#C59B27] to-transparent top-0 animate-bounce"></div>
-                            </div>
-                          </div>
-
-                          {/* Camera Controls Overlay */}
-                          <div className="absolute top-3 right-3 flex items-center space-x-2 z-10">
-                            {cameras.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={handleFlipCamera}
-                                className="p-1.5 bg-white/90 text-stone-900 rounded-lg transition-all cursor-pointer flex items-center space-x-1 shadow-xs font-sans font-medium text-[10px]"
-                                title="Flip Camera"
-                              >
-                                <RefreshCw className="h-3 w-3" />
-                                <span>Flip</span>
-                              </button>
-                            )}
-                            <button
-                              onClick={() => setCameraActive(false)}
-                              className="p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors cursor-pointer"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-4 z-10">
-                          <div className="space-y-1">
-                            <p className="text-white font-sans font-semibold text-base">Scan child pass</p>
-                            <p className="text-xs font-sans text-white/70 max-w-[220px] mx-auto leading-relaxed">
-                              Align the child's entry pass QR inside the viewfinder area.
-                            </p>
-                          </div>
-
-                          <button
-                            onClick={() => setCameraActive(true)}
-                            className="px-5 py-2.5 bg-white text-stone-900 font-sans font-semibold text-xs rounded-full hover:bg-stone-100 transition-colors shadow-sm flex items-center space-x-2 cursor-pointer"
-                          >
-                            <Camera className="h-4 w-4" />
-                            <span>Scan child pass</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Manual Pass Code Toggle Action (Quiet secondary) */}
-                  <div className="space-y-2.5">
-                    <div className="text-center">
+              {/* Primary Unified Identification Input (Keyboard-wedge & Manual) */}
+              <div className="bg-white border border-stone-200/80 p-4 rounded-2xl shadow-xs space-y-3" data-component-version="volunteer-unified-scanner-input">
+                <form onSubmit={handleManualVerifySubmit} className="space-y-3">
+                  <div className="relative">
+                    <input
+                      ref={scannerInputRef}
+                      type="text"
+                      autoFocus
+                      value={manualCode}
+                      onChange={(e) => {
+                        setManualCode(e.target.value);
+                        if (unassignedWristbandInfo) setUnassignedWristbandInfo(null);
+                      }}
+                      placeholder="e.g. KOI-2026-..., WB-001245, or tap band"
+                      disabled={scanLoading}
+                      autoComplete="off"
+                      autoCorrect="off"
+                      spellCheck="false"
+                      className="w-full bg-stone-50/80 border border-stone-200 rounded-xl px-4 py-3 text-xs sm:text-sm font-sans font-semibold tracking-wide text-stone-900 placeholder:text-stone-400 placeholder:font-normal outline-none focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27]/20 focus:bg-white transition-all disabled:opacity-60 text-center uppercase"
+                    />
+                    {manualCode && (
                       <button
                         type="button"
-                        onClick={() => setShowManualInput(!showManualInput)}
-                        className="inline-flex items-center gap-1 text-xs font-sans font-medium text-stone-500 hover:text-stone-800 transition-colors cursor-pointer py-1 px-2"
-                        data-component-version="volunteer-check-in-manual-pass-v4"
+                        onClick={() => {
+                          setManualCode('');
+                          scannerInputRef.current?.focus();
+                        }}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-600 rounded-full hover:bg-stone-100 transition-colors"
                       >
-                        <span>Enter pass code manually</span>
-                        <span className="text-stone-400" aria-hidden="true">→</span>
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={scanLoading || !manualCode.trim()}
+                    className="w-full py-3 bg-stone-900 hover:bg-stone-800 disabled:bg-stone-100 disabled:text-stone-400 text-white font-sans font-semibold text-xs tracking-wider uppercase rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center space-x-2"
+                  >
+                    {scanLoading ? (
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    ) : (
+                      <span>Find child</span>
+                    )}
+                  </button>
+                </form>
+              </div>
+
+              {/* Unassigned Wristband Alert & Action (Section 7) */}
+              {unassignedWristbandInfo && (
+                <div className="bg-[#FAF6EB] border border-[#E5D5AE] rounded-2xl p-4 space-y-3 animate-fade-in" data-component-version="volunteer-unassigned-wristband-alert">
+                  <div className="flex items-start space-x-3">
+                    <div className="p-2 bg-amber-100/80 rounded-xl text-[#9A7326] shrink-0 mt-0.5">
+                      <Tag className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold text-stone-900 font-sans">
+                        This wristband has not been assigned yet.
+                      </p>
+                      <p className="text-[11px] text-stone-500 mt-0.5 font-sans">
+                        To use this wristband, it must first be assigned to a child at the Wristband Desk.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setUnassignedWristbandInfo(null)}
+                      className="p-1 text-stone-400 hover:text-stone-600 rounded-lg hover:bg-stone-100 cursor-pointer"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+
+                  {canAssignWristbands && (
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUnassignedWristbandInfo(null);
+                          onNavigate('/volunteer/wristbands');
+                        }}
+                        className="w-full py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-semibold text-xs rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center space-x-1.5"
+                      >
+                        <Tag className="h-3.5 w-3.5" />
+                        <span>Assign wristband</span>
                       </button>
                     </div>
+                  )}
+                </div>
+              )}
 
-                    {/* Manual Pass Code Input Form */}
-                    {showManualInput && (
-                      <form onSubmit={handleManualVerifySubmit} className="flex gap-2 animate-fade-in bg-white border border-stone-200/80 p-2.5 rounded-xl">
-                        <div className="relative flex-1">
-                          <input
-                            type="text"
-                            value={manualCode}
-                            onChange={(e) => setManualCode(e.target.value.toUpperCase())}
-                            placeholder="e.g. 6E80A7"
-                            disabled={scanLoading}
-                            className="w-full bg-stone-50/70 border border-stone-200 rounded-lg px-3 py-2 text-xs font-sans font-semibold tracking-wider placeholder:tracking-normal outline-none focus:border-stone-400 focus:bg-white transition-all disabled:opacity-60 uppercase"
-                          />
-                          {manualCode && (
+              {/* Camera Scanner Viewport */}
+              {cameraUnavailable ? (
+                <div className="bg-stone-50 border border-stone-200/80 rounded-xl p-3.5 text-center space-y-1" data-component-version="volunteer-scan-manual-fallback-v3">
+                  <p className="font-sans font-medium text-xs text-stone-900">Camera unavailable</p>
+                  <p className="font-sans text-xs text-stone-500">
+                    Use the identification input above or search by child name below.
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-white border border-stone-200/80 rounded-2xl overflow-hidden relative shadow-xs" data-component-version="volunteer-scan-viewport-v5">
+                  <div className="aspect-[4/3] sm:aspect-[3/4] bg-stone-950 relative flex flex-col items-center justify-center overflow-hidden">
+                    {!cameraActive && (
+                      <div
+                        className="absolute inset-0 bg-cover bg-center filter blur-xs opacity-35 scale-105"
+                        style={{
+                          backgroundImage: `url('https://images.unsplash.com/photo-1516627145497-ae6968895b74?auto=format&fit=crop&q=80&w=600')`
+                        }}
+                      />
+                    )}
+
+                    {cameraActive ? (
+                      <>
+                        <video
+                          ref={videoRef}
+                          className="w-full h-full object-cover"
+                          playsInline
+                          muted
+                        />
+
+                        {/* Overlay frame */}
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <div className="w-48 h-48 sm:w-56 sm:h-56 border border-white/30 rounded-2xl relative flex items-center justify-center">
+                            <div className="absolute -top-1 -left-1 w-5 h-5 border-t-3 border-l-3 border-[#C59B27] rounded-tl-md"></div>
+                            <div className="absolute -top-1 -right-1 w-5 h-5 border-t-3 border-r-3 border-[#C59B27] rounded-tr-md"></div>
+                            <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-3 border-l-3 border-[#C59B27] rounded-bl-md"></div>
+                            <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-3 border-r-3 border-[#C59B27] rounded-br-md"></div>
+
+                            <div className="absolute w-full h-0.5 bg-gradient-to-r from-transparent via-[#C59B27] to-transparent top-0 animate-bounce"></div>
+                          </div>
+                        </div>
+
+                        {/* Camera Controls Overlay */}
+                        <div className="absolute top-3 right-3 flex items-center space-x-2 z-10">
+                          {cameras.length > 1 && (
                             <button
                               type="button"
-                              onClick={() => setManualCode('')}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-600 rounded-full hover:bg-stone-100"
+                              onClick={handleFlipCamera}
+                              className="p-1.5 bg-white/90 text-stone-900 rounded-lg transition-all cursor-pointer flex items-center space-x-1 shadow-xs font-sans font-medium text-[10px]"
+                              title="Flip Camera"
                             >
-                              <X className="h-3 w-3" />
+                              <RefreshCw className="h-3 w-3" />
+                              <span>Flip</span>
                             </button>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => setCameraActive(false)}
+                            className="p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors cursor-pointer"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-4 z-10">
+                        <div className="space-y-1">
+                          <p className="text-white font-sans font-semibold text-base">Scan a child pass or wristband to begin.</p>
+                          <p className="text-xs font-sans text-white/70 max-w-[240px] mx-auto leading-relaxed">
+                            Use the scanner input above or activate camera to scan child pass QR code.
+                          </p>
                         </div>
 
                         <button
-                          type="submit"
-                          disabled={scanLoading || !manualCode}
-                          className="px-3.5 bg-stone-900 hover:bg-stone-800 disabled:bg-stone-100 disabled:text-stone-400 text-white font-sans font-medium text-xs rounded-lg transition-colors cursor-pointer flex items-center justify-center shrink-0"
+                          type="button"
+                          onClick={() => setCameraActive(true)}
+                          className="px-5 py-2.5 bg-white text-stone-900 font-sans font-semibold text-xs rounded-full hover:bg-stone-100 transition-colors shadow-sm flex items-center space-x-2 cursor-pointer"
                         >
-                          {scanLoading ? (
-                            <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                          ) : (
-                            <span>Verify</span>
-                          )}
+                          <Camera className="h-4 w-4" />
+                          <span>Scan with camera</span>
                         </button>
-                      </form>
+                      </div>
                     )}
                   </div>
                 </div>
               )}
 
               {/* Child Search Field */}
-              <div className="space-y-1.5">
-                <h3 className="font-sans font-medium text-xs text-stone-500">Find a child</h3>
+              <div className="space-y-1.5 pt-2">
+                <h3 className="font-sans font-medium text-xs text-stone-500">Find a child by name</h3>
                 <form 
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -3919,6 +4131,22 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
             </div>
           )
+        )}
+
+        {cleanRoute === '/volunteer/wristbands' && (
+          <WristbandAssignmentDesk
+            eventId={eventDetails?.id}
+            actorRole="volunteer"
+            volunteerProfile={volunteerProfile}
+            dutyAssignment={currentDutyLocation}
+            initialChild={wristbandInitialChild}
+            onContinueToCheckIn={(child) => {
+              setLookedUpChild(child);
+              setScanMode('check_in');
+              onNavigate('/volunteer/scan');
+            }}
+            onNavigate={onNavigate}
+          />
         )}
 
         {cleanRoute === '/volunteer/pickup' && (
@@ -4720,19 +4948,6 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </div>
             ) : (
               <div className="space-y-3.5 animate-fade-in pb-12 max-w-md mx-auto" data-view-version="volunteer-child-profile-v3-refined">
-                
-                {/* Back to children directory */}
-                <div className="flex items-center justify-between pb-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedChildId(null)}
-                    className="inline-flex items-center space-x-1.5 text-xs font-sans font-medium text-zinc-600 hover:text-zinc-900 transition-colors py-1 cursor-pointer"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                    <span>Back to children</span>
-                  </button>
-                </div>
-
                 {/* Main Profile Card */}
                 <div className="bg-white border border-zinc-200/80 rounded-2xl shadow-xs overflow-hidden divide-y divide-zinc-100">
                   
@@ -7136,7 +7351,6 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
       {cleanRoute === '/volunteer/readiness' && (
         <DeviceReadinessView 
-          onBack={() => onNavigate('/volunteer/event')}
           userRole="volunteer"
           volunteerProfile={volunteerProfile}
         />
@@ -7502,113 +7716,115 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         </div>
       )}
 
-      {/* Persistent Bottom Tab Bar */}
+      {/* Persistent Bottom Tab Bar (Mobile / Tablet) */}
       <nav
-        className="fixed bottom-0 left-0 right-0 h-16 bg-white/95 backdrop-blur-md border-t border-stone-200/80 px-2 py-1 flex items-center justify-around z-20 shadow-xs"
+        className="fixed bottom-0 left-0 right-0 z-20 bg-white/95 backdrop-blur-md border-t border-stone-200/80 shadow-xs lg:hidden"
         data-component-version="volunteer-navigation-v3-safe-routing"
         aria-label="Volunteer navigation"
       >
-        <button
-          onClick={() => onNavigate('/volunteer/event')}
-          className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
-            cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup' 
-              ? 'text-[#C59B27]' 
-              : 'text-stone-400 hover:text-stone-600'
-          }`}
-        >
-          <Calendar className="h-5 w-5 stroke-[1.75]" />
-          <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
-            cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
-          }`}>
-            Events
-          </span>
-        </button>
-        
-        <button
-          onClick={() => {
-            setCameraActive(true);
-            onNavigate('/volunteer/scan');
-          }}
-          className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
-            cleanRoute === '/volunteer/scan' 
-              ? 'text-[#C59B27]' 
-              : 'text-stone-400 hover:text-stone-600'
-          }`}
-        >
-          <QrCode className="h-5 w-5 stroke-[1.75]" />
-          <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
-            cleanRoute === '/volunteer/scan' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
-          }`}>
-            Scan
-          </span>
-        </button>
-
-        <button
-          onClick={() => onNavigate('/volunteer/children')}
-          className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
-            cleanRoute === '/volunteer/children' 
-              ? 'text-[#C59B27]' 
-              : 'text-stone-400 hover:text-stone-600'
-          }`}
-        >
-          <Users className="h-5 w-5 stroke-[1.75]" />
-          <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
-            cleanRoute === '/volunteer/children' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
-          }`}>
-            Children
-          </span>
-        </button>
-
-        <button
-          onClick={() => onNavigate('/volunteer/reports')}
-          className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
-            cleanRoute === '/volunteer/reports' 
-              ? 'text-[#C59B27]' 
-              : 'text-stone-400 hover:text-stone-600'
-          }`}
-        >
-          <BarChart3 className="h-5 w-5 stroke-[1.75]" />
-          <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
-            cleanRoute === '/volunteer/reports' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
-          }`}>
-            Summary
-          </span>
-        </button>
-
-        {volunteerProfile && (
+        <div className="max-w-md mx-auto w-full h-16 px-2 py-1 flex items-center justify-around">
           <button
-            onClick={() => onNavigate('/volunteer/team-alerts')}
-            data-component-version="volunteer-dashboard-icon-route-v2"
+            onClick={() => onNavigate('/volunteer/event')}
             className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
-              cleanRoute === '/volunteer/team-alerts' 
-                ? 'text-[#C59B27]' 
+              cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup'
+                ? 'text-[#C59B27]'
                 : 'text-stone-400 hover:text-stone-600'
             }`}
           >
-            <ShieldAlert className="h-5 w-5 stroke-[1.75]" />
+            <Calendar className="h-5 w-5 stroke-[1.75]" />
             <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
-              cleanRoute === '/volunteer/team-alerts' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
+              cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
             }`}>
-              Safety
+              Events
             </span>
           </button>
-        )}
 
-        <button
-          onClick={() => onNavigate('/volunteer/profile')}
-          className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
-            cleanRoute === '/volunteer/profile' 
-              ? 'text-[#C59B27]' 
-              : 'text-stone-400 hover:text-stone-600'
-          }`}
-        >
-          <User className="h-5 w-5 stroke-[1.75]" />
-          <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
-            cleanRoute === '/volunteer/profile' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
-          }`}>
-            Profile
-          </span>
-        </button>
+          <button
+            onClick={() => {
+              setCameraActive(true);
+              onNavigate('/volunteer/scan');
+            }}
+            className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
+              cleanRoute === '/volunteer/scan'
+                ? 'text-[#C59B27]'
+                : 'text-stone-400 hover:text-stone-600'
+            }`}
+          >
+            <QrCode className="h-5 w-5 stroke-[1.75]" />
+            <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
+              cleanRoute === '/volunteer/scan' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
+            }`}>
+              Scan
+            </span>
+          </button>
+
+          <button
+            onClick={() => onNavigate('/volunteer/children')}
+            className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
+              cleanRoute === '/volunteer/children'
+                ? 'text-[#C59B27]'
+                : 'text-stone-400 hover:text-stone-600'
+            }`}
+          >
+            <Users className="h-5 w-5 stroke-[1.75]" />
+            <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
+              cleanRoute === '/volunteer/children' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
+            }`}>
+              Children
+            </span>
+          </button>
+
+          <button
+            onClick={() => onNavigate('/volunteer/reports')}
+            className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
+              cleanRoute === '/volunteer/reports'
+                ? 'text-[#C59B27]'
+                : 'text-stone-400 hover:text-stone-600'
+            }`}
+          >
+            <BarChart3 className="h-5 w-5 stroke-[1.75]" />
+            <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
+              cleanRoute === '/volunteer/reports' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
+            }`}>
+              Summary
+            </span>
+          </button>
+
+          {volunteerProfile && (
+            <button
+              onClick={() => onNavigate('/volunteer/team-alerts')}
+              data-component-version="volunteer-dashboard-icon-route-v2"
+              className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
+                cleanRoute === '/volunteer/team-alerts'
+                  ? 'text-[#C59B27]'
+                  : 'text-stone-400 hover:text-stone-600'
+              }`}
+            >
+              <ShieldAlert className="h-5 w-5 stroke-[1.75]" />
+              <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
+                cleanRoute === '/volunteer/team-alerts' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
+              }`}>
+                Safety
+              </span>
+            </button>
+          )}
+
+          <button
+            onClick={() => onNavigate('/volunteer/profile')}
+            className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
+              cleanRoute === '/volunteer/profile'
+                ? 'text-[#C59B27]'
+                : 'text-stone-400 hover:text-stone-600'
+            }`}
+          >
+            <User className="h-5 w-5 stroke-[1.75]" />
+            <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
+              cleanRoute === '/volunteer/profile' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
+            }`}>
+              Profile
+            </span>
+          </button>
+        </div>
       </nav>
 
       {/* MANUAL LOCATION SELECT MODAL */}

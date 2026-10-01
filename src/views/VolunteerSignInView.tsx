@@ -238,22 +238,22 @@ export const VolunteerSignInView: React.FC<VolunteerSignInViewProps> = ({
       maxWidth="md"
     >
       <div className="flex justify-center">
-        <div className="w-14 h-14 rounded-2xl bg-[#FAF6EC] text-[#C59B27] flex items-center justify-center shadow-inner border border-[#E5D5AE]">
+        <div className="w-14 h-14 rounded-2xl bg-[#FAF6EC] dark:bg-[#21211E] text-[#C59B27] flex items-center justify-center shadow-inner border border-[#E5D5AE] dark:border-[#302E29]">
           <KeyRound className="w-7 h-7" />
         </div>
       </div>
 
       <div className="text-center space-y-2">
-        <h1 className="type-h1-app text-[#18181B]">
+        <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
           Volunteer Access
         </h1>
-        <p id="volunteer-signin-subtitle" className="text-sm text-[#52525B] leading-relaxed max-w-sm mx-auto">
+        <p id="volunteer-signin-subtitle" className="text-sm text-[#52525B] dark:text-[#B8B0A5] leading-relaxed max-w-sm mx-auto">
           Sign in to support Children and Teens check-in, pickup, and care during the event.
         </p>
       </div>
 
       {error && (
-        <div className="bg-red-50/50 border border-red-200/60 text-red-600 p-3.5 rounded-2xl text-xs font-medium text-center">
+        <div className="bg-red-50/50 dark:bg-red-950/20 border border-red-200/60 dark:border-red-900/40 text-red-600 dark:text-red-400 p-3.5 rounded-2xl text-xs font-medium text-center">
           {error}
         </div>
       )}
@@ -314,9 +314,9 @@ export const VolunteerSignInView: React.FC<VolunteerSignInViewProps> = ({
 
         {/* Passkey Sign In */}
         <div className="relative flex py-2 items-center">
-          <div className="flex-grow border-t border-[#EAE8E1]"></div>
-          <span className="flex-shrink mx-4 text-[10px] text-zinc-400 font-semibold uppercase tracking-wider">or</span>
-          <div className="flex-grow border-t border-[#EAE8E1]"></div>
+          <div className="flex-grow border-t border-[#EAE8E1] dark:border-[#302E29]"></div>
+          <span className="flex-shrink mx-4 text-[10px] text-zinc-400 dark:text-[#7A7570] font-semibold uppercase tracking-wider">or</span>
+          <div className="flex-grow border-t border-[#EAE8E1] dark:border-[#302E29]"></div>
         </div>
 
         <div className="space-y-1 text-center">
@@ -327,7 +327,7 @@ export const VolunteerSignInView: React.FC<VolunteerSignInViewProps> = ({
             variant="outline"
             fullWidth
             data-component-version="passkey-native-auth-prompt-v2"
-            className="border-[#C59B27] text-[#C59B27] hover:bg-[#FAF6EC] py-3 text-sm font-semibold rounded-xl flex items-center justify-center space-x-1.5"
+            className="border-[#C59B27] text-[#C59B27] hover:bg-[#FAF6EC] dark:hover:bg-[#21211E] py-3 text-sm font-semibold rounded-xl flex items-center justify-center space-x-1.5"
           >
             {passkeyLoading ? (
               <span className="flex items-center justify-center gap-2">
@@ -341,27 +341,27 @@ export const VolunteerSignInView: React.FC<VolunteerSignInViewProps> = ({
               </span>
             )}
           </Button>
-          <p className="text-[11px] text-[#71717A]">
+          <p className="text-[11px] text-[#71717A] dark:text-[#7A7570]">
             Use your fingerprint, face, screen lock or device PIN.
           </p>
         </div>
       </form>
 
-      <div className="text-center space-y-3 pt-4 border-t border-[#EAE8E1]">
-        <p className="text-xs text-gray-500">
+      <div className="text-center space-y-3 pt-4 border-t border-[#EAE8E1] dark:border-[#302E29]">
+        <p className="text-xs text-gray-500 dark:text-[#B8B0A5]">
           Want to join the team?{' '}
           <button
             onClick={() => onNavigate('/volunteer/create-account')}
-            className="text-[#C59B27] font-semibold hover:underline cursor-pointer focus:outline-none"
+            className="text-[#C59B27] dark:text-[#D4AF37] font-semibold hover:underline cursor-pointer focus:outline-none"
           >
             Create a volunteer account
           </button>
         </p>
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-gray-400 dark:text-[#7A7570]">
           Are you a parent?{' '}
           <button
             onClick={() => onNavigate('/parent/sign-in')}
-            className="text-gray-500 font-semibold hover:underline cursor-pointer focus:outline-none"
+            className="text-gray-500 dark:text-[#B8B0A5] font-semibold hover:underline cursor-pointer focus:outline-none"
           >
             Sign in to Parent Access
           </button>

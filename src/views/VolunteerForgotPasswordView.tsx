@@ -122,28 +122,28 @@ export const VolunteerForgotPasswordView: React.FC<VolunteerForgotPasswordViewPr
       maxWidth="md"
     >
       <div className="flex justify-center">
-        <div className="w-14 h-14 rounded-2xl bg-[#FAF6EC] text-[#C59B27] flex items-center justify-center shadow-inner border border-[#E5D5AE]">
+        <div className="w-14 h-14 rounded-2xl bg-[#FAF6EC] dark:bg-[#21211E] text-[#C59B27] flex items-center justify-center shadow-inner border border-[#E5D5AE] dark:border-[#302E29]">
           <KeyRound className="w-7 h-7" />
         </div>
       </div>
 
       <div className="text-center space-y-2">
-        <h1 className="type-h1-app text-[#18181B]">
+        <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
           Forgot password?
         </h1>
-        <p className="text-sm text-[#52525B] leading-relaxed max-w-sm mx-auto">
+        <p className="text-sm text-[#52525B] dark:text-[#B8B0A5] leading-relaxed max-w-sm mx-auto">
           Enter the email connected to your Volunteer Access. We’ll send steps to help you continue.
         </p>
       </div>
 
       {error && (
-        <div className="bg-red-50/50 border border-red-200/60 text-red-600 p-3.5 rounded-2xl text-xs font-medium text-center">
+        <div className="bg-red-50/50 dark:bg-red-950/30 border border-red-200/60 dark:border-red-900/40 text-red-600 dark:text-red-400 p-3.5 rounded-2xl text-xs font-medium text-center">
           {error}
         </div>
       )}
 
       {cooldown > 0 && !submitted && (
-        <div className="bg-amber-50/50 border border-amber-200/60 text-amber-800 p-3.5 rounded-2xl text-xs font-medium text-center">
+        <div className="bg-amber-50/50 dark:bg-[#21211E] border border-amber-200/60 dark:border-[#302E29] text-amber-800 dark:text-[#C59B27] p-3.5 rounded-2xl text-xs font-medium text-center">
           Please wait {cooldown}s before requesting another reset link.
         </div>
       )}
@@ -189,27 +189,27 @@ export const VolunteerForgotPasswordView: React.FC<VolunteerForgotPasswordViewPr
           </div>
         </form>
       ) : (
-        <div className="bg-[#FFFDF9] rounded-2xl p-6 border border-[#EBE3D3]/70 space-y-6 text-center animate-fade-in">
+        <div className="bg-[#FFFDF9] dark:bg-[#1D1D1A] rounded-2xl p-6 border border-[#EBE3D3]/70 dark:border-[#302E29] space-y-6 text-center animate-fade-in">
           <div className="flex justify-center">
             {emailSent ? (
-              <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
+              <div className="w-16 h-16 rounded-full bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
                 <CheckCircle2 className="w-10 h-10 stroke-[1.5]" />
               </div>
             ) : (
-              <div className="w-16 h-16 rounded-full bg-gray-50 border border-gray-100 flex items-center justify-center text-gray-400">
+              <div className="w-16 h-16 rounded-full bg-gray-50 dark:bg-[#21211E] border border-gray-100 dark:border-[#302E29] flex items-center justify-center text-gray-400 dark:text-[#7A7570]">
                 <Mail className="w-8 h-8 stroke-[1.5]" />
               </div>
             )}
           </div>
           
-          <p className="text-sm text-[#52525B] leading-relaxed max-w-sm mx-auto">
+          <p className="text-sm text-[#52525B] dark:text-[#B8B0A5] leading-relaxed max-w-sm mx-auto">
             {emailSent 
               ? "A reset link has been sent. Please check your inbox and spam folder."
               : "If this email is connected to Volunteer Access, a reset link will be sent."}
           </p>
 
           {email && (
-            <div className="inline-flex items-center justify-center bg-[#FAF6EC] border border-[#EBE3D3] rounded-full py-1.5 px-4 text-xs font-medium text-[#715D3A] break-all max-w-full">
+            <div className="inline-flex items-center justify-center bg-[#FAF6EC] dark:bg-[#21211E] border border-[#EBE3D3] dark:border-[#302E29] rounded-full py-1.5 px-4 text-xs font-medium text-[#715D3A] dark:text-[#C59B27] break-all max-w-full">
               {emailSent ? `Sent to: ${email}` : `Target: ${email}`}
             </div>
           )}
@@ -240,19 +240,19 @@ export const VolunteerForgotPasswordView: React.FC<VolunteerForgotPasswordViewPr
 
       {/* Bottom helper box */}
       {!submitted && (
-        <div className="bg-[#FAF6EC] border border-[#EBE3D3] rounded-[16px] p-4 flex items-start space-x-3 shadow-sm text-left">
+        <div className="bg-[#FAF6EC] dark:bg-[#21211E] border border-[#EBE3D3] dark:border-[#302E29] rounded-[16px] p-4 flex items-start space-x-3 shadow-sm text-left">
           <Info className="w-5 h-5 text-[#B89047] shrink-0 mt-0.5" />
-          <p className="text-xs text-[#52525B] leading-relaxed">
+          <p className="text-xs text-[#52525B] dark:text-[#B8B0A5] leading-relaxed">
             After you receive the email, follow the steps to create a new password.
           </p>
         </div>
       )}
 
       {/* Back link */}
-      <div className="pt-4 border-t border-[#EBE3D3] text-center shrink-0">
+      <div className="pt-4 border-t border-[#EBE3D3] dark:border-[#302E29] text-center shrink-0">
         <button
           onClick={() => onNavigate('/volunteer/sign-in')}
-          className="inline-flex items-center text-xs font-semibold text-[#6B7280] hover:text-[#262626] cursor-pointer focus:outline-none"
+          className="inline-flex items-center text-xs font-semibold text-[#6B7280] dark:text-[#B8B0A5] hover:text-[#262626] dark:hover:text-[#F0EBE3] cursor-pointer focus:outline-none"
         >
           <ChevronLeft className="w-3.5 h-3.5 mr-1" />
           Back to Volunteer Sign In

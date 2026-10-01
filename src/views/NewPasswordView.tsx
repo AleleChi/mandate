@@ -185,35 +185,35 @@ export const NewPasswordView: React.FC<NewPasswordViewProps> = ({ onNavigate }) 
     >
       <div className="space-y-6 text-center">
         <div>
-          <h1 className="text-2xl font-serif-koinonia font-bold text-[#18181B]">
+          <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
             Create new password
           </h1>
-          <p className="text-xs text-[#6B7280] mt-1.5 leading-relaxed">
+          <p className="text-xs text-[#6B7280] dark:text-[#B8B0A5] mt-1.5 leading-relaxed">
             Choose a new secure password for your parent access account.
           </p>
         </div>
 
         {error && (
-          <div className="bg-red-50 text-red-600 p-3 rounded-xl text-xs font-medium">
+          <div className="bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 p-3 rounded-xl text-xs font-medium">
             {error}
           </div>
         )}
 
         {success ? (
-          <div className="bg-[#ECFDF5] border border-[#A7F3D0] p-5 rounded-2xl text-center space-y-2">
+          <div className="bg-[#ECFDF5] dark:bg-emerald-950/20 border border-[#A7F3D0] dark:border-emerald-800/40 p-5 rounded-2xl text-center space-y-2">
             <ShieldCheck className="w-8 h-8 text-[#059669] mx-auto" />
-            <h3 className="text-sm font-bold text-[#065F46]">Password updated successfully</h3>
-            <p className="text-xs text-[#065F46]/80">Redirecting to sign in...</p>
+            <h3 className="text-sm font-bold text-[#065F46] dark:text-emerald-300">Password updated successfully</h3>
+            <p className="text-xs text-[#065F46]/80 dark:text-emerald-400/80">Redirecting to sign in...</p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4 text-left">
             <div className="space-y-1 relative">
               <div className="flex justify-between items-center -mb-7 relative z-10">
-                <span className="text-sm font-semibold text-[#262626]"></span>
+                <span className="text-sm font-semibold text-[#262626] dark:text-[#F0EBE3]"></span>
                 <button
                   type="button"
                   onClick={handleSuggestPassword}
-                  className="text-xs font-semibold text-[#B89047] hover:underline focus:outline-none cursor-pointer"
+                  className="text-xs font-semibold text-[#B89047] dark:text-[#D4AF37] hover:underline focus:outline-none cursor-pointer"
                 >
                   Suggest strong password
                 </button>
@@ -233,7 +233,7 @@ export const NewPasswordView: React.FC<NewPasswordViewProps> = ({ onNavigate }) 
             </div>
 
             {showPasswordNotice && (
-              <div className="bg-[#FAF6EC] border border-[#EBE3D3] text-[#9A7326] p-3 rounded-xl text-xs font-medium flex items-center justify-between shadow-sm">
+              <div className="bg-[#FAF6EC] dark:bg-[#21211E] border border-[#EBE3D3] dark:border-[#302E29] text-[#9A7326] dark:text-[#D4AF37] p-3 rounded-xl text-xs font-medium flex items-center justify-between shadow-sm">
                 <span>Strong password added. Please keep it somewhere safe.</span>
                 <button
                   type="button"
@@ -278,10 +278,10 @@ export const NewPasswordView: React.FC<NewPasswordViewProps> = ({ onNavigate }) 
           </form>
         )}
 
-        <div className="pt-4 border-t border-[#EAE8E1] text-center">
+        <div className="pt-4 border-t border-[#EAE8E1] dark:border-[#302E29] text-center">
           <button
             onClick={() => onNavigate('/parent/sign-in')}
-            className="text-xs font-semibold text-[#6B7280] hover:text-[#262626] focus:outline-none"
+            className="text-xs font-semibold text-[#6B7280] dark:text-[#B8B0A5] hover:text-[#262626] dark:hover:text-[#F0EBE3] focus:outline-none"
           >
             Back to sign in
           </button>

@@ -22,6 +22,8 @@ export interface EventRow {
   allow_edit_after_submission?: number | boolean;
   volunteer_registration_opens_at?: string;
   volunteer_registration_closes_at?: string;
+  minimum_age?: number | null;
+  maximum_age?: number | null;
   capacity?: number;
   created_at?: string;
   updated_at?: string;

@@ -1312,6 +1312,20 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                     >
                                       <Edit2 className="w-3.5 h-3.5" />
                                     </button>
+                                    {isSuperAdmin && member.status !== 'revoked' && (
+                                      <button
+                                        type="button"
+                                        title="Remove team member"
+                                        disabled={isRemovingAccess}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setRemovingMember(member);
+                                        }}
+                                        className="text-zinc-400 dark:text-[#7A7570] hover:text-red-600 dark:hover:text-red-400 p-1 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors inline-flex cursor-pointer"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
                                   </div>
                                 </td>
                               </tr>
@@ -1581,16 +1595,20 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                           )}
 
                           {/* Super Admin: Remove Member Access (Permanent) */}
-                          {isSuperAdmin && !Boolean(
-                            selectedMember && adminUser && (
-                              selectedMember.id === adminUser.id ||
-                              (selectedMember.email && adminUser.email && selectedMember.email.toLowerCase() === adminUser.email.toLowerCase())
-                            )
-                          ) && (
+                          {isSuperAdmin && (
                             <div className="pt-3 border-t border-[#EAE8E1] dark:border-[#302E29] flex items-center justify-between">
-                              {selectedMember.role === 'super_admin' && teamMembers.filter(m => m.role === 'super_admin' && (m.status === 'active' || !m.status)).length <= 1 ? (
+                              {Boolean(
+                                selectedMember && adminUser && (
+                                  selectedMember.id === adminUser.id ||
+                                  (selectedMember.email && adminUser.email && selectedMember.email.toLowerCase() === adminUser.email.toLowerCase())
+                                )
+                              ) ? (
                                 <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] italic">
-                                  Cannot remove the only active Super Administrator.
+                                  You cannot remove your own access while signed in.
+                                </span>
+                              ) : selectedMember.role === 'super_admin' && selectedMember.status === 'active' && teamMembers.filter(m => m.role === 'super_admin' && m.status === 'active').length <= 1 ? (
+                                <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] italic">
+                                  This Super Admin cannot be removed because at least one Super Admin must remain.
                                 </span>
                               ) : (
                                 <button
@@ -1600,7 +1618,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                   className="text-xs font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50/80 dark:hover:bg-red-950/30 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1.5"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
-                                  <span>Remove access</span>
+                                  <span>Remove team member</span>
                                 </button>
                               )}
                             </div>
@@ -1620,11 +1638,37 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                     <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl max-w-sm w-full p-6 shadow-xl border border-[#EAE8E1] dark:border-[#302E29] space-y-4 animate-in zoom-in-95 duration-150 font-sans">
                       <div className="space-y-1.5">
                         <h3 className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">
-                          Remove access?
+                          {removingMember.role === 'super_admin' ? 'Remove Super Admin?' : 'Remove team member?'}
                         </h3>
-                        <p className="text-xs text-stone-600 dark:text-[#B8B0A5] leading-relaxed">
-                          <strong className="text-stone-900 dark:text-[#F0EBE3]">{removingMember.fullName || removingMember.email}</strong> will no longer be able to sign in to the admin area.
-                        </p>
+                        {Boolean(
+                          adminUser && (
+                            removingMember.id === adminUser.id ||
+                            (removingMember.email && adminUser.email && removingMember.email.toLowerCase() === adminUser.email.toLowerCase())
+                          )
+                        ) ? (
+                          <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 p-2.5 rounded-lg border border-amber-200 dark:border-amber-900/40 leading-relaxed">
+                            You cannot remove your own access while signed in.
+                          </p>
+                        ) : removingMember.role === 'super_admin' && removingMember.status === 'active' && teamMembers.filter(m => m.role === 'super_admin' && m.status === 'active').length <= 1 ? (
+                          <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 p-2.5 rounded-lg border border-amber-200 dark:border-amber-900/40 leading-relaxed">
+                            This Super Admin cannot be removed because at least one Super Admin must remain.
+                          </p>
+                        ) : (
+                          <div className="text-xs text-stone-600 dark:text-[#B8B0A5] leading-relaxed space-y-1.5">
+                            {removingMember.role === 'super_admin' ? (
+                              <>
+                                <p>This will remove Super Admin access for:</p>
+                                <p className="font-semibold text-stone-900 dark:text-[#F0EBE3]">{removingMember.email || removingMember.fullName}</p>
+                              </>
+                            ) : (
+                              <>
+                                <p>You are about to remove Admin access for:</p>
+                                <p className="font-semibold text-stone-900 dark:text-[#F0EBE3]">{removingMember.email || removingMember.fullName}</p>
+                                <p>They will no longer be able to access the Admin portal.</p>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#EAE8E1] dark:border-[#302E29]">
@@ -1636,15 +1680,22 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         >
                           Cancel
                         </button>
-                        <button
-                          type="button"
-                          disabled={isRemovingAccess}
-                          onClick={handleConfirmRemoveAccess}
-                          className="px-3.5 py-2 text-xs font-medium rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                        >
-                          {isRemovingAccess && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                          <span>Remove access</span>
-                        </button>
+                        {!Boolean(
+                          adminUser && (
+                            removingMember.id === adminUser.id ||
+                            (removingMember.email && adminUser.email && removingMember.email.toLowerCase() === adminUser.email.toLowerCase())
+                          )
+                        ) && !(removingMember.role === 'super_admin' && removingMember.status === 'active' && teamMembers.filter(m => m.role === 'super_admin' && m.status === 'active').length <= 1) && (
+                          <button
+                            type="button"
+                            disabled={isRemovingAccess}
+                            onClick={handleConfirmRemoveAccess}
+                            className="px-3.5 py-2 text-xs font-medium rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                          >
+                            {isRemovingAccess && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                            <span>Remove access</span>
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>

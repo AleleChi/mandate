@@ -33,8 +33,12 @@ import {
   Heart,
   User,
   Smartphone,
-  CloudOff
+  CloudOff,
+  Tag,
+  Layers
 } from 'lucide-react';
+import { WristbandAssignmentDesk } from '../../components/wristbands/WristbandAssignmentDesk';
+import { WristbandInventoryWorkspace } from '../../components/wristbands/WristbandInventoryWorkspace';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { useAlertAudioPreferences } from '../../hooks/useAlertAudioPreferences';
@@ -69,7 +73,7 @@ import { EventAutomationsInbox } from '../../components/admin/EventAutomationsIn
 import { OperationsAssistantModal } from '../../components/admin/OperationsAssistantModal';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 
-type AdminTab = 'overview' | 'events' | 'applications' | 'review' | 'children' | 'attendance' | 'reports' | 'messages' | 'settings' | 'volunteers' | 'parents' | 'duty_devices' | 'incidents' | 'escalations' | 'operations' | 'training';
+type AdminTab = 'overview' | 'events' | 'applications' | 'review' | 'children' | 'attendance' | 'wristbands' | 'wristbands_inventory' | 'reports' | 'messages' | 'settings' | 'volunteers' | 'parents' | 'duty_devices' | 'incidents' | 'escalations' | 'operations' | 'training';
 
 interface AdminOverviewViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -1168,6 +1172,10 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       onNavigate('/admin/escalations');
     } else if (tab === 'operations') {
       onNavigate('/admin/operations');
+    } else if (tab === 'wristbands_inventory') {
+      onNavigate('/admin/wristbands/inventory');
+    } else if (tab === 'wristbands') {
+      onNavigate('/admin/wristbands');
     }
   };
 
@@ -1370,6 +1378,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             { id: 'review', label: 'Review', icon: ShieldAlert },
             { id: 'children', label: 'Children', icon: Users },
             { id: 'attendance', label: 'Attendance', icon: UserCheck },
+            { id: 'wristbands_inventory', label: 'Wristband Inventory', icon: Layers },
+            { id: 'wristbands', label: 'Wristband Desk', icon: Tag },
             { id: 'incidents', label: 'Incident Desk', icon: Shield },
             { id: 'escalations', label: 'Escalation Policies', icon: ShieldAlert },
             { id: 'reports', label: 'Reports', icon: TrendingUp },
@@ -3612,6 +3622,28 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               onBackToOverview={() => handleTabChange('overview')}
               onNavigate={onNavigate}
               adminUser={adminUser}
+            />
+          )}
+
+          {/* WRISTBANDS INVENTORY WORKSPACE PANEL (PHASE 4A) */}
+          {activeTab === 'wristbands_inventory' && (
+            <WristbandInventoryWorkspace
+              eventId={overviewData?.event?.id || overviewData?.currentEvent?.id}
+              adminUser={adminUser}
+              onNavigate={onNavigate}
+              onSwitchToDesk={() => handleTabChange('wristbands')}
+            />
+          )}
+
+          {/* WRISTBANDS ASSIGNMENT DESK PANEL */}
+          {activeTab === 'wristbands' && (
+            <WristbandAssignmentDesk
+              eventId={overviewData?.event?.id || overviewData?.currentEvent?.id}
+              actorRole="admin"
+              adminUser={adminUser}
+              onBack={() => handleTabChange('overview')}
+              onContinueToCheckIn={() => handleTabChange('attendance')}
+              onNavigate={onNavigate}
             />
           )}
 

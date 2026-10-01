@@ -29,6 +29,22 @@ import {
   processQueuedWhatsAppJobs,
   isWhatsAppInProcessWorkerEnabled
 } from '../services/whatsapp';
+import {
+  provisionWristband,
+  lookupWristbandByNfcUid,
+  bindWristbandToChild,
+  deactivateWristbandAssignment,
+  replaceWristband,
+  WristbandDomainError,
+  getWristbandInventory,
+  previewBulkImportWristbands,
+  executeBulkImportWristbands,
+  getWristbandsForPrint,
+  verifyWristbandTag,
+  prepareWristband,
+  verifyWristband,
+  assertCanProvisionWristband
+} from '../services/wristbandService';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -208,7 +224,7 @@ async function validateChildSelectionCapacity(
 }
 
 // Public Auth Endpoints for Admin Access
-router.post('/sign-in', async (req, res) => {
+router.post(['/sign-in', '/login'], async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -223,6 +239,14 @@ router.post('/sign-in', async (req, res) => {
         success: false,
         code: 'INVALID_CREDENTIALS',
         message: 'Email or password is incorrect.'
+      });
+    }
+
+    if (user.status === 'suspended' || user.status === 'revoked' || user.status === 'disabled') {
+      return res.status(403).json({
+        success: false,
+        code: 'ACCOUNT_BLOCKED',
+        message: 'Your account has been deactivated or revoked. Please contact event administration.'
       });
     }
 
@@ -3569,6 +3593,8 @@ router.get('/events/:eventId', async (req: AuthenticatedRequest, res: Response) 
     status: event.status,
     capacity: totalCap,
     eventCapacity: totalCap,
+    minimumAge: event.minimum_age !== null && event.minimum_age !== undefined ? Number(event.minimum_age) : null,
+    maximumAge: event.maximum_age !== null && event.maximum_age !== undefined ? Number(event.maximum_age) : null,
     volunteerRegistrationOpensAt: event.volunteer_registration_opens_at || null,
     volunteerRegistrationClosesAt: event.volunteer_registration_closes_at || null,
     volunteerAccessOpensAt: event.volunteer_registration_opens_at || null,
@@ -3610,6 +3636,8 @@ router.get('/events/:eventId', async (req: AuthenticatedRequest, res: Response) 
       description: event.description,
       capacity: totalCap,
       eventCapacity: totalCap,
+      minimumAge: event.minimum_age !== null && event.minimum_age !== undefined ? Number(event.minimum_age) : null,
+      maximumAge: event.maximum_age !== null && event.maximum_age !== undefined ? Number(event.maximum_age) : null,
       volunteerRegistrationOpensAt: event.volunteer_registration_opens_at || null,
       volunteerRegistrationClosesAt: event.volunteer_registration_closes_at || null,
       volunteerAccessOpensAt: event.volunteer_registration_opens_at || null,
@@ -3748,6 +3776,8 @@ router.get('/events', async (req: AuthenticatedRequest, res: Response) => {
         totalCapacity,
         capacity: totalCap,
         eventCapacity: totalCap,
+        minimumAge: event.minimum_age !== null && event.minimum_age !== undefined ? Number(event.minimum_age) : null,
+        maximumAge: event.maximum_age !== null && event.maximum_age !== undefined ? Number(event.maximum_age) : null,
         volunteerRegistrationOpensAt: event.volunteer_registration_opens_at || null,
         volunteerRegistrationClosesAt: event.volunteer_registration_closes_at || null,
         volunteerAccessOpensAt: event.volunteer_registration_opens_at || null,
@@ -3792,6 +3822,10 @@ router.post('/events', async (req: AuthenticatedRequest, res: Response) => {
       volunteerAccessClosesAt,
       capacity,
       eventCapacity,
+      minimumAge,
+      maximumAge,
+      minimum_age,
+      maximum_age,
       status = 'draft',
       ageGroups = []
     } = req.body;
@@ -3828,6 +3862,12 @@ router.post('/events', async (req: AuthenticatedRequest, res: Response) => {
     const resolvedCapacity = capacity !== undefined ? (capacity ? parseInt(String(capacity), 10) : null) : (eventCapacity !== undefined ? (eventCapacity ? parseInt(String(eventCapacity), 10) : null) : null);
     const resolvedVolOpens = volunteerRegistrationOpensAt || volunteerAccessOpensAt || null;
     const resolvedVolCloses = volunteerRegistrationClosesAt || volunteerAccessClosesAt || null;
+    const parsedMinAge = (minimumAge !== undefined && minimumAge !== null && minimumAge !== '')
+      ? parseInt(String(minimumAge), 10)
+      : (minimum_age !== undefined && minimum_age !== null && minimum_age !== '' ? parseInt(String(minimum_age), 10) : null);
+    const parsedMaxAge = (maximumAge !== undefined && maximumAge !== null && maximumAge !== '')
+      ? parseInt(String(maximumAge), 10)
+      : (maximum_age !== undefined && maximum_age !== null && maximum_age !== '' ? parseInt(String(maximum_age), 10) : null);
 
     await execute(`
       INSERT INTO events (
@@ -3837,9 +3877,10 @@ router.post('/events', async (req: AuthenticatedRequest, res: Response) => {
         parents_can_create_account, allow_multiple_children,
         allow_save_and_continue, allow_edit_after_submission,
         volunteer_registration_opens_at, volunteer_registration_closes_at,
+        minimum_age, maximum_age,
         capacity,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       eventId,
       title,
@@ -3859,6 +3900,8 @@ router.post('/events', async (req: AuthenticatedRequest, res: Response) => {
       allowEditAfterSubmission ? 1 : 0,
       resolvedVolOpens,
       resolvedVolCloses,
+      parsedMinAge,
+      parsedMaxAge,
       resolvedCapacity,
       now,
       now
@@ -3917,6 +3960,10 @@ router.patch('/events/:eventId', async (req: AuthenticatedRequest, res: Response
       volunteerRegistrationClosesAt,
       volunteerAccessOpensAt,
       volunteerAccessClosesAt,
+      minimumAge,
+      maximumAge,
+      minimum_age,
+      maximum_age,
       capacity,
       eventCapacity,
       status,
@@ -3944,6 +3991,12 @@ router.patch('/events/:eventId', async (req: AuthenticatedRequest, res: Response
     const resolvedCapacity = capacity !== undefined ? (capacity ? parseInt(String(capacity), 10) : null) : (eventCapacity !== undefined ? (eventCapacity ? parseInt(String(eventCapacity), 10) : null) : event.capacity);
     const resolvedVolOpens = volunteerRegistrationOpensAt !== undefined ? volunteerRegistrationOpensAt : (volunteerAccessOpensAt !== undefined ? volunteerAccessOpensAt : event.volunteer_registration_opens_at);
     const resolvedVolCloses = volunteerRegistrationClosesAt !== undefined ? volunteerRegistrationClosesAt : (volunteerAccessClosesAt !== undefined ? volunteerAccessClosesAt : event.volunteer_registration_closes_at);
+    const resolvedMinAge = minimumAge !== undefined
+      ? (minimumAge === null || minimumAge === '' ? null : parseInt(String(minimumAge), 10))
+      : (minimum_age !== undefined ? (minimum_age === null || minimum_age === '' ? null : parseInt(String(minimum_age), 10)) : (event.minimum_age !== undefined ? event.minimum_age : null));
+    const resolvedMaxAge = maximumAge !== undefined
+      ? (maximumAge === null || maximumAge === '' ? null : parseInt(String(maximumAge), 10))
+      : (maximum_age !== undefined ? (maximum_age === null || maximum_age === '' ? null : parseInt(String(maximum_age), 10)) : (event.maximum_age !== undefined ? event.maximum_age : null));
 
     // Server defence: Ordinary event-detail updates preserve existing lifecycle status.
     // Lifecycle transitions require explicit actions (/publish, /archive, /set-current).
@@ -3966,6 +4019,8 @@ router.patch('/events/:eventId', async (req: AuthenticatedRequest, res: Response
         allow_edit_after_submission = COALESCE(?, allow_edit_after_submission),
         volunteer_registration_opens_at = ?,
         volunteer_registration_closes_at = ?,
+        minimum_age = ?,
+        maximum_age = ?,
         capacity = ?,
         updated_at = ?
       WHERE id = ?
@@ -3987,6 +4042,8 @@ router.patch('/events/:eventId', async (req: AuthenticatedRequest, res: Response
       allowEditAfterSubmission !== undefined ? (allowEditAfterSubmission ? 1 : 0) : null,
       resolvedVolOpens || null,
       resolvedVolCloses || null,
+      resolvedMinAge !== undefined ? resolvedMinAge : null,
+      resolvedMaxAge !== undefined ? resolvedMaxAge : null,
       resolvedCapacity !== undefined ? resolvedCapacity : null,
       now,
       eventId
@@ -4064,6 +4121,572 @@ router.post('/events/:eventId/set-current', async (req: AuthenticatedRequest, re
     console.error('Error setting current event:', err);
     const status = err.statusCode || 500;
     res.status(status).json({ error: err.message || 'Failed to set current event.' });
+  }
+});
+
+// =============================================================================
+// TGA 2026 PHASE 2A: NFC WRISTBAND INVENTORY, LOOKUP & BINDING (ADMIN)
+// =============================================================================
+
+// POST /api/admin/events/:eventId/wristbands (Provision physical wristband into event inventory)
+router.post('/events/:eventId/wristbands', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const { nfcUid, wristbandCode } = req.body || {};
+
+    const wristband = await provisionWristband({
+      eventId,
+      nfcUid,
+      wristbandCode,
+      actor: {
+        id: req.user?.id || '',
+        role: req.user?.role || '',
+        email: req.user?.email || ''
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Wristband provisioned successfully.',
+      wristband
+    });
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error provisioning wristband:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to provision wristband.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// =============================================================================
+// TGA 2026 PHASE 4A: BULK WRISTBAND INVENTORY, IMPORT & PRINT PREPARATION
+// =============================================================================
+
+// GET /api/admin/events/:eventId/wristbands/inventory
+const handleGetWristbandInventory = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const { page, limit, q, search, status, rangeStart, rangeEnd } = req.query as Record<string, string>;
+
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+
+    const result = await getWristbandInventory({
+      eventId,
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 50,
+      search: q || search || '',
+      status: status || 'all',
+      rangeStart,
+      rangeEnd,
+      actor
+    });
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error fetching wristband inventory:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch wristband inventory.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+router.get('/events/:eventId/wristbands/inventory', authMiddleware, handleGetWristbandInventory);
+router.get('/events/:eventId/wristbands', authMiddleware, handleGetWristbandInventory);
+
+// GET & POST /api/admin/events/:eventId/wristbands/print-batch
+const handleGetWristbandsPrintBatch = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const query = req.query as Record<string, string>;
+    const body = req.body || {};
+
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+
+    let ids: string[] | undefined;
+    if (Array.isArray(body.ids)) {
+      ids = body.ids;
+    } else if (typeof query.ids === 'string') {
+      ids = query.ids.split(',').map((s: string) => s.trim()).filter(Boolean);
+    }
+
+    const rangeStart = (body.rangeStart || query.rangeStart) as string | undefined;
+    const rangeEnd = (body.rangeEnd || query.rangeEnd) as string | undefined;
+    const isReprint = body.isReprint === true || query.isReprint === 'true' || query.isReprint === '1';
+    const status = (body.status || query.status || (isReprint ? undefined : 'prepared')) as string | undefined;
+
+    const result = await getWristbandsForPrint({
+      eventId,
+      ids,
+      rangeStart,
+      rangeEnd,
+      status,
+      isReprint,
+      actor
+    });
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error generating wristband print batch:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate wristband print batch.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+router.get('/events/:eventId/wristbands/print-batch', authMiddleware, handleGetWristbandsPrintBatch);
+router.post('/events/:eventId/wristbands/print-batch', authMiddleware, handleGetWristbandsPrintBatch);
+
+// POST /api/admin/events/:eventId/wristbands/bulk-import/preview
+router.post('/events/:eventId/wristbands/bulk-import/preview', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const { rows, csvText } = req.body || {};
+
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+
+    const preview = await previewBulkImportWristbands({
+      eventId,
+      rows,
+      csvText,
+      actor
+    });
+
+    res.json({
+      success: true,
+      preview
+    });
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error previewing bulk wristband import:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to preview bulk import.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// POST /api/admin/events/:eventId/wristbands/bulk-import/execute
+router.post('/events/:eventId/wristbands/bulk-import/execute', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const { rows, csvText, skipErrors } = req.body || {};
+
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+
+    const result = await executeBulkImportWristbands({
+      eventId,
+      rows,
+      csvText,
+      skipErrors: skipErrors !== false,
+      actor
+    });
+
+    res.status(201).json({
+      success: true,
+      result
+    });
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error executing bulk wristband import:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to execute bulk import.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// GET /api/admin/events/:eventId/wristbands/print-batch
+router.get('/events/:eventId/wristbands/print-batch', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const { ids, rangeStart, rangeEnd, status, isReprint } = req.query as Record<string, string>;
+
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+
+    let idList: string[] | undefined;
+    if (ids) {
+      idList = Array.isArray(ids) ? (ids as string[]) : (ids as string).split(',').map(s => s.trim()).filter(Boolean);
+    }
+
+    const result = await getWristbandsForPrint({
+      eventId,
+      ids: idList,
+      rangeStart,
+      rangeEnd,
+      status,
+      isReprint: isReprint === 'true' || isReprint === '1',
+      actor
+    });
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error fetching print batch:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch print batch.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// POST /api/admin/events/:eventId/wristbands/verify-pack
+router.post('/events/:eventId/wristbands/verify-pack', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const { nfcUid } = req.body || {};
+
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+
+    const result = await verifyWristbandTag({
+      eventId,
+      nfcUid,
+      actor
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error verifying wristband tag:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to verify wristband tag.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// =============================================================================
+// TGA 2026 PHASE 4B1: SCAN, PREPARE & PHYSICAL WRISTBAND VERIFICATION (ADMIN)
+// =============================================================================
+
+// POST /api/admin/events/:eventId/wristbands/prepare
+router.post('/events/:eventId/wristbands/prepare', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const { nfcUid } = req.body || {};
+
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+
+    const result = await prepareWristband({
+      eventId,
+      nfcUid,
+      actor
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Wristband prepared successfully.',
+      ...result
+    });
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error preparing wristband:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to prepare wristband.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// POST /api/admin/wristbands/verify & POST /api/admin/events/:eventId/wristbands/verify
+const handleVerifyWristband = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const eventId = req.params.eventId || req.body?.eventId;
+    const { wristbandCode, nfcUid } = req.body || {};
+
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+
+    const result = await verifyWristband({
+      eventId,
+      wristbandCode,
+      nfcUid,
+      actor
+    });
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error verifying wristband:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to verify wristband.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+router.post('/wristbands/verify', authMiddleware, handleVerifyWristband);
+router.post('/events/:eventId/wristbands/verify', authMiddleware, handleVerifyWristband);
+// POST & GET /api/admin/wristbands/lookup (Event-scoped lookup by NFC UID)
+const handleAdminWristbandLookup = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const eventId = (req.body?.eventId || req.query?.eventId || '') as string;
+    const nfcUid = (req.body?.nfcUid || req.query?.nfcUid || '') as string;
+
+    const wristband = await lookupWristbandByNfcUid({
+      eventId,
+      rawUid: nfcUid
+    });
+
+    res.json({
+      success: true,
+      wristband
+    });
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error looking up wristband:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to lookup wristband.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+router.post('/wristbands/lookup', authMiddleware, handleAdminWristbandLookup);
+router.get('/wristbands/lookup', authMiddleware, handleAdminWristbandLookup);
+
+// POST /api/admin/wristbands/bind (Admin binding)
+router.post('/wristbands/bind', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId, childEventEntryId, nfcUid, wristbandId, idempotencyKey } = req.body || {};
+
+    const result = await bindWristbandToChild({
+      eventId,
+      childEventEntryId,
+      nfcUid,
+      wristbandId,
+      idempotencyKey,
+      actor: {
+        id: req.user?.id || '',
+        role: req.user?.role || '',
+        email: req.user?.email || ''
+      }
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error binding wristband (admin):', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to bind wristband',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// POST /api/admin/wristbands/deactivate (Admin deactivation)
+router.post('/wristbands/deactivate', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId, childEventEntryId, wristbandId, nfcUid, assignmentId, reason, resultingWristbandStatus, idempotencyKey } = req.body || {};
+
+    const result = await deactivateWristbandAssignment({
+      eventId,
+      childEventEntryId,
+      wristbandId,
+      nfcUid,
+      assignmentId,
+      reason,
+      resultingWristbandStatus,
+      idempotencyKey,
+      actor: {
+        id: req.user?.id || '',
+        role: req.user?.role || '',
+        email: req.user?.email || ''
+      }
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error deactivating wristband (admin):', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to deactivate wristband',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// POST /api/admin/wristbands/replace (Admin replacement)
+router.post('/wristbands/replace', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId, childEventEntryId, currentWristbandId, currentNfcUid, replacementWristbandId, replacementNfcUid, reason, idempotencyKey } = req.body || {};
+
+    const result = await replaceWristband({
+      eventId,
+      childEventEntryId,
+      currentWristbandId,
+      currentNfcUid,
+      replacementWristbandId,
+      replacementNfcUid,
+      reason,
+      idempotencyKey,
+      actor: {
+        id: req.user?.id || '',
+        role: req.user?.role || '',
+        email: req.user?.email || ''
+      }
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error replacing wristband (admin):', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to replace wristband',
+      code: 'INTERNAL_ERROR'
+    });
   }
 });
 
@@ -6542,76 +7165,190 @@ router.post('/team/edit-status', async (req: AuthenticatedRequest, res: Response
   }
 });
 
-// POST remove team member access (Super Admin only, cannot remove self, cannot remove last super admin)
-router.post('/team/remove-access', async (req: AuthenticatedRequest, res: Response) => {
+// Helper handler for removing administrative access
+async function handleRemoveTeamAccess(req: AuthenticatedRequest, res: Response) {
   try {
-    if (req.user?.role !== 'super_admin') {
+    if (!req.user || req.user.role !== 'super_admin') {
       return res.status(403).json({
         success: false,
+        code: 'SUPER_ADMIN_REQUIRED',
         error: 'Only Super Administrators can remove administrative access.'
       });
     }
 
-    const { userId } = req.body;
+    const userId = req.body?.userId || req.params?.userId;
     if (!userId) {
-      return res.status(400).json({ success: false, error: 'User ID is required.' });
-    }
-
-    if (req.user?.id === userId) {
       return res.status(400).json({
         success: false,
-        error: 'You cannot remove your own administrative access.'
+        code: 'USER_ID_REQUIRED',
+        error: 'User ID is required.'
+      });
+    }
+
+    if (req.user.id === userId) {
+      return res.status(400).json({
+        success: false,
+        code: 'SELF_REMOVAL_NOT_ALLOWED',
+        error: 'You cannot remove your own access while signed in.'
       });
     }
 
     const targetUser = await queryOne('SELECT * FROM users WHERE id = ?', [userId]);
     if (!targetUser) {
-      return res.status(404).json({ success: false, error: 'Team member not found.' });
+      return res.status(404).json({
+        success: false,
+        code: 'TEAM_MEMBER_NOT_FOUND',
+        error: 'Team member not found.'
+      });
     }
 
-    // Rule 2: Cannot remove the last active Super Admin
-    if (targetUser.role === 'super_admin') {
-      const activeSuperAdmins = await queryOne(
-        "SELECT COUNT(*) as count FROM users WHERE role = 'super_admin' AND (status = 'active' OR status IS NULL) AND id != ?",
+    // Determine if the target user is currently a genuinely active Super Admin
+    const isTargetActiveSuperAdmin =
+      targetUser.role === 'super_admin' &&
+      targetUser.password_hash &&
+      targetUser.password_hash !== 'invited_pending' &&
+      targetUser.status !== 'revoked' &&
+      targetUser.status !== 'suspended' &&
+      targetUser.status !== 'disabled';
+
+    let lastSuperAdminError = false;
+
+    // Atomic transaction for concurrency safety and integrity
+    await transaction(async () => {
+      // Concurrency lock: In PostgreSQL, lock super_admin rows FOR UPDATE to prevent concurrent dual removal
+      const lockSql = (process.env.DATABASE_URL?.startsWith('postgres://') || process.env.DATABASE_URL?.startsWith('postgresql://'))
+        ? "SELECT id FROM users WHERE role = 'super_admin' FOR UPDATE"
+        : "SELECT id FROM users WHERE role = 'super_admin'";
+      await query(lockSql);
+
+      // Rule: Cannot remove the last active Super Admin
+      if (isTargetActiveSuperAdmin) {
+        const activeSuperAdmins = await queryOne(
+          `SELECT COUNT(*) as count FROM users
+           WHERE role = 'super_admin'
+             AND (status = 'active' OR status IS NULL)
+             AND (status IS NULL OR status NOT IN ('revoked', 'suspended', 'disabled', 'invited'))
+             AND password_hash IS NOT NULL
+             AND password_hash != ''
+             AND password_hash != 'invited_pending'
+             AND id != ?`,
+          [userId]
+        );
+
+        if (!activeSuperAdmins || Number(activeSuperAdmins.count) === 0) {
+          lastSuperAdminError = true;
+          return;
+        }
+      }
+
+      // Inspect target user's non-admin identities
+      const volunteerProfile = await queryOne(
+        'SELECT id, status, preferred_team FROM volunteer_profiles WHERE user_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)',
         [userId]
       );
-      if (!activeSuperAdmins || Number(activeSuperAdmins.count) === 0) {
-        return res.status(400).json({
-          success: false,
-          error: 'Cannot remove the last active Super Administrator.'
-        });
+      const hasVolunteerIdentity = !!volunteerProfile && volunteerProfile.status !== 'rejected';
+
+      const parentProfile = await queryOne(
+        'SELECT id, full_name, phone_number, home_address, profile_completed_at FROM parent_profiles WHERE user_id = ?',
+        [userId]
+      );
+
+      let hasChildren = false;
+      if (parentProfile) {
+        const childRow = await queryOne(
+          'SELECT COUNT(*) as count FROM children WHERE parent_profile_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)',
+          [parentProfile.id]
+        );
+        hasChildren = Number(childRow?.count || 0) > 0;
       }
-    }
 
-    const now = new Date().toISOString();
+      const hasGenuineParentIdentity = !!parentProfile && (
+        hasChildren ||
+        Boolean(parentProfile.phone_number && parentProfile.phone_number.trim()) ||
+        Boolean(parentProfile.home_address && parentProfile.home_address.trim()) ||
+        Boolean(parentProfile.profile_completed_at)
+      );
 
-    // Safely remove administrative access by demoting role to 'parent' and status to 'revoked'
-    // This immediately removes the user from the admin directory, denies admin access,
-    // while preserving all existing parent profiles, children, and historical audit records.
-    await execute(
-      "UPDATE users SET role = 'parent', status = 'revoked', updated_at = ? WHERE id = ?",
-      [now, userId]
-    );
+      // Determine target's role and status after removing Admin access
+      let newRole: string;
+      let newStatus: string;
 
-    // Invalidate any pending invitation or active tokens
-    await execute(
-      "UPDATE auth_tokens SET revoked_at = ?, revoked_by = ? WHERE user_id = ? AND revoked_at IS NULL",
-      [now, req.user?.id || null, userId]
-    );
+      if (hasVolunteerIdentity && hasGenuineParentIdentity) {
+        // User has both genuine Volunteer and Parent identities:
+        // Setting role = 'volunteer' preserves volunteer routes, while req.parentProfile preserves parent routes
+        newRole = 'volunteer';
+        newStatus = 'active';
+      } else if (hasVolunteerIdentity) {
+        // User is a Volunteer: preserve Volunteer role and active status
+        newRole = 'volunteer';
+        newStatus = 'active';
+        if (parentProfile && !hasGenuineParentIdentity) {
+          await execute('DELETE FROM parent_profiles WHERE id = ?', [parentProfile.id]);
+        }
+      } else if (hasGenuineParentIdentity) {
+        // User is a Parent: preserve Parent role and active status
+        newRole = 'parent';
+        newStatus = 'active';
+      } else {
+        // Admin-only account (no other legitimate identity in the system):
+        // Safely revoke access without forcing them into role = 'parent'
+        newRole = 'revoked';
+        newStatus = 'revoked';
+        if (parentProfile && !hasChildren) {
+          await execute('DELETE FROM parent_profiles WHERE id = ?', [parentProfile.id]);
+        }
+      }
 
-    // Write audit log
-    try {
+      const now = new Date().toISOString();
+
+      await execute(
+        'UPDATE users SET role = ?, status = ?, updated_at = ? WHERE id = ?',
+        [newRole, newStatus, now, userId]
+      );
+
+      if (newStatus === 'active') {
+        // Only revoke admin invitation tokens; preserve child pass authorizations & parent tokens
+        await execute(
+          "UPDATE auth_tokens SET revoked_at = ?, revoked_by = ? WHERE user_id = ? AND token_type = 'admin_invite' AND revoked_at IS NULL",
+          [now, req.user?.id || null, userId]
+        );
+      } else {
+        // Admin-only account: revoke all active tokens
+        await execute(
+          "UPDATE auth_tokens SET revoked_at = ?, revoked_by = ? WHERE user_id = ? AND revoked_at IS NULL",
+          [now, req.user?.id || null, userId]
+        );
+      }
+
+      // Write audit log with schema-correct columns
       await execute(`
-        INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, created_at)
-        VALUES (?, ?, 'REMOVE_ADMIN_ACCESS', 'user', ?, ?, ?)
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, 'REMOVE_ADMIN_ACCESS', 'user', ?, ?, ?)
       `, [
         crypto.randomUUID(),
         req.user?.id || 'system',
+        req.user?.role || 'super_admin',
         userId,
-        JSON.stringify({ email: targetUser.email, previousRole: targetUser.role }),
+        JSON.stringify({
+          email: targetUser.email,
+          previousRole: targetUser.role,
+          previousStatus: targetUser.status,
+          newRole,
+          newStatus,
+          preservedParent: hasGenuineParentIdentity,
+          preservedVolunteer: hasVolunteerIdentity
+        }),
         now
       ]);
-    } catch (e) {}
+    });
+
+    if (lastSuperAdminError) {
+      return res.status(400).json({
+        success: false,
+        code: 'LAST_SUPER_ADMIN',
+        error: 'This Super Admin cannot be removed because at least one Super Admin must remain.'
+      });
+    }
 
     return res.json({
       success: true,
@@ -6621,7 +7358,13 @@ router.post('/team/remove-access', async (req: AuthenticatedRequest, res: Respon
     console.error('Error removing team member access:', err);
     return res.status(500).json({ success: false, error: 'Failed to remove team member access.' });
   }
-});
+}
+
+// POST remove team member access (Super Admin only, cannot remove self, cannot remove last super admin)
+router.post('/team/remove-access', authMiddleware, handleRemoveTeamAccess);
+
+// DELETE remove team member access
+router.delete('/team-members/:userId', authMiddleware, handleRemoveTeamAccess);
 
 /**
  * Determines whether a message type requires child-specific registration context.

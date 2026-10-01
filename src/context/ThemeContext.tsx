@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useMemo, useCall
 
 export type Theme = 'light' | 'dark' | 'system';
 export type ResolvedTheme = 'light' | 'dark';
-export type ThemeSurface = 'public' | 'admin';
+export type ThemeSurface = 'parent' | 'volunteer' | 'admin' | 'public';
 
 interface ThemeContextValue {
   // Current active surface theme
@@ -12,21 +12,36 @@ interface ThemeContextValue {
   setTheme: (theme: Theme, surface?: ThemeSurface) => void;
   toggleTheme: (surface?: ThemeSurface) => void;
 
-  // Explicit surface themes
-  publicTheme: Theme;
-  publicResolvedTheme: ResolvedTheme;
-  setPublicTheme: (theme: Theme) => void;
-  togglePublicTheme: () => void;
+  // Parent surface theme
+  parentTheme: Theme;
+  parentResolvedTheme: ResolvedTheme;
+  setParentTheme: (theme: Theme) => void;
+  toggleParentTheme: () => void;
 
+  // Volunteer surface theme
+  volunteerTheme: Theme;
+  volunteerResolvedTheme: ResolvedTheme;
+  setVolunteerTheme: (theme: Theme) => void;
+  toggleVolunteerTheme: () => void;
+
+  // Admin surface theme
   adminTheme: Theme;
   adminResolvedTheme: ResolvedTheme;
   setAdminTheme: (theme: Theme) => void;
   toggleAdminTheme: () => void;
+
+  // Public surface aliases (backwards compatibility for landing, public header, etc.)
+  publicTheme: Theme;
+  publicResolvedTheme: ResolvedTheme;
+  setPublicTheme: (theme: Theme) => void;
+  togglePublicTheme: () => void;
 }
 
+export const PARENT_STORAGE_KEY = 'koinonia-parent-theme';
+export const VOLUNTEER_STORAGE_KEY = 'koinonia-volunteer-theme';
+export const ADMIN_STORAGE_KEY = 'koinonia-admin-theme';
 export const PUBLIC_STORAGE_KEY = 'koinonia-public-theme';
 export const LEGACY_STORAGE_KEY = 'koinonia-theme';
-export const ADMIN_STORAGE_KEY = 'koinonia-admin-theme';
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
@@ -37,24 +52,54 @@ function getSystemPreference(): ResolvedTheme {
     : 'light';
 }
 
-function getStoredPublicTheme(): Theme {
-  if (typeof window === 'undefined') return 'system';
+/**
+ * Parent default rule:
+ * If the user has a saved preference ('light' | 'dark'), use it.
+ * Otherwise, DEFAULT TO LIGHT. Do NOT default from OS/system dark mode or admin theme.
+ */
+function getStoredParentTheme(): Theme {
+  if (typeof window === 'undefined') return 'light';
   try {
-    const item = localStorage.getItem(PUBLIC_STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
-    if (item === 'light' || item === 'dark' || item === 'system') {
+    const item = localStorage.getItem(PARENT_STORAGE_KEY) ||
+                 localStorage.getItem(PUBLIC_STORAGE_KEY) ||
+                 localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (item === 'light' || item === 'dark') {
       return item;
     }
   } catch (e) {
     // localStorage might be unavailable or restricted
   }
-  return 'system';
+  return 'light'; // First visit must be LIGHT
 }
 
+/**
+ * Volunteer default rule:
+ * If the user has a saved preference ('light' | 'dark'), use it.
+ * Otherwise, DEFAULT TO LIGHT. Do NOT default from OS/system dark mode or admin theme.
+ */
+function getStoredVolunteerTheme(): Theme {
+  if (typeof window === 'undefined') return 'light';
+  try {
+    const item = localStorage.getItem(VOLUNTEER_STORAGE_KEY);
+    if (item === 'light' || item === 'dark') {
+      return item;
+    }
+  } catch (e) {
+    // localStorage might be unavailable
+  }
+  return 'light'; // First visit must be LIGHT
+}
+
+/**
+ * Admin default rule:
+ * If the user has a saved preference ('light' | 'dark'), use it.
+ * Otherwise, DEFAULT TO LIGHT.
+ */
 function getStoredAdminTheme(): Theme {
   if (typeof window === 'undefined') return 'light';
   try {
     const item = localStorage.getItem(ADMIN_STORAGE_KEY);
-    if (item === 'light' || item === 'dark' || item === 'system') {
+    if (item === 'light' || item === 'dark') {
       return item;
     }
   } catch (e) {
@@ -64,22 +109,26 @@ function getStoredAdminTheme(): Theme {
 }
 
 function detectActiveSurface(): ThemeSurface {
-  if (typeof window === 'undefined') return 'public';
+  if (typeof window === 'undefined') return 'parent';
   const hash = window.location.hash || '';
   const pathname = window.location.pathname || '';
   if (hash.includes('/admin') || pathname.includes('/admin')) {
     return 'admin';
   }
-  return 'public';
+  if (hash.includes('/volunteer') || pathname.includes('/volunteer')) {
+    return 'volunteer';
+  }
+  return 'parent';
 }
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [publicTheme, setPublicThemeState] = useState<Theme>(getStoredPublicTheme);
+  const [parentTheme, setParentThemeState] = useState<Theme>(getStoredParentTheme);
+  const [volunteerTheme, setVolunteerThemeState] = useState<Theme>(getStoredVolunteerTheme);
   const [adminTheme, setAdminThemeState] = useState<Theme>(getStoredAdminTheme);
   const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(getSystemPreference);
   const [activeSurface, setActiveSurface] = useState<ThemeSurface>(detectActiveSurface);
 
-  // Listen to OS system theme changes
+  // Listen to OS system theme changes (only affects 'system' preference if explicitly set)
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -96,7 +145,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, []);
 
-  // Track active surface based on window hash and popstate/hashchange
+  // Track active surface based on window hash, pathname, popstate, pushState, and replaceState
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const updateSurface = () => {
@@ -105,28 +154,63 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     window.addEventListener('hashchange', updateSurface);
     window.addEventListener('popstate', updateSurface);
+
+    // Patch history pushState and replaceState to catch SPA navigations immediately
+    const originalPushState = window.history.pushState;
+    const originalReplaceState = window.history.replaceState;
+
+    window.history.pushState = function (...args) {
+      const result = originalPushState.apply(this, args);
+      updateSurface();
+      return result;
+    };
+
+    window.history.replaceState = function (...args) {
+      const result = originalReplaceState.apply(this, args);
+      updateSurface();
+      return result;
+    };
+
     return () => {
       window.removeEventListener('hashchange', updateSurface);
       window.removeEventListener('popstate', updateSurface);
+      window.history.pushState = originalPushState;
+      window.history.replaceState = originalReplaceState;
     };
   }, []);
 
-  const publicResolvedTheme: ResolvedTheme = useMemo(() => {
-    if (publicTheme === 'system') {
+  const parentResolvedTheme: ResolvedTheme = useMemo(() => {
+    if (parentTheme === 'system') {
       return systemTheme;
     }
-    return publicTheme;
-  }, [publicTheme, systemTheme]);
+    return parentTheme === 'dark' ? 'dark' : 'light';
+  }, [parentTheme, systemTheme]);
+
+  const volunteerResolvedTheme: ResolvedTheme = useMemo(() => {
+    if (volunteerTheme === 'system') {
+      return systemTheme;
+    }
+    return volunteerTheme === 'dark' ? 'dark' : 'light';
+  }, [volunteerTheme, systemTheme]);
 
   const adminResolvedTheme: ResolvedTheme = useMemo(() => {
     if (adminTheme === 'system') {
       return systemTheme;
     }
-    return adminTheme;
+    return adminTheme === 'dark' ? 'dark' : 'light';
   }, [adminTheme, systemTheme]);
 
-  const activeResolvedTheme = activeSurface === 'admin' ? adminResolvedTheme : publicResolvedTheme;
-  const activeTheme = activeSurface === 'admin' ? adminTheme : publicTheme;
+  const activeResolvedTheme: ResolvedTheme = useMemo(() => {
+    if (activeSurface === 'admin') return adminResolvedTheme;
+    if (activeSurface === 'volunteer') return volunteerResolvedTheme;
+    return parentResolvedTheme;
+  }, [activeSurface, adminResolvedTheme, volunteerResolvedTheme, parentResolvedTheme]);
+
+  const activeTheme: Theme = useMemo(() => {
+    if (activeSurface === 'admin') return adminTheme;
+    if (activeSurface === 'volunteer') return volunteerTheme;
+    return parentTheme;
+  }, [activeSurface, adminTheme, volunteerTheme, parentTheme]);
 
   // Synchronize document attribute and class for the active surface
   useEffect(() => {
@@ -140,19 +224,34 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [activeResolvedTheme]);
 
-  const setPublicTheme = useCallback((newTheme: Theme) => {
-    setPublicThemeState(newTheme);
+  // Setters with isolated persistence
+  const setParentTheme = useCallback((newTheme: Theme) => {
+    setParentThemeState(newTheme);
     try {
+      localStorage.setItem(PARENT_STORAGE_KEY, newTheme);
       localStorage.setItem(PUBLIC_STORAGE_KEY, newTheme);
       localStorage.setItem(LEGACY_STORAGE_KEY, newTheme);
     } catch (e) {
-      console.warn('Could not persist public theme to localStorage', e);
+      console.warn('Could not persist parent theme to localStorage', e);
     }
   }, []);
 
-  const togglePublicTheme = useCallback(() => {
-    setPublicTheme(publicResolvedTheme === 'dark' ? 'light' : 'dark');
-  }, [publicResolvedTheme, setPublicTheme]);
+  const toggleParentTheme = useCallback(() => {
+    setParentTheme(parentResolvedTheme === 'dark' ? 'light' : 'dark');
+  }, [parentResolvedTheme, setParentTheme]);
+
+  const setVolunteerTheme = useCallback((newTheme: Theme) => {
+    setVolunteerThemeState(newTheme);
+    try {
+      localStorage.setItem(VOLUNTEER_STORAGE_KEY, newTheme);
+    } catch (e) {
+      console.warn('Could not persist volunteer theme to localStorage', e);
+    }
+  }, []);
+
+  const toggleVolunteerTheme = useCallback(() => {
+    setVolunteerTheme(volunteerResolvedTheme === 'dark' ? 'light' : 'dark');
+  }, [volunteerResolvedTheme, setVolunteerTheme]);
 
   const setAdminTheme = useCallback((newTheme: Theme) => {
     setAdminThemeState(newTheme);
@@ -171,35 +270,55 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const target = surface || activeSurface;
     if (target === 'admin') {
       setAdminTheme(newTheme);
+    } else if (target === 'volunteer') {
+      setVolunteerTheme(newTheme);
     } else {
-      setPublicTheme(newTheme);
+      setParentTheme(newTheme);
     }
-  }, [activeSurface, setAdminTheme, setPublicTheme]);
+  }, [activeSurface, setAdminTheme, setVolunteerTheme, setParentTheme]);
 
   const toggleTheme = useCallback((surface?: ThemeSurface) => {
     const target = surface || activeSurface;
     if (target === 'admin') {
       toggleAdminTheme();
+    } else if (target === 'volunteer') {
+      toggleVolunteerTheme();
     } else {
-      togglePublicTheme();
+      toggleParentTheme();
     }
-  }, [activeSurface, toggleAdminTheme, togglePublicTheme]);
+  }, [activeSurface, toggleAdminTheme, toggleVolunteerTheme, toggleParentTheme]);
 
-  const value = useMemo(
+  const value = useMemo<ThemeContextValue>(
     () => ({
       theme: activeTheme,
       resolvedTheme: activeResolvedTheme,
       activeSurface,
       setTheme,
       toggleTheme,
-      publicTheme,
-      publicResolvedTheme,
-      setPublicTheme,
-      togglePublicTheme,
+
+      // Parent
+      parentTheme,
+      parentResolvedTheme,
+      setParentTheme,
+      toggleParentTheme,
+
+      // Volunteer
+      volunteerTheme,
+      volunteerResolvedTheme,
+      setVolunteerTheme,
+      toggleVolunteerTheme,
+
+      // Admin
       adminTheme,
       adminResolvedTheme,
       setAdminTheme,
       toggleAdminTheme,
+
+      // Public aliases
+      publicTheme: parentTheme,
+      publicResolvedTheme: parentResolvedTheme,
+      setPublicTheme: setParentTheme,
+      togglePublicTheme: toggleParentTheme,
     }),
     [
       activeTheme,
@@ -207,10 +326,14 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       activeSurface,
       setTheme,
       toggleTheme,
-      publicTheme,
-      publicResolvedTheme,
-      setPublicTheme,
-      togglePublicTheme,
+      parentTheme,
+      parentResolvedTheme,
+      setParentTheme,
+      toggleParentTheme,
+      volunteerTheme,
+      volunteerResolvedTheme,
+      setVolunteerTheme,
+      toggleVolunteerTheme,
       adminTheme,
       adminResolvedTheme,
       setAdminTheme,

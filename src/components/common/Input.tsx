@@ -22,30 +22,32 @@ export const Input: React.FC<InputProps> = ({
 
   return (
     <div className="w-full flex flex-col space-y-1.5">
-      <label htmlFor={inputId} className="text-sm font-semibold text-[#262626]">
+      <label htmlFor={inputId} className="text-sm font-semibold text-[#262626] dark:text-[#F0EBE3]">
         {label}
       </label>
       <div className="relative">
         {icon && (
-          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#6B7280]">
+          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#6B7280] dark:text-[#7A7570]">
             {icon}
           </div>
         )}
         <input
           id={inputId}
-          className={`w-full bg-white border rounded-xl py-3 text-[#262626] placeholder-[#9CA3AF] text-sm font-normal focus:outline-none focus:ring-2 focus:ring-[#C59B27]/40 focus:border-[#C59B27] transition-colors ${
+          className={`w-full bg-white dark:bg-[#262520] border rounded-xl py-3 text-[#262626] dark:text-[#F0EBE3] placeholder-[#9CA3AF] dark:placeholder-[#7A7570] text-sm font-normal focus:outline-none focus:ring-2 focus:ring-[#C59B27]/40 focus:border-[#C59B27] transition-colors ${
             icon ? 'pl-10 pr-4' : 'px-4'
           } ${
-            error ? 'border-red-500 bg-red-50/30' : 'border-[#D9D6CE]'
+            error
+              ? 'border-red-500 bg-red-50/30 dark:bg-red-950/20'
+              : 'border-[#D9D6CE] dark:border-[#3A3835]'
           } ${className}`}
           {...props}
         />
       </div>
       {helperText && !error && (
-        <p className="text-xs text-[#6B7280]">{helperText}</p>
+        <p className="text-xs text-[#6B7280] dark:text-[#B8B0A5]">{helperText}</p>
       )}
       {error && (
-        <p className="text-xs text-red-600 font-medium">{error}</p>
+        <p className="text-xs text-red-600 dark:text-red-400 font-medium">{error}</p>
       )}
     </div>
   );

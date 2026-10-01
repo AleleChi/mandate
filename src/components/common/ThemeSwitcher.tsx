@@ -18,21 +18,30 @@ export const ThemeSwitcher: React.FC<ThemeSwitcherProps> = ({
     toggleTheme,
     adminResolvedTheme,
     toggleAdminTheme,
-    publicResolvedTheme,
-    togglePublicTheme,
+    volunteerResolvedTheme,
+    toggleVolunteerTheme,
+    parentResolvedTheme,
+    toggleParentTheme,
+    activeSurface,
   } = useTheme();
 
-  const isDark = surface === 'admin'
+  const effectiveSurface = surface || activeSurface;
+
+  const isDark = effectiveSurface === 'admin'
     ? adminResolvedTheme === 'dark'
-    : surface === 'public'
-    ? publicResolvedTheme === 'dark'
+    : effectiveSurface === 'volunteer'
+    ? volunteerResolvedTheme === 'dark'
+    : effectiveSurface === 'parent' || effectiveSurface === 'public'
+    ? parentResolvedTheme === 'dark'
     : resolvedTheme === 'dark';
 
   const handleToggle = () => {
-    if (surface === 'admin') {
+    if (effectiveSurface === 'admin') {
       toggleAdminTheme();
-    } else if (surface === 'public') {
-      togglePublicTheme();
+    } else if (effectiveSurface === 'volunteer') {
+      toggleVolunteerTheme();
+    } else if (effectiveSurface === 'parent' || effectiveSurface === 'public') {
+      toggleParentTheme();
     } else {
       toggleTheme();
     }
@@ -48,7 +57,7 @@ export const ThemeSwitcher: React.FC<ThemeSwitcherProps> = ({
       title={label}
       className={`relative inline-flex items-center justify-center rounded-xl p-2 text-xs font-semibold transition-all duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C59B27] focus-visible:ring-offset-2 ${
         isDark
-          ? 'text-[#E5B834] bg-[#20201E] border border-[#2E2D29] hover:bg-[#282724] hover:border-[#C59B27]/50 focus-visible:ring-offset-[#181817]'
+          ? 'text-[#E5B834] bg-[#262520] border border-[#3A3835] hover:bg-[#2F2D27] hover:border-[#C59B27]/50 focus-visible:ring-offset-[#19191A]'
           : 'text-[#9A7326] bg-[#FAF6EB] border border-[#E5D5AE] hover:bg-[#F5EED9] hover:border-[#C59B27]/60 focus-visible:ring-offset-[#FAF9F6]'
       } ${className}`}
     >

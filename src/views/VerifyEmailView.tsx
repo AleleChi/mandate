@@ -121,10 +121,10 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) 
           <div className="space-y-6 py-6 flex flex-col items-center">
             <Loader2 className="w-12 h-12 text-[#C59B27] animate-spin stroke-[2]" />
             <div>
-              <h1 className="font-serif-koinonia font-bold text-2xl text-[#18181B] tracking-tight mb-2">
+              <h1 className="type-h1-app text-2xl text-[#18181B] dark:text-[#F0EBE3] tracking-tight mb-2">
                 Verifying your email...
               </h1>
-              <p className="text-sm text-[#71717A]">
+              <p className="text-sm text-[#71717A] dark:text-[#B8B0A5]">
                 Please hold on while we verify your secure access credentials.
               </p>
             </div>
@@ -134,15 +134,15 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) 
         {status === 'success' && (
           <div className="space-y-6 py-4">
             <div className="flex justify-center">
-              <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
+              <div className="w-16 h-16 rounded-full bg-emerald-50 dark:bg-emerald-950/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
                 <CheckCircle2 className="w-10 h-10 stroke-[1.5]" />
               </div>
             </div>
             <div>
-              <h1 className="font-serif-koinonia font-bold text-2xl text-[#18181B] tracking-tight mb-3">
+              <h1 className="type-h1-app text-2xl text-[#18181B] dark:text-[#F0EBE3] tracking-tight mb-3">
                 Email verified
               </h1>
-              <p className="text-sm text-[#3F3F46] leading-relaxed">
+              <p className="text-sm text-[#3F3F46] dark:text-[#B8B0A5] leading-relaxed">
                 Your email has been confirmed. You can now continue setting up your parent profile.
               </p>
             </div>
@@ -150,7 +150,7 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) 
             <button
               type="button"
               onClick={() => onNavigate('/parent/profile-setup')}
-              className="w-full py-3.5 px-6 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-medium text-base shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27]/40"
+              className="w-full py-3.5 px-6 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-base shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27]/40"
             >
               <span>Continue</span>
               <ArrowRight className="w-4 h-4" />
@@ -161,16 +161,16 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) 
         {status === 'error' && (
           <div className="space-y-6 py-4">
             <div className="flex justify-center">
-              <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center text-red-600">
+              <div className="w-16 h-16 rounded-full bg-red-50 dark:bg-red-950/20 flex items-center justify-center text-red-600 dark:text-red-400">
                 <XCircle className="w-10 h-10 stroke-[1.5]" />
               </div>
             </div>
             
             <div>
-              <h1 className="font-serif-koinonia font-bold text-2xl text-[#18181B] tracking-tight mb-3">
+              <h1 className="type-h1-app text-2xl text-[#18181B] dark:text-[#F0EBE3] tracking-tight mb-3">
                 This link is no longer valid
               </h1>
-              <p className="text-sm text-[#3F3F46] leading-relaxed">
+              <p className="text-sm text-[#3F3F46] dark:text-[#B8B0A5] leading-relaxed">
                 Please request a new email link.
               </p>
             </div>
@@ -218,7 +218,7 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) 
 
                 {showEmailInput && (
                   <div className="space-y-1.5 text-left">
-                    <label htmlFor="resend-email" className="text-xs font-semibold uppercase tracking-wider text-[#71717A]">
+                    <label htmlFor="resend-email" className="text-xs font-semibold uppercase tracking-wider text-[#71717A] dark:text-[#B8B0A5]">
                       Email Address
                     </label>
                     <input
@@ -238,15 +238,15 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) 
                         setEmailInputError(validateEmailInput(emailInput));
                       }}
                       placeholder="e.g. sarah@example.com"
-                      className={`w-full px-3.5 py-2.5 rounded-xl border bg-white text-[#18181B] text-sm focus:outline-none focus:ring-2 focus:ring-[#C59B27]/30 focus:border-[#C59B27] transition-all ${
-                        emailInputError ? 'border-red-500 bg-red-50/10' : 'border-[#D9D6CE]'
+                      className={`w-full px-3.5 py-2.5 rounded-xl border bg-white dark:bg-[#262520] text-[#18181B] dark:text-[#F0EBE3] placeholder:text-[#9CA3AF] dark:placeholder:text-[#7A7570] text-sm focus:outline-none focus:ring-2 focus:ring-[#C59B27]/30 focus:border-[#C59B27] transition-all ${
+                        emailInputError ? 'border-red-500 bg-red-50/10' : 'border-[#D9D6CE] dark:border-[#3A3835]'
                       }`}
                     />
                     {emailInputError && (
-                      <p className="text-xs text-red-600 mt-1.5 font-medium">{emailInputError}</p>
+                      <p className="text-xs text-red-600 dark:text-red-400 mt-1.5 font-medium">{emailInputError}</p>
                     )}
                     {emailInputSuggestion && (
-                      <div className="mt-1.5 text-xs text-[#B89047] font-semibold bg-[#FAF6EC] border border-[#EBE3D3] p-2 px-3 rounded-xl flex items-center justify-between">
+                      <div className="mt-1.5 text-xs text-[#B89047] dark:text-[#D4AF37] font-semibold bg-[#FAF6EC] dark:bg-[#21211E] border border-[#EBE3D3] dark:border-[#302E29] p-2 px-3 rounded-xl flex items-center justify-between">
                         <span>Did you mean <strong>{emailInputSuggestion}</strong>?</span>
                         <button
                           type="button"
@@ -267,7 +267,7 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) 
                 <button
                   type="submit"
                   disabled={resendLoading}
-                  className="w-full py-3.5 px-6 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-medium text-base shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27]/40 disabled:opacity-50"
+                  className="w-full py-3.5 px-6 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-base shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27]/40 disabled:opacity-50"
                 >
                   {resendLoading ? 'Sending...' : 'Send new link'}
                 </button>
@@ -278,7 +278,7 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) 
               <button
                 type="button"
                 onClick={() => onNavigate('/parent/sign-in')}
-                className="text-xs font-semibold tracking-widest text-[#18181B] underline underline-offset-4 hover:text-[#C59B27] uppercase transition-colors"
+                className="text-xs font-semibold tracking-widest text-[#18181B] dark:text-[#F0EBE3] underline underline-offset-4 hover:text-[#C59B27] dark:hover:text-[#D4AF37] uppercase transition-colors"
               >
                 Back to Sign In
               </button>

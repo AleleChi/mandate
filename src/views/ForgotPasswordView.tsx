@@ -81,15 +81,15 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onNaviga
       maxWidth="md"
     >
       <div className="space-y-6 text-center">
-        <div className="w-14 h-14 rounded-2xl bg-[#FAF6EC] text-[#C59B27] flex items-center justify-center shadow-inner border border-[#E5D5AE] mx-auto">
+        <div className="w-14 h-14 rounded-2xl bg-[#FAF6EC] dark:bg-[#21211E] text-[#C59B27] flex items-center justify-center shadow-inner border border-[#E5D5AE] dark:border-[#302E29] mx-auto">
           <KeyRound className="w-7 h-7" />
         </div>
 
         <div>
-          <h1 className="text-2xl font-serif-koinonia font-bold text-[#18181B]">
+          <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
             Forgot password
           </h1>
-          <p className="text-xs text-[#6B7280] mt-1.5 leading-relaxed max-w-sm mx-auto">
+          <p className="text-xs text-[#6B7280] dark:text-[#B8B0A5] mt-1.5 leading-relaxed max-w-sm mx-auto">
             Enter your parent email address and we will send instructions to create a new secure password.
           </p>
         </div>
@@ -108,7 +108,7 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onNaviga
             />
 
             {suggestion && (
-              <div className="mt-1.5 text-xs text-[#B89047] font-semibold bg-[#FAF6EC] border border-[#EBE3D3] p-2 px-3 rounded-xl flex items-center justify-between">
+              <div className="mt-1.5 text-xs text-[#B89047] dark:text-[#D4AF37] font-semibold bg-[#FAF6EC] dark:bg-[#21211E] border border-[#EBE3D3] dark:border-[#302E29] p-2 px-3 rounded-xl flex items-center justify-between">
                 <span>Did you mean <strong>{suggestion}</strong>?</span>
                 <button
                   type="button"
@@ -137,8 +137,8 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onNaviga
             </div>
           </form>
         ) : (
-          <div className="bg-[#FAF9F6] p-5 rounded-2xl border border-[#EAE8E1] space-y-4 text-center">
-            <p className="text-xs text-[#262626] leading-relaxed">
+          <div className="bg-[#FAF9F6] dark:bg-[#21211E] p-5 rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] space-y-4 text-center">
+            <p className="text-xs text-[#262626] dark:text-[#F0EBE3] leading-relaxed">
               We have sent password reset link steps to <span className="font-bold">{email}</span>. Please check your inbox.
             </p>
             <div className="flex flex-col space-y-2">
@@ -151,7 +151,7 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onNaviga
               </Button>
               <button
                 onClick={() => setSubmitted(false)}
-                className="text-xs text-[#6B7280] hover:underline pt-2 focus:outline-none"
+                className="text-xs text-[#6B7280] dark:text-[#B8B0A5] hover:underline pt-2 focus:outline-none"
               >
                 Try a different email address
               </button>
@@ -159,10 +159,10 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onNaviga
           </div>
         )}
 
-        <div className="pt-4 border-t border-[#EAE8E1] text-center">
+        <div className="pt-4 border-t border-[#EAE8E1] dark:border-[#302E29] text-center">
           <button
             onClick={() => onNavigate('/parent/sign-in')}
-            className="inline-flex items-center text-xs font-semibold text-[#6B7280] hover:text-[#262626] focus:outline-none"
+            className="inline-flex items-center text-xs font-semibold text-[#6B7280] dark:text-[#B8B0A5] hover:text-[#262626] dark:hover:text-[#F0EBE3] focus:outline-none"
           >
             <ArrowLeft className="w-3.5 h-3.5 mr-1" />
             Back to sign in

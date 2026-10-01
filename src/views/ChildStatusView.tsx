@@ -118,7 +118,7 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
   useEffect(() => {
     if (foundChild?.id && (!childId || childId !== foundChild.id)) {
       try {
-        window.history.replaceState(null, '', `#/parent/status/${foundChild.id}`);
+        window.history.replaceState(null, '', `/parent/status/${foundChild.id}`);
       } catch {}
     }
   }, [foundChild?.id, childId]);

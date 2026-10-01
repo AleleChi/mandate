@@ -74,7 +74,7 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
   }, []);
 
   const [formData, setFormData] = useState(() => {
-    const searchParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+    const searchParams = new URLSearchParams(window.location.search || (window.location.hash.includes('?') ? window.location.hash.substring(window.location.hash.indexOf('?')) : ''));
     const emailParam = searchParams.get('email') || '';
     return {
       fullName: '',
@@ -87,7 +87,7 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
   });
 
   const showNotice = React.useMemo(() => {
-    const searchParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+    const searchParams = new URLSearchParams(window.location.search || (window.location.hash.includes('?') ? window.location.hash.substring(window.location.hash.indexOf('?')) : ''));
     return !!searchParams.get('email');
   }, []);
 
@@ -292,10 +292,10 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
     >
       {/* Title Area */}
       <div className="text-center mb-6">
-        <h1 className="type-h1-app text-[#18181B]">
+        <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
           Create parent account
         </h1>
-        <p className="text-sm text-[#3F3F46] mt-3 max-w-[320px] mx-auto leading-relaxed">
+        <p className="text-sm text-[#3F3F46] dark:text-[#B8B0A5] mt-3 max-w-[320px] mx-auto leading-relaxed">
           Start here. You can add your children after your account is ready.
         </p>
       </div>
@@ -355,10 +355,10 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
         />
 
         {/* WhatsApp updates */}
-        <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl p-4 sm:p-4.5 space-y-3">
+        <div className="bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-4.5 space-y-3">
           <div>
-            <span className="text-xs font-semibold text-[#18181B] block">WhatsApp updates</span>
-            <p className="text-[11px] text-zinc-500 mt-0.5 leading-relaxed">
+            <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] block">WhatsApp updates</span>
+            <p className="text-[11px] text-zinc-500 dark:text-[#7A7570] mt-0.5 leading-relaxed">
               Receive important registration and event updates on WhatsApp.
             </p>
           </div>
@@ -393,16 +393,16 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
                 className={`w-4 h-4 mt-0.5 rounded border flex items-center justify-center transition-all shrink-0 ${
                   agreedToWhatsApp
                     ? 'bg-[#C59B27] border-[#C59B27] text-[#18181B]'
-                    : 'bg-white border-[#D9D6CE] group-hover:border-[#18181B]'
+                    : 'bg-white dark:bg-[#262520] border-[#D9D6CE] dark:border-[#3A3835] group-hover:border-[#18181B] dark:group-hover:border-[#F0EBE3]'
                 }`}
               >
                 {agreedToWhatsApp && <Check className="w-3 h-3 stroke-[3] text-[#18181B]" />}
               </div>
               <div className="pt-0.5">
-                <span className="text-xs text-zinc-700 leading-snug block">
+                <span className="text-xs text-zinc-700 dark:text-[#B8B0A5] leading-snug block">
                   Send me important registration and event updates on WhatsApp
                 </span>
-                <span className="text-[11px] text-zinc-400 block mt-0.5">
+                <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] block mt-0.5">
                   You can turn this off later.
                 </span>
               </div>
@@ -490,18 +490,18 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
                   ? 'border-red-500 bg-red-50/20'
                   : agreedToUpdates
                   ? 'bg-[#C59B27] border-[#C59B27] text-[#18181B]'
-                  : 'bg-white border-[#D9D6CE] group-hover:border-[#18181B]'
+                  : 'bg-white dark:bg-[#262520] border-[#D9D6CE] dark:border-[#3A3835] group-hover:border-[#18181B] dark:group-hover:border-[#F0EBE3]'
               }`}
             >
               {agreedToUpdates && <Check className="w-3.5 h-3.5 stroke-[3] text-[#18181B]" />}
             </div>
-            <span className="text-sm text-[#18181B] leading-snug">
+            <span className="text-sm text-[#18181B] dark:text-[#F0EBE3] leading-snug">
               I agree to receive event updates about my children.
             </span>
           </label>
 
           {touched.agreement && errors.agreement && (
-            <p className="text-xs text-red-600 font-medium mt-1.5 flex items-center gap-1.5">
+            <p className="text-xs text-red-600 dark:text-red-400 font-medium mt-1.5 flex items-center gap-1.5">
               <AlertCircle className="w-3.5 h-3.5 shrink-0" />
               <span>{errors.agreement}</span>
             </p>
@@ -509,7 +509,7 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
         </div>
 
         {errorMsg && (
-          <div className="bg-red-50 text-red-600 p-3 rounded-xl text-xs font-medium">
+          <div className="bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 p-3 rounded-xl text-xs font-medium">
             {errorMsg}
           </div>
         )}
@@ -535,11 +535,11 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
 
         {/* Secondary text */}
         <div className="pt-2 text-center">
-          <span className="text-sm text-[#71717A]">Already have an account? </span>
+          <span className="text-sm text-[#71717A] dark:text-[#B8B0A5]">Already have an account? </span>
           <button
             type="button"
             onClick={() => onNavigate('/parent/sign-in')}
-            className="text-sm font-medium text-[#18181B] hover:underline cursor-pointer focus:outline-none"
+            className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3] hover:underline cursor-pointer focus:outline-none"
           >
             Sign in
           </button>
@@ -547,8 +547,8 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
       </form>
 
       {/* Small reassurance note */}
-      <div className="mt-6 text-center border-t border-[#EBE3D3] pt-4">
-        <p className="text-xs text-[#71717A] max-w-xs mx-auto leading-relaxed">
+      <div className="mt-6 text-center border-t border-[#EBE3D3] dark:border-[#302E29] pt-4">
+        <p className="text-xs text-[#71717A] dark:text-[#B8B0A5] max-w-xs mx-auto leading-relaxed">
           Your details are used for event updates, entry checks, and pickup confirmation.
         </p>
       </div>

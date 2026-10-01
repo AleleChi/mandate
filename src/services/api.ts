@@ -521,6 +521,21 @@ export const api = {
         body: JSON.stringify(payload)
       });
     },
+    async resolveIdentifier(payload: { eventId?: string; identifier: string; identifierType?: 'pass' | 'wristband_code' | 'nfc_uid' }) {
+      return api.request<{
+        success: boolean;
+        identifierType: 'pass' | 'wristband_code' | 'nfc_uid';
+        childEventEntryId: string;
+        eventId: string;
+        sourceReference: string;
+        wristbandId?: string;
+        wristbandCode?: string;
+        childStatus?: string;
+      }>('/api/volunteer/children/resolve-identifier', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
     async checkIn(payload: { passReference?: string; childId?: string; childEventEntryId?: string }) {
       return api.request<any>('/api/volunteer/check-in', {
         method: 'POST',
@@ -743,6 +758,79 @@ export const api = {
     async getSummary(eventId?: string) {
       const qs = eventId ? `?eventId=${encodeURIComponent(eventId)}` : '';
       return api.request<{ success: boolean; summary: any }>(`/api/notifications/admin/updates/summary${qs}`);
+    },
+    async lookupWristband(payload: { eventId: string; nfcUid: string }) {
+      return api.request<{
+        success: boolean;
+        wristband: {
+          id: string;
+          eventId: string;
+          wristbandCode: string;
+          nfcUid: string;
+          status: 'available' | 'active' | 'lost' | 'damaged' | 'decommissioned';
+          isAssigned: boolean;
+          assignedChildEventEntryId: string | null;
+          assignedAt: string | null;
+        };
+      }>('/api/volunteer/wristbands/lookup', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bindWristband(payload: {
+      eventId: string;
+      childEventEntryId: string;
+      nfcUid?: string;
+      wristbandId?: string;
+      idempotencyKey?: string;
+    }) {
+      return api.request<{
+        success: boolean;
+        wristband: any;
+        assignment: any;
+      }>('/api/volunteer/wristbands/bind', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    }
+  },
+
+  wristbands: {
+    async lookup(payload: { eventId: string; nfcUid: string }, role: 'admin' | 'volunteer' = 'volunteer') {
+      const endpoint = role === 'admin' ? '/api/admin/wristbands/lookup' : '/api/volunteer/wristbands/lookup';
+      return api.request<{
+        success: boolean;
+        wristband: {
+          id: string;
+          eventId: string;
+          wristbandCode: string;
+          nfcUid: string;
+          status: 'available' | 'active' | 'lost' | 'damaged' | 'decommissioned';
+          isAssigned: boolean;
+          assignedChildEventEntryId: string | null;
+          assignedAt: string | null;
+        };
+      }>(endpoint, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bind(payload: {
+      eventId: string;
+      childEventEntryId: string;
+      nfcUid?: string;
+      wristbandId?: string;
+      idempotencyKey?: string;
+    }, role: 'admin' | 'volunteer' = 'volunteer') {
+      const endpoint = role === 'admin' ? '/api/admin/wristbands/bind' : '/api/volunteer/wristbands/bind';
+      return api.request<{
+        success: boolean;
+        wristband: any;
+        assignment: any;
+      }>(endpoint, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
     }
   },
 
@@ -769,6 +857,206 @@ export const api = {
     },
     async getMe() {
       return api.request<{ user: any; profile: any }>('/api/admin/me');
+    },
+    async lookupWristband(payload: { eventId: string; nfcUid: string }) {
+      return api.request<{
+        success: boolean;
+        wristband: {
+          id: string;
+          eventId: string;
+          wristbandCode: string;
+          nfcUid: string;
+          status: 'available' | 'active' | 'lost' | 'damaged' | 'decommissioned';
+          isAssigned: boolean;
+          assignedChildEventEntryId: string | null;
+          assignedAt: string | null;
+        };
+      }>('/api/admin/wristbands/lookup', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bindWristband(payload: {
+      eventId: string;
+      childEventEntryId: string;
+      nfcUid?: string;
+      wristbandId?: string;
+      idempotencyKey?: string;
+    }) {
+      return api.request<{
+        success: boolean;
+        wristband: any;
+        assignment: any;
+      }>('/api/admin/wristbands/bind', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async provisionWristband(eventId: string, payload: { nfcUid: string; wristbandCode?: string }) {
+      return api.request<{
+        success: boolean;
+        message: string;
+        wristband: any;
+      }>(`/api/admin/events/${eventId}/wristbands`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getWristbandInventory(eventId: string, params?: {
+      q?: string;
+      status?: string;
+      page?: number;
+      limit?: number;
+      rangeStart?: string;
+      rangeEnd?: string;
+    }) {
+      const queryParams = new URLSearchParams();
+      if (params?.q) queryParams.append('q', params.q);
+      if (params?.status) queryParams.append('status', params.status);
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
+      if (params?.rangeStart) queryParams.append('rangeStart', params.rangeStart);
+      if (params?.rangeEnd) queryParams.append('rangeEnd', params.rangeEnd);
+      const qs = queryParams.toString();
+      return api.request<{
+        success: boolean;
+        summary: {
+          total: number;
+          prepared: number;
+          available: number;
+          active: number;
+          lost: number;
+          damaged: number;
+          decommissioned: number;
+        };
+        wristbands: any[];
+        pagination: {
+          page: number;
+          limit: number;
+          totalCount: number;
+          totalPages: number;
+        };
+      }>(`/api/admin/events/${eventId}/wristbands/inventory${qs ? `?${qs}` : ''}`);
+    },
+    async prepareWristband(eventId: string, nfcUid: string) {
+      return api.request<{
+        success: boolean;
+        message: string;
+        wristband: any;
+        wristbandCode: string;
+        nfcUid: string;
+        status: 'prepared';
+        eventId: string;
+      }>(`/api/admin/events/${eventId}/wristbands/prepare`, {
+        method: 'POST',
+        body: JSON.stringify({ nfcUid })
+      });
+    },
+    async verifyPhysicalWristband(payload: { eventId: string; wristbandCode: string; nfcUid: string }) {
+      return api.request<{
+        success: boolean;
+        wristband: any;
+        status: 'available';
+        verified: boolean;
+        message: string;
+      }>('/api/admin/wristbands/verify', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async previewBulkImportWristbands(eventId: string, payload: {
+      rows?: Array<{ nfcUid: string; wristbandCode?: string }>;
+      csvText?: string;
+    }) {
+      return api.request<{
+        success: boolean;
+        preview: {
+          summary: {
+            totalRows: number;
+            validCount: number;
+            malformedCount: number;
+            duplicateInFileCount: number;
+            alreadyExistingCount: number;
+          };
+          rows: Array<{
+            rowNumber: number;
+            rawNfcUid: string;
+            normalizedNfcUid: string | null;
+            wristbandCode: string | null;
+            status: 'valid' | 'malformed' | 'duplicate_in_file' | 'already_exists';
+            errorReason?: string;
+          }>;
+        };
+      }>(`/api/admin/events/${eventId}/wristbands/bulk-import/preview`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async executeBulkImportWristbands(eventId: string, payload: {
+      rows?: Array<{ nfcUid: string; wristbandCode?: string }>;
+      csvText?: string;
+      skipErrors?: boolean;
+    }) {
+      return api.request<{
+        success: boolean;
+        result: {
+          success: boolean;
+          importedCount: number;
+          skippedCount: number;
+          wristbands: any[];
+          errors: Array<{ rowNumber: number; rawNfcUid: string; reason: string }>;
+        };
+      }>(`/api/admin/events/${eventId}/wristbands/bulk-import/execute`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getWristbandsPrintBatch(eventId: string, params?: {
+      ids?: string[];
+      rangeStart?: string;
+      rangeEnd?: string;
+      status?: string;
+      isReprint?: boolean;
+    }) {
+      const queryParams = new URLSearchParams();
+      if (params?.ids && params.ids.length > 0) queryParams.append('ids', params.ids.join(','));
+      if (params?.rangeStart) queryParams.append('rangeStart', params.rangeStart);
+      if (params?.rangeEnd) queryParams.append('rangeEnd', params.rangeEnd);
+      if (params?.status) queryParams.append('status', params.status);
+      if (params?.isReprint) queryParams.append('isReprint', 'true');
+      const qs = queryParams.toString();
+      return api.request<{
+        success: boolean;
+        items: Array<{
+          id: string;
+          wristbandCode: string;
+          qrValue: string;
+          eventName: string;
+          status: string;
+          sequenceIndex?: number;
+          totalInBatch?: number;
+        }>;
+        totalCount: number;
+        firstCode?: string | null;
+        lastCode?: string | null;
+        eventName?: string;
+      }>(`/api/admin/events/${eventId}/wristbands/print-batch${qs ? `?${qs}` : ''}`);
+    },
+    async verifyWristbandTag(eventId: string, nfcUid: string) {
+      return api.request<{
+        success: boolean;
+        wristband?: {
+          id: string;
+          wristbandCode: string;
+          status: string;
+          nfcUid: string;
+          createdAt: string;
+        };
+        error?: string;
+      }>(`/api/admin/events/${eventId}/wristbands/verify-pack`, {
+        method: 'POST',
+        body: JSON.stringify({ nfcUid })
+      });
     },
     async getOverview(options?: RequestInit) {
       return api.request<any>('/api/admin/overview', options);
@@ -1328,6 +1616,11 @@ export const api = {
       return api.request<{ success: boolean; message: string }>('/api/admin/team/remove-access', {
         method: 'POST',
         body: JSON.stringify(payload)
+      });
+    },
+    async deleteTeamMember(userId: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/team-members/${userId}`, {
+        method: 'DELETE'
       });
     },
     async getVolunteers(params?: { q?: string; status?: string; team?: string; page?: number; limit?: number }) {

@@ -360,7 +360,11 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         Passes: '/parent/passes',
         Profile: '/parent/profile'
       };
-      window.history.pushState(null, '', `#${pathMap[tab]}`);
+      if (onNavigate) {
+        onNavigate(pathMap[tab]);
+      } else {
+        window.history.pushState(null, '', pathMap[tab]);
+      }
     } catch {
       // Ignore history push errors in sandboxes
     }
@@ -1717,9 +1721,6 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           data-component-version="parent-profile-help-row-v1"
           onClick={() => {
             setShowHelpDrawer(true);
-            try {
-              window.history.pushState(null, '', '#/parent/help');
-            } catch {}
           }}
           className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] transition-colors cursor-pointer focus:outline-none text-left"
         >
@@ -1735,9 +1736,6 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           data-component-version="parent-profile-safety-row-v1"
           onClick={() => {
             setShowSafetyDrawer(true);
-            try {
-              window.history.pushState(null, '', '#/parent/safety');
-            } catch {}
           }}
           className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] transition-colors cursor-pointer focus:outline-none text-left"
         >
