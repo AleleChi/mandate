@@ -29,8 +29,8 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, size = 'sm', c
       case 'Draft':
       case 'Not registered':
         return {
-          bg: 'bg-[#F3EFE6] text-[#715D3A] border border-[#D9D6CE]',
-          icon: <Clock className="w-3.5 h-3.5 mr-1 text-[#9A7326] shrink-0" />
+          bg: 'bg-[#F3EFE6] dark:bg-[#262520] text-[#715D3A] dark:text-[#B8B0A5] border border-[#D9D6CE] dark:border-[#3A3835]',
+          icon: <Clock className="w-3.5 h-3.5 mr-1 text-[#9A7326] dark:text-[#C59B27] shrink-0" />
         };
       case 'Pass ready':
       case 'Selected':

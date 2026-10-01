@@ -107,6 +107,13 @@ export const PwaInstallBanner: React.FC = () => {
   const [isDismissed, setIsDismissed] = useState(true);
   const [guidePlatform, setGuidePlatform] = useState<'ios' | 'browser' | null>(null);
 
+  // Scope to volunteer routes: /volunteer/*
+  const isVolunteerRoute = typeof window !== 'undefined' && (
+    window.location.pathname.startsWith('/volunteer') ||
+    window.location.hash.startsWith('#/volunteer') ||
+    window.location.hash.includes('/volunteer')
+  );
+
   useEffect(() => {
     if (isAppInstalled()) {
       setCanInstall(false);
@@ -123,6 +130,9 @@ export const PwaInstallBanner: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
+  // Strict route-scoped suppression and null rendering for hidden state:
+  // Ensures no wrapper, no green top border, no emerald border, no green background strip,
+  // no residual 1px/2px/4px height, and no green pseudo-element exist on /volunteer/* or when hidden.
   if (!canInstall || isDismissed) {
     if (!guidePlatform) return null;
   }

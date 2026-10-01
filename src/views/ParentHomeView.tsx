@@ -65,7 +65,7 @@ const FallbackAvatar: React.FC<{
   if (src && src.trim() !== '' && !error) {
     const resolved = resolveMediaUrl(src);
     return (
-      <div className={`overflow-hidden bg-[#FAF6EB] flex items-center justify-center shrink-0 ${className}`}>
+      <div className={`overflow-hidden bg-[#FAF6EB] dark:bg-[#262520] flex items-center justify-center shrink-0 ${className}`}>
         <img
           src={resolved}
           alt=""
@@ -80,7 +80,7 @@ const FallbackAvatar: React.FC<{
 
   return (
     <div
-      className={`bg-[#FAF6EB] border border-[#E5D5AE] flex items-center justify-center select-none font-serif-koinonia shrink-0 text-[#9A7326] ${className}`}
+      className={`bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] flex items-center justify-center select-none font-serif-koinonia shrink-0 text-[#9A7326] dark:text-[#B8B0A5] ${className}`}
     >
       <span>{getInitials(name)}</span>
     </div>
@@ -419,10 +419,10 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         {/* Warm Parent Greeting */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 data-component-version="parent-dashboard-greeting-v2" className="text-xl sm:text-2xl font-serif-koinonia font-bold text-[#18181B] leading-snug">
+            <h1 data-component-version="parent-dashboard-greeting-v2" className="text-xl sm:text-2xl font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3] leading-snug">
               {getGreeting()}
             </h1>
-            <p className="text-xs sm:text-sm text-[#3F3F46] mt-1">
+            <p className="text-xs sm:text-sm text-[#3F3F46] dark:text-[#B8B0A5] mt-1">
               Here is where things stand for your children.
             </p>
           </div>
@@ -433,11 +433,11 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
         {/* Gentle completion banner if photo, address, etc. are missing */}
         {(!parentProfile.homeAddress || !parentProfile.photoUrl || !isRealUploadedPhoto(parentProfile.photoUrl)) && (
-          <div data-component-version="parent-profile-reminder-v1" className="bg-[#FCF9F2] border border-[#E8DFCA] rounded-2xl p-4 flex items-start gap-3">
-            <Info className="w-5 h-5 text-[#9A7326] shrink-0 mt-0.5" />
+          <div data-component-version="parent-profile-reminder-v1" className="bg-[#FCF9F2] dark:bg-[#21211E] border border-[#E8DFCA] dark:border-[#302E29] rounded-2xl p-4 flex items-start gap-3">
+            <Info className="w-5 h-5 text-[#9A7326] dark:text-[#C59B27] shrink-0 mt-0.5" />
             <div className="flex-1">
-              <h4 className="text-xs font-bold text-[#18181B]">Complete your profile</h4>
-              <p className="text-[11px] text-[#6B7280] mt-0.5">
+              <h4 className="text-xs font-bold text-[#18181B] dark:text-[#F0EBE3]">Complete your profile</h4>
+              <p className="text-[11px] text-[#6B7280] dark:text-[#B8B0A5] mt-0.5">
                 Add any missing contact details so the event team can reach you when needed.
               </p>
               <button
@@ -445,7 +445,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 onClick={() => {
                   onNavigate('/parent/profile/edit');
                 }}
-                className="mt-2 text-[11px] font-bold text-[#9A7326] hover:underline focus:outline-none cursor-pointer"
+                className="mt-2 text-[11px] font-bold text-[#9A7326] dark:text-[#D4AF37] hover:underline focus:outline-none cursor-pointer"
               >
                 Update profile
               </button>
@@ -455,12 +455,12 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
         {/* Quiet WhatsApp Opt-in Prompt for existing parents */}
         {whatsappStatus === 'unknown' && !isWaQuietDismissed && (
-          <div data-component-version="parent-whatsapp-quiet-banner-v1" className="bg-[#FAF8F3] border border-[#E5D5AE] rounded-2xl p-4 flex items-start justify-between gap-3 shadow-2xs">
+          <div data-component-version="parent-whatsapp-quiet-banner-v1" className="bg-[#FAF8F3] dark:bg-[#21211E] border border-[#E5D5AE] dark:border-[#302E29] rounded-2xl p-4 flex items-start justify-between gap-3 shadow-2xs">
             <div className="flex items-start gap-3">
-              <Phone className="w-5 h-5 text-[#9A7326] shrink-0 mt-0.5" />
+              <Phone className="w-5 h-5 text-[#9A7326] dark:text-[#C59B27] shrink-0 mt-0.5" />
               <div>
-                <h4 className="text-xs font-bold text-[#18181B]">Get updates on WhatsApp</h4>
-                <p className="text-[11px] text-[#6B7280] mt-0.5">
+                <h4 className="text-xs font-bold text-[#18181B] dark:text-[#F0EBE3]">Get updates on WhatsApp</h4>
+                <p className="text-[11px] text-[#6B7280] dark:text-[#B8B0A5] mt-0.5">
                   Receive important registration and event updates on WhatsApp.
                 </p>
                 <div className="mt-3 flex items-center gap-3">
@@ -470,7 +470,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                       setWaModalPhone(whatsappNumber || parentProfile.phone || '');
                       setShowWaOptInModal(true);
                     }}
-                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[#18181B] text-white hover:bg-zinc-800 transition-all cursor-pointer shadow-2xs"
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[#18181B] dark:bg-[#262520] text-white dark:text-[#F0EBE3] border border-transparent dark:border-[#3A3835] hover:bg-zinc-800 dark:hover:bg-[#2A2926] transition-all cursor-pointer shadow-2xs"
                   >
                     Enable WhatsApp updates
                   </button>
@@ -482,7 +482,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                       } catch {}
                       setIsWaQuietDismissed(true);
                     }}
-                    className="text-xs text-[#6B7280] hover:text-[#18181B] font-medium cursor-pointer"
+                    className="text-xs text-[#6B7280] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] font-medium cursor-pointer"
                   >
                     Not now
                   </button>
@@ -493,7 +493,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         )}
 
         {/* Event hero card with image, Date/Time row, Continue button */}
-        <div className="bg-white rounded-2xl border border-[#EAE8E1] shadow-sm overflow-hidden" data-component-version="parent-dashboard-hero-v8-secure-media">
+        <div className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] shadow-sm overflow-hidden" data-component-version="parent-dashboard-hero-v8-secure-media">
           <div className="relative h-44 sm:h-48 w-full bg-[#24221C] overflow-hidden flex flex-col justify-end p-4 sm:p-5">
             <SafeImage 
               src={customHeroUrl}
@@ -517,9 +517,9 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             </div>
           </div>
 
-          <div className="p-4 sm:p-5 space-y-4 bg-white">
-            <div className="flex items-center text-xs sm:text-sm text-[#3F3F46] font-medium">
-              <Calendar className="w-4 h-4 mr-3 text-[#B89047] shrink-0 stroke-[2]" />
+          <div className="p-4 sm:p-5 space-y-4 bg-white dark:bg-[#21211E]">
+            <div className="flex items-center text-xs sm:text-sm text-[#3F3F46] dark:text-[#B8B0A5] font-medium">
+              <Calendar className="w-4 h-4 mr-3 text-[#B89047] dark:text-[#C59B27] shrink-0 stroke-[2]" />
               <span>
                 {(() => {
                   if (!activeEvent) return '18th to 22nd November 2026, 9:00 AM to 7:00 PM';
@@ -573,17 +573,17 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         {/* My Children Today Section */}
         <div className="space-y-3 pt-1" data-component-version="parent-my-children-today-v1">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg sm:text-xl font-serif-koinonia font-bold text-[#18181B] tracking-tight">
+            <h3 className="text-lg sm:text-xl font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3] tracking-tight">
               My children today
             </h3>
-            <span className="text-xs text-[#71717A] font-medium">
+            <span className="text-xs text-[#71717A] dark:text-[#B8B0A5] font-medium">
               {childrenList.length} registered
             </span>
           </div>
 
           {childrenList.length === 0 ? (
-            <div className="bg-white rounded-2xl p-4 border border-[#EAE8E1] text-center space-y-2 shadow-2xs">
-              <p className="text-xs text-[#52525B]">
+            <div className="bg-white dark:bg-[#21211E] rounded-2xl p-4 border border-[#EAE8E1] dark:border-[#302E29] text-center space-y-2 shadow-2xs">
+              <p className="text-xs text-[#52525B] dark:text-[#B8B0A5]">
                 No children registered for today's event yet.
               </p>
             </div>
@@ -630,20 +630,20 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 if (!cleanAgeGroup) cleanAgeGroup = 'Children';
 
                 return (
-                  <div key={`today-${child.id}`} className="bg-white rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] shadow-2xs space-y-3 font-sans">
+                  <div key={`today-${child.id}`} className="bg-white dark:bg-[#21211E] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] dark:border-[#302E29] shadow-2xs space-y-3 font-sans">
                     {/* Header: Photo, Name, Clean Age/Group, Status capsule top-right */}
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-start space-x-3 min-w-0">
                         <FallbackAvatar src={child.photoUrl} name={child.name} className="w-10 h-10 rounded-full shrink-0 mt-0.5" />
                         <div className="min-w-0">
-                          <h4 className="text-sm font-sans font-semibold text-[#18181B] truncate leading-tight">
+                          <h4 className="text-sm font-sans font-semibold text-[#18181B] dark:text-[#F0EBE3] truncate leading-tight">
                             {child.name}
                           </h4>
-                          <p className="text-xs text-[#71717A] mt-0.5 font-sans">
+                          <p className="text-xs text-[#71717A] dark:text-[#B8B0A5] mt-0.5 font-sans">
                             {ageLabel} · {cleanAgeGroup}
                           </p>
                           {hasReviewNeeded && (
-                            <p className="text-[11px] text-amber-800 font-sans mt-0.5 font-medium">
+                            <p className="text-[11px] text-amber-800 dark:text-amber-400 font-sans mt-0.5 font-medium">
                               Age needs confirmation
                             </p>
                           )}
@@ -655,35 +655,35 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                     </div>
 
                     {/* Location and check-in details with clean divided rows */}
-                    <div className="p-3 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl divide-y divide-zinc-200/60 text-xs font-sans">
+                    <div className="p-3 bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl divide-y divide-zinc-200/60 dark:divide-[#302E29] text-xs font-sans">
                       {!isCheckedIn ? (
                         <>
                           <div className="flex items-center justify-between py-1.5 first:pt-0">
-                            <span className="text-[#71717A]">Planned location</span>
-                            <span className="font-semibold text-[#18181B]">{plannedLocation}</span>
+                            <span className="text-[#71717A] dark:text-[#B8B0A5]">Planned location</span>
+                            <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">{plannedLocation}</span>
                           </div>
                           <div className="flex items-center justify-between py-1.5">
-                            <span className="text-[#71717A]">Check-in point</span>
-                            <span className="font-semibold text-[#18181B]">{checkInPoint}</span>
+                            <span className="text-[#71717A] dark:text-[#B8B0A5]">Check-in point</span>
+                            <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">{checkInPoint}</span>
                           </div>
                           <div className="flex items-center justify-between py-1.5 last:pb-0">
-                            <span className="text-[#71717A]">Status</span>
-                            <span className="font-semibold text-[#B89047]">Not checked in</span>
+                            <span className="text-[#71717A] dark:text-[#B8B0A5]">Status</span>
+                            <span className="font-semibold text-[#B89047] dark:text-[#C59B27]">Not checked in</span>
                           </div>
                         </>
                       ) : (
                         <>
                           <div className="flex items-center justify-between py-1.5 first:pt-0">
-                            <span className="text-[#71717A]">Current location</span>
-                            <span className="font-semibold text-[#18181B]">{plannedLocation}</span>
+                            <span className="text-[#71717A] dark:text-[#B8B0A5]">Current location</span>
+                            <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">{plannedLocation}</span>
                           </div>
                           <div className="flex items-center justify-between py-1.5">
-                            <span className="text-[#71717A]">Checked in at</span>
-                            <span className="font-semibold text-[#18181B]">9:14 AM</span>
+                            <span className="text-[#71717A] dark:text-[#B8B0A5]">Checked in at</span>
+                            <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">9:14 AM</span>
                           </div>
                           <div className="flex items-center justify-between py-1.5 last:pb-0">
-                            <span className="text-[#71717A]">Pickup point</span>
-                            <span className="font-semibold text-[#18181B]">{pickupPoint}</span>
+                            <span className="text-[#71717A] dark:text-[#B8B0A5]">Pickup point</span>
+                            <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">{pickupPoint}</span>
                           </div>
                         </>
                       )}
@@ -697,7 +697,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                             setSelectedArrivalChild(child);
                             setShowArrivalGuideModal(true);
                           }}
-                          className="w-full py-2.5 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] text-[#18181B] font-semibold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer focus:outline-none"
+                          className="w-full py-2.5 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer focus:outline-none"
                         >
                           View arrival guide
                         </button>
@@ -708,7 +708,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                             setSelectedPickupChild(child);
                             setShowPickupDetailsModal(true);
                           }}
-                          className="w-full py-2.5 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] text-[#18181B] font-semibold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer focus:outline-none"
+                          className="w-full py-2.5 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer focus:outline-none"
                         >
                           View pickup details
                         </button>
@@ -723,46 +723,46 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
         {/* 6. Summary cards */}
         <div className="space-y-3">
-          <div className="bg-[#FAF8F4] border border-[#EAE8E1] rounded-2xl p-3.5 sm:p-4 flex items-center space-x-3.5 shadow-2xs">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white border border-[#E5D5AE] flex items-center justify-center shrink-0 shadow-2xs">
-              <Users className="w-4 h-4 sm:w-5 sm:h-5 text-[#9A7326]" />
+          <div className="bg-[#FAF8F4] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-3.5 sm:p-4 flex items-center space-x-3.5 shadow-2xs">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#302E29] flex items-center justify-center shrink-0 shadow-2xs">
+              <Users className="w-4 h-4 sm:w-5 sm:h-5 text-[#9A7326] dark:text-[#C59B27]" />
             </div>
-            <span className="text-sm text-[#3F3F46]">
-              Children added: <strong className="font-bold text-[#18181B]">{childrenList.length}</strong>
+            <span className="text-sm text-[#3F3F46] dark:text-[#B8B0A5]">
+              Children added: <strong className="font-bold text-[#18181B] dark:text-[#F0EBE3]">{childrenList.length}</strong>
             </span>
           </div>
 
-          <div className="bg-[#FAF8F4] border border-[#EAE8E1] rounded-2xl p-3.5 sm:p-4 flex items-center space-x-3.5 shadow-2xs">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white border border-[#E5D5AE] flex items-center justify-center shrink-0 shadow-2xs">
-              <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-[#E07A5F]" />
+          <div className="bg-[#FAF8F4] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-3.5 sm:p-4 flex items-center space-x-3.5 shadow-2xs">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#302E29] flex items-center justify-center shrink-0 shadow-2xs">
+              <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-[#E07A5F] dark:text-[#C59B27]" />
             </div>
-            <span className="text-sm text-[#3F3F46]">
-              Under review: <strong className="font-bold text-[#18181B]">{underReviewCount}</strong>
+            <span className="text-sm text-[#3F3F46] dark:text-[#B8B0A5]">
+              Under review: <strong className="font-bold text-[#18181B] dark:text-[#F0EBE3]">{underReviewCount}</strong>
             </span>
           </div>
 
-          <div className="bg-[#FAF8F4] border border-[#EAE8E1] rounded-2xl p-3.5 sm:p-4 flex items-center space-x-3.5 shadow-2xs">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white border border-[#E5D5AE] flex items-center justify-center shrink-0 shadow-2xs">
+          <div className="bg-[#FAF8F4] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-3.5 sm:p-4 flex items-center space-x-3.5 shadow-2xs">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#302E29] flex items-center justify-center shrink-0 shadow-2xs">
               <QrCode className="w-4 h-4 sm:w-5 sm:h-5 text-[#C59B27]" />
             </div>
-            <span className="text-sm text-[#3F3F46]">
-              Pass ready: <strong className="font-bold text-[#18181B]">{passReadyCount}</strong>
+            <span className="text-sm text-[#3F3F46] dark:text-[#B8B0A5]">
+              Pass ready: <strong className="font-bold text-[#18181B] dark:text-[#F0EBE3]">{passReadyCount}</strong>
             </span>
           </div>
         </div>
 
         {/* 7. Your Children heading */}
         <div className="space-y-4 pt-1">
-          <h3 className="text-lg sm:text-xl font-serif-koinonia font-bold text-[#18181B] tracking-tight">
+          <h3 className="text-lg sm:text-xl font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3] tracking-tight">
             Your Children
           </h3>
 
           {childrenList.length === 0 ? (
-            <div className="bg-white rounded-2xl p-6 border border-[#EAE8E1] text-center space-y-3 shadow-2xs">
-              <h4 className="text-base sm:text-lg font-serif-koinonia font-bold text-[#18181B]">
+            <div className="bg-white dark:bg-[#21211E] rounded-2xl p-6 border border-[#EAE8E1] dark:border-[#302E29] text-center space-y-3 shadow-2xs">
+              <h4 className="text-base sm:text-lg font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3]">
                 No children added yet
               </h4>
-              <p className="text-xs sm:text-sm text-[#3F3F46] max-w-xs mx-auto leading-relaxed">
+              <p className="text-xs sm:text-sm text-[#3F3F46] dark:text-[#B8B0A5] max-w-xs mx-auto leading-relaxed">
                 Add each child who may attend the Children and Teens section.
               </p>
               <div className="pt-2">
@@ -794,18 +794,18 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                   return (
                     <div
                       key={child.id}
-                      className="bg-white rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] shadow-2xs space-y-3 font-sans"
+                      className="bg-white dark:bg-[#21211E] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] dark:border-[#302E29] shadow-2xs space-y-3 font-sans"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <h4 className="text-base font-sans font-semibold text-[#18181B] leading-snug truncate">
+                          <h4 className="text-base font-sans font-semibold text-[#18181B] dark:text-[#F0EBE3] leading-snug truncate">
                             {child.name}
                           </h4>
-                          <p className="text-xs text-[#71717A] mt-0.5 font-sans">
+                          <p className="text-xs text-[#71717A] dark:text-[#B8B0A5] mt-0.5 font-sans">
                             {cAgeLabel}{cCleanGroup ? ` · ${cCleanGroup}` : ''}
                           </p>
                           {cHasReview && (
-                            <p className="text-[11px] text-amber-800 font-sans mt-0.5 font-medium">
+                            <p className="text-[11px] text-amber-800 dark:text-amber-400 font-sans mt-0.5 font-medium">
                               Age needs confirmation
                             </p>
                           )}
@@ -815,7 +815,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                         </div>
                       </div>
 
-                      <p className="text-xs text-[#3F3F46] font-sans">
+                      <p className="text-xs text-[#3F3F46] dark:text-[#B8B0A5] font-sans">
                         {child.statusNote || (child.status === 'Pass ready' ? 'Event pass is available' : child.status === 'Incomplete' || child.status === 'Draft' ? 'Continue entering child details' : 'Details sent for review')}
                       </p>
 
@@ -846,7 +846,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                           <button
                             type="button"
                             onClick={() => setChildToRemove(child)}
-                            className="w-full py-2 px-4 rounded-xl text-[#6B7280] hover:text-[#4B5563] font-semibold text-xs transition-all cursor-pointer focus:outline-none text-center bg-transparent"
+                            className="w-full py-2 px-4 rounded-xl text-[#6B7280] dark:text-[#B8B0A5] hover:text-[#4B5563] dark:hover:text-[#F0EBE3] font-semibold text-xs transition-all cursor-pointer focus:outline-none text-center bg-transparent"
                           >
                             Remove
                           </button>
@@ -857,7 +857,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                           onClick={() => {
                             onNavigate(`/parent/children/${child.id}/status`);
                           }}
-                          className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-[#FAF9F6] active:bg-[#F4F1EA] border border-[#18181B] text-[#18181B] font-semibold text-xs sm:text-sm transition-all cursor-pointer focus:outline-none"
+                          className="w-full py-2.5 px-4 rounded-xl bg-white dark:bg-[#262520] hover:bg-[#FAF9F6] dark:hover:bg-[#2A2926] active:bg-[#F4F1EA] dark:active:bg-[#302E29] border border-[#18181B] dark:border-[#3A3835] text-[#18181B] dark:text-[#F0EBE3] font-semibold text-xs sm:text-sm transition-all cursor-pointer focus:outline-none"
                         >
                           View status
                         </button>
@@ -875,9 +875,9 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                   if (onStartNewChild) onStartNewChild();
                   else onNavigate('/parent/children/new');
                 }}
-                className="w-full py-3.5 px-5 rounded-2xl border-2 border-dashed border-[#C59B27]/50 bg-[#FAF8F4]/70 hover:bg-[#FAF8F4] active:bg-[#FAF6EB] text-[#9A7326] font-semibold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer focus:outline-none"
+                className="w-full py-3.5 px-5 rounded-2xl border-2 sm:border border-dashed border-[#C59B27]/50 dark:border-[#3A3835] bg-[#FAF8F4]/70 hover:bg-[#FAF8F4] active:bg-[#FAF6EB] dark:bg-[#21211E] dark:hover:bg-[#2A2926] text-[#9A7326] dark:text-[#D4AF37] font-semibold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer focus:outline-none"
               >
-                <Plus className="w-4 h-4 stroke-[2.5]" />
+                <Plus className="w-4 h-4 stroke-[2.5] text-[#9A7326] dark:text-[#D4AF37]" />
                 <span>Add a child</span>
               </button>
             </>
@@ -885,8 +885,8 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         </div>
 
         {/* 11. Save-progress note card */}
-        <div className="bg-[#F3EFE6] p-3.5 sm:p-4 rounded-2xl border border-[#E5D5AE]/70 text-xs sm:text-sm text-[#3F3F46] flex items-start space-x-3 shadow-2xs">
-          <Info className="w-4 h-4 sm:w-5 sm:h-5 text-[#9A7326] shrink-0 mt-0.5 stroke-[2]" />
+        <div className="bg-[#F3EFE6] dark:bg-[#21211E] p-3.5 sm:p-4 rounded-2xl border border-[#E5D5AE]/70 dark:border-[#302E29] text-xs sm:text-sm text-[#3F3F46] dark:text-[#B8B0A5] flex items-start space-x-3 shadow-2xs">
+          <Info className="w-4 h-4 sm:w-5 sm:h-5 text-[#9A7326] dark:text-[#C59B27] shrink-0 mt-0.5 stroke-[2]" />
           <p className="leading-relaxed">
             You can save progress and return before sending details for review.
           </p>
@@ -899,8 +899,8 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
     <div data-view-version="parent-children-v3-clean-header" className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-serif-koinonia font-bold text-[#18181B]">Children Profiles</h2>
-          <p className="text-xs text-[#6B7280]">Identity check for arrival and pickup.</p>
+          <h2 className="text-xl font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3]">Children Profiles</h2>
+          <p className="text-xs text-[#6B7280] dark:text-[#B8B0A5]">Identity check for arrival and pickup.</p>
         </div>
         <Button variant="primary" size="sm" onClick={() => {
           if (onStartNewChild) onStartNewChild();
@@ -911,11 +911,11 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       </div>
 
       {childrenList.length === 0 ? (
-        <div className="bg-white rounded-3xl p-8 border border-[#EAE8E1] text-center space-y-3 shadow-sm">
-          <h4 className="text-base sm:text-lg font-serif-koinonia font-bold text-[#18181B]">
+        <div className="bg-white dark:bg-[#21211E] rounded-3xl p-8 border border-[#EAE8E1] dark:border-[#302E29] text-center space-y-3 shadow-sm">
+          <h4 className="text-base sm:text-lg font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3]">
             No children added yet
           </h4>
-          <p className="text-xs sm:text-sm text-[#3F3F46] max-w-xs mx-auto leading-relaxed">
+          <p className="text-xs sm:text-sm text-[#3F3F46] dark:text-[#B8B0A5] max-w-xs mx-auto leading-relaxed">
             Add each child who may attend the Children and Teens section.
           </p>
           <div className="pt-2">
@@ -935,16 +935,16 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       ) : (
         <div className="space-y-4">
           {childrenList.map((child) => (
-            <div key={child.id} className="bg-white rounded-3xl p-5 border border-[#EAE8E1] shadow-sm space-y-4">
+            <div key={child.id} className="bg-white dark:bg-[#21211E] rounded-3xl p-5 border border-[#EAE8E1] dark:border-[#302E29] shadow-sm space-y-4">
               <div className="flex items-start space-x-4">
                 <FallbackAvatar
                   src={isRealUploadedPhoto(child.photoUrl) ? child.photoUrl : undefined}
                   name={child.name}
-                  className="w-16 h-16 rounded-2xl border border-[#D9D6CE] text-lg font-bold"
+                  className="w-16 h-16 rounded-2xl border border-[#D9D6CE] dark:border-[#3A3835] text-lg font-bold"
                 />
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-lg font-bold text-[#18181B] truncate">{child.name}</h3>
-                  <p className="text-xs text-[#9A7326] font-medium mt-0.5 font-sans">
+                  <h3 className="text-lg font-bold text-[#18181B] dark:text-[#F0EBE3] truncate">{child.name}</h3>
+                  <p className="text-xs text-[#9A7326] dark:text-[#B8B0A5] font-medium mt-0.5 font-sans">
                     {child.age === 0 ? 'Under 1 year' : `${child.age} years`} · {((child.ageGroup || '').replace(/\s*\(Review Needed\)/gi, '').trim() || 'Children') === 'Under 4' ? 'Under 4s' : ((child.ageGroup || '').replace(/\s*\(Review Needed\)/gi, '').trim() || 'Children')}
                   </p>
                   <div className="mt-2">
@@ -952,16 +952,19 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                   </div>
                 </div>
               </div>
-              <div className="bg-[#FAF9F6] p-3 rounded-xl border border-[#EAE8E1] text-xs text-[#6B7280] flex items-center justify-between">
+              <div className="bg-[#FAF9F6] dark:bg-[#262520] p-3 rounded-xl border border-[#EAE8E1] dark:border-[#302E29] text-xs text-[#6B7280] dark:text-[#B8B0A5] flex items-center justify-between">
                 <div>
-                  <span className="font-semibold text-[#18181B]">Care Review Status: </span> {child.statusNote}
+                  <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">Care Review Status: </span>
+                  <span className={child.status === 'Draft' || child.status === 'Incomplete' ? "text-[#9A7326] dark:text-[#C59B27]" : "text-[#6B7280] dark:text-[#B8B0A5]"}>
+                    {child.statusNote || (child.status === 'Pass ready' ? 'Event pass is available' : 'Details sent for review')}
+                  </span>
                 </div>
                 {(child.status === 'Incomplete' || child.status === 'Draft') && (
                   <div className="flex items-center space-x-2 shrink-0">
                     <button
                       type="button"
                       onClick={() => setChildToRemove(child)}
-                      className="py-1.5 px-3 rounded-lg border border-gray-200 text-gray-500 hover:text-gray-700 font-semibold text-xs cursor-pointer bg-white"
+                      className="py-1.5 px-3 rounded-lg border border-gray-200 dark:border-[#3A3835] text-gray-500 dark:text-[#B8B0A5] hover:text-gray-700 dark:hover:text-[#F0EBE3] font-semibold text-xs cursor-pointer bg-white dark:bg-[#21211E]"
                     >
                       Remove
                     </button>
@@ -971,7 +974,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                         if (onResumeChildDraft) onResumeChildDraft(child);
                         else onNavigate('/parent/children/new');
                       }}
-                      className="py-1.5 px-3 rounded-lg bg-[#C59B27] hover:bg-[#B58E33] text-[#18181B] font-semibold text-xs cursor-pointer"
+                      className="py-1.5 px-3 rounded-lg bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-xs cursor-pointer"
                     >
                       Continue details
                     </button>
@@ -1017,35 +1020,35 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       <div data-view-version="parent-passes-v12-stitch-multi-child-overview" className="space-y-6 pb-10 text-left">
         {/* Page Title & Subtitle */}
         <div data-component-version="parent-passes-title-v2-stitch" className="space-y-1">
-          <h2 className="text-2xl font-serif-koinonia font-bold text-[#18181B]">Passes</h2>
-          <p className="text-xs text-[#5C5A54] font-medium">Passes will appear here when children are selected.</p>
+          <h2 className="text-2xl font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3]">Passes</h2>
+          <p className="text-xs text-[#5C5A54] dark:text-[#B8B0A5] font-medium">Passes will appear here when children are selected.</p>
         </div>
 
         {/* Summary Counters */}
         <div data-component-version="parent-passes-summary-v2-stitch" className="grid grid-cols-3 gap-3">
-          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-3 text-center shadow-2xs">
-            <span className="text-[10px] font-semibold text-[#8E8B82] uppercase tracking-wider block">Pass ready</span>
-            <span className="text-lg font-bold text-[#18181B] mt-1 block">{passReadyCount}</span>
+          <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-3 text-center shadow-2xs">
+            <span className="text-[10px] font-semibold text-[#8E8B82] dark:text-[#B8B0A5] uppercase tracking-wider block">Pass ready</span>
+            <span className="text-lg font-bold text-[#18181B] dark:text-[#F0EBE3] mt-1 block">{passReadyCount}</span>
           </div>
-          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-3 text-center shadow-2xs">
-            <span className="text-[10px] font-semibold text-[#8E8B82] uppercase tracking-wider block">Waiting</span>
-            <span className="text-lg font-bold text-[#18181B] mt-1 block">{waitingCount}</span>
+          <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-3 text-center shadow-2xs">
+            <span className="text-[10px] font-semibold text-[#8E8B82] dark:text-[#B8B0A5] uppercase tracking-wider block">Waiting</span>
+            <span className="text-lg font-bold text-[#18181B] dark:text-[#F0EBE3] mt-1 block">{waitingCount}</span>
           </div>
-          <div className="bg-white border border-[#EAE8E1] rounded-2xl p-3 text-center shadow-2xs">
-            <span className="text-[10px] font-semibold text-[#8E8B82] uppercase tracking-wider block">Draft</span>
-            <span className="text-lg font-bold text-[#18181B] mt-1 block">{draftCount}</span>
+          <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-3 text-center shadow-2xs">
+            <span className="text-[10px] font-semibold text-[#8E8B82] dark:text-[#B8B0A5] uppercase tracking-wider block">Draft</span>
+            <span className="text-lg font-bold text-[#18181B] dark:text-[#F0EBE3] mt-1 block">{draftCount}</span>
           </div>
         </div>
 
         {/* Empty State when no children exist */}
         {childrenList.length === 0 && (
-          <div data-component-version="parent-pass-empty-state-v2" className="bg-white rounded-3xl p-8 border border-[#EAE8E1] text-center space-y-4 shadow-2xs">
-            <div className="w-12 h-12 rounded-2xl bg-[#FAF6EB] text-[#C59B27] flex items-center justify-center mx-auto border border-[#E5D5AE]">
+          <div data-component-version="parent-pass-empty-state-v2" className="bg-white dark:bg-[#21211E] rounded-3xl p-8 border border-[#EAE8E1] dark:border-[#302E29] text-center space-y-4 shadow-2xs">
+            <div className="w-12 h-12 rounded-2xl bg-[#FAF6EB] dark:bg-[#262520] text-[#C59B27] flex items-center justify-center mx-auto border border-[#E5D5AE] dark:border-[#3A3835]">
               <QrCode className="w-6 h-6 opacity-60" />
             </div>
             <div className="space-y-1">
-              <h3 className="text-base font-bold text-[#18181B]">Passes under preparation</h3>
-              <p className="text-xs text-[#6B7280] max-w-xs mx-auto">
+              <h3 className="text-base font-bold text-[#18181B] dark:text-[#F0EBE3]">Passes under preparation</h3>
+              <p className="text-xs text-[#6B7280] dark:text-[#B8B0A5] max-w-xs mx-auto">
                 Once details sent for review are verified by the care team, your digital passes will appear here.
               </p>
             </div>
@@ -1061,16 +1064,16 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
               <div 
                 key={c.id} 
                 data-component-version={isCheckedIn ? "parent-pass-card-checked-in-v2" : "parent-pass-ready-card-v2-stitch"}
-                className="w-full bg-[#FAF9F6] border border-[#E5D5AE] rounded-3xl p-5 shadow-xs relative overflow-hidden space-y-4 text-left"
+                className="w-full bg-[#FAF9F6] dark:bg-[#21211E] border border-[#E5D5AE] dark:border-[#302E29] rounded-3xl p-5 shadow-xs relative overflow-hidden space-y-4 text-left"
               >
                 {/* Top-right status badge */}
                 <div className="absolute top-4 right-4">
                   {isCheckedIn ? (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#E8F5E9] border border-[#C8E6C9] text-[#2E7D32] text-[10px] font-bold uppercase tracking-wider">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#E8F5E9] dark:bg-[#262520] border border-[#C8E6C9] dark:border-[#3A3835] text-[#2E7D32] dark:text-[#C59B27] text-[10px] font-bold uppercase tracking-wider">
                       Checked in today
                     </span>
                   ) : (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-[10px] font-bold uppercase tracking-wider">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] text-[#9A7326] dark:text-[#C59B27] text-[10px] font-bold uppercase tracking-wider">
                       Pass ready
                     </span>
                   )}
@@ -1081,23 +1084,23 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                   <FallbackAvatar
                     src={isRealUploadedPhoto(c.photoUrl) ? c.photoUrl : undefined}
                     name={c.name}
-                    className="w-16 h-16 rounded-full border border-[#D9D6CE] text-lg font-bold shadow-2xs"
+                    className="w-16 h-16 rounded-full border border-[#D9D6CE] dark:border-[#3A3835] text-lg font-bold shadow-2xs"
                   />
-                  <h3 className="text-base font-serif-koinonia font-bold text-[#18181B] mt-2.5 text-center leading-tight">{c.name}</h3>
-                  <p className="text-[11px] text-[#5C5A54] font-medium text-center mt-0.5">{c.age} years • {c.ageGroup}</p>
+                  <h3 className="text-base font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3] mt-2.5 text-center leading-tight">{c.name}</h3>
+                  <p className="text-[11px] text-[#5C5A54] dark:text-[#B8B0A5] font-medium text-center mt-0.5">{c.age} years • {c.ageGroup}</p>
                 </div>
 
                 {/* Event info block */}
-                <div className="bg-white p-3 rounded-xl border border-[#EAE8E1] text-xs space-y-1">
-                  <span className="text-[10px] text-[#8E8B82] uppercase tracking-wider font-semibold block">Event</span>
-                  <span className="font-bold text-[#18181B] block leading-tight">
+                <div className="bg-white dark:bg-[#262520] p-3 rounded-xl border border-[#EAE8E1] dark:border-[#302E29] text-xs space-y-1">
+                  <span className="text-[10px] text-[#8E8B82] dark:text-[#B8B0A5] uppercase tracking-wider font-semibold block">Event</span>
+                  <span className="font-bold text-[#18181B] dark:text-[#F0EBE3] block leading-tight">
                     {activeEvent ? `${activeEvent.sectionName || activeEvent.section_name || "Children and Teens"} ${activeEvent.title || "The General Assembly"}` : "Children and Teens The General Assembly"}
                   </span>
                 </div>
 
                 {/* Compact QR Preview */}
                 <div className="flex flex-col items-center space-y-1.5 pt-1">
-                  <div className="bg-white p-2 rounded-xl border border-[#E5D5AE] w-20 h-20 flex items-center justify-center shadow-inner">
+                  <div className="bg-white dark:bg-[#262520] p-2 rounded-xl border border-[#E5D5AE] dark:border-[#3A3835] w-20 h-20 flex items-center justify-center shadow-inner">
                     <img
                       src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(c.passReference || c.id)}`}
                       alt=""
@@ -1105,7 +1108,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                       referrerPolicy="no-referrer"
                     />
                   </div>
-                  <span className="text-[9px] font-mono font-semibold tracking-wider text-[#8E8B82]">
+                  <span className="text-[9px] font-mono font-semibold tracking-wider text-[#8E8B82] dark:text-[#B8B0A5]">
                     Show at entry
                   </span>
                 </div>
@@ -1139,33 +1142,33 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             <div 
               key={c.id} 
               data-component-version="parent-pass-waiting-card-v2-stitch"
-              className="bg-white rounded-3xl p-4 border border-[#EAE8E1] shadow-2xs space-y-4 text-left"
+              className="bg-white dark:bg-[#21211E] rounded-3xl p-4 border border-[#EAE8E1] dark:border-[#302E29] shadow-2xs space-y-4 text-left"
             >
               <div className="flex items-start justify-between">
                 <div className="flex items-center space-x-3">
                   <FallbackAvatar
                     src={isRealUploadedPhoto(c.photoUrl) ? c.photoUrl : undefined}
                     name={c.name}
-                    className="w-12 h-12 rounded-xl border border-[#D9D6CE] text-sm font-bold shadow-2xs"
+                    className="w-12 h-12 rounded-xl border border-[#D9D6CE] dark:border-[#3A3835] text-sm font-bold shadow-2xs"
                   />
                   <div className="min-w-0">
-                    <h4 className="text-sm font-bold text-[#18181B] truncate">{c.name}</h4>
-                    <p className="text-[11px] text-[#8E8B82] font-semibold mt-0.5">{c.age} years • {c.ageGroup}</p>
+                    <h4 className="text-sm font-bold text-[#18181B] dark:text-[#F0EBE3] truncate">{c.name}</h4>
+                    <p className="text-[11px] text-[#8E8B82] dark:text-[#B8B0A5] font-semibold mt-0.5">{c.age} years • {c.ageGroup}</p>
                   </div>
                 </div>
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[9px] font-bold uppercase tracking-wider">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-50 dark:bg-[#262520] border border-amber-200 dark:border-[#3A3835] text-amber-700 dark:text-[#C59B27] text-[9px] font-bold uppercase tracking-wider">
                   {c.status === 'Selected' ? 'Waiting' : 'Under review'}
                 </span>
               </div>
 
-              <div className="bg-[#FAF6EB]/40 p-3 rounded-xl border border-[#E5D5AE]/20 text-xs text-[#5C5A54] leading-relaxed">
+              <div className="bg-[#FAF6EB]/40 dark:bg-[#262520] p-3 rounded-xl border border-[#E5D5AE]/20 dark:border-[#3A3835] text-xs text-[#5C5A54] dark:text-[#B8B0A5] leading-relaxed">
                 Pass will appear here if selected.
               </div>
 
               <button
                 type="button"
                 onClick={() => onNavigate(`/parent/children/${c.id}/status` as AppRoute)}
-                className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-[#FAF9F6] border border-[#18181B] text-[#18181B] font-semibold text-xs sm:text-sm transition-all cursor-pointer focus:outline-none text-center"
+                className="w-full py-2.5 px-4 rounded-xl bg-white dark:bg-[#262520] hover:bg-[#FAF9F6] dark:hover:bg-[#2A2926] border border-[#18181B] dark:border-[#3A3835] text-[#18181B] dark:text-[#F0EBE3] font-semibold text-xs sm:text-sm transition-all cursor-pointer focus:outline-none text-center"
               >
                 View status
               </button>
@@ -1177,26 +1180,26 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             <div 
               key={c.id} 
               data-component-version="parent-pass-draft-card-v2-stitch"
-              className="bg-white rounded-3xl p-4 border border-[#EAE8E1] shadow-2xs space-y-4 text-left"
+              className="bg-white dark:bg-[#21211E] rounded-3xl p-4 border border-[#EAE8E1] dark:border-[#302E29] shadow-2xs space-y-4 text-left"
             >
               <div className="flex items-start justify-between">
                 <div className="flex items-center space-x-3">
                   <FallbackAvatar
                     src={undefined}
                     name={c.name}
-                    className="w-12 h-12 rounded-xl border border-[#EAE8E1] text-sm font-bold"
+                    className="w-12 h-12 rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] text-sm font-bold"
                   />
                   <div className="min-w-0">
-                    <h4 className="text-sm font-bold text-[#18181B] truncate">{c.name}</h4>
-                    <p className="text-[11px] text-[#8E8B82] font-semibold mt-0.5">{c.age} years • {c.ageGroup}</p>
+                    <h4 className="text-sm font-bold text-[#18181B] dark:text-[#F0EBE3] truncate">{c.name}</h4>
+                    <p className="text-[11px] text-[#8E8B82] dark:text-[#B8B0A5] font-semibold mt-0.5">{c.age} years • {c.ageGroup}</p>
                   </div>
                 </div>
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-gray-100 border border-gray-200 text-gray-600 text-[9px] font-bold uppercase tracking-wider">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-gray-100 dark:bg-[#262520] border border-gray-200 dark:border-[#3A3835] text-gray-600 dark:text-[#B8B0A5] text-[9px] font-bold uppercase tracking-wider">
                   Draft
                 </span>
               </div>
 
-              <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 text-xs text-gray-500 leading-relaxed">
+              <div className="bg-gray-50 dark:bg-[#262520] p-3 rounded-xl border border-gray-100 dark:border-[#3A3835] text-xs text-gray-500 dark:text-[#B8B0A5] leading-relaxed">
                 Details have not been sent yet.
               </div>
 
@@ -1209,7 +1212,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                     onNavigate('/parent/children/new');
                   }
                 }}
-                className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-gray-50 border border-gray-300 text-[#3F3F46] font-semibold text-xs sm:text-sm transition-all cursor-pointer focus:outline-none text-center"
+                className="w-full py-2.5 px-4 rounded-xl bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#2A2926] border border-gray-300 dark:border-[#3A3835] text-[#3F3F46] dark:text-[#F0EBE3] font-semibold text-xs sm:text-sm transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27]/40 text-center"
               >
                 Continue details
               </button>
@@ -1220,9 +1223,9 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         {/* Bottom Info Note Card */}
         <div 
           data-component-version="parent-passes-info-note-v2-stitch"
-          className="bg-[#FCF9F2] p-4 rounded-2xl border border-[#E8DFCA] text-xs text-[#5C5A54] flex items-start space-x-3 shadow-2xs"
+          className="bg-[#FCF9F2] dark:bg-[#21211E] p-4 rounded-2xl border border-[#E8DFCA] dark:border-[#302E29] text-xs text-[#5C5A54] dark:text-[#B8B0A5] flex items-start space-x-3 shadow-2xs"
         >
-          <Info className="w-4 h-4 text-[#9A7326] shrink-0 mt-0.5 stroke-[2]" />
+          <Info className="w-4 h-4 text-[#9A7326] dark:text-[#C59B27] shrink-0 mt-0.5 stroke-[2]" />
           <p className="leading-relaxed text-left">
             Keep each pass ready on event day. The team will check the child photo and pickup details.
           </p>
@@ -1234,12 +1237,12 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   const renderProfileTab = () => (
     <div data-view-version="parent-profile-v4-clean-header" className="space-y-4 pt-1">
       {/* 2. Parent profile card */}
-      <div className="bg-white rounded-2xl border border-[#EAE8E1] p-5 shadow-2xs relative text-center">
+      <div className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-5 shadow-2xs relative text-center">
         <div className="flex justify-end mb-1">
           <button
             type="button"
             onClick={() => onNavigate('/parent/profile/edit')}
-            className="text-xs font-semibold text-[#B89047] hover:underline cursor-pointer focus:outline-none"
+            className="text-xs font-semibold text-[#B89047] dark:text-[#C59B27] hover:underline cursor-pointer focus:outline-none"
           >
             Edit details
           </button>
@@ -1249,39 +1252,39 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           <FallbackAvatar
             src={isRealUploadedPhoto(parentProfile.photoUrl) ? parentProfile.photoUrl : undefined}
             name={parentProfile.fullName || 'Parent Account'}
-            className="w-16 h-16 sm:w-18 sm:h-18 rounded-2xl border border-[#D9D6CE] text-lg font-bold shadow-2xs"
+            className="w-16 h-16 sm:w-18 sm:h-18 rounded-2xl border border-[#D9D6CE] dark:border-[#3A3835] dark:bg-[#262520] dark:text-[#B8B0A5] text-lg font-bold shadow-2xs"
           />
         </div>
 
-        <h2 className="text-lg sm:text-xl font-serif-koinonia font-bold text-[#18181B] leading-tight">
+        <h2 className="text-lg sm:text-xl font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3] leading-tight">
           {parentProfile.fullName || 'Parent Account'}
         </h2>
 
         <div className="mt-1.5 mb-2.5">
-          <span className="inline-block px-3 py-0.5 rounded-full bg-[#EFECE4] text-[#715D3A] text-xs font-semibold">
+          <span className="inline-block px-3 py-0.5 rounded-full bg-[#EFECE4] dark:bg-[#262520] border border-transparent dark:border-[#3A3835] text-[#715D3A] dark:text-[#B8B0A5] text-xs font-semibold">
             Parent account
           </span>
         </div>
 
-        <p className="text-xs sm:text-sm text-[#3F3F46]">
+        <p className="text-xs sm:text-sm text-[#3F3F46] dark:text-[#B8B0A5]">
           {parentProfile.email || 'Not specified'}
         </p>
 
-        <p className="text-xs sm:text-sm text-[#3F3F46] mt-0.5">
+        <p className="text-xs sm:text-sm text-[#3F3F46] dark:text-[#B8B0A5] mt-0.5">
           {parentProfile.phone || 'Not specified'}
         </p>
       </div>
 
       {/* Volunteer Status / Switcher Banner */}
       {volunteerProfile && (volunteerProfile.status === 'active' || volunteerProfile.status === 'approved') && (
-        <div className="bg-[#FAF6EB] border border-[#E5D5AE] rounded-2xl p-4.5 space-y-3 shadow-2xs text-left">
+        <div className="bg-[#FAF6EB] dark:bg-[#21211E] border border-[#E5D5AE] dark:border-[#302E29] rounded-2xl p-4.5 space-y-3 shadow-2xs text-left">
           <div className="flex items-center space-x-3">
-            <div className="p-2.5 bg-[#FAF6EB] border border-[#E5D5AE] rounded-xl text-[#9A7326] shrink-0">
+            <div className="p-2.5 bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] rounded-xl text-[#9A7326] dark:text-[#C59B27] shrink-0">
               <Users className="w-5 h-5 stroke-[1.75]" />
             </div>
             <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-bold text-[#18181B] font-serif-koinonia leading-tight">Volunteer Access Active</h3>
-              <p className="text-[11px] text-[#6B7280] mt-0.5 leading-tight truncate">Approved for the <span className="font-semibold text-gray-700">{volunteerProfile.preferred_team || 'event-day'}</span> team.</p>
+              <h3 className="text-sm font-bold text-[#18181B] dark:text-[#F0EBE3] font-serif-koinonia leading-tight">Volunteer Access Active</h3>
+              <p className="text-[11px] text-[#6B7280] dark:text-[#B8B0A5] mt-0.5 leading-tight truncate">Approved for the <span className="font-semibold text-gray-700 dark:text-[#F0EBE3]">{volunteerProfile.preferred_team || 'event-day'}</span> team.</p>
             </div>
           </div>
           <Button
@@ -1302,14 +1305,14 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       )}
 
       {volunteerProfile && volunteerProfile.status === 'pending_review' && (
-        <div className="bg-amber-50/40 border border-amber-200/60 rounded-2xl p-4 text-left">
+        <div className="bg-amber-50/40 dark:bg-[#21211E] border border-amber-200/60 dark:border-[#302E29] rounded-2xl p-4 text-left">
           <div className="flex items-start space-x-3">
-            <div className="p-2 bg-amber-50 rounded-xl text-amber-600 shrink-0 mt-0.5 border border-amber-100">
+            <div className="p-2 bg-amber-50 dark:bg-[#262520] rounded-xl text-amber-600 dark:text-[#C59B27] shrink-0 mt-0.5 border border-amber-100 dark:border-[#3A3835]">
               <Clock className="w-4 h-4 stroke-[2]" />
             </div>
             <div>
-              <h3 className="text-xs font-bold text-amber-900 uppercase tracking-wide">Volunteer Status: Pending</h3>
-              <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+              <h3 className="text-xs font-bold text-amber-900 dark:text-[#F0EBE3] uppercase tracking-wide">Volunteer Status: Pending</h3>
+              <p className="text-xs text-amber-700 dark:text-[#B8B0A5] mt-1 leading-relaxed">
                 Your application to serve on the <span className="font-semibold">{volunteerProfile.preferred_team || 'event-day'}</span> team is currently under admin review.
               </p>
               <button
@@ -1324,14 +1327,14 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       )}
 
       {volunteerProfile && volunteerProfile.status === 'rejected' && (
-        <div className="bg-red-50/40 border border-red-200/60 rounded-2xl p-4 text-left">
+        <div className="bg-red-50/40 dark:bg-[#21211E] border border-red-200/60 dark:border-[#302E29] rounded-2xl p-4 text-left">
           <div className="flex items-start space-x-3">
-            <div className="p-2 bg-red-50 rounded-xl text-red-600 shrink-0 mt-0.5 border border-red-100">
+            <div className="p-2 bg-red-50 dark:bg-[#262520] rounded-xl text-red-600 dark:text-red-400 shrink-0 mt-0.5 border border-red-100 dark:border-[#3A3835]">
               <Shield className="w-4 h-4 stroke-[2]" />
             </div>
             <div>
-              <h3 className="text-xs font-bold text-red-900 uppercase tracking-wide">Volunteer Status: Rejected</h3>
-              <p className="text-xs text-red-700 mt-1 leading-relaxed">
+              <h3 className="text-xs font-bold text-red-900 dark:text-[#F0EBE3] uppercase tracking-wide">Volunteer Status: Rejected</h3>
+              <p className="text-xs text-red-700 dark:text-[#B8B0A5] mt-1 leading-relaxed">
                 Your request for volunteer access has been rejected by an administrator. Please contact support if you believe this is an error.
               </p>
             </div>
@@ -1340,14 +1343,14 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       )}
 
       {volunteerProfile && volunteerProfile.status === 'suspended' && (
-        <div className="bg-gray-100/60 border border-gray-200 rounded-2xl p-4 text-left">
+        <div className="bg-gray-100/60 dark:bg-[#21211E] border border-gray-200 dark:border-[#302E29] rounded-2xl p-4 text-left">
           <div className="flex items-start space-x-3">
-            <div className="p-2 bg-gray-50 rounded-xl text-gray-500 shrink-0 mt-0.5 border border-gray-150">
+            <div className="p-2 bg-gray-50 dark:bg-[#262520] rounded-xl text-gray-500 dark:text-[#B8B0A5] shrink-0 mt-0.5 border border-gray-150 dark:border-[#3A3835]">
               <Shield className="w-4 h-4 stroke-[2]" />
             </div>
             <div>
-              <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wide">Volunteer Status: Suspended</h3>
-              <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+              <h3 className="text-xs font-bold text-gray-800 dark:text-[#F0EBE3] uppercase tracking-wide">Volunteer Status: Suspended</h3>
+              <p className="text-xs text-gray-600 dark:text-[#B8B0A5] mt-1 leading-relaxed">
                 Your volunteer profile has been suspended by an administrator.
               </p>
             </div>
@@ -1356,47 +1359,47 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       )}
 
       {/* 3. Contact preference card */}
-      <div className="bg-white rounded-2xl border border-[#EAE8E1] p-4 sm:p-5 shadow-2xs space-y-3">
+      <div className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-4 sm:p-5 shadow-2xs space-y-3">
         <div className="flex items-center justify-between pb-1">
-          <span className="text-[11px] font-semibold tracking-wider text-[#3F3F46] uppercase">
+          <span className="text-[11px] font-semibold tracking-wider text-[#3F3F46] dark:text-[#B8B0A5] uppercase">
             CONTACT PREFERENCE
           </span>
           <button
             type="button"
             onClick={() => onNavigate('/parent/profile/edit')}
-            className="text-xs font-semibold text-[#B89047] hover:underline cursor-pointer focus:outline-none"
+            className="text-xs font-semibold text-[#B89047] dark:text-[#C59B27] hover:underline cursor-pointer focus:outline-none"
           >
             Change
           </button>
         </div>
 
-        <div className="flex items-center space-x-3 text-sm font-medium text-[#18181B] py-1">
-          <MessageCircle className="w-4 h-4 text-[#B89047] stroke-[1.75] shrink-0" />
+        <div className="flex items-center space-x-3 text-sm font-medium text-[#18181B] dark:text-[#F0EBE3] py-1">
+          <MessageCircle className="w-4 h-4 text-[#B89047] dark:text-[#C59B27] stroke-[1.75] shrink-0" />
           <span>WhatsApp</span>
         </div>
 
-        <div className="flex items-center space-x-3 text-sm font-medium text-[#18181B] py-1">
-          <Mail className="w-4 h-4 text-[#B89047] stroke-[1.75] shrink-0" />
+        <div className="flex items-center space-x-3 text-sm font-medium text-[#18181B] dark:text-[#F0EBE3] py-1">
+          <Mail className="w-4 h-4 text-[#B89047] dark:text-[#C59B27] stroke-[1.75] shrink-0" />
           <span>Email</span>
         </div>
 
-        <p className="text-xs italic text-[#6B7280] pt-1">
+        <p className="text-xs italic text-[#6B7280] dark:text-[#B8B0A5] pt-1">
           Important updates will be sent here.
         </p>
       </div>
 
       {/* Notification Preferences Card */}
-      <div className="bg-white rounded-2xl border border-[#EAE8E1] p-4 sm:p-5 shadow-2xs space-y-4">
-        <span className="text-[11px] font-semibold tracking-wider text-[#3F3F46] uppercase block">
+      <div className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-4 sm:p-5 shadow-2xs space-y-4">
+        <span className="text-[11px] font-semibold tracking-wider text-[#3F3F46] dark:text-[#B8B0A5] uppercase block">
           Notification Preferences
         </span>
 
-        <div className="space-y-3.5 divide-y divide-[#EAE8E1]/30 text-xs text-[#18181B]">
+        <div className="space-y-3.5 divide-y divide-[#EAE8E1]/30 dark:divide-[#302E29] text-xs text-[#18181B] dark:text-[#F0EBE3]">
           {/* Sound Notification Preference */}
           <div className="flex items-center justify-between pt-0.5">
             <div className="flex flex-col text-left">
-              <span className="font-semibold text-zinc-800">Sound alerts</span>
-              <span className="text-[10px] text-[#6B7280]">Play a soft alert for new updates</span>
+              <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">Sound alerts</span>
+              <span className="text-[10px] text-[#6B7280] dark:text-[#B8B0A5]">Play a soft alert for new updates</span>
             </div>
             <button
               type="button"
@@ -1410,9 +1413,9 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 showSuccess('Sound Alerts Updated', `Sound notifications turned ${nextVal ? 'on' : 'off'}.`);
               }}
               className={`px-3 py-1.5 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all cursor-pointer ${
-                isSoundOn 
-                  ? 'bg-[#C59B27] text-white' 
-                  : 'bg-[#FAF8F3] border border-[#E5D5AE] text-[#3F3F46]'
+                isSoundOn
+                  ? 'bg-[#C59B27] text-white dark:text-[#1D1D1A]'
+                  : 'bg-[#FAF8F3] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] text-[#3F3F46] dark:text-[#B8B0A5] dark:hover:bg-[#2A2926]'
               }`}
             >
               {isSoundOn ? 'On' : 'Off'}
@@ -1422,33 +1425,36 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           {/* Appearance / Theme Preference */}
           <div className="flex items-center justify-between pt-3.5">
             <div className="flex flex-col text-left">
-              <span className="font-semibold text-zinc-800">Theme</span>
-              <span className="text-[10px] text-[#6B7280]">Switch between light and dark theme</span>
+              <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">Theme</span>
+              <span className="text-[10px] text-[#6B7280] dark:text-[#B8B0A5]">Switch between light and dark theme</span>
             </div>
-            <ThemeSwitcher showLabel />
+            <ThemeSwitcher
+              showLabel
+              className="dark:!bg-[#C59B27] dark:!text-[#1D1D1A] dark:!border-[#C59B27] dark:hover:!bg-[#B88C22]"
+            />
           </div>
 
           {/* Push Notification Preference */}
           <div className="flex items-center justify-between pt-3.5">
             <div className="flex flex-col text-left">
-              <span className="font-semibold text-zinc-800">Push notifications</span>
-              <span className="text-[10px] text-[#6B7280]">
+              <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">Push notifications</span>
+              <span className="text-[10px] text-[#6B7280] dark:text-[#B8B0A5]">
                 {pushStatus === 'enabled' ? 'Receiving alerts on this device' : 'Receive updates on this device'}
               </span>
               {pushStatus === 'needs_attention' && (
-                <span className="text-[10px] text-amber-600 mt-0.5">Needs attention</span>
+                <span className="text-[10px] text-amber-600 dark:text-[#C59B27] mt-0.5">Needs attention</span>
               )}
             </div>
             {pushStatus === 'unsupported' ? (
-              <span className="text-[10px] font-semibold text-[#6B7280]">
+              <span className="text-[10px] font-semibold text-[#6B7280] dark:text-[#7A7570]">
                 Unavailable
               </span>
             ) : pushStatus === 'blocked' ? (
-              <span className="text-[10px] font-semibold text-red-500">
+              <span className="text-[10px] font-semibold text-red-500 dark:text-red-400">
                 Blocked
               </span>
             ) : pushStatus === 'enabled' ? (
-              <span className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-[#FAF6EB] text-[#9A7326] border border-[#E5D5AE] tracking-wider uppercase">
+              <span className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-[#FAF6EB] dark:bg-[#C59B27] text-[#9A7326] dark:text-[#1D1D1A] border border-[#E5D5AE] dark:border-[#C59B27] tracking-wider uppercase">
                 On
               </span>
             ) : pushStatus === 'needs_attention' ? (
@@ -1468,7 +1474,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                     showInfo('Setup Alert', res.error || 'Could not connect push. Please try again.');
                   }
                 }}
-                className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-amber-50 border border-amber-300 text-amber-700 hover:bg-amber-100 transition-all cursor-pointer"
+                className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-amber-50 dark:bg-[#262520] border border-amber-300 dark:border-[#3A3835] text-amber-700 dark:text-[#B8B0A5] hover:bg-amber-100 dark:hover:bg-[#2A2926] transition-all cursor-pointer"
               >
                 Try again
               </button>
@@ -1489,7 +1495,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                     showInfo('Setup Alert', res.error || 'Push notifications are not available yet.');
                   }
                 }}
-                className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-[#FAF8F3] border border-[#E5D5AE] text-[#3F3F46] hover:border-[#C59B27] hover:text-[#9A7326] transition-all cursor-pointer"
+                className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-[#FAF8F3] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] text-[#3F3F46] dark:text-[#B8B0A5] hover:border-[#C59B27] hover:text-[#9A7326] dark:hover:bg-[#2A2926] dark:hover:text-[#F0EBE3] transition-all cursor-pointer"
               >
                 Enable
               </button>
@@ -1499,8 +1505,8 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           {/* Email Notification Preference */}
           <div className="flex items-center justify-between pt-3.5">
             <div className="flex flex-col text-left">
-              <span className="font-semibold text-zinc-800">Email updates</span>
-              <span className="text-[10px] text-[#6B7280]">Weekly newsletters and care reminders</span>
+              <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">Email updates</span>
+              <span className="text-[10px] text-[#6B7280] dark:text-[#B8B0A5]">Weekly newsletters and care reminders</span>
             </div>
             <button
               type="button"
@@ -1514,8 +1520,8 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
               }}
               className={`px-3 py-1.5 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all cursor-pointer ${
                 localStorage.getItem('koinonia_parent_email_notifications') === 'true'
-                  ? 'bg-[#C59B27] text-white' 
-                  : 'bg-[#FAF8F3] border border-[#E5D5AE] text-[#3F3F46]'
+                  ? 'bg-[#C59B27] text-white dark:text-[#1D1D1A]'
+                  : 'bg-[#FAF8F3] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] text-[#3F3F46] dark:text-[#B8B0A5] dark:hover:bg-[#2A2926]'
               }`}
             >
               {localStorage.getItem('koinonia_parent_email_notifications') === 'true' ? 'On' : 'Off'}
@@ -1523,10 +1529,10 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           </div>
 
           {/* WhatsApp Notification Preference */}
-          <div className="flex items-center justify-between pt-3.5 border-t border-[#FAF8F4]">
+          <div className="flex items-center justify-between pt-3.5 border-t border-[#FAF8F4] dark:border-[#302E29]">
             <div className="flex flex-col text-left">
-              <span className="font-semibold text-zinc-800">WhatsApp updates</span>
-              <span className="text-[10px] text-[#6B7280]">
+              <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">WhatsApp updates</span>
+              <span className="text-[10px] text-[#6B7280] dark:text-[#B8B0A5]">
                 {whatsappStatus === 'opted_in'
                   ? (whatsappNumber ? `Active for ${whatsappNumber}` : 'Active for account')
                   : 'Important registration and event updates'}
@@ -1534,14 +1540,14 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             </div>
             {whatsappStatus === 'opted_in' ? (
               <div className="flex items-center gap-2">
-                <span className="px-2.5 py-1 rounded-xl text-[10px] font-bold tracking-wider uppercase bg-[#C59B27] text-white">
+                <span className="px-2.5 py-1 rounded-xl text-[10px] font-bold tracking-wider uppercase bg-[#C59B27] text-white dark:text-[#1D1D1A]">
                   On
                 </span>
                 <button
                   type="button"
                   disabled={waConsentLoading}
                   onClick={handleOptOutWhatsApp}
-                  className="px-2.5 py-1 rounded-xl text-[10px] font-semibold text-[#71717A] hover:text-red-600 hover:bg-red-50 border border-zinc-200 transition-all cursor-pointer"
+                  className="px-2.5 py-1 rounded-xl text-[10px] font-semibold text-[#71717A] dark:text-[#B8B0A5] hover:text-red-600 hover:bg-red-50 dark:bg-[#262520] dark:hover:bg-[#2A2926] dark:hover:text-red-400 border border-zinc-200 dark:border-[#3A3835] transition-all cursor-pointer"
                 >
                   Turn off
                 </button>
@@ -1549,7 +1555,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             ) : (
               <div className="flex items-center gap-2">
                 {whatsappStatus === 'opted_out' && (
-                  <span className="px-2.5 py-1 rounded-xl text-[10px] font-bold tracking-wider uppercase bg-zinc-200 text-zinc-700">
+                  <span className="px-2.5 py-1 rounded-xl text-[10px] font-bold tracking-wider uppercase bg-zinc-200 dark:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] border border-transparent dark:border-[#3A3835]">
                     Off
                   </span>
                 )}
@@ -1560,7 +1566,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                     setWaModalPhone(whatsappNumber || parentProfile.phone || '');
                     setShowWaOptInModal(true);
                   }}
-                  className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-[#FAF8F3] border border-[#E5D5AE] text-[#3F3F46] hover:border-[#C59B27] hover:text-[#9A7326] tracking-wider uppercase transition-all cursor-pointer"
+                  className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-[#FAF8F3] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] text-[#3F3F46] dark:text-[#B8B0A5] hover:border-[#C59B27] hover:text-[#9A7326] dark:hover:bg-[#2A2926] dark:hover:text-[#F0EBE3] tracking-wider uppercase transition-all cursor-pointer"
                 >
                   {whatsappStatus === 'opted_out' ? 'Turn on' : 'Enable'}
                 </button>
@@ -1571,80 +1577,80 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       </div>
 
       {/* 4. Parent details card */}
-      <div className="bg-white rounded-2xl border border-[#EAE8E1] p-4 sm:p-5 shadow-2xs space-y-4">
+      <div className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-4 sm:p-5 shadow-2xs space-y-4">
         <div className="flex items-center justify-between">
-          <span className="text-[11px] font-semibold tracking-wider text-[#3F3F46] uppercase">
+          <span className="text-[11px] font-semibold tracking-wider text-[#3F3F46] dark:text-[#B8B0A5] uppercase">
             PARENT DETAILS
           </span>
           <button
             type="button"
             onClick={() => onNavigate('/parent/profile/edit')}
-            className="text-xs font-semibold text-[#B89047] hover:underline cursor-pointer focus:outline-none"
+            className="text-xs font-semibold text-[#B89047] dark:text-[#C59B27] hover:underline cursor-pointer focus:outline-none"
           >
             Edit details
           </button>
         </div>
 
         <div>
-          <div className="text-xs text-[#6B7280]">Full name</div>
-          <div className="text-sm font-semibold text-[#18181B] mt-0.5">
+          <div className="text-xs text-[#6B7280] dark:text-[#B8B0A5]">Full name</div>
+          <div className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5">
             {parentProfile.fullName || 'Not provided'}
           </div>
         </div>
 
         <div>
-          <div className="text-xs text-[#6B7280]">Phone number</div>
-          <div className="text-sm font-semibold text-[#18181B] mt-0.5">
+          <div className="text-xs text-[#6B7280] dark:text-[#B8B0A5]">Phone number</div>
+          <div className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5">
             {parentProfile.phone || 'Not provided'}
           </div>
         </div>
 
         <div>
-          <div className="text-xs text-[#6B7280]">WhatsApp number</div>
-          <div className="text-sm font-semibold text-[#18181B] mt-0.5">
+          <div className="text-xs text-[#6B7280] dark:text-[#B8B0A5]">WhatsApp number</div>
+          <div className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5">
             {parentProfile.whatsapp || parentProfile.phone || 'Not provided'}
           </div>
         </div>
 
         <div>
-          <div className="text-xs text-[#6B7280]">Home address</div>
-          <div className="text-sm font-semibold text-[#18181B] mt-0.5 leading-relaxed whitespace-pre-line">
+          <div className="text-xs text-[#6B7280] dark:text-[#B8B0A5]">Home address</div>
+          <div className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5 leading-relaxed whitespace-pre-line">
             {parentProfile.homeAddress || 'Not provided'}
           </div>
         </div>
 
         <div>
-          <div className="text-xs text-[#6B7280]">Country</div>
-          <div className="text-sm font-semibold text-[#18181B] mt-0.5">
+          <div className="text-xs text-[#6B7280] dark:text-[#B8B0A5]">Country</div>
+          <div className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5">
             {parentProfile.country || 'Not provided'}
           </div>
         </div>
 
         <div>
-          <div className="text-xs text-[#6B7280]">State / Region</div>
-          <div className="text-sm font-semibold text-[#18181B] mt-0.5">
+          <div className="text-xs text-[#6B7280] dark:text-[#B8B0A5]">State / Region</div>
+          <div className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5">
             {parentProfile.stateRegion || 'Not provided'}
           </div>
         </div>
 
         <div>
-          <div className="text-xs text-[#6B7280]">City</div>
-          <div className="text-sm font-semibold text-[#18181B] mt-0.5">
+          <div className="text-xs text-[#6B7280] dark:text-[#B8B0A5]">City</div>
+          <div className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5">
             {parentProfile.city || 'Not provided'}
           </div>
         </div>
 
         <div className="pt-1">
-          <div className="text-xs text-[#6B7280] mb-2">Ministry involvement</div>
-          <div className="bg-[#FAF8F4] border border-[#EAE8E1] rounded-xl p-3.5 space-y-2.5">
+          <div className="text-xs text-[#6B7280] dark:text-[#B8B0A5] mb-2">Ministry involvement</div>
+          <div className="bg-[#FAF8F4] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3.5 space-y-2.5">
             <div className="flex items-center justify-between text-xs sm:text-sm">
-              <span className="text-[#3F3F46]">Koinonia worker</span>
-              <span className="font-semibold text-[#18181B]">{parentProfile.isWorker ? 'Yes' : 'No'}</span>
+              <span className="text-[#3F3F46] dark:text-[#B8B0A5]">Koinonia worker</span>
+              <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">{parentProfile.isWorker ? 'Yes' : 'No'}</span>
             </div>
             {parentProfile.isWorker && (
               <div className="flex items-center justify-between text-xs sm:text-sm">
-                <span className="text-[#3F3F46]">Department</span>
-                <span className="font-semibold text-[#18181B]">{parentProfile.department || 'Children Ministry'}</span>
+                <span className="text-[#3F3F46] dark:text-[#B8B0A5]">Department</span>
+                <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">{parentProfile.department || 'Children Ministry'}</span>
               </div>
             )}
           </div>
@@ -1652,42 +1658,42 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       </div>
 
       {/* 5. Quick links card */}
-      <div className="bg-white rounded-2xl border border-[#EAE8E1] shadow-2xs divide-y divide-[#FAF8F4] overflow-hidden">
+      <div className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] shadow-2xs divide-y divide-[#FAF8F4] dark:divide-[#302E29] overflow-hidden">
         <button
           type="button"
           onClick={() => handleTabChange('Children')}
-          className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] transition-colors cursor-pointer focus:outline-none text-left"
+          className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] dark:hover:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none text-left"
         >
           <div className="flex items-center space-x-3.5">
-            <Smile className="w-4 h-4 text-[#6B7280] stroke-[1.75]" />
-            <span className="text-sm font-medium text-[#18181B]">My children</span>
+            <Smile className="w-4 h-4 text-[#6B7280] dark:text-[#B8B0A5] stroke-[1.75]" />
+            <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3]">My children</span>
           </div>
-          <ChevronRight className="w-4 h-4 text-[#D9D6CE]" />
+          <ChevronRight className="w-4 h-4 text-[#D9D6CE] dark:text-[#7A7570]" />
         </button>
 
         <button
           type="button"
           onClick={() => handleTabChange('Passes')}
-          className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] transition-colors cursor-pointer focus:outline-none text-left"
+          className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] dark:hover:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none text-left"
         >
           <div className="flex items-center space-x-3.5">
-            <Ticket className="w-4 h-4 text-[#6B7280] stroke-[1.75]" />
-            <span className="text-sm font-medium text-[#18181B]">Passes</span>
+            <Ticket className="w-4 h-4 text-[#6B7280] dark:text-[#B8B0A5] stroke-[1.75]" />
+            <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3]">Passes</span>
           </div>
-          <ChevronRight className="w-4 h-4 text-[#D9D6CE]" />
+          <ChevronRight className="w-4 h-4 text-[#D9D6CE] dark:text-[#7A7570]" />
         </button>
 
         {!volunteerProfile ? (
           <button
             type="button"
             onClick={() => onNavigate('/parent/volunteer-request')}
-            className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] transition-colors cursor-pointer focus:outline-none text-left animate-fade-in"
+            className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] dark:hover:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none text-left animate-fade-in"
           >
             <div className="flex items-center space-x-3.5">
               <Users className="w-4 h-4 text-[#C59B27] stroke-[1.75]" />
-              <span className="text-sm font-medium text-[#18181B]">Volunteer with Children & Teens</span>
+              <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3]">Volunteer with Children & Teens</span>
             </div>
-            <ChevronRight className="w-4 h-4 text-[#D9D6CE]" />
+            <ChevronRight className="w-4 h-4 text-[#D9D6CE] dark:text-[#7A7570]" />
           </button>
         ) : (
           <button
@@ -1700,18 +1706,18 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 onNavigate('/volunteer/event');
               }
             }}
-            className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] transition-colors cursor-pointer focus:outline-none text-left animate-fade-in disabled:opacity-50"
+            className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] dark:hover:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none text-left animate-fade-in disabled:opacity-50"
           >
             <div className="flex items-center space-x-3.5">
               <ShieldCheck className="w-4 h-4 text-[#C59B27] stroke-[1.75]" />
-              <span className="text-sm font-medium text-[#18181B]">
+              <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3]">
                 {isSwitchingExperience ? 'Switching…' : 'Switch to Volunteer Access'}
               </span>
             </div>
             {isSwitchingExperience ? (
               <RefreshCw className="w-4 h-4 text-[#C59B27] animate-spin" />
             ) : (
-              <ChevronRight className="w-4 h-4 text-[#D9D6CE]" />
+              <ChevronRight className="w-4 h-4 text-[#D9D6CE] dark:text-[#7A7570]" />
             )}
           </button>
         )}
@@ -1722,13 +1728,13 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           onClick={() => {
             setShowHelpDrawer(true);
           }}
-          className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] transition-colors cursor-pointer focus:outline-none text-left"
+          className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] dark:hover:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none text-left"
         >
           <div className="flex items-center space-x-3.5">
-            <HelpCircle className="w-4 h-4 text-[#6B7280] stroke-[1.75]" />
-            <span className="text-sm font-medium text-[#18181B]">Help and questions</span>
+            <HelpCircle className="w-4 h-4 text-[#6B7280] dark:text-[#B8B0A5] stroke-[1.75]" />
+            <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3]">Help and questions</span>
           </div>
-          <ChevronRight className="w-4 h-4 text-[#D9D6CE]" />
+          <ChevronRight className="w-4 h-4 text-[#D9D6CE] dark:text-[#7A7570]" />
         </button>
 
         <button
@@ -1737,13 +1743,13 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           onClick={() => {
             setShowSafetyDrawer(true);
           }}
-          className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] transition-colors cursor-pointer focus:outline-none text-left"
+          className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] dark:hover:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none text-left"
         >
           <div className="flex items-center space-x-3.5">
-            <Shield className="w-4 h-4 text-[#6B7280] stroke-[1.75]" />
-            <span className="text-sm font-medium text-[#18181B]">Safety information</span>
+            <Shield className="w-4 h-4 text-[#6B7280] dark:text-[#B8B0A5] stroke-[1.75]" />
+            <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3]">Safety information</span>
           </div>
-          <ChevronRight className="w-4 h-4 text-[#D9D6CE]" />
+          <ChevronRight className="w-4 h-4 text-[#D9D6CE] dark:text-[#7A7570]" />
         </button>
       </div>
 
@@ -1761,14 +1767,14 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       />
 
       {/* 6. Account actions card */}
-      <div className="bg-white rounded-2xl border border-[#EAE8E1] shadow-2xs divide-y divide-[#FAF8F4] overflow-hidden">
+      <div className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] shadow-2xs divide-y divide-[#FAF8F4] dark:divide-[#302E29] overflow-hidden">
         {isAppInstalled() ? (
           <div className="w-full p-4 flex items-center justify-between text-left">
             <div className="flex items-center space-x-3.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 stroke-[1.75]" />
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-[#C59B27] stroke-[1.75]" />
               <div>
-                <span className="text-sm font-medium text-[#18181B]">App installed</span>
-                <p className="text-[11px] text-zinc-500 leading-tight">Koinonia Children & Teens is already installed on this device.</p>
+                <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3]">App installed</span>
+                <p className="text-[11px] text-zinc-500 dark:text-[#B8B0A5] leading-tight">Koinonia Children & Teens is already installed on this device.</p>
               </div>
             </div>
           </div>
@@ -1787,29 +1793,29 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 showSuccess('Already installed', 'Koinonia Children & Teens is already installed on this device.');
               }
             }}
-            className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] transition-colors cursor-pointer focus:outline-none text-left"
+            className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] dark:hover:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none text-left"
           >
             <div className="flex items-center space-x-3.5">
               <Download className="w-4 h-4 text-[#C59B27] stroke-[1.75]" />
               <div>
-                <span className="text-sm font-medium text-[#18181B]">Install app</span>
-                <p className="text-[11px] text-zinc-500 leading-tight">Add Koinonia Children & Teens to this device.</p>
+                <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3]">Install app</span>
+                <p className="text-[11px] text-zinc-500 dark:text-[#B8B0A5] leading-tight">Add Koinonia Children & Teens to this device.</p>
               </div>
             </div>
-            <ChevronRight className="w-4 h-4 text-[#D9D6CE]" />
+            <ChevronRight className="w-4 h-4 text-[#D9D6CE] dark:text-[#7A7570]" />
           </button>
         )}
 
         <button
           type="button"
           onClick={() => onNavigate('/parent/new-password')}
-          className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] transition-colors cursor-pointer focus:outline-none text-left"
+          className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] dark:hover:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none text-left"
         >
           <div className="flex items-center space-x-3.5">
-            <Lock className="w-4 h-4 text-[#6B7280] stroke-[1.75]" />
-            <span className="text-sm font-medium text-[#18181B]">Change password</span>
+            <Lock className="w-4 h-4 text-[#6B7280] dark:text-[#B8B0A5] stroke-[1.75]" />
+            <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3]">Change password</span>
           </div>
-          <ChevronRight className="w-4 h-4 text-[#D9D6CE]" />
+          <ChevronRight className="w-4 h-4 text-[#D9D6CE] dark:text-[#7A7570]" />
         </button>
 
         <button
@@ -1832,10 +1838,10 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
               onNavigate('/');
             }
           }}
-          className="w-full p-4 flex items-center space-x-3.5 hover:bg-[#FEF2F2]/50 transition-colors cursor-pointer focus:outline-none text-left"
+          className="w-full p-4 flex items-center space-x-3.5 hover:bg-[#FEF2F2]/50 dark:hover:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none text-left"
         >
-          <LogOut className="w-4 h-4 text-[#C53030] stroke-[1.75]" />
-          <span className="text-sm font-medium text-[#C53030]">Sign out</span>
+          <LogOut className="w-4 h-4 text-[#C53030] dark:text-[#E05252] stroke-[1.75]" />
+          <span className="text-sm font-medium text-[#C53030] dark:text-[#E05252]">Sign out</span>
         </button>
       </div>
     </div>
@@ -1849,9 +1855,9 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       activeTab === 'Passes' ? 'parent-passes-v11-fixed-active-pass-rendering' :
       activeTab === 'Profile' ? 'parent-profile-v4-clean-header' :
       'parent-dashboard-v5-clean-header'
-    } className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF8F3] text-[#18181B] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50">
+    } className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF8F3] dark:bg-[#1D1D1A] text-[#18181B] dark:text-[#F0EBE3] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50 dark:border-[#302E29]">
       {/* Top Header shown on all screens with calm, minimal, premium design */}
-      <header className="sticky top-0 z-30 bg-[#FAF8F3]/95 backdrop-blur-md border-b border-[#EAE8E1]/50" data-component-version={activeTab === 'Passes' ? 'parent-passes-header-v2-stitch' : 'parent-mobile-header-v2-clean'}>
+      <header className="sticky top-0 z-30 bg-[#FAF8F3]/95 dark:bg-[#1D1D1A]/95 backdrop-blur-md border-b border-[#EAE8E1]/50 dark:border-[#302E29]" data-component-version={activeTab === 'Passes' ? 'parent-passes-header-v2-stitch' : 'parent-mobile-header-v2-clean'}>
         <div className="px-5 h-14 flex items-center justify-between">
             <BrandLogo
               context="compact"
@@ -1861,7 +1867,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             />
 
           <div className="text-center">
-            <span className="font-serif-koinonia font-bold text-xs sm:text-sm text-[#18181B] tracking-wider uppercase leading-none">
+            <span className="font-serif-koinonia font-bold text-xs sm:text-sm text-[#18181B] dark:text-[#F0EBE3] tracking-wider uppercase leading-none">
               {activeTab === 'Passes' ? 'KOINONIA' : activeTab === 'Home' ? 'Koinonia' : activeTab === 'Children' ? 'Children' : activeTab === 'Status' ? 'Status' : 'Profile'}
             </span>
           </div>
@@ -1870,10 +1876,10 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             {activeTab !== 'Passes' && (
               <button
                 onClick={() => setShowNotificationsDrawer(true)}
-                className="relative p-2 rounded-xl text-[#3F3F46] hover:text-[#C59B27] active:scale-95 transition-all cursor-pointer focus:outline-none"
+                className="relative p-2 rounded-xl text-[#3F3F46] dark:text-[#B8B0A5] hover:text-[#C59B27] active:scale-95 transition-all cursor-pointer focus:outline-none"
                 title="Notifications"
               >
-                <Bell className="w-5 h-5 text-[#3F3F46]" />
+                <Bell className="w-5 h-5 text-[#3F3F46] dark:text-[#B8B0A5]" />
                 {unreadCount > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-[#E07A5F] text-[9px] font-bold text-white shadow-sm ring-1 ring-white">
                     {unreadCount}
@@ -1888,7 +1894,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
               <FallbackAvatar
                 src={isRealUploadedPhoto(parentProfile.photoUrl) ? parentProfile.photoUrl : undefined}
                 name={parentProfile.fullName || 'Parent'}
-                className="w-8 h-8 rounded-full border border-[#D9D6CE] text-xs font-bold shadow-2xs"
+                className="w-8 h-8 rounded-full border border-[#D9D6CE] dark:border-[#3A3835] text-xs font-bold shadow-2xs"
               />
             </button>
           </div>
@@ -1905,7 +1911,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       </main>
 
       {/* Fixed Bottom Navigation locked within the mobile app shell */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 max-w-[390px] mx-auto bg-white/95 backdrop-blur-md border-t border-[#EAE8E1] shadow-lg">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 max-w-[390px] mx-auto bg-white/95 dark:bg-[#1D1D1A]/95 backdrop-blur-md border-t border-[#EAE8E1] dark:border-[#302E29] shadow-lg">
         <div className="px-2 h-16 flex items-center justify-around">
           {[
             { label: 'Home' as BottomNavTab, icon: <Home className="w-5 h-5" /> },
@@ -1922,13 +1928,13 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 onClick={() => handleTabChange(item.label)}
                 className={`flex flex-col items-center justify-center flex-1 py-1.5 rounded-xl transition-all cursor-pointer focus:outline-none ${
                   isActive
-                    ? 'text-[#B89047] font-semibold'
-                    : 'text-[#6B7280] hover:text-[#18181B]'
+                    ? 'text-[#B89047] dark:text-[#D4AF37] font-semibold'
+                    : 'text-[#6B7280] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3]'
                 }`}
               >
                 <div
                   className={`p-1 rounded-lg transition-transform ${
-                    isActive ? 'bg-[#FAF6EB] scale-110 text-[#C59B27]' : ''
+                    isActive ? 'bg-[#FAF6EB] dark:bg-[#262520] scale-110 text-[#C59B27] dark:text-[#D4AF37]' : ''
                   }`}
                 >
                   {item.icon}
@@ -2061,6 +2067,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           fetchNotifications();
         }}
         role="parent"
+        surface="parent"
         onNavigate={onNavigate}
         onUnreadCountChange={handleUnreadCountChange}
       />
@@ -2076,28 +2083,28 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           onClick={() => setShowHelpDrawer(false)}
         >
           <div 
-            className="bg-[#FAF8F3] rounded-t-[32px] max-h-[85%] overflow-hidden flex flex-col border-t border-[#E5D5AE] shadow-2xl animate-in slide-in-from-bottom duration-300"
+            className="bg-[#FAF8F3] dark:bg-[#1D1D1A] rounded-t-[32px] max-h-[85%] overflow-hidden flex flex-col border-t border-[#E5D5AE] dark:border-[#302E29] shadow-2xl animate-in slide-in-from-bottom duration-300"
             data-component-version="parent-profile-info-sheet-v1"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="px-5 py-4.5 border-b border-[#E5D5AE]/40 flex items-center justify-between shrink-0">
+            <div className="px-5 py-4.5 border-b border-[#E5D5AE]/40 dark:border-[#302E29] flex items-center justify-between shrink-0">
               <div className="flex items-center space-x-3.5">
-                <div className="p-2.5 bg-[#FAF6EB] rounded-2xl border border-[#E5D5AE]/60 text-[#C59B27]">
+                <div className="p-2.5 bg-[#FAF6EB] dark:bg-[#262520] rounded-2xl border border-[#E5D5AE]/60 dark:border-[#3A3835] text-[#C59B27]">
                   <HelpCircle className="w-5 h-5 stroke-[1.75]" />
                 </div>
                 <div className="text-left">
-                  <h3 className="text-lg font-sans font-bold text-[#8C6D23]">
+                  <h3 className="text-lg font-sans font-bold text-[#8C6D23] dark:text-[#F0EBE3]">
                     Help and questions
                   </h3>
-                  <p className="text-[11px] text-[#6B7280] font-medium leading-tight mt-0.5">
+                  <p className="text-[11px] text-[#6B7280] dark:text-[#B8B0A5] font-medium leading-tight mt-0.5">
                     Common answers for parents during the event.
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setShowHelpDrawer(false)}
-                className="p-2 rounded-xl hover:bg-[#FAF6EB] text-[#6B7280] hover:text-[#18181B] cursor-pointer transition-colors focus:outline-none"
+                className="p-2 rounded-xl hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] text-[#6B7280] dark:text-[#7A7570] hover:text-[#18181B] dark:hover:text-[#F0EBE3] cursor-pointer transition-colors focus:outline-none"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -2140,17 +2147,17 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 <div 
                   key={faq.id} 
                   id={faq.id}
-                  className="bg-white rounded-2xl border border-[#EAE8E1]/80 p-4.5 shadow-2xs space-y-2 text-left"
+                  className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1]/80 dark:border-[#302E29] p-4.5 shadow-2xs space-y-2 text-left"
                 >
                   <div className="flex items-start space-x-2.5">
                     <span className="text-xs font-sans font-bold text-[#C59B27] mt-0.5">
                       {idx + 1}.
                     </span>
-                    <h4 className="text-sm font-sans font-bold text-[#18181B] leading-snug">
+                    <h4 className="text-sm font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] leading-snug">
                       {faq.title}
                     </h4>
                   </div>
-                  <p className="text-xs text-[#3F3F46] leading-relaxed pl-5">
+                  <p className="text-xs text-[#3F3F46] dark:text-[#B8B0A5] leading-relaxed pl-5">
                     {faq.body}
                   </p>
                 </div>
@@ -2158,10 +2165,10 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             </div>
 
             {/* Footer */}
-            <div className="p-4.5 bg-white border-t border-[#EAE8E1]/60 flex justify-center shrink-0">
+            <div className="p-4.5 bg-white dark:bg-[#1D1D1A] border-t border-[#EAE8E1]/60 dark:border-[#302E29] flex justify-center shrink-0">
               <button
                 onClick={() => setShowHelpDrawer(false)}
-                className="w-full py-3 px-4 rounded-xl bg-[#FAF6EB] border border-[#E5D5AE] text-[#8C6D23] font-bold text-sm hover:bg-[#EFECE4] transition-all duration-200 cursor-pointer text-center"
+                className="w-full py-3 px-4 rounded-xl bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] text-[#8C6D23] dark:text-[#B8B0A5] font-bold text-sm hover:bg-[#EFECE4] dark:hover:bg-[#2A2926] transition-all duration-200 cursor-pointer text-center"
               >
                 Close help guide
               </button>
@@ -2178,28 +2185,28 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           onClick={() => setShowSafetyDrawer(false)}
         >
           <div 
-            className="bg-[#FAF8F3] rounded-t-[32px] max-h-[85%] overflow-hidden flex flex-col border-t border-[#E5D5AE] shadow-2xl animate-in slide-in-from-bottom duration-300"
+            className="bg-[#FAF8F3] dark:bg-[#1D1D1A] rounded-t-[32px] max-h-[85%] overflow-hidden flex flex-col border-t border-[#E5D5AE] dark:border-[#302E29] shadow-2xl animate-in slide-in-from-bottom duration-300"
             data-component-version="parent-profile-info-sheet-v1"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="px-5 py-4.5 border-b border-[#E5D5AE]/40 flex items-center justify-between shrink-0">
+            <div className="px-5 py-4.5 border-b border-[#E5D5AE]/40 dark:border-[#302E29] flex items-center justify-between shrink-0">
               <div className="flex items-center space-x-3.5">
-                <div className="p-2.5 bg-[#FAF6EB] rounded-2xl border border-[#E5D5AE]/60 text-[#C59B27]">
+                <div className="p-2.5 bg-[#FAF6EB] dark:bg-[#262520] rounded-2xl border border-[#E5D5AE]/60 dark:border-[#3A3835] text-[#C59B27]">
                   <Shield className="w-5 h-5 stroke-[1.75]" />
                 </div>
                 <div className="text-left">
-                  <h3 className="text-lg font-serif-koinonia font-bold text-[#8C6D23]">
+                  <h3 className="text-lg font-serif-koinonia font-bold text-[#8C6D23] dark:text-[#F0EBE3]">
                     Safety information
                   </h3>
-                  <p className="text-[11px] text-[#6B7280] font-medium leading-tight mt-0.5">
+                  <p className="text-[11px] text-[#6B7280] dark:text-[#B8B0A5] font-medium leading-tight mt-0.5">
                     How we help keep children safe during the event.
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setShowSafetyDrawer(false)}
-                className="p-2 rounded-xl hover:bg-[#FAF6EB] text-[#6B7280] hover:text-[#18181B] cursor-pointer transition-colors focus:outline-none"
+                className="p-2 rounded-xl hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] text-[#6B7280] dark:text-[#7A7570] hover:text-[#18181B] dark:hover:text-[#F0EBE3] cursor-pointer transition-colors focus:outline-none"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -2242,17 +2249,17 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 <div 
                   key={safety.id} 
                   id={safety.id}
-                  className="bg-white rounded-2xl border border-[#EAE8E1]/80 p-4.5 shadow-2xs space-y-2 text-left"
+                  className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1]/80 dark:border-[#302E29] p-4.5 shadow-2xs space-y-2 text-left"
                 >
                   <div className="flex items-start space-x-2.5">
                     <span className="text-xs font-sans font-bold text-[#C59B27] mt-0.5">
                       {idx + 1}.
                     </span>
-                    <h4 className="text-sm font-sans font-bold text-[#18181B] leading-snug">
+                    <h4 className="text-sm font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] leading-snug">
                       {safety.title}
                     </h4>
                   </div>
-                  <p className="text-xs text-[#3F3F46] leading-relaxed pl-5">
+                  <p className="text-xs text-[#3F3F46] dark:text-[#B8B0A5] leading-relaxed pl-5">
                     {safety.body}
                   </p>
                 </div>
@@ -2260,10 +2267,10 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             </div>
 
             {/* Footer */}
-            <div className="p-4.5 bg-white border-t border-[#EAE8E1]/60 flex justify-center shrink-0">
+            <div className="p-4.5 bg-white dark:bg-[#1D1D1A] border-t border-[#EAE8E1]/60 dark:border-[#302E29] flex justify-center shrink-0">
               <button
                 onClick={() => setShowSafetyDrawer(false)}
-                className="w-full py-3 px-4 rounded-xl bg-[#FAF6EB] border border-[#E5D5AE] text-[#8C6D23] font-bold text-sm hover:bg-[#EFECE4] transition-all duration-200 cursor-pointer text-center"
+                className="w-full py-3 px-4 rounded-xl bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] text-[#8C6D23] dark:text-[#B8B0A5] font-bold text-sm hover:bg-[#EFECE4] dark:hover:bg-[#2A2926] transition-all duration-200 cursor-pointer text-center"
               >
                 Close safety guide
               </button>
@@ -2722,32 +2729,32 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       {/* WhatsApp Opt-in Modal */}
       {showWaOptInModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl border border-[#EAE8E1] p-6 max-w-md w-full shadow-xl space-y-4">
+          <div className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-6 max-w-md w-full shadow-xl space-y-4">
             <div className="flex items-start justify-between">
               <div className="flex items-center space-x-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-[#262520] text-emerald-600 dark:text-[#C59B27] border border-transparent dark:border-[#3A3835] flex items-center justify-center">
                   <Phone className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-[#18181B]">Get updates on WhatsApp</h3>
-                  <p className="text-xs text-[#6B7280]">Stay informed directly on your phone</p>
+                  <h3 className="text-base font-bold text-[#18181B] dark:text-[#F0EBE3]">Get updates on WhatsApp</h3>
+                  <p className="text-xs text-[#6B7280] dark:text-[#B8B0A5]">Stay informed directly on your phone</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowWaOptInModal(false)}
-                className="text-zinc-400 hover:text-zinc-700 cursor-pointer p-1"
+                className="text-zinc-400 dark:text-[#7A7570] hover:text-zinc-700 dark:hover:text-[#F0EBE3] cursor-pointer p-1"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-xs text-[#3F3F46] leading-relaxed">
+            <p className="text-xs text-[#3F3F46] dark:text-[#B8B0A5] leading-relaxed">
               Receive important registration and event updates on WhatsApp. You can opt out at any time from your profile.
             </p>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#18181B] block">
+              <label className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] block">
                 WhatsApp number
               </label>
               <input
@@ -2755,9 +2762,9 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 value={waModalPhone}
                 onChange={(e) => setWaModalPhone(e.target.value)}
                 placeholder="+234 800 000 0000"
-                className="w-full bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl px-3.5 py-2.5 text-sm text-[#18181B] focus:outline-none focus:border-[#C59B27]"
+                className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl px-3.5 py-2.5 text-sm text-[#18181B] dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27]"
               />
-              <p className="text-[11px] text-[#6B7280]">
+              <p className="text-[11px] text-[#6B7280] dark:text-[#B8B0A5]">
                 Enter with country code (e.g. +234 for Nigeria or local format).
               </p>
             </div>
@@ -2767,7 +2774,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 type="button"
                 onClick={() => setShowWaOptInModal(false)}
                 disabled={waConsentLoading}
-                className="px-4 py-2 text-xs font-medium text-[#6B7280] hover:text-[#18181B] cursor-pointer"
+                className="px-4 py-2 text-xs font-medium text-[#6B7280] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] cursor-pointer"
               >
                 Cancel
               </button>
@@ -2775,7 +2782,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 type="button"
                 disabled={waConsentLoading || !waModalPhone.trim()}
                 onClick={() => handleOptInWhatsApp(waModalPhone)}
-                className="px-4 py-2 bg-[#18181B] hover:bg-zinc-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                className="px-4 py-2 bg-[#18181B] dark:bg-[#C59B27] hover:bg-zinc-800 dark:hover:bg-[#B88C22] disabled:opacity-50 text-white dark:text-[#1D1D1A] rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
               >
                 {waConsentLoading ? 'Enabling...' : 'Enable WhatsApp updates'}
               </button>

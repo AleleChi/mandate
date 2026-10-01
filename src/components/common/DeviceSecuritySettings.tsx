@@ -137,7 +137,7 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
 
   return (
     <div className="space-y-4 font-sans text-left" data-component-version="device-security-v3-real">
-      <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-5 shadow-xs">
+      <div className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-5 shadow-xs">
         {/* Header */}
         <div className="flex items-start gap-3.5">
           <div className="p-2.5 bg-[#FAF6EB] dark:bg-amber-950/30 text-[#9A7326] dark:text-amber-400 rounded-xl shrink-0">
@@ -189,7 +189,7 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
             /* State 4: Set up / registered */
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-600 dark:bg-emerald-400" />
+                <span className="w-2 h-2 rounded-full bg-emerald-600 dark:bg-[#C59B27]" />
                 <p className="text-xs font-semibold text-zinc-900 dark:text-[#F0EBE3]">Secure sign-in is on</p>
               </div>
               <div className="flex items-center gap-2">

@@ -49,7 +49,7 @@ const FallbackAvatar: React.FC<{
   if (src && src.trim() !== '' && !error) {
     const resolved = resolveMediaUrl(src);
     return (
-      <div className={`overflow-hidden bg-[#FAF6EB] flex items-center justify-center shrink-0 ${className}`}>
+      <div className={`overflow-hidden bg-[#FAF6EB] dark:bg-[#262520] flex items-center justify-center shrink-0 ${className}`}>
         <img
           src={resolved}
           alt=""
@@ -64,7 +64,7 @@ const FallbackAvatar: React.FC<{
 
   return (
     <div
-      className={`bg-[#FAF6EB] border border-[#E5D5AE] flex items-center justify-center select-none font-serif-koinonia shrink-0 text-[#9A7326] ${className}`}
+      className={`bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] flex items-center justify-center select-none font-serif-koinonia shrink-0 text-[#9A7326] dark:text-[#B8B0A5] ${className}`}
     >
       <span>{getInitials(name)}</span>
     </div>
@@ -328,7 +328,7 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
   return (
     <div 
       data-view-version="parent-child-status-v11-canonical"
-      className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF9F6] text-[#18181B] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50 pb-24"
+      className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF9F6] dark:bg-[#191815] text-[#18181B] dark:text-[#F0EBE3] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50 dark:border-[#302E29] pb-24"
     >
       {/* Scrollable Content */}
       <div className="px-5 pt-5 pb-8">
@@ -338,12 +338,12 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
             type="button"
             onClick={handleBack}
             data-component-version="parent-child-status-back-action-v1"
-            className="p-1 -ml-1 text-[#18181B] hover:text-[#715D3A] active:opacity-75 transition-all cursor-pointer focus:outline-none shrink-0"
+            className="p-1 -ml-1 text-[#18181B] dark:text-[#F0EBE3] hover:text-[#715D3A] dark:hover:text-[#D4AF37] active:opacity-75 transition-all cursor-pointer focus:outline-none shrink-0"
             aria-label="Back"
           >
             <ArrowLeft className="w-5 h-5 stroke-[2]" />
           </button>
-          <h1 className="text-xl font-serif-koinonia font-bold text-[#8C6D23] tracking-tight">
+          <h1 className="text-xl font-serif-koinonia font-bold text-[#8C6D23] dark:text-[#D4AF37] tracking-tight">
             Child Status
           </h1>
           <div className="w-5" />
@@ -366,8 +366,8 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
                   onClick={() => onNavigate(`/parent/status/${c.id}`)}
                   className={`flex items-center gap-2 py-1.5 px-3 rounded-full text-xs transition-all cursor-pointer shrink-0 border ${
                     isSelected
-                      ? 'bg-[#FAF6EB] border-[#C59B27] text-[#18181B] font-bold shadow-2xs ring-1 ring-[#C59B27]/30'
-                      : 'bg-white border-[#EAE8E1] text-[#5C5A54] hover:border-[#D9D6CE] hover:text-[#18181B]'
+                      ? 'bg-[#FAF6EB] dark:bg-[#262520] border-[#C59B27] dark:border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3] font-bold shadow-2xs ring-1 ring-[#C59B27]/30'
+                      : 'bg-white dark:bg-[#21211E] border-[#EAE8E1] dark:border-[#302E29] text-[#5C5A54] dark:text-[#B8B0A5] hover:border-[#D9D6CE] dark:hover:border-[#3A3835] hover:text-[#18181B] dark:hover:text-[#F0EBE3]'
                   }`}
                   role="tab"
                   aria-selected={isSelected}
@@ -375,10 +375,10 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
                   <FallbackAvatar
                     src={isRealUploadedPhoto(c.photoUrl) ? c.photoUrl : undefined}
                     name={c.name}
-                    className="w-5 h-5 rounded-full text-[9px] border border-[#E5D5AE]"
+                    className="w-5 h-5 rounded-full text-[9px] border border-[#E5D5AE] dark:border-[#3A3835]"
                   />
                   <span className="truncate max-w-[120px]">{c.name}</span>
-                  <span className={`text-[10px] font-semibold ${isSelected ? 'text-[#9A7326]' : 'text-[#8E8B82]'}`}>
+                  <span className={`text-[10px] font-semibold ${isSelected ? 'text-[#9A7326] dark:text-[#C59B27]' : 'text-[#8E8B82] dark:text-[#B8B0A5]'}`}>
                     · {highLevelState}
                   </span>
                 </button>
@@ -388,49 +388,49 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
         )}
 
         {/* Child summary card (Elegant Header) */}
-        <div data-component-version="parent-child-status-summary-card-v2" className="bg-white rounded-3xl p-5 border border-[#EAE8E1] shadow-xs mt-1 space-y-4">
+        <div data-component-version="parent-child-status-summary-card-v2" className="bg-white dark:bg-[#21211E] rounded-3xl p-5 border border-[#EAE8E1] dark:border-[#302E29] shadow-xs mt-1 space-y-4">
           <div className="flex items-center space-x-4">
             <div className="relative shrink-0">
               <FallbackAvatar
                 src={isRealUploadedPhoto(foundChild.photoUrl) ? foundChild.photoUrl : undefined}
                 name={foundChild.name}
-                className="w-16 h-16 rounded-2xl border border-[#E5D5AE]"
+                className="w-16 h-16 rounded-2xl border border-[#E5D5AE] dark:border-[#3A3835]"
               />
-              <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-[#C59B27] text-white flex items-center justify-center border border-white shadow-2xs">
+              <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-[#C59B27] text-white flex items-center justify-center border border-white dark:border-[#21211E] shadow-2xs">
                 <Check className="w-3 h-3 stroke-[3]" />
               </div>
             </div>
 
             <div className="min-w-0 flex-1">
-              <h2 className="text-lg font-serif-koinonia font-bold text-[#18181B] truncate leading-tight">
+              <h2 className="text-lg font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3] truncate leading-tight">
                 {foundChild.name}
               </h2>
-              <p className="text-xs text-[#5C5A54] mt-0.5 font-medium">
+              <p className="text-xs text-[#5C5A54] dark:text-[#B8B0A5] mt-0.5 font-medium">
                 {displayAge} · {displayAgeGroup}
               </p>
             </div>
           </div>
 
-          <div className="pt-3 border-t border-[#EAE8E1]/60 flex items-center justify-between gap-2.5 flex-wrap">
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-[10px] font-bold uppercase tracking-wider">
+          <div className="pt-3 border-t border-[#EAE8E1]/60 dark:border-[#302E29] flex items-center justify-between gap-2.5 flex-wrap">
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] text-[#9A7326] dark:text-[#C59B27] text-[10px] font-bold uppercase tracking-wider">
               ● {currentStatus.toUpperCase()}
             </span>
-            <span className="text-[10px] text-[#8E8B82] font-semibold">
+            <span className="text-[10px] text-[#8E8B82] dark:text-[#B8B0A5] font-semibold">
               Submitted on {submittedDateText}
             </span>
           </div>
         </div>
 
         {/* Status message card */}
-        <div data-component-version="parent-child-status-message-card-v2" className="bg-[#FAF6EB]/40 rounded-2xl p-4 border border-[#E5D5AE]/40 flex items-start gap-3 mt-4">
-          <div className="w-6 h-6 rounded-full bg-white text-[#C59B27] flex items-center justify-center shrink-0 mt-0.5 border border-[#EAE8E1]">
+        <div data-component-version="parent-child-status-message-card-v2" className="bg-[#FAF6EB]/40 dark:bg-[#21211E] rounded-2xl p-4 border border-[#E5D5AE]/40 dark:border-[#3A3835] flex items-start gap-3 mt-4">
+          <div className="w-6 h-6 rounded-full bg-white dark:bg-[#262520] text-[#C59B27] flex items-center justify-center shrink-0 mt-0.5 border border-[#EAE8E1] dark:border-[#3A3835]">
             <Info className="w-3.5 h-3.5 stroke-[2.5]" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="font-serif-koinonia font-bold text-sm text-[#18181B] leading-snug">
+            <h3 className="font-serif-koinonia font-bold text-sm text-[#18181B] dark:text-[#F0EBE3] leading-snug">
               {statusCard.title}
             </h3>
-            <p className="text-xs text-[#5C5A54] mt-1 leading-relaxed">
+            <p className="text-xs text-[#5C5A54] dark:text-[#B8B0A5] mt-1 leading-relaxed">
               {statusCard.message}
             </p>
           </div>
@@ -438,31 +438,31 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
 
         {/* Progress section (Vertical Timeline) */}
         <div className="mt-8 space-y-4">
-          <h4 className="text-[10px] font-bold text-[#8E8B82] tracking-widest uppercase pb-1 border-b border-[#EAE8E1]">
+          <h4 className="text-[10px] font-bold text-[#8E8B82] dark:text-[#B8B0A5] tracking-widest uppercase pb-1 border-b border-[#EAE8E1] dark:border-[#302E29]">
             Progress
           </h4>
 
           {/* Timeline Wrapper */}
-          <div className="relative border-l-2 border-[#E5D5AE] ml-4 pl-6 py-2 space-y-6">
+          <div className="relative border-l-2 border-[#E5D5AE] dark:border-[#302E29] ml-4 pl-6 py-2 space-y-6">
             
             {/* Step 1: Details sent */}
             <div className="relative">
               {/* Dot */}
               <div className={`absolute -left-[31px] top-1 w-4 h-4 rounded-full border flex items-center justify-center ${
                 isDetailsSentDone
-                  ? 'bg-[#137333]/10 border-[#137333]/30'
-                  : 'bg-[#C59B27]/10 border-[#C59B27]/30'
+                  ? 'bg-[#137333]/10 dark:bg-[#C59B27]/15 border-[#137333]/30 dark:border-[#C59B27]'
+                  : 'bg-[#C59B27]/10 dark:bg-[#262520] border-[#C59B27]/30 dark:border-[#3A3835]'
               }`}>
-                <div className={`w-1.5 h-1.5 rounded-full ${isDetailsSentDone ? 'bg-[#137333]' : 'bg-[#C59B27]'}`} />
+                <div className={`w-1.5 h-1.5 rounded-full ${isDetailsSentDone ? 'bg-[#137333] dark:bg-[#C59B27]' : 'bg-[#C59B27] dark:bg-[#3A3835]'}`} />
               </div>
               <div className="space-y-0.5">
-                <span className={`text-[10px] font-bold uppercase tracking-wider block ${isDetailsSentDone ? 'text-[#137333]' : 'text-[#C59B27]'}`}>
+                <span className={`text-[10px] font-bold uppercase tracking-wider block ${isDetailsSentDone ? 'text-[#137333] dark:text-[#D4AF37]' : 'text-[#C59B27] dark:text-[#B8B0A5]'}`}>
                   Details sent
                 </span>
-                <span className="text-[11px] text-[#5C5A54] leading-relaxed block">
+                <span className="text-[11px] text-[#5C5A54] dark:text-[#B8B0A5] leading-relaxed block">
                   {isDetailsSentDone ? 'Your child’s details were received.' : 'Submit child registration details.'}
                 </span>
-                <span className="text-[9px] text-[#8E8B82] font-semibold block">Verified on {submittedDateText}</span>
+                <span className="text-[9px] text-[#8E8B82] dark:text-[#7A7570] font-semibold block">Verified on {submittedDateText}</span>
               </div>
             </div>
 
@@ -470,23 +470,23 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
             <div className="relative">
               {/* Dot */}
               <div className={`absolute -left-[31px] top-1 w-4 h-4 rounded-full border flex items-center justify-center ${
-                isReviewDone 
-                  ? 'bg-[#137333]/10 border-[#137333]/30 text-[#137333]' 
+                isReviewDone
+                  ? 'bg-[#137333]/10 dark:bg-[#C59B27]/15 border-[#137333]/30 dark:border-[#C59B27] text-[#137333] dark:text-[#C59B27]'
                   : (currentStatus === 'Under review')
-                    ? 'bg-[#C59B27]/10 border-[#C59B27]/30 text-[#C59B27] animate-pulse'
-                    : 'bg-[#FAF9F6] border-[#EAE8E1] text-[#8E8B82]'
+                    ? 'bg-[#C59B27]/10 dark:bg-[#C59B27]/15 border-[#C59B27]/30 dark:border-[#C59B27] text-[#C59B27] animate-pulse'
+                    : 'bg-[#FAF9F6] dark:bg-[#262520] border-[#EAE8E1] dark:border-[#3A3835] text-[#8E8B82] dark:text-[#3A3835]'
               }`}>
                 {isReviewDone || currentStatus === 'Under review' ? (
-                  <div className={`w-1.5 h-1.5 rounded-full ${isReviewDone ? 'bg-[#137333]' : 'bg-[#C59B27]'}`} />
+                  <div className={`w-1.5 h-1.5 rounded-full ${isReviewDone ? 'bg-[#137333] dark:bg-[#C59B27]' : 'bg-[#C59B27]'}`} />
                 ) : null}
               </div>
               <div className="space-y-0.5">
                 <span className={`text-[10px] font-bold uppercase tracking-wider block ${
-                  isReviewDone ? 'text-[#137333]' : (currentStatus === 'Under review') ? 'text-[#C59B27]' : 'text-[#8E8B82]'
+                  isReviewDone ? 'text-[#137333] dark:text-[#D4AF37]' : (currentStatus === 'Under review') ? 'text-[#C59B27] dark:text-[#D4AF37]' : 'text-[#8E8B82] dark:text-[#B8B0A5]'
                 }`}>
                   Review completed
                 </span>
-                <span className="text-[11px] text-[#5C5A54] leading-relaxed block">
+                <span className="text-[11px] text-[#5C5A54] dark:text-[#B8B0A5] leading-relaxed block">
                   {isReviewDone
                     ? 'The care team has reviewed the details.'
                     : (currentStatus === 'Under review')
@@ -500,23 +500,23 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
             <div className="relative">
               {/* Dot */}
               <div className={`absolute -left-[31px] top-1 w-4 h-4 rounded-full border flex items-center justify-center ${
-                isPassDone 
-                  ? 'bg-[#137333]/10 border-[#137333]/30 text-[#137333]' 
-                  : (currentStatus === 'Selected') 
-                    ? 'bg-[#C59B27]/10 border-[#C59B27]/30 text-[#C59B27] animate-pulse' 
-                    : 'bg-[#FAF9F6] border-[#EAE8E1] text-[#8E8B82]'
+                isPassDone
+                  ? 'bg-[#137333]/10 dark:bg-[#C59B27]/15 border-[#137333]/30 dark:border-[#C59B27] text-[#137333] dark:text-[#C59B27]'
+                  : (currentStatus === 'Selected')
+                    ? 'bg-[#C59B27]/10 dark:bg-[#C59B27]/15 border-[#C59B27]/30 dark:border-[#C59B27] text-[#C59B27] animate-pulse'
+                    : 'bg-[#FAF9F6] dark:bg-[#262520] border-[#EAE8E1] dark:border-[#3A3835] text-[#8E8B82] dark:text-[#3A3835]'
               }`}>
                 {isPassDone || currentStatus === 'Selected' ? (
-                  <div className={`w-1.5 h-1.5 rounded-full ${isPassDone ? 'bg-[#137333]' : 'bg-[#C59B27]'}`} />
+                  <div className={`w-1.5 h-1.5 rounded-full ${isPassDone ? 'bg-[#137333] dark:bg-[#C59B27]' : 'bg-[#C59B27]'}`} />
                 ) : null}
               </div>
               <div className="space-y-0.5">
                 <span className={`text-[10px] font-bold uppercase tracking-wider block ${
-                  isPassDone ? 'text-[#137333]' : (currentStatus === 'Selected') ? 'text-[#C59B27]' : 'text-[#8E8B82]'
+                  isPassDone ? 'text-[#137333] dark:text-[#D4AF37]' : (currentStatus === 'Selected') ? 'text-[#C59B27] dark:text-[#D4AF37]' : 'text-[#8E8B82] dark:text-[#B8B0A5]'
                 }`}>
                   Pass ready
                 </span>
-                <span className="text-[11px] text-[#5C5A54] leading-relaxed block">
+                <span className="text-[11px] text-[#5C5A54] dark:text-[#B8B0A5] leading-relaxed block">
                   {isPassDone ? 'Your child’s event pass is ready.' : (currentStatus === 'Selected') ? 'Generating secure pass...' : 'Your pass reference is being compiled.'}
                 </span>
               </div>
@@ -527,26 +527,26 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
               {/* Dot */}
               <div className={`absolute -left-[31px] top-1 w-4 h-4 rounded-full border flex items-center justify-center ${
                 isCheckInDone
-                  ? 'bg-[#137333]/10 border-[#137333]/30 text-[#137333]'
+                  ? 'bg-[#137333]/10 dark:bg-[#C59B27]/15 border-[#137333]/30 dark:border-[#C59B27] text-[#137333] dark:text-[#C59B27]'
                   : (currentStatus === 'Pass ready')
-                    ? 'bg-[#C59B27]/10 border-[#C59B27]/30 text-[#C59B27] animate-pulse'
-                    : 'bg-[#FAF9F6] border-[#EAE8E1] text-[#8E8B82]'
+                    ? 'bg-[#C59B27]/10 dark:bg-[#C59B27]/15 border-[#C59B27]/30 dark:border-[#C59B27] text-[#C59B27] animate-pulse'
+                    : 'bg-[#FAF9F6] dark:bg-[#262520] border-[#EAE8E1] dark:border-[#3A3835] text-[#8E8B82] dark:text-[#3A3835]'
               }`}>
                 {isCheckInDone || currentStatus === 'Pass ready' ? (
-                  <div className={`w-1.5 h-1.5 rounded-full ${isCheckInDone ? 'bg-[#137333]' : 'bg-[#C59B27]'}`} />
+                  <div className={`w-1.5 h-1.5 rounded-full ${isCheckInDone ? 'bg-[#137333] dark:bg-[#C59B27]' : 'bg-[#C59B27]'}`} />
                 ) : null}
               </div>
               <div className="space-y-0.5">
                 <span className={`text-[10px] font-bold uppercase tracking-wider block ${
                   isCheckInDone
-                    ? 'text-[#137333]'
+                    ? 'text-[#137333] dark:text-[#D4AF37]'
                     : (currentStatus === 'Pass ready')
-                      ? 'text-[#C59B27]'
-                      : 'text-[#8E8B82]'
+                      ? 'text-[#C59B27] dark:text-[#D4AF37]'
+                      : 'text-[#8E8B82] dark:text-[#B8B0A5]'
                 }`}>
                   Arrival check-in
                 </span>
-                <span className="text-[11px] text-[#5C5A54] leading-relaxed block">
+                <span className="text-[11px] text-[#5C5A54] dark:text-[#B8B0A5] leading-relaxed block">
                   {isCheckInDone
                     ? 'Child successfully checked in.'
                     : 'Show the pass when your child arrives.'}
@@ -559,22 +559,22 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
               {/* Dot */}
               <div className={`absolute -left-[31px] top-1 w-4 h-4 rounded-full border flex items-center justify-center ${
                 isPickupDone
-                  ? 'bg-[#137333]/10 border-[#137333]/30 text-[#137333]'
+                  ? 'bg-[#137333]/10 dark:bg-[#C59B27]/15 border-[#137333]/30 dark:border-[#C59B27] text-[#137333] dark:text-[#C59B27]'
                   : (currentStatus === 'Checked in' || currentStatus === 'Inside')
-                    ? 'bg-[#C59B27]/10 border-[#C59B27]/30 text-[#C59B27] animate-pulse'
-                    : 'bg-[#FAF9F6] border-[#EAE8E1] text-[#8E8B82]'
+                    ? 'bg-[#C59B27]/10 dark:bg-[#C59B27]/15 border-[#C59B27]/30 dark:border-[#C59B27] text-[#C59B27] animate-pulse'
+                    : 'bg-[#FAF9F6] dark:bg-[#262520] border-[#EAE8E1] dark:border-[#3A3835] text-[#8E8B82] dark:text-[#3A3835]'
               }`}>
                 {isPickupDone || currentStatus === 'Checked in' || currentStatus === 'Inside' ? (
-                  <div className={`w-1.5 h-1.5 rounded-full ${isPickupDone ? 'bg-[#137333]' : 'bg-[#C59B27]'}`} />
+                  <div className={`w-1.5 h-1.5 rounded-full ${isPickupDone ? 'bg-[#137333] dark:bg-[#C59B27]' : 'bg-[#C59B27]'}`} />
                 ) : null}
               </div>
               <div className="space-y-0.5">
                 <span className={`text-[10px] font-bold uppercase tracking-wider block ${
-                  isPickupDone ? 'text-[#137333]' : (currentStatus === 'Checked in' || currentStatus === 'Inside') ? 'text-[#C59B27]' : 'text-[#8E8B82]'
+                  isPickupDone ? 'text-[#137333] dark:text-[#D4AF37]' : (currentStatus === 'Checked in' || currentStatus === 'Inside') ? 'text-[#C59B27] dark:text-[#D4AF37]' : 'text-[#8E8B82] dark:text-[#B8B0A5]'
                 }`}>
                   Pickup and release
                 </span>
-                <span className="text-[11px] text-[#5C5A54] leading-relaxed block">
+                <span className="text-[11px] text-[#5C5A54] dark:text-[#B8B0A5] leading-relaxed block">
                   {isPickupDone
                     ? 'Child safely picked up and released.'
                     : 'Pickup will be confirmed before release.'}
@@ -586,7 +586,7 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
 
         {/* Details shared section */}
         <div data-component-version="parent-child-details-confirmed-v2" className="mt-8 pt-2">
-          <h3 className="font-serif-koinonia text-base font-bold text-[#18181B]">
+          <h3 className="font-serif-koinonia text-base font-bold text-[#18181B] dark:text-[#F0EBE3]">
             Details confirmed
           </h3>
           <div className="mt-3 space-y-2">
@@ -596,8 +596,8 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
               'Approved pickup details',
               'Parent contact details'
             ].map((item) => (
-              <div key={item} className="flex items-center space-x-3 text-xs text-[#5C5A54] font-medium">
-                <Check className="w-4 h-4 text-[#137333] shrink-0 stroke-[2.5]" />
+              <div key={item} className="flex items-center space-x-3 text-xs text-[#5C5A54] dark:text-[#B8B0A5] font-medium">
+                <Check className="w-4 h-4 text-[#137333] dark:text-[#C59B27] shrink-0 stroke-[2.5]" />
                 <span>{item}</span>
               </div>
             ))}
@@ -605,13 +605,13 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
         </div>
 
         {/* Pickup person card */}
-        <div data-component-version="parent-child-pickup-person-card-v2" className="bg-white rounded-2xl p-4 border border-[#EAE8E1] mt-6">
-          <div className="flex items-center justify-between border-b border-[#FAF9F6] pb-3 mb-3">
-            <h3 className="text-sm font-serif-koinonia text-[#18181B] font-bold">
+        <div data-component-version="parent-child-pickup-person-card-v2" className="bg-white dark:bg-[#21211E] rounded-2xl p-4 border border-[#EAE8E1] dark:border-[#302E29] mt-6">
+          <div className="flex items-center justify-between border-b border-[#FAF9F6] dark:border-[#302E29] pb-3 mb-3">
+            <h3 className="text-sm font-serif-koinonia text-[#18181B] dark:text-[#F0EBE3] font-bold">
               Pickup person
             </h3>
             {isRealUploadedPhoto(pickupPhoto) || pickupPhoto ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-[9px] font-bold uppercase tracking-wider">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] text-[#9A7326] dark:text-[#C59B27] text-[9px] font-bold uppercase tracking-wider">
                 Photo Added
               </span>
             ) : null}
@@ -619,22 +619,22 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
 
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div>
-              <span className="text-[10px] text-[#8E8B82] block font-medium uppercase">Name</span>
-              <span className="font-semibold text-[#18181B] block mt-0.5 truncate">{pickupName || 'Not specified'}</span>
+              <span className="text-[10px] text-[#8E8B82] dark:text-[#B8B0A5] block font-medium uppercase">Name</span>
+              <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] block mt-0.5 truncate">{pickupName || 'Not specified'}</span>
             </div>
             <div>
-              <span className="text-[10px] text-[#8E8B82] block font-medium uppercase">Relationship</span>
-              <span className="font-semibold text-[#18181B] block mt-0.5 truncate">{pickupRelation || 'Not specified'}</span>
+              <span className="text-[10px] text-[#8E8B82] dark:text-[#B8B0A5] block font-medium uppercase">Relationship</span>
+              <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] block mt-0.5 truncate">{pickupRelation || 'Not specified'}</span>
             </div>
             <div className="col-span-2">
-              <span className="text-[10px] text-[#8E8B82] block font-medium uppercase">Phone</span>
-              <span className="font-semibold text-[#18181B] block mt-0.5 font-mono">{pickupPhone || 'Not specified'}</span>
+              <span className="text-[10px] text-[#8E8B82] dark:text-[#B8B0A5] block font-medium uppercase">Phone</span>
+              <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] block mt-0.5 font-mono">{pickupPhone || 'Not specified'}</span>
             </div>
           </div>
 
-          <div className="bg-[#FAF6EB]/40 rounded-xl p-2.5 border border-[#E5D5AE]/20 mt-4 flex items-center gap-2">
+          <div className="bg-[#FAF6EB]/40 dark:bg-[#262520] rounded-xl p-2.5 border border-[#E5D5AE]/20 dark:border-[#3A3835] mt-4 flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-[#C59B27] shrink-0" />
-            <span className="text-[10px] text-[#9A7326] font-medium">
+            <span className="text-[10px] text-[#9A7326] dark:text-[#B8B0A5] font-medium">
               Photo ID and pass details may be checked before pickup.
             </span>
           </div>
@@ -647,7 +647,7 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
               type="button"
               onClick={() => onNavigate(`/parent/children/${foundChild.id}/pass`)}
               data-component-version="parent-status-view-pass-action-v6"
-              className="w-full py-3.5 px-5 rounded-2xl bg-[#18181B] hover:bg-[#27272A] active:opacity-90 text-white font-bold text-sm transition-all duration-200 shadow-sm cursor-pointer focus:outline-none flex items-center justify-center gap-2"
+              className="w-full py-3.5 px-5 rounded-2xl bg-[#18181B] dark:bg-[#262520] hover:bg-[#27272A] dark:hover:bg-[#2A2926] active:opacity-90 text-white dark:text-[#F0EBE3] border dark:border-[#3A3835] font-bold text-sm transition-all duration-200 shadow-sm cursor-pointer focus:outline-none flex items-center justify-center gap-2"
             >
               <QrCode className="w-4 h-4" />
               <span>View pass</span>
@@ -659,14 +659,14 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
               <button
                 type="button"
                 onClick={handleEditDetails}
-                className="w-full py-3.5 px-5 rounded-2xl bg-white hover:bg-[#FAF9F6] border border-[#18181B] text-[#18181B] font-bold text-sm transition-all duration-200 cursor-pointer focus:outline-none"
+                className="w-full py-3.5 px-5 rounded-2xl bg-white dark:bg-[#262520] hover:bg-[#FAF9F6] dark:hover:bg-[#2A2926] border border-[#18181B] dark:border-[#3A3835] text-[#18181B] dark:text-[#F0EBE3] font-bold text-sm transition-all duration-200 cursor-pointer focus:outline-none"
               >
                 Edit details
               </button>
               <button
                 type="button"
                 onClick={() => setShowWithdrawModal(true)}
-                className="w-full py-2.5 px-5 rounded-2xl text-[#6B7280] hover:text-[#4B5563] font-semibold text-xs transition-all cursor-pointer focus:outline-none text-center bg-transparent mt-1"
+                className="w-full py-2.5 px-5 rounded-2xl text-[#6B7280] dark:text-[#B8B0A5] hover:text-[#4B5563] dark:hover:text-[#F0EBE3] font-semibold text-xs transition-all cursor-pointer focus:outline-none text-center bg-transparent mt-1"
               >
                 Withdraw details
               </button>
@@ -676,7 +676,7 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
       </div>
 
       {/* Fixed Bottom Navigation locked within the mobile app shell */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 max-w-[390px] mx-auto bg-white/95 backdrop-blur-md border-t border-[#EAE8E1] shadow-lg">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 max-w-[390px] mx-auto bg-white/95 dark:bg-[#1D1D1A]/95 backdrop-blur-md border-t border-[#EAE8E1] dark:border-[#302E29] shadow-lg">
         <div className="px-2 h-16 flex items-center justify-around">
           {[
             { label: 'Home' as BottomNavTab, icon: <Home className="w-5 h-5" /> },
@@ -693,13 +693,13 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
                 onClick={() => handleTabChange(item.label)}
                 className={`flex flex-col items-center justify-center flex-1 py-1.5 rounded-xl transition-all cursor-pointer focus:outline-none ${
                   isActive
-                    ? 'text-[#B89047] font-semibold'
-                    : 'text-[#6B7280] hover:text-[#18181B]'
+                    ? 'text-[#B89047] dark:text-[#D4AF37] font-semibold'
+                    : 'text-[#6B7280] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3]'
                 }`}
               >
                 <div
                   className={`p-1 rounded-lg transition-transform ${
-                    isActive ? 'bg-[#FAF6EB] scale-110 text-[#C59B27]' : ''
+                    isActive ? 'bg-[#FAF6EB] dark:bg-[#262520] scale-110 text-[#C59B27] dark:text-[#D4AF37]' : ''
                   }`}
                 >
                   {item.icon}
@@ -714,11 +714,11 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
       {/* Withdraw details modal */}
       {showWithdrawModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 border border-[#EAE8E1] shadow-2xl max-w-sm w-full animate-in fade-in zoom-in-95">
-            <h3 className="text-lg font-serif-koinonia font-bold text-[#18181B] mb-2">
+          <div className="bg-white dark:bg-[#1D1D1A] rounded-3xl p-6 border border-[#EAE8E1] dark:border-[#302E29] shadow-2xl max-w-sm w-full animate-in fade-in zoom-in-95">
+            <h3 className="text-lg font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3] mb-2">
               Withdraw details?
             </h3>
-            <p className="text-sm text-[#3F3F46] leading-relaxed mb-6">
+            <p className="text-sm text-[#3F3F46] dark:text-[#B8B0A5] leading-relaxed mb-6">
               The Children and Teens team will no longer review this child’s details for this event.
             </p>
             <div className="flex space-x-3">
@@ -726,7 +726,7 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
                 type="button"
                 disabled={isWithdrawing}
                 onClick={() => setShowWithdrawModal(false)}
-                className="flex-1 py-2.5 px-4 rounded-xl border border-[#EAE8E1] text-[#3F3F46] hover:bg-[#FAF9F6] font-semibold text-sm transition-all focus:outline-none cursor-pointer text-center"
+                className="flex-1 py-2.5 px-4 rounded-xl border border-[#EAE8E1] dark:border-[#302E29] text-[#3F3F46] dark:text-[#B8B0A5] hover:bg-[#FAF9F6] dark:hover:bg-[#262520] font-semibold text-sm transition-all focus:outline-none cursor-pointer text-center"
               >
                 Cancel
               </button>

@@ -4,7 +4,7 @@ import {
   ShieldCheck, Check, Home, Camera, CameraOff, X, Phone, MessageCircle, 
   ArrowRight, Sparkles, UserCheck, UserX, Clock, ChevronLeft, Calendar, Heart, Info, Keyboard,
   Settings, ChevronRight, Users, LogIn, History, MapPin, Bell, ShieldAlert, Smartphone, ChevronDown, Shield, CheckCircle2,
-  HelpCircle, Tag
+  HelpCircle, Tag, Plus
 } from 'lucide-react';
 import { WristbandAssignmentDesk } from '../components/wristbands/WristbandAssignmentDesk';
 import { AppRoute } from '../types';
@@ -143,15 +143,15 @@ const formatAlertCategory = (category?: string | null): string => {
 const formatAlertPriority = (severity?: string | null): { label: string | null; colorClass: string } => {
   const sev = (severity || '').toLowerCase();
   if (sev === 'urgent') {
-    return { label: 'Urgent', colorClass: 'text-rose-700 font-semibold' };
+    return { label: 'Urgent', colorClass: 'text-rose-700 dark:text-rose-400 font-semibold' };
   }
   if (sev === 'warning' || sev === 'important') {
-    return { label: 'High priority', colorClass: 'text-amber-800 font-medium' };
+    return { label: 'High priority', colorClass: 'text-amber-800 dark:text-[#C59B27] font-medium' };
   }
   if (sev === 'routine' || sev === 'normal' || sev === 'low') {
-    return { label: null, colorClass: 'text-zinc-500' };
+    return { label: null, colorClass: 'text-zinc-500 dark:text-[#7A7570]' };
   }
-  return { label: null, colorClass: 'text-zinc-500' };
+  return { label: null, colorClass: 'text-zinc-500 dark:text-[#7A7570]' };
 };
 
 const formatAlertStatus = (
@@ -160,7 +160,7 @@ const formatAlertStatus = (
   volunteerName?: string
 ): { label: string; colorClass: string } => {
   if (alert.status === 'resolved') {
-    return { label: 'Resolved', colorClass: 'text-zinc-500' };
+    return { label: 'Resolved', colorClass: 'text-zinc-500 dark:text-[#7A7570]' };
   }
   if (alert.status === 'acknowledged') {
     const vId = volunteerUserId || '';
@@ -170,10 +170,10 @@ const formatAlertStatus = (
       (vName && ackByName && vName === ackByName);
     return {
       label: isMine ? "You're handling this" : 'Being handled',
-      colorClass: 'text-amber-800'
+      colorClass: 'text-amber-800 dark:text-[#C59B27]'
     };
   }
-  return { label: 'Open', colorClass: 'text-zinc-600' };
+  return { label: 'Open', colorClass: 'text-zinc-600 dark:text-[#B8B0A5]' };
 };
 
 const resolveChildPhotoUrl = (photoRef?: string | null): string => {
@@ -217,39 +217,39 @@ const VolunteerDetailedAlertProgress: React.FC<{ alertId: string }> = ({ alertId
       <button
         onClick={fetchProgress}
         className={`w-full text-left text-xs font-sans font-medium flex items-center justify-between bg-transparent border-none cursor-pointer p-0 transition-colors ${
-          expanded ? 'text-stone-900' : 'text-stone-600 hover:text-stone-800'
+          expanded ? 'text-stone-900 dark:text-[#F0EBE3]' : 'text-stone-600 dark:text-[#B8B0A5] hover:text-stone-800 dark:hover:text-[#F0EBE3]'
         }`}
       >
         <span>Response history</span>
         {loading ? (
-          <RefreshCw className="w-3.5 h-3.5 animate-spin text-stone-400" />
+          <RefreshCw className="w-3.5 h-3.5 animate-spin text-stone-400 dark:text-[#7A7570]" />
         ) : (
-          <ChevronDown className={`w-3.5 h-3.5 transform transition-transform text-stone-400 ${expanded ? 'rotate-180' : ''}`} />
+          <ChevronDown className={`w-3.5 h-3.5 transform transition-transform text-stone-400 dark:text-[#7A7570] ${expanded ? 'rotate-180' : ''}`} />
         )}
       </button>
 
       {expanded && (
-        <div className="mt-2.5 space-y-2 bg-stone-50 border border-stone-200/80 rounded-lg p-3 font-sans">
+        <div className="mt-2.5 space-y-2 bg-stone-50 dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] rounded-lg p-3 font-sans">
           {progress.length > 0 ? (
             progress.map((p, idx) => (
               <div key={idx} className="flex space-x-2.5 text-xs" id={`milestone-${idx}`}>
                 <div className="flex flex-col items-center shrink-0">
-                  <div className="w-1.5 h-1.5 rounded-full bg-stone-400 mt-1" />
-                  {idx !== progress.length - 1 && <div className="w-px bg-stone-200 flex-1 my-0.5" />}
+                  <div className="w-1.5 h-1.5 rounded-full bg-stone-400 dark:bg-[#7A7570] mt-1" />
+                  {idx !== progress.length - 1 && <div className="w-px bg-stone-200 dark:bg-[#302E29] flex-1 my-0.5" />}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="font-medium text-stone-800 break-words">{p.updateType || p.type}</p>
-                    <span className="text-[10px] text-stone-400 shrink-0 font-sans">
+                    <p className="font-medium text-stone-800 dark:text-[#F0EBE3] break-words">{p.updateType || p.type}</p>
+                    <span className="text-[10px] text-stone-400 dark:text-[#7A7570] shrink-0 font-sans">
                       {new Date(p.createdAt || p.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
-                  {p.note && <p className="text-[11px] text-stone-600 italic break-words mt-0.5">"{p.note}"</p>}
+                  {p.note && <p className="text-[11px] text-stone-600 dark:text-[#B8B0A5] italic break-words mt-0.5">"{p.note}"</p>}
                 </div>
               </div>
             ))
           ) : (
-            <p className="text-xs text-stone-400 italic">No structured milestones logged yet.</p>
+            <p className="text-xs text-stone-400 dark:text-[#7A7570] italic">No structured milestones logged yet.</p>
           )}
         </div>
       )}
@@ -553,6 +553,36 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [isSubmittingSafetyAlert, setIsSubmittingSafetyAlert] = useState(false);
   const [mySafetyAlerts, setMySafetyAlerts] = useState<any[]>([]);
   const [showMyAlertsView, setShowMyAlertsView] = useState(false);
+  const [isQuickActionsOpen, setIsQuickActionsOpen] = useState(false);
+  const quickActionsRef = useRef<HTMLDivElement>(null);
+
+  // Floating quick actions dismiss handlers (Escape key and click-outside)
+  useEffect(() => {
+    if (!isQuickActionsOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsQuickActionsOpen(false);
+      }
+    };
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (quickActionsRef.current && !quickActionsRef.current.contains(e.target as Node)) {
+        setIsQuickActionsOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isQuickActionsOpen]);
+
+  useEffect(() => {
+    setIsQuickActionsOpen(false);
+  }, [currentRoute]);
   const [safetyLinkOption, setSafetyLinkOption] = useState<'general' | 'link' | 'unidentified'>('general');
   const [safetySearchQuery, setSafetySearchQuery] = useState('');
   const [safetySearchResults, setSafetySearchResults] = useState<any[]>([]);
@@ -1257,7 +1287,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [resolvingAttention, setResolvingAttention] = useState<boolean>(false);
   const [attentionError, setAttentionError] = useState<string | null>(null);
 
-  const cleanRoute = currentRoute.split('?')[0];
+  const rawCleanRoute = currentRoute.split('?')[0];
+  const cleanRoute = rawCleanRoute === '/volunteer/summary'
+    ? '/volunteer/reports'
+    : rawCleanRoute === '/volunteer/safety'
+    ? '/volunteer/team-alerts'
+    : rawCleanRoute;
   const canAssignWristbands = React.useMemo(() => {
     if (!volunteerProfile) return false;
     if (volunteerProfile.role === 'admin' || volunteerProfile.role === 'super_admin') return true;
@@ -2494,178 +2529,106 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const fullName = volunteerProfile?.full_name || volunteerProfile?.fullName || volunteerProfile?.user?.fullName || volunteerProfile?.user?.full_name || 'Volunteer';
   const teamName = volunteerProfile?.preferred_team || 'General Team';
 
+  const isSubpageWithBack =
+    (cleanRoute === '/volunteer/children' && !!selectedChildId) ||
+    (cleanRoute === '/volunteer/scan' && (!!checkedInSuccessChild || !!lookedUpChild)) ||
+    cleanRoute === '/volunteer/pickup' ||
+    cleanRoute === '/volunteer/profile' ||
+    cleanRoute === '/volunteer/wristbands' ||
+    cleanRoute === '/volunteer/readiness';
+
   return (
-    <div className="min-h-screen bg-[#FAF9F6] font-sans flex flex-col pb-24 lg:pb-10" data-view-version="volunteer-dashboard-v9-handover-mobile-app">
-      {/* Top Header Bar - Calm, Minimal, Premium Mobile Header */}
-      <header 
-        className="bg-[#FAF9F6] border-b border-[#EAE8E1]/60 sticky top-0 z-20 px-4 h-16 flex items-center justify-between"
-        data-component-version="volunteer-mobile-app-header-v2-handover"
-      >
-        <div 
-          className="max-w-4xl w-full mx-auto flex items-center justify-between h-full"
-          data-component-version="volunteer-dashboard-header-v2-clean"
+    <div className="min-h-screen bg-[#FAF9F6] dark:bg-[#19191A] font-sans flex flex-col" data-view-version="volunteer-dashboard-v9-handover-mobile-app">
+      <div className="w-full max-w-[500px] mx-auto min-h-screen flex flex-col bg-[#FAF8F5] dark:bg-[#1B1B1C]">
+        {/* Top Header Bar - Calm, Minimal, Premium Mobile Header */}
+        <header
+          className="bg-[#FAF9F6]/95 dark:bg-[#1D1D1A]/95 backdrop-blur-md border-b border-[#EAE8E1] dark:border-[#302E29] sticky top-0 z-30 px-4 sm:px-5 h-14 w-full"
+          data-component-version="volunteer-mobile-app-header-v2-handover"
         >
-          {/* Left: Brand Logo or Back arrow depending on page context */}
-          <div className="flex items-center">
-            {cleanRoute !== '/volunteer/event' ? (
-              <button
-                onClick={() => {
-                  if (cleanRoute === '/volunteer/scan') {
-                    if (checkedInSuccessChild || lookedUpChild) {
-                      handleResetScannerState();
+          <div
+            className="w-full max-w-[500px] mx-auto grid grid-cols-[1fr_auto_1fr] items-center h-full"
+            data-component-version="volunteer-dashboard-header-v2-clean"
+          >
+            {/* Left: Brand Logo or Back arrow depending on subpage context */}
+            <div className="justify-self-start flex items-center">
+              {isSubpageWithBack ? (
+                <button
+                  onClick={() => {
+                    if (cleanRoute === '/volunteer/scan') {
+                      if (checkedInSuccessChild || lookedUpChild) {
+                        handleResetScannerState();
+                      } else {
+                        onNavigate('/volunteer/event');
+                      }
+                    } else if (cleanRoute === '/volunteer/pickup') {
+                      if (pickupChild || pickupSuccessResult) {
+                        setPickupChild(null);
+                        setPickupSuccessResult(null);
+                      } else {
+                        onNavigate('/volunteer/event');
+                      }
+                    } else if (cleanRoute === '/volunteer/children') {
+                      if (selectedChildId) {
+                        setSelectedChildId(null);
+                      } else {
+                        onNavigate('/volunteer/event');
+                      }
                     } else {
                       onNavigate('/volunteer/event');
                     }
-                  } else if (cleanRoute === '/volunteer/pickup') {
-                    if (pickupChild || pickupSuccessResult) {
-                      setPickupChild(null);
-                      setPickupSuccessResult(null);
-                    } else {
-                      onNavigate('/volunteer/event');
-                    }
-                  } else if (cleanRoute === '/volunteer/children') {
-                    if (selectedChildId) {
-                      setSelectedChildId(null);
-                    } else {
-                      onNavigate('/volunteer/event');
-                    }
-                  } else {
-                    onNavigate('/volunteer/event');
-                  }
-                }}
-                className="p-1.5 -ml-1.5 text-gray-500 hover:text-gray-800 transition-colors cursor-pointer rounded-full hover:bg-gray-50"
-                id="btn-volunteer-header-back"
-              >
-                <ChevronLeft className="h-6 w-6" />
-              </button>
-            ) : (
-              <BrandLogo
-                context="compact"
-                data-component-version="volunteer-brand-logo-v1-configured"
-                onClick={() => onNavigate('/volunteer/event')}
-                className="mr-1"
-              />
-            )}
-          </div>
+                  }}
+                  className="p-1.5 -ml-1.5 text-zinc-500 hover:text-zinc-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] transition-colors cursor-pointer rounded-full hover:bg-zinc-100 dark:hover:bg-[#21211E]"
+                  id="btn-volunteer-header-back"
+                  title="Go back"
+                >
+                  <ChevronLeft className="h-6 w-6" />
+                </button>
+              ) : (
+                <BrandLogo
+                  context="compact"
+                  data-component-version="volunteer-brand-logo-v1-configured"
+                  onClick={() => onNavigate('/volunteer/event')}
+                />
+              )}
+            </div>
 
-          {/* Center: Desktop Navigation Tabs (Hidden on mobile/tablet) */}
-          <nav className="hidden lg:flex items-center space-x-1" aria-label="Volunteer desktop navigation">
-            <button
-              type="button"
-              onClick={() => onNavigate('/volunteer/event')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium font-sans transition-colors cursor-pointer ${
-                cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup'
-                  ? 'bg-[#FAF6EB] text-[#C59B27] font-semibold'
-                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
-              }`}
-            >
-              Events
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setCameraActive(true);
-                onNavigate('/volunteer/scan');
-              }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium font-sans transition-colors cursor-pointer ${
-                cleanRoute === '/volunteer/scan'
-                  ? 'bg-[#FAF6EB] text-[#C59B27] font-semibold'
-                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
-              }`}
-            >
-              Scan
-            </button>
-            <button
-              type="button"
-              onClick={() => onNavigate('/volunteer/children')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium font-sans transition-colors cursor-pointer ${
-                cleanRoute === '/volunteer/children'
-                  ? 'bg-[#FAF6EB] text-[#C59B27] font-semibold'
-                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
-              }`}
-            >
-              Children
-            </button>
-            <button
-              type="button"
-              onClick={() => onNavigate('/volunteer/reports')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium font-sans transition-colors cursor-pointer ${
-                cleanRoute === '/volunteer/reports'
-                  ? 'bg-[#FAF6EB] text-[#C59B27] font-semibold'
-                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
-              }`}
-            >
-              Summary
-            </button>
-            {volunteerProfile && (
-              <button
-                type="button"
-                onClick={() => onNavigate('/volunteer/team-alerts')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium font-sans transition-colors cursor-pointer ${
-                  cleanRoute === '/volunteer/team-alerts'
-                    ? 'bg-[#FAF6EB] text-[#C59B27] font-semibold'
-                    : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
-                }`}
-              >
-                Safety
-              </button>
-            )}
-          </nav>
-
-          {/* Center: Contextual Page Title on Mobile/Tablet */}
-          <div className="text-center lg:hidden">
-            {cleanRoute !== '/volunteer/event' && (
-              <span className="font-semibold text-sm text-zinc-900 tracking-tight font-sans">
-                {(() => {
-                  if (cleanRoute === '/volunteer/scan') {
-                    if (checkedInSuccessChild) return 'Check-in confirmed';
-                    if (lookedUpChild) return 'Child found';
-                    return 'Scan';
-                  }
-                  if (cleanRoute === '/volunteer/pickup') return 'Pickup';
-                  if (cleanRoute === '/volunteer/children') return selectedChildId ? 'Child profile' : 'Children';
-                  if (cleanRoute === '/volunteer/reports') return 'Summary';
-                  if (cleanRoute === '/volunteer/team-alerts') return 'Safety';
-                  if (cleanRoute === '/volunteer/profile') return 'Profile';
-                  if (cleanRoute === '/volunteer/readiness') return 'Device readiness';
-                  if (cleanRoute === '/volunteer/wristbands') return 'Wristbands';
-                  return '';
-                })()}
+            {/* Center: KOINONIA Brand */}
+            <div className="justify-self-center text-center">
+              <span className="font-serif-koinonia font-bold text-xs sm:text-sm text-[#18181B] dark:text-[#F0EBE3] tracking-wider uppercase leading-none">
+                KOINONIA
               </span>
-            )}
-          </div>
+            </div>
 
-          {/* Right: Notifications & Profile Avatar (Single Theme Switcher below) */}
-          <div className="flex items-center space-x-2">
-            {hasParentProfile && (
-              <button
-                disabled={isSwitchingExperience}
-                onClick={() => {
-                  if (onSwitchExperience) {
-                    onSwitchExperience('parent');
-                  } else {
-                    onNavigate('/parent/home');
-                  }
-                }}
-                className="p-1.5 text-[#C59B27] hover:text-[#A47E1F] rounded-full hover:bg-[#FAF6EB] flex items-center justify-center cursor-pointer transition-colors disabled:opacity-50"
-                title="Switch to Parent Access"
-              >
-                {isSwitchingExperience ? (
-                  <RefreshCw className="h-4.5 w-4.5 animate-spin" />
-                ) : (
-                  <Home className="h-4.5 w-4.5" />
-                )}
-              </button>
-            )}
+            {/* Right: Notifications & Profile Avatar */}
+            <div className="justify-self-end flex items-center space-x-2">
+              {hasParentProfile && (
+                <button
+                  disabled={isSwitchingExperience}
+                  onClick={() => {
+                    if (onSwitchExperience) {
+                      onSwitchExperience('parent');
+                    } else {
+                      onNavigate('/parent/home');
+                    }
+                  }}
+                  className="p-1.5 text-[#C59B27] hover:text-[#A47E1F] rounded-full hover:bg-[#FAF6EB] dark:hover:bg-[#21211E] flex items-center justify-center cursor-pointer transition-colors disabled:opacity-50"
+                  title="Switch to Parent Access"
+                >
+                  {isSwitchingExperience ? (
+                    <RefreshCw className="h-4.5 w-4.5 animate-spin" />
+                  ) : (
+                    <Home className="h-4.5 w-4.5" />
+                  )}
+                </button>
+              )}
 
-            {/* Notification Bell with Mobile Notification Centre */}
-            <div className="relative">
+              {/* Notification Bell */}
               <button
                 onClick={() => {
                   setShowNotifPanel(true);
                   resumeAudioContext();
                 }}
-                className="p-2 text-zinc-500 hover:text-zinc-800 rounded-full transition-colors relative cursor-pointer hover:bg-zinc-100"
+                className="p-2 text-zinc-500 hover:text-zinc-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] rounded-full transition-colors relative cursor-pointer hover:bg-zinc-100 dark:hover:bg-[#21211E]"
                 title="Notifications"
                 id="volunteer-notification-bell"
               >
@@ -2677,70 +2640,75 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 )}
               </button>
 
-              <MobileNotificationCentre
-                isOpen={showNotifPanel}
-                onClose={() => setShowNotifPanel(false)}
-                role="volunteer"
-                onNavigate={onNavigate}
-                onUnreadCountChange={setUnreadNotifCount}
-              />
-            </div>
+              <ThemeSwitcher surface="volunteer" />
 
-            <ThemeSwitcher surface="volunteer" />
-            
-            <button
-              onClick={() => onNavigate('/volunteer/profile')}
-              className="w-8 h-8 rounded-full bg-[#C59B27]/10 flex items-center justify-center text-[#C59B27] font-serif font-bold text-xs overflow-hidden border border-[#D9D6CE] shadow-2xs cursor-pointer transition-transform duration-200 hover:scale-105 shrink-0"
-              data-component-version="volunteer-header-avatar-v3-handover-photo"
-            >
-              {(() => {
-                const avatarPhoto = volunteerProfile?.photoUrl || 
-                                     volunteerProfile?.profile?.photoUrl || 
-                                     volunteerProfile?.profilePhotoUrl || 
-                                     volunteerProfile?.user?.photoUrl;
-                if (avatarPhoto) {
-                  return (
-                    <SafeImage 
-                      src={avatarPhoto} 
-                      alt={fullName} 
-                      className="w-full h-full object-cover" 
-                      fallbackComponent={
-                        <span className="font-serif font-bold text-xs">
-                          {fullName.charAt(0).toUpperCase()}
-                        </span>
-                      }
-                    />
-                  );
-                }
-                return fullName.charAt(0).toUpperCase();
-              })()}
-            </button>
+              <button
+                onClick={() => onNavigate('/volunteer/profile')}
+                className="w-8 h-8 rounded-full bg-[#C59B27]/10 flex items-center justify-center text-[#C59B27] font-serif font-bold text-xs overflow-hidden border border-[#D9D6CE] dark:border-[#302E29] shadow-2xs cursor-pointer transition-transform duration-200 hover:scale-105 shrink-0"
+                data-component-version="volunteer-header-avatar-v3-handover-photo"
+                title="Profile"
+              >
+                {(() => {
+                  const avatarPhoto = volunteerProfile?.photoUrl ||
+                                       volunteerProfile?.profile?.photoUrl ||
+                                       volunteerProfile?.profilePhotoUrl ||
+                                       volunteerProfile?.user?.photoUrl;
+                  if (avatarPhoto) {
+                    return (
+                      <SafeImage
+                        src={avatarPhoto}
+                        alt={fullName}
+                        className="w-full h-full object-cover"
+                        fallbackComponent={
+                          <span className="font-serif font-bold text-xs">
+                            {fullName.charAt(0).toUpperCase()}
+                          </span>
+                        }
+                      />
+                    );
+                  }
+                  return fullName.charAt(0).toUpperCase();
+                })()}
+              </button>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+
+        {/* Mobile Notification Centre */}
+        <MobileNotificationCentre
+          isOpen={showNotifPanel}
+          onClose={() => setShowNotifPanel(false)}
+          role="volunteer"
+          onNavigate={onNavigate}
+          onUnreadCountChange={setUnreadNotifCount}
+        />
 
       {/* Main Container */}
-      <main className="max-w-4xl w-full mx-auto px-4 pt-5 space-y-5 flex-1">
+      <main className={`w-full px-4 sm:px-5 ${
+        cleanRoute === '/volunteer/team-alerts'
+          ? (offlineService.isOffline() || outbox.length > 0 || showOfflineHubDetails ? 'pt-4 space-y-4' : 'hidden')
+          : 'pt-5 pb-24 space-y-4 sm:space-y-5 flex-1'
+      }`}>
         
         {/* Device Connectivity Bar / Collapsible Hub */}
         {offlineService.isOffline() || outbox.length > 0 || showOfflineHubDetails ? (
           <div 
-            className="bg-white border border-[#EAE8E1] rounded-2xl p-4 space-y-4 shadow-2xs animate-fade-in"
+            className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 space-y-4 shadow-2xs animate-fade-in"
             data-component-version="volunteer-offline-hub-card-v3"
           >
-            <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#F4F3EF]">
+            <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#F4F3EF] dark:border-[#302E29]">
               <div className="space-y-0.5">
-                <h3 className="text-xs font-serif font-bold text-[#18181B]">
+                <h3 className="text-xs font-serif font-bold text-[#18181B] dark:text-[#F0EBE3]">
                   Sync & Data Options
                 </h3>
                 <div className="flex items-center space-x-1.5 pt-0.5">
                   {offlineService.isOffline() ? (
-                    <span className="inline-flex items-center px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-md text-[11px] font-medium">
+                    <span className="inline-flex items-center px-2 py-0.5 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40 rounded-md text-[11px] font-medium">
                       Operating Offline
                     </span>
                   ) : (
-                    <span className="inline-flex items-center space-x-1.5 text-xs font-semibold text-emerald-700">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span className="inline-flex items-center space-x-1.5 text-xs font-semibold text-[#C59B27] dark:text-[#D4AF37]">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-[#C59B27] dark:text-[#D4AF37] shrink-0" />
                       <span>Synced</span>
                     </span>
                   )}
@@ -2752,16 +2720,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   type="button"
                   onClick={handleDownloadManifest}
                   disabled={isDownloadingManifest || offlineService.isOffline()}
-                  className="px-3 py-1.5 bg-[#FAF9F6] hover:bg-[#F4F3EF] border border-[#EAE8E1] text-[#18181B] text-xs font-medium rounded-xl flex items-center space-x-1.5 transition-all cursor-pointer shadow-2xs"
+                  className="px-3 py-1.5 bg-[#FAF9F6] dark:bg-[#21211E] hover:bg-[#F4F3EF] dark:hover:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] text-[#18181B] dark:text-[#F0EBE3] text-xs font-medium rounded-xl flex items-center space-x-1.5 transition-all cursor-pointer shadow-2xs"
                 >
-                  <RefreshCw className={`h-3.5 w-3.5 ${isDownloadingManifest ? 'animate-spin text-[#C59B27]' : 'text-zinc-500'}`} />
+                  <RefreshCw className={`h-3.5 w-3.5 ${isDownloadingManifest ? 'animate-spin text-[#C59B27]' : 'text-zinc-500 dark:text-[#7A7570]'}`} />
                   <span>{isDownloadingManifest ? 'Caching...' : 'Preload data'}</span>
                 </button>
 
                 <button 
                   type="button" 
                   onClick={() => setShowOfflineHubDetails(false)}
-                  className="p-1.5 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 transition-colors cursor-pointer"
+                  className="p-1.5 hover:bg-zinc-100 dark:hover:bg-[#21211E] rounded-lg text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#F0EBE3] transition-colors cursor-pointer"
                   title="Close sync options"
                 >
                   <X className="w-4 h-4" />
@@ -2773,10 +2741,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             <div className="space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div className="space-y-0.5">
-                  <h4 className="text-xs font-bold text-[#18181B]">
+                  <h4 className="text-xs font-bold text-[#18181B] dark:text-[#F0EBE3]">
                     Pending Offline Scans ({outbox.length})
                   </h4>
-                  <p className="text-xs text-[#71717A] leading-relaxed">
+                  <p className="text-xs text-[#71717A] dark:text-[#B8B0A5] leading-relaxed">
                     {outbox.length === 0 
                       ? 'All check-ins are saved and fully synchronized.' 
                       : `${outbox.length} offline check-ins waiting to upload.`}
@@ -2796,15 +2764,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </div>
 
               {outbox.length > 0 && (
-                <div className="bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl divide-y divide-[#EAE8E1] max-h-48 overflow-y-auto">
+                <div className="bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl divide-y divide-[#EAE8E1] dark:divide-[#302E29] max-h-48 overflow-y-auto">
                   {outbox.map((item) => (
                     <div key={item.idempotencyKey} className="p-3 flex items-center justify-between text-xs gap-3">
                       <div className="space-y-0.5 min-w-0 pr-3">
                         <div className="flex items-center space-x-2">
-                          <span className="font-bold text-[#18181B] truncate">{item.childName}</span>
-                          <span className="px-1.5 py-0.5 bg-white border border-[#EAE8E1] text-[#71717A] rounded text-[10px] font-mono">{item.passReference}</span>
+                          <span className="font-bold text-[#18181B] dark:text-[#F0EBE3] truncate">{item.childName}</span>
+                          <span className="px-1.5 py-0.5 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] text-[#71717A] dark:text-[#B8B0A5] rounded text-[10px] font-mono">{item.passReference}</span>
                         </div>
-                        <div className="text-[11px] text-[#71717A]">
+                        <div className="text-[11px] text-[#71717A] dark:text-[#7A7570]">
                           {item.gateLocation} • {new Date(item.actionTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </div>
                         {item.error && (
@@ -2826,9 +2794,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             </div>
           </div>
         ) : (isOffline || outbox.length > 0) ? (
-          <div className="flex items-center justify-between px-3.5 py-2 bg-amber-50/80 border border-amber-200/80 rounded-2xl text-xs">
-            <div className="flex items-center space-x-2 text-amber-900">
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+          <div className="flex items-center justify-between px-3.5 py-2 bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/40 rounded-2xl text-xs">
+            <div className="flex items-center space-x-2 text-amber-900 dark:text-amber-300">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
               <span className="font-semibold text-[11px]">
                 {isOffline ? 'Offline mode' : `${outbox.length} item${outbox.length > 1 ? 's' : ''} queued`}
               </span>
@@ -2836,7 +2804,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             <button
               type="button"
               onClick={() => setShowOfflineHubDetails(true)}
-              className="px-2.5 py-0.5 bg-white border border-amber-200 text-amber-900 font-bold text-[11px] rounded-lg transition-all cursor-pointer shadow-2xs"
+              className="px-2.5 py-0.5 bg-white dark:bg-[#21211E] border border-amber-200 dark:border-amber-900/40 text-amber-900 dark:text-amber-300 font-bold text-[11px] rounded-lg transition-all cursor-pointer shadow-2xs"
             >
               Sync options
             </button>
@@ -2846,11 +2814,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         {/* Dynamic Route Content Router */}
         {cleanRoute === '/volunteer/event' && (
           /* ==================== 1. EVENT TOOLS / METRICS VIEW ==================== */
-          <div className="space-y-4 animate-fade-in" data-view-version="volunteer-dashboard-v11-refined-mobile">
+          <div className="space-y-4 sm:space-y-5 animate-fade-in w-full" data-view-version="volunteer-dashboard-v11-refined-mobile">
             
             {/* 1. Compact Volunteer Greeting */}
-            <div className="pt-2 pb-1 space-y-1" data-component-version="volunteer-dashboard-compact-greeting">
-              <h1 className="type-h1-app text-[#18181B]">
+            <div className="space-y-1 w-full" data-component-version="volunteer-dashboard-compact-greeting">
+              <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
                 {(() => {
                   const hour = new Date().getHours();
                   const rawName = volunteerProfile?.full_name || 
@@ -2872,7 +2840,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   return firstName ? `${greetingPrefix}, ${firstName}` : greetingPrefix;
                 })()}
               </h1>
-              <p className="text-sm text-zinc-500 font-normal">
+              <p className="text-sm text-zinc-500 dark:text-[#B8B0A5] font-normal">
                 Here's what you need for today's event.
               </p>
             </div>
@@ -2893,7 +2861,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             />
 
             {/* 2. Unified Event Cover & Summary Card */}
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl overflow-hidden shadow-2xs" data-component-version="volunteer-dashboard-unified-event-card">
+            <div className="w-full bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl overflow-hidden shadow-2xs" data-component-version="volunteer-dashboard-unified-event-card">
               <div className="relative h-36 sm:h-44 w-full bg-[#18181B] overflow-hidden flex flex-col justify-end p-4 sm:p-5">
                 <SafeImage 
                   src={customHeroUrl}
@@ -2916,13 +2884,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </div>
               </div>
 
-              <div className="p-4 sm:p-5 space-y-3 bg-white">
-                <div className="space-y-2 text-xs sm:text-sm text-zinc-600 font-sans">
+              <div className="p-4 sm:p-5 space-y-3 bg-white dark:bg-[#1D1D1A]">
+                <div className="space-y-2 text-xs sm:text-sm text-zinc-600 dark:text-[#B8B0A5] font-sans">
                   <div className="flex items-center space-x-2">
                     <Calendar className="w-3.5 h-3.5 text-[#C59B27] shrink-0" />
                     <span>
                       {formatEventDateRange(eventDetails?.starts_at, eventDetails?.ends_at)}
-                      <span className="mx-2 text-zinc-300">·</span>
+                      <span className="mx-2 text-zinc-300 dark:text-[#7A7570]">·</span>
                       {eventDetails?.daily_start_time && eventDetails?.daily_end_time 
                         ? `${eventDetails.daily_start_time} – ${eventDetails.daily_end_time}` 
                         : '9:00 AM – 7:00 PM'}
@@ -2930,20 +2898,20 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   </div>
                   <div className="flex items-center space-x-2">
                     <MapPin className="w-3.5 h-3.5 text-[#C59B27] shrink-0" />
-                    <span className="truncate text-zinc-700">
+                    <span className="truncate text-zinc-700 dark:text-[#F0EBE3]">
                       {eventDetails?.location || 'Koinonia Global Auditorium & Children Pavilion, Abuja'}
                     </span>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-2.5 border-t border-[#F4F3EF] text-xs font-sans">
-                  <span className="text-zinc-500">
-                    Serving with <span className="text-zinc-800 font-medium">{teamName || 'General Team'}</span>
+                <div className="flex items-center justify-between pt-2.5 border-t border-[#F4F3EF] dark:border-[#302E29] text-xs font-sans">
+                  <span className="text-zinc-500 dark:text-[#B8B0A5]">
+                    Serving with <span className="text-zinc-800 dark:text-[#F0EBE3] font-medium">{teamName || 'General Team'}</span>
                   </span>
                   <button 
                     type="button" 
                     onClick={() => setShowEventDetailsModal(true)} 
-                    className="font-medium text-[#C59B27] hover:text-[#A47E1F] transition-colors cursor-pointer inline-flex items-center gap-1"
+                    className="font-medium text-[#C59B27] hover:text-[#A47E1F] dark:text-[#D4AF37] dark:hover:text-[#E5C158] transition-colors cursor-pointer inline-flex items-center gap-1"
                   >
                     <span>View event details</span>
                     <ChevronRight className="w-3.5 h-3.5" />
@@ -2953,9 +2921,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             </div>
 
             {/* 3. Duty Location Card */}
-            <div className="bg-white border border-stone-200/80 rounded-xl p-4 sm:p-5 space-y-3.5 shadow-xs" data-component-version="volunteer-dashboard-duty-location">
+            <div className="w-full bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-2xs" data-component-version="volunteer-dashboard-duty-location">
               <div className="flex items-center justify-between">
-                <h2 className="text-xs font-sans font-medium text-stone-500">Duty location</h2>
+                <h2 className="text-xs font-sans font-medium text-stone-500 dark:text-[#B8B0A5]">Duty location</h2>
                 {currentDutyLocation && !currentDutyLocation.isAssignedByAdmin && (
                   <button
                     type="button"
@@ -2963,7 +2931,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       fetchAvailableLocations();
                       setShowLocationSelectModal(true);
                     }}
-                    className="text-xs text-[#C59B27] hover:text-[#A47E1F] font-sans font-medium transition-colors cursor-pointer"
+                    className="text-xs text-[#C59B27] hover:text-[#A47E1F] dark:text-[#D4AF37] dark:hover:text-[#E5C158] font-sans font-medium transition-colors cursor-pointer"
                   >
                     Change location
                   </button>
@@ -2976,11 +2944,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   <div className="space-y-1">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="text-base sm:text-lg font-serif font-semibold text-stone-900 tracking-tight">
+                        <div className="text-base sm:text-lg font-serif font-semibold text-stone-900 dark:text-[#F0EBE3] tracking-tight">
                           {currentDutyLocation.name || currentDutyLocation.locationName}
                         </div>
                         {(currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey || currentDutyLocation.team || currentDutyLocation.teamKey) && (
-                          <div className="text-xs text-stone-500 font-sans mt-0.5">
+                          <div className="text-xs text-stone-500 dark:text-[#B8B0A5] font-sans mt-0.5">
                             {[
                               cleanAgeGroup(currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey) || currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey,
                               currentDutyLocation.team || currentDutyLocation.teamKey
@@ -2991,15 +2959,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       <button
                         type="button"
                         onClick={() => setShowDutyLocationDetailsModal(true)}
-                        className="text-xs text-stone-500 hover:text-stone-800 font-sans font-medium transition-colors cursor-pointer shrink-0 inline-flex items-center gap-1 pt-0.5"
+                        className="text-xs text-stone-500 hover:text-stone-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] font-sans font-medium transition-colors cursor-pointer shrink-0 inline-flex items-center gap-1 pt-0.5"
                       >
                         <span>View details</span>
-                        <span className="text-stone-400" aria-hidden="true">→</span>
+                        <span className="text-stone-400 dark:text-[#7A7570]" aria-hidden="true">→</span>
                       </button>
                     </div>
 
                     {currentDutyLocation.instructions && (
-                      <p className="text-xs text-stone-600 font-sans pt-1 leading-relaxed line-clamp-2">
+                      <p className="text-xs text-stone-600 dark:text-[#B8B0A5] font-sans pt-1 leading-relaxed line-clamp-2">
                         {currentDutyLocation.instructions}
                       </p>
                     )}
@@ -3007,19 +2975,19 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                   {/* Presence Status & Arrival Confirmation */}
                   {currentDutyLocation.isPresent ? (
-                    <div className="pt-2.5 border-t border-stone-100 flex items-center justify-between">
-                      <div className="text-xs font-sans text-stone-600">
-                        <span className="font-medium text-emerald-700">On duty</span>
+                    <div className="pt-2.5 border-t border-stone-100 dark:border-[#302E29] flex items-center justify-between">
+                      <div className="text-xs font-sans text-stone-600 dark:text-[#B8B0A5]">
+                        <span className="font-medium text-[#C59B27] dark:text-[#D4AF37]">On duty</span>
                         {currentDutyLocation.presentSince && (
-                          <span className="text-stone-500">
+                          <span className="text-stone-500 dark:text-[#7A7570]">
                             {' '}· Since {new Date(currentDutyLocation.presentSince).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
                           </span>
                         )}
                       </div>
                     </div>
                   ) : (
-                    <div className="pt-2.5 border-t border-stone-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
-                      <p className="text-xs font-sans text-stone-500">
+                    <div className="pt-2.5 border-t border-stone-100 dark:border-[#302E29] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                      <p className="text-xs font-sans text-stone-500 dark:text-[#B8B0A5]">
                         Confirm your arrival to let your team know you're here.
                       </p>
                       <button
@@ -3037,10 +3005,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               ) : (
                 /* Unassigned Location State */
                 <div className="space-y-3">
-                  <p className="text-sm font-sans font-medium text-stone-900">
+                  <p className="text-sm font-sans font-medium text-stone-900 dark:text-[#F0EBE3]">
                     No location assigned yet.
                   </p>
-                  <p className="text-xs text-stone-500 font-sans leading-relaxed">
+                  <p className="text-xs text-stone-500 dark:text-[#B8B0A5] font-sans leading-relaxed">
                     Choose where you'll serve
                   </p>
 
@@ -3062,9 +3030,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         setShowLocationQRModal(true);
                         startLocationQRScanning();
                       }}
-                      className="py-2.5 px-3 text-stone-600 hover:text-stone-900 hover:bg-stone-100 font-sans font-medium text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5"
+                      className="py-2.5 px-3 text-stone-600 hover:text-stone-900 hover:bg-stone-100 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] dark:hover:bg-[#21211E] font-sans font-medium text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5"
                     >
-                      <QrCode className="w-3.5 h-3.5 text-stone-500" />
+                      <QrCode className="w-3.5 h-3.5 text-stone-500 dark:text-[#B8B0A5]" />
                       <span>Scan location QR</span>
                     </button>
                   </div>
@@ -3072,8 +3040,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               )}
             </div>
 
-            {/* 4. Primary Operational Actions */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            {/* 4. Primary Operational Actions (Reflowed cleanly for 500px shell without cramped labels) */}
+            <div className="w-full space-y-2.5">
               <button
                 type="button"
                 onClick={() => {
@@ -3081,49 +3049,32 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   setScanMode('check_in');
                   onNavigate('/volunteer/scan');
                 }}
-                className="py-3 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-medium text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2"
+                className="w-full py-3 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-medium text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2"
+                id="btn-volunteer-start-checkin"
               >
                 <QrCode className="w-4 h-4" />
                 <span>Start check-in</span>
               </button>
-              <button
-                type="button"
-                onClick={() => onNavigate('/volunteer/wristbands')}
-                className="py-3 px-4 bg-white border border-[#E5D5AE] hover:bg-[#FAF6EB] text-[#9A7326] font-sans font-medium text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2"
-              >
-                <Tag className="w-4 h-4 text-[#C59B27]" />
-                <span>Wristband desk</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigate('/volunteer/pickup')}
-                className="py-3 px-4 bg-white border border-stone-200/90 hover:bg-stone-50 text-stone-900 font-sans font-medium text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2"
-              >
-                <ShieldCheck className="w-4 h-4 text-[#C59B27]" />
-                <span>Open pickup</span>
-              </button>
-            </div>
-
-            {/* 5. Support Actions */}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => handleOpenSafetyAlertModal()}
-                className="flex-1 py-2.5 px-3 bg-white border border-rose-200 hover:bg-rose-50/50 text-rose-700 font-sans font-medium text-xs rounded-xl transition-colors cursor-pointer text-center"
-              >
-                Request admin help
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowMyAlertsView(true)}
-                className="py-2.5 px-3.5 bg-white border border-stone-200/80 hover:bg-stone-50 text-stone-700 font-sans font-medium text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shrink-0"
-                title="View care requests"
-              >
-                <span>My requests</span>
-                <span className="text-stone-400 font-normal">
-                  {mySafetyAlerts.filter(a => a.status !== 'resolved').length}
-                </span>
-              </button>
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => onNavigate('/volunteer/wristbands')}
+                  className="py-2.5 px-3 bg-white dark:bg-[#21211E] border border-[#E5D5AE] dark:border-[#302E29] hover:bg-[#FAF6EB] dark:hover:bg-[#262520] text-[#9A7326] dark:text-[#D4AF37] font-sans font-medium text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2"
+                  id="btn-volunteer-wristband-desk"
+                >
+                  <Tag className="w-4 h-4 text-[#C59B27]" />
+                  <span>Wristband desk</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('/volunteer/pickup')}
+                  className="py-2.5 px-3 bg-white dark:bg-[#21211E] border border-stone-200/90 dark:border-[#302E29] hover:bg-stone-50 dark:hover:bg-[#262520] text-stone-900 dark:text-[#F0EBE3] font-sans font-medium text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2"
+                  id="btn-volunteer-open-pickup"
+                >
+                  <ShieldCheck className="w-4 h-4 text-[#C59B27]" />
+                  <span>Open pickup</span>
+                </button>
+              </div>
             </div>
 
             {/* 5. Child Search Field */}
@@ -3136,52 +3087,52 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               data-component-version="volunteer-dashboard-search-v5-mobile"
             >
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                <Search className="h-4 w-4 text-zinc-400" />
+                <Search className="h-4 w-4 text-zinc-400 dark:text-[#7A7570]" />
               </div>
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Find child by name or parent phone"
-                className="w-full pl-10 pr-4 py-2.5 bg-[#FAF9F6] border border-[#EAE8E1] rounded-xl text-xs sm:text-sm text-zinc-900 placeholder-zinc-400 focus:bg-white focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] outline-hidden transition-all"
+                className="w-full pl-10 pr-4 py-2.5 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl text-xs sm:text-sm text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:bg-white dark:focus:bg-[#262520] focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] outline-hidden transition-all"
               />
             </form>
 
             {/* 6. Metrics Summary Grid (Cohesive card with subtle dividers, no box fatigue) */}
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 shadow-2xs" data-component-version="volunteer-dashboard-summary-refined">
-              <div className="grid grid-cols-4 gap-2 text-center divide-x divide-zinc-100">
+            <div className="w-full bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-2xs" data-component-version="volunteer-dashboard-summary-refined">
+              <div className="grid grid-cols-4 gap-2 text-center divide-x divide-zinc-100 dark:divide-[#302E29]">
                 <div className="space-y-1">
-                  <span className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide block">
+                  <span className="text-[11px] font-medium text-zinc-400 dark:text-[#7A7570] uppercase tracking-wide block">
                     Expected
                   </span>
-                  <span className="text-2xl sm:text-3xl font-serif font-medium text-zinc-900 block leading-tight">
+                  <span className="text-2xl sm:text-3xl font-serif font-medium text-zinc-900 dark:text-[#F0EBE3] block leading-tight">
                     {stats.expected || 0}
                   </span>
                 </div>
 
                 <div className="space-y-1 pl-2">
-                  <span className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide block">
+                  <span className="text-[11px] font-medium text-zinc-400 dark:text-[#7A7570] uppercase tracking-wide block">
                     Checked in
                   </span>
-                  <span className="text-2xl sm:text-3xl font-serif font-medium text-[#C59B27] block leading-tight">
+                  <span className="text-2xl sm:text-3xl font-serif font-medium text-[#C59B27] dark:text-[#D4AF37] block leading-tight">
                     {stats.checkedIn || 0}
                   </span>
                 </div>
 
                 <div className="space-y-1 pl-2">
-                  <span className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide block">
+                  <span className="text-[11px] font-medium text-zinc-400 dark:text-[#7A7570] uppercase tracking-wide block">
                     Picked up
                   </span>
-                  <span className="text-2xl sm:text-3xl font-serif font-medium text-zinc-700 block leading-tight">
+                  <span className="text-2xl sm:text-3xl font-serif font-medium text-zinc-700 dark:text-[#B8B0A5] block leading-tight">
                     {stats.pickedUp || 0}
                   </span>
                 </div>
 
                 <div className="space-y-1 pl-2">
-                  <span className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide block">
+                  <span className="text-[11px] font-medium text-zinc-400 dark:text-[#7A7570] uppercase tracking-wide block">
                     Attention
                   </span>
-                  <span className="text-2xl sm:text-3xl font-serif font-medium text-zinc-900 block leading-tight">
+                  <span className="text-2xl sm:text-3xl font-serif font-medium text-zinc-900 dark:text-[#F0EBE3] block leading-tight">
                     {stats.attention || 0}
                   </span>
                 </div>
@@ -3189,20 +3140,20 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             </div>
 
             {/* 7. Needs Attention Section */}
-            <div className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3" data-component-version="volunteer-dashboard-attention-refined">
-              <div className="flex items-center space-x-2 border-b border-zinc-100 pb-2.5">
+            <div className="w-full bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3" data-component-version="volunteer-dashboard-attention-refined">
+              <div className="flex items-center space-x-2 border-b border-zinc-100 dark:border-[#302E29] pb-2.5">
                 <AlertTriangle className="h-4 w-4 text-[#C59B27]" />
-                <h2 className="text-base font-sans font-bold text-zinc-900">Needs Attention</h2>
+                <h2 className="text-base font-sans font-bold text-zinc-900 dark:text-[#F0EBE3]">Needs Attention</h2>
               </div>
 
               {attentionItems.length === 0 && !loading && (
-                <div className="py-3 text-center text-xs text-zinc-400">
+                <div className="py-3 text-center text-xs text-zinc-400 dark:text-[#7A7570]">
                   No attention items right now.
                 </div>
               )}
 
               {attentionItems.length > 0 && (
-                <div className="divide-y divide-zinc-100" data-component-version="volunteer-attention-list-v2">
+                <div className="divide-y divide-zinc-100 dark:divide-[#302E29]" data-component-version="volunteer-attention-list-v2">
                   {attentionItems.map((item, index) => {
                     const childPhoto = item.child_photo_file_id || item.childPhotoFileId;
                     const cName = item.child_name || item.childName || 'Child';
@@ -3223,7 +3174,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         <div className="flex items-center space-x-3 min-w-0 flex-1">
                           {/* Photo area */}
                           <div 
-                            className="w-10 h-10 rounded-xl overflow-hidden bg-[#FAF6EB] border border-[#E5D5AE]/60 shrink-0 flex items-center justify-center text-[#C59B27] font-serif font-bold text-xs"
+                            className="w-10 h-10 rounded-xl overflow-hidden bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE]/60 dark:border-[#302E29] shrink-0 flex items-center justify-center text-[#C59B27] font-serif font-bold text-xs"
                             data-component-version="volunteer-attention-child-photo-v2"
                           >
                             {resolvedPhotoUrl ? (
@@ -3245,10 +3196,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           </div>
 
                           <div className="min-w-0 flex-1">
-                            <p className="text-xs font-semibold text-zinc-900 leading-tight truncate">
+                            <p className="text-xs font-semibold text-zinc-900 dark:text-[#F0EBE3] leading-tight truncate">
                               {item.issue_type || item.issueType || 'Unresolved issue'}
                             </p>
-                            <p className="text-[11px] text-zinc-500 mt-0.5 truncate">
+                            <p className="text-[11px] text-zinc-500 dark:text-[#B8B0A5] mt-0.5 truncate">
                               {cleaned.name} {cleaned.ref ? `• #${cleaned.ref}` : (item.child_id ? `• #${String(item.child_id).slice(-4)}` : '')}
                             </p>
                           </div>
@@ -3257,7 +3208,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         <button
                           onClick={() => handleResolveAction(item)}
                           data-component-version="volunteer-attention-action-v2"
-                          className="text-xs font-semibold text-[#C59B27] hover:text-[#A47E1F] shrink-0 transition-colors cursor-pointer"
+                          className="text-xs font-semibold text-[#C59B27] hover:text-[#A47E1F] dark:text-[#D4AF37] dark:hover:text-[#E5C158] shrink-0 transition-colors cursor-pointer"
                         >
                           {item.action_text === 'RESOLVE' || item.actionText === 'RESOLVE' ? 'Resolve' : item.action_text === 'VERIFY' || item.actionText === 'VERIFY' ? 'Verify' : 'Review'}
                         </button>
@@ -3269,23 +3220,23 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             </div>
 
             {/* 8. Recent Activity Section */}
-            <div 
-              className="bg-white border border-[#EAE8E1] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3 font-sans" 
+            <div
+              className="w-full bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3 font-sans"
               data-component-version="volunteer-dashboard-recent-activity-refined"
             >
-              <div className="flex items-center space-x-2 border-b border-zinc-100 pb-2.5">
+              <div className="flex items-center space-x-2 border-b border-zinc-100 dark:border-[#302E29] pb-2.5">
                 <History className="h-4 w-4 text-[#C59B27]" />
-                <h2 className="text-base font-sans font-bold text-zinc-900">Recent Activity</h2>
+                <h2 className="text-base font-sans font-bold text-zinc-900 dark:text-[#F0EBE3]">Recent Activity</h2>
               </div>
 
               {recentScans.length === 0 && (
-                <div className="py-3 text-center text-xs text-zinc-400">
+                <div className="py-3 text-center text-xs text-zinc-400 dark:text-[#7A7570]">
                   No scan activity recorded yet.
                 </div>
               )}
 
               {recentScans.length > 0 && (
-                <div className="divide-y divide-zinc-100">
+                <div className="divide-y divide-zinc-100 dark:divide-[#302E29]">
                   {recentScans.slice(0, 3).map((item, index) => (
                     <div
                       key={item.id || index}
@@ -3294,23 +3245,23 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       <div className="flex items-center space-x-3 min-w-0">
                         <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] shrink-0 font-semibold ${
                           item.status === 'checked_in' || item.status === 'inside'
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : 'bg-zinc-100 text-zinc-700 border border-zinc-200'
+                            ? 'bg-[#FAF6EB] text-[#C59B27] border border-[#E5D5AE] dark:bg-[#262520] dark:text-[#D4AF37] dark:border-[#3A3835]'
+                            : 'bg-zinc-100 text-zinc-700 border border-zinc-200 dark:bg-[#21211E] dark:text-[#B8B0A5] dark:border-[#302E29]'
                         }`}>
                           {item.status === 'checked_in' || item.status === 'inside' ? 'IN' : 'OUT'}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-xs font-semibold text-zinc-900 truncate leading-tight">
+                          <p className="text-xs font-semibold text-zinc-900 dark:text-[#F0EBE3] truncate leading-tight">
                             {item.childName || 'Child'}
                           </p>
-                          <p className="text-[10px] text-zinc-500 mt-0.5">
+                          <p className="text-[10px] text-zinc-500 dark:text-[#B8B0A5] mt-0.5">
                             {item.status === 'checked_in' || item.status === 'inside' ? 'Checked in' : 'Picked up'} • {formatTime(item.timestamp)}
                           </p>
                         </div>
                       </div>
                       
                       {item.ageGroup && (
-                        <span className="text-[10px] font-medium text-zinc-500 bg-zinc-50 border border-zinc-200 px-2 py-0.5 rounded-full shrink-0">
+                        <span className="text-[10px] font-medium text-zinc-500 dark:text-[#B8B0A5] bg-zinc-50 dark:bg-[#262520] border border-zinc-200 dark:border-[#302E29] px-2 py-0.5 rounded-full shrink-0">
                           {cleanAgeGroup(item.ageGroup)}
                         </span>
                       )}
@@ -3353,28 +3304,28 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   {/* Success Title Block */}
                   <div className="text-center space-y-3">
                     <div className="flex justify-center">
-                      <div className="w-16 h-16 bg-[#10B981] text-white rounded-full flex items-center justify-center shadow-md animate-scale-in">
+                      <div className="w-16 h-16 bg-[#C59B27] text-white rounded-full flex items-center justify-center shadow-md animate-scale-in">
                         <ShieldCheck className="h-9 w-9 stroke-[2.5]" />
                       </div>
                     </div>
                     <div className="space-y-1">
-                      <span className="text-[10px] font-mono font-bold text-[#10B981] uppercase tracking-widest block">Check-in successful</span>
-                      <h2 className="text-3xl font-serif font-black text-gray-900 leading-tight">Ready for class!</h2>
+                      <span className="text-[10px] font-mono font-bold text-[#C59B27] uppercase tracking-widest block">Check-in successful</span>
+                      <h2 className="text-3xl font-serif font-black text-gray-900 dark:text-[#F0EBE3] leading-tight">Ready for class!</h2>
                     </div>
                   </div>
 
                   {/* Success badge card */}
-                  <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-3xl p-5 shadow-xs text-center space-y-1" data-component-version="volunteer-checked-in-success-badge-v1-stitch">
-                    <span className="text-sm font-bold text-[#047857] block">Checked in</span>
-                    <p className="text-xs text-[#065F46] font-medium leading-relaxed">
+                  <div className="bg-[#ECFDF5] dark:bg-amber-950/20 border border-[#A7F3D0] dark:border-amber-900/40 rounded-3xl p-5 shadow-xs text-center space-y-1" data-component-version="volunteer-checked-in-success-badge-v1-stitch">
+                    <span className="text-sm font-bold text-[#047857] dark:text-[#D4AF37] block">Checked in</span>
+                    <p className="text-xs text-[#065F46] dark:text-[#B8B0A5] font-medium leading-relaxed">
                       {firstName} has been marked present.
                     </p>
                   </div>
 
                   {/* Child summary card */}
-                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-sm space-y-4" data-component-version="volunteer-checked-in-child-summary-v5">
+                  <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-sm space-y-4" data-component-version="volunteer-checked-in-child-summary-v5">
                     <div className="flex items-center space-x-4">
-                      <div className="w-16 h-16 rounded-2xl overflow-hidden bg-gray-50 border border-gray-150 shrink-0 shadow-inner flex items-center justify-center">
+                      <div className="w-16 h-16 rounded-2xl overflow-hidden bg-gray-50 dark:bg-[#262520] border border-gray-150 dark:border-[#302E29] shrink-0 shadow-inner flex items-center justify-center">
                         {checkedInSuccessChild.photoUrl ? (
                           <img
                             src={checkedInSuccessChild.photoUrl}
@@ -3383,18 +3334,18 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                             referrerPolicy="no-referrer"
                           />
                         ) : (
-                          <User className="h-8 w-8 text-gray-300 stroke-[1.5]" />
+                          <User className="h-8 w-8 text-gray-300 dark:text-[#7A7570] stroke-[1.5]" />
                         )}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h3 className="text-lg font-serif font-bold text-gray-950 leading-snug truncate">
+                        <h3 className="text-lg font-serif font-bold text-gray-950 dark:text-[#F0EBE3] leading-snug truncate">
                           {checkedInSuccessChild.fullName || 'Registered Child'}
                         </h3>
-                        <div className="flex items-center space-x-1.5 mt-1 text-xs text-gray-500 font-semibold">
+                        <div className="flex items-center space-x-1.5 mt-1 text-xs text-gray-500 dark:text-[#B8B0A5] font-semibold">
                           <span data-component-version="volunteer-child-age-display-v2-under-one">{ageLabel}</span>
-                          {ageLabel && ageGroup && <span className="text-gray-300">&bull;</span>}
+                          {ageLabel && ageGroup && <span className="text-gray-300 dark:text-[#302E29]">&bull;</span>}
                           {ageGroup && (
-                            <span className="bg-[#FAF9F6] border border-[#EAE8E1] text-[#C59B27] px-2 py-0.5 text-[9px] font-bold uppercase rounded-md tracking-wider">
+                            <span className="bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] text-[#C59B27] px-2 py-0.5 text-[9px] font-bold uppercase rounded-md tracking-wider">
                               {ageGroup}
                             </span>
                           )}
@@ -3402,79 +3353,79 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       </div>
                     </div>
 
-                    <div className="border-t border-gray-100 pt-3.5 space-y-2.5 text-xs" data-component-version="volunteer-checked-in-entry-details-v5">
+                    <div className="border-t border-gray-100 dark:border-[#302E29] pt-3.5 space-y-2.5 text-xs" data-component-version="volunteer-checked-in-entry-details-v5">
                       <div className="flex justify-between items-center">
-                        <span className="text-gray-400 font-mono font-bold uppercase tracking-wider text-[9px]">ENTRY TIME</span>
-                        <span className="font-semibold text-gray-850">{checkInTime}</span>
+                        <span className="text-gray-400 dark:text-[#7A7570] font-mono font-bold uppercase tracking-wider text-[9px]">ENTRY TIME</span>
+                        <span className="font-semibold text-gray-850 dark:text-[#F0EBE3]">{checkInTime}</span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-gray-400 font-mono font-bold uppercase tracking-wider text-[9px]">BY</span>
-                        <span className="font-semibold text-gray-800">{checkedInBy}</span>
+                        <span className="text-gray-400 dark:text-[#7A7570] font-mono font-bold uppercase tracking-wider text-[9px]">BY</span>
+                        <span className="font-semibold text-gray-800 dark:text-[#F0EBE3]">{checkedInBy}</span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-gray-400 font-mono font-bold uppercase tracking-wider text-[9px]">POINT</span>
-                        <span className="font-semibold text-gray-800">{checkInPoint}</span>
+                        <span className="text-gray-400 dark:text-[#7A7570] font-mono font-bold uppercase tracking-wider text-[9px]">POINT</span>
+                        <span className="font-semibold text-gray-800 dark:text-[#F0EBE3]">{checkInPoint}</span>
                       </div>
                     </div>
                   </div>
 
                   {/* Care notes card */}
-                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-sm space-y-4" data-component-version="volunteer-checked-in-care-notes-v5">
-                    <h4 className="text-[10px] font-mono font-bold text-[#8F7020] uppercase tracking-[0.15em] border-b border-gray-100 pb-2">
+                  <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-sm space-y-4" data-component-version="volunteer-checked-in-care-notes-v5">
+                    <h4 className="text-[10px] font-mono font-bold text-[#8F7020] dark:text-[#C59B27] uppercase tracking-[0.15em] border-b border-gray-100 dark:border-[#302E29] pb-2">
                       CARE NOTES
                     </h4>
                     {hasCareNotes ? (
                       <div className="space-y-3.5">
                         {medicalNote && (
-                          <div className="flex items-start space-x-2.5 text-xs text-gray-700">
-                            <span className="p-1.5 bg-rose-50 rounded-lg text-rose-600 shrink-0 mt-0.5">
-                              <Heart className="h-3.5 w-3.5 fill-rose-600 stroke-rose-600" />
+                          <div className="flex items-start space-x-2.5 text-xs text-gray-700 dark:text-[#F0EBE3]">
+                            <span className="p-1.5 bg-rose-50 dark:bg-red-950/30 rounded-lg text-rose-600 dark:text-rose-400 shrink-0 mt-0.5">
+                              <Heart className="h-3.5 w-3.5 fill-rose-600 dark:fill-rose-400 stroke-rose-600 dark:stroke-rose-400" />
                             </span>
                             <div className="min-w-0">
-                              <span className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider block">MEDICAL</span>
-                              <p className="font-semibold text-gray-800 leading-normal mt-0.5">{medicalNote}</p>
+                              <span className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block">MEDICAL</span>
+                              <p className="font-semibold text-gray-800 dark:text-[#F0EBE3] leading-normal mt-0.5">{medicalNote}</p>
                             </div>
                           </div>
                         )}
                         {allergies && allergies.toLowerCase() !== 'no' && (
-                          <div className="flex items-start space-x-2.5 text-xs text-gray-700">
-                            <span className="p-1.5 bg-amber-50 rounded-lg text-amber-600 shrink-0 mt-0.5">
+                          <div className="flex items-start space-x-2.5 text-xs text-gray-700 dark:text-[#F0EBE3]">
+                            <span className="p-1.5 bg-amber-50 dark:bg-amber-950/30 rounded-lg text-amber-600 dark:text-[#C59B27] shrink-0 mt-0.5">
                               <AlertTriangle className="h-3.5 w-3.5" />
                             </span>
                             <div className="min-w-0">
-                              <span className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider block">ALLERGIES</span>
-                              <p className="font-semibold text-gray-800 leading-normal mt-0.5">{allergies}</p>
+                              <span className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block">ALLERGIES</span>
+                              <p className="font-semibold text-gray-800 dark:text-[#F0EBE3] leading-normal mt-0.5">{allergies}</p>
                             </div>
                           </div>
                         )}
                         {extraSupport && extraSupport.toLowerCase() !== 'no' && (
-                          <div className="flex items-start space-x-2.5 text-xs text-gray-700">
-                            <span className="p-1.5 bg-blue-50 rounded-lg text-blue-600 shrink-0 mt-0.5">
+                          <div className="flex items-start space-x-2.5 text-xs text-gray-700 dark:text-[#F0EBE3]">
+                            <span className="p-1.5 bg-blue-50 dark:bg-blue-950/30 rounded-lg text-blue-600 dark:text-blue-400 shrink-0 mt-0.5">
                               <Info className="h-3.5 w-3.5" />
                             </span>
                             <div className="min-w-0">
-                              <span className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider block">EXTRA SUPPORT</span>
-                              <p className="font-semibold text-gray-800 leading-normal mt-0.5">{extraSupport}</p>
+                              <span className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block">EXTRA SUPPORT</span>
+                              <p className="font-semibold text-gray-800 dark:text-[#F0EBE3] leading-normal mt-0.5">{extraSupport}</p>
                             </div>
                           </div>
                         )}
                       </div>
                     ) : (
-                      <p className="text-xs text-gray-500 font-medium italic text-center py-2 bg-gray-50 rounded-2xl border border-gray-100">
+                      <p className="text-xs text-gray-500 dark:text-[#7A7570] font-medium italic text-center py-2 bg-gray-50 dark:bg-[#262520] rounded-2xl border border-gray-100 dark:border-[#302E29]">
                         No care notes added.
                       </p>
                     )}
                   </div>
 
                   {/* Children inside / Waiting metrics card */}
-                  <div className="grid grid-cols-2 gap-4 bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-sm" data-component-version="volunteer-checked-in-metrics-v5">
-                    <div className="text-center space-y-1 border-r border-gray-100 pr-2">
-                      <span className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider block">CHILDREN INSIDE</span>
-                      <span className="text-3xl font-serif font-black text-gray-900">{stats.checkedIn}</span>
+                  <div className="grid grid-cols-2 gap-4 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-sm" data-component-version="volunteer-checked-in-metrics-v5">
+                    <div className="text-center space-y-1 border-r border-gray-100 dark:border-[#302E29] pr-2">
+                      <span className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block">CHILDREN INSIDE</span>
+                      <span className="text-3xl font-serif font-black text-gray-900 dark:text-[#F0EBE3]">{stats.checkedIn}</span>
                     </div>
                     <div className="text-center space-y-1 pl-2">
-                      <span className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider block">WAITING</span>
-                      <span className="text-3xl font-serif font-black text-gray-900">{Math.max(0, stats.expected - stats.checkedIn)}</span>
+                      <span className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block">WAITING</span>
+                      <span className="text-3xl font-serif font-black text-gray-900 dark:text-[#F0EBE3]">{Math.max(0, stats.expected - stats.checkedIn)}</span>
                     </div>
                   </div>
 
@@ -3483,7 +3434,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     <button
                       onClick={handleResetScannerState}
                       data-component-version="volunteer-checked-in-scan-another-v5"
-                      className="w-full bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2"
+                      className="w-full bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#1D1D1A] font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2"
                     >
                       <QrCode className="h-4 w-4 stroke-[2.5]" />
                       <span>SCAN ANOTHER PASS</span>
@@ -3496,9 +3447,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         onNavigate('/volunteer/children');
                       }}
                       data-component-version="volunteer-checked-in-view-child-v5"
-                      className="w-full border border-gray-300 hover:border-gray-400 text-gray-850 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white hover:bg-gray-50 flex items-center justify-center space-x-2"
+                      className="w-full border border-gray-300 dark:border-[#302E29] hover:border-gray-400 dark:hover:border-[#3A3835] text-gray-850 dark:text-[#F0EBE3] font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] flex items-center justify-center space-x-2"
                     >
-                      <User className="h-4 w-4 text-gray-600 stroke-[2]" />
+                      <User className="h-4 w-4 text-gray-600 dark:text-[#B8B0A5] stroke-[2]" />
                       <span>VIEW CHILD PROFILE</span>
                     </button>
 
@@ -3534,13 +3485,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     </span>
                     <span>Scan successful</span>
                   </div>
-                  <h2 className="text-3xl font-serif font-bold text-gray-950 leading-tight">Child found</h2>
+                  <h2 className="text-3xl font-serif font-bold text-gray-950 dark:text-[#F0EBE3] leading-tight">Child found</h2>
                 </div>
 
                 {/* Child Identity Card */}
-                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-found-card-v3">
+                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-found-card-v3">
                   {/* Photo area */}
-                  <div className="w-full aspect-[4/3] rounded-2xl overflow-hidden bg-gray-50 border border-gray-150 relative">
+                  <div className="w-full aspect-[4/3] rounded-2xl overflow-hidden bg-gray-50 dark:bg-[#262520] border border-gray-150 dark:border-[#302E29] relative">
                     {lookedUpChild.photoUrl ? (
                       <img
                         src={lookedUpChild.photoUrl}
@@ -3549,9 +3500,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         referrerPolicy="no-referrer"
                       />
                     ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center text-gray-400">
+                      <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 dark:text-[#7A7570]">
                         <User className="h-14 w-14 stroke-[1]" />
-                        <span className="text-xs font-semibold text-gray-400 mt-2">No photo available</span>
+                        <span className="text-xs font-semibold text-gray-400 dark:text-[#7A7570] mt-2">No photo available</span>
                       </div>
                     )}
                   </div>
@@ -3559,29 +3510,29 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   {/* Child details */}
                   <div className="space-y-1">
                     <div className="flex items-center justify-between gap-2">
-                      <h3 className="text-xl font-serif font-bold text-gray-900 leading-tight truncate">
+                      <h3 className="text-xl font-serif font-bold text-gray-900 dark:text-[#F0EBE3] leading-tight truncate">
                         {lookedUpChild.fullName}
                       </h3>
-                      <span className="bg-[#FAF9F6] border border-[#EAE8E1] text-[#C59B27] px-2.5 py-0.5 text-[10px] font-bold uppercase rounded-md tracking-wider shrink-0 leading-none">
+                      <span className="bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] text-[#C59B27] px-2.5 py-0.5 text-[10px] font-bold uppercase rounded-md tracking-wider shrink-0 leading-none">
                         {lookedUpChild.identificationSource || 'Pass'}
                       </span>
                     </div>
-                    <p className="text-xs text-gray-500 font-medium" data-component-version="volunteer-child-age-display-v2-under-one">
+                    <p className="text-xs text-gray-500 dark:text-[#B8B0A5] font-medium" data-component-version="volunteer-child-age-display-v2-under-one">
                       {calculateAge(lookedUpChild.dateOfBirth) || 'Age verified'}
                     </p>
                   </div>
 
                   {/* Two column grid */}
-                  <div className="grid grid-cols-2 gap-4 border-t border-gray-100 pt-3.5 text-xs">
+                  <div className="grid grid-cols-2 gap-4 border-t border-gray-100 dark:border-[#302E29] pt-3.5 text-xs">
                     <div>
-                      <span className="text-[10px] text-gray-400 font-mono uppercase tracking-wider block">Class</span>
-                      <span className="font-semibold text-gray-800 block mt-0.5 truncate">
+                      <span className="text-[10px] text-gray-400 dark:text-[#7A7570] font-mono uppercase tracking-wider block">Class</span>
+                      <span className="font-semibold text-gray-800 dark:text-[#F0EBE3] block mt-0.5 truncate">
                         {lookedUpChild.ageGroup || lookedUpChild.className || 'General Room'}
                       </span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-gray-400 font-mono uppercase tracking-wider block">Gender</span>
-                      <span className="font-semibold text-gray-800 block mt-0.5 capitalize">
+                      <span className="text-[10px] text-gray-400 dark:text-[#7A7570] font-mono uppercase tracking-wider block">Gender</span>
+                      <span className="font-semibold text-gray-800 dark:text-[#F0EBE3] block mt-0.5 capitalize">
                         {lookedUpChild.gender || 'Not specified'}
                       </span>
                     </div>
@@ -3589,47 +3540,47 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </div>
 
                 {/* Care Notes Card */}
-                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-found-care-notes-v3">
-                  <div className="flex items-center space-x-2 text-gray-900 pb-1 border-b border-gray-50">
-                    <ShieldCheck className="h-4.5 w-4.5 text-gray-500" />
+                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-found-care-notes-v3">
+                  <div className="flex items-center space-x-2 text-gray-900 dark:text-[#F0EBE3] pb-1 border-b border-gray-50 dark:border-[#302E29]">
+                    <ShieldCheck className="h-4.5 w-4.5 text-gray-500 dark:text-[#C59B27]" />
                     <h4 className="text-sm font-serif font-bold">Care Notes</h4>
                   </div>
                   
                   <div className="space-y-3 text-xs">
                     {/* Medical Note Row */}
-                    <div className="bg-gray-50 border border-gray-100 rounded-2xl p-3 flex items-start space-x-2.5">
-                      <span className={`${medicalNoteText ? 'text-[#E07A5F]' : 'text-gray-400'} font-bold text-[10px] mt-0.5`}>
+                    <div className="bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#3A3835] rounded-2xl p-3 flex items-start space-x-2.5">
+                      <span className={`${medicalNoteText ? 'text-[#E07A5F]' : 'text-gray-400 dark:text-[#7A7570]'} font-bold text-[10px] mt-0.5`}>
                         {medicalNoteText ? '⚠️' : '✓'}
                       </span>
                       <div>
-                        <span className={`text-[9px] font-bold ${medicalNoteText ? 'text-[#E07A5F]' : 'text-gray-400'} uppercase tracking-wider block font-mono`}>Medical Note</span>
-                        <p className={`${medicalNoteText ? 'text-gray-850 font-semibold' : 'text-gray-500 font-medium'} mt-0.5 leading-relaxed`}>
+                        <span className={`text-[9px] font-bold ${medicalNoteText ? 'text-[#E07A5F]' : 'text-gray-400 dark:text-[#7A7570]'} uppercase tracking-wider block font-mono`}>Medical Note</span>
+                        <p className={`${medicalNoteText ? 'text-gray-850 dark:text-[#F0EBE3] font-semibold' : 'text-gray-500 dark:text-[#7A7570] font-medium'} mt-0.5 leading-relaxed`}>
                           {medicalNoteText || 'None required.'}
                         </p>
                       </div>
                     </div>
 
                     {/* Allergies Row */}
-                    <div className="bg-gray-50 border border-gray-100 rounded-2xl p-3 flex items-start space-x-2.5">
-                      <span className={`${allergiesText ? 'text-[#E07A5F]' : 'text-gray-400'} font-bold text-[10px] mt-0.5`}>
+                    <div className="bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#3A3835] rounded-2xl p-3 flex items-start space-x-2.5">
+                      <span className={`${allergiesText ? 'text-[#E07A5F]' : 'text-gray-400 dark:text-[#7A7570]'} font-bold text-[10px] mt-0.5`}>
                         {allergiesText ? '⚠️' : '✓'}
                       </span>
                       <div>
-                        <span className={`text-[9px] font-bold ${allergiesText ? 'text-[#E07A5F]' : 'text-gray-400'} uppercase tracking-wider block font-mono`}>Allergies</span>
-                        <p className={`${allergiesText ? 'text-gray-850 font-semibold' : 'text-gray-500 font-medium'} mt-0.5 leading-relaxed`}>
+                        <span className={`text-[9px] font-bold ${allergiesText ? 'text-[#E07A5F]' : 'text-gray-400 dark:text-[#7A7570]'} uppercase tracking-wider block font-mono`}>Allergies</span>
+                        <p className={`${allergiesText ? 'text-gray-850 dark:text-[#F0EBE3] font-semibold' : 'text-gray-500 dark:text-[#7A7570] font-medium'} mt-0.5 leading-relaxed`}>
                           {allergiesText || 'No allergy added.'}
                         </p>
                       </div>
                     </div>
 
                     {/* Extra Support Row */}
-                    <div className="bg-gray-50 border border-gray-100 rounded-2xl p-3 flex items-start space-x-2.5">
-                      <span className={`${extraSupportText ? 'text-[#E07A5F]' : 'text-gray-400'} font-bold text-[10px] mt-0.5`}>
+                    <div className="bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#3A3835] rounded-2xl p-3 flex items-start space-x-2.5">
+                      <span className={`${extraSupportText ? 'text-[#E07A5F]' : 'text-gray-400 dark:text-[#7A7570]'} font-bold text-[10px] mt-0.5`}>
                         {extraSupportText ? '⚠️' : '✓'}
                       </span>
                       <div>
-                        <span className={`text-[9px] font-bold ${extraSupportText ? 'text-[#E07A5F]' : 'text-gray-400'} uppercase tracking-wider block font-mono`}>Extra Support</span>
-                        <p className={`${extraSupportText ? 'text-gray-850 font-semibold' : 'text-gray-500 font-medium'} mt-0.5 leading-relaxed`}>
+                        <span className={`text-[9px] font-bold ${extraSupportText ? 'text-[#E07A5F]' : 'text-gray-400 dark:text-[#7A7570]'} uppercase tracking-wider block font-mono`}>Extra Support</span>
+                        <p className={`${extraSupportText ? 'text-gray-850 dark:text-[#F0EBE3] font-semibold' : 'text-gray-500 dark:text-[#7A7570] font-medium'} mt-0.5 leading-relaxed`}>
                           {extraSupportText || 'None required.'}
                         </p>
                       </div>
@@ -3638,19 +3589,19 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </div>
 
                 {/* Entry Status Card */}
-                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-found-entry-status-v3">
-                  <h4 className="text-lg font-serif font-bold text-gray-950">Entry Status</h4>
+                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-found-entry-status-v3">
+                  <h4 className="text-lg font-serif font-bold text-gray-950 dark:text-[#F0EBE3]">Entry Status</h4>
                   
                   {/* Status Info Box */}
-                  <div className="flex items-start space-x-3.5 bg-gray-50/50 border border-gray-100 rounded-2xl p-4">
-                    <div className="p-2 bg-amber-50 rounded-xl text-amber-600 shrink-0">
+                  <div className={`flex items-start space-x-3.5 ${isAlreadyCheckedIn ? 'bg-amber-50/60 dark:bg-amber-950/25 border-amber-200/60 dark:border-amber-900/40' : 'bg-gray-50/50 dark:bg-[#262520] border-gray-100 dark:border-[#3A3835]'} border rounded-2xl p-4`}>
+                    <div className={`p-2 ${isAlreadyCheckedIn ? 'bg-amber-100 dark:bg-[#262520] text-amber-700 dark:text-[#C59B27]' : 'bg-amber-50 dark:bg-[#262520] text-amber-600 dark:text-[#C59B27]'} rounded-xl shrink-0`}>
                       <Clock className="h-5 w-5 stroke-[2]" />
                     </div>
                     <div>
-                      <h5 className="text-sm font-bold text-gray-900 leading-tight">
+                      <h5 className={`text-sm font-bold ${isAlreadyCheckedIn ? 'text-amber-900 dark:text-amber-200' : 'text-gray-900 dark:text-[#F0EBE3]'} leading-tight`}>
                         {isAlreadyCheckedIn ? 'Already checked in' : 'Not checked in yet'}
                       </h5>
-                      <p className="text-xs text-gray-500 mt-0.5">
+                      <p className={`text-xs ${isAlreadyCheckedIn ? 'text-amber-700 dark:text-amber-300/80' : 'text-gray-500 dark:text-[#B8B0A5]'} mt-0.5`}>
                         {isAlreadyCheckedIn 
                           ? `Checked in at ${formatTime(lookedUpChild.checkedInAt || lookedUpChild.checked_in_at || new Date().toISOString())}` 
                           : 'Ready for processing'}
@@ -3670,10 +3621,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       }}
                       disabled={scanLoading || isCheckingIn}
                       data-component-version="volunteer-child-checkin-action-v6"
-                      className={`w-full text-white font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2 ${
-                        isAlreadyCheckedIn 
-                          ? 'bg-gray-400 hover:bg-gray-500' 
-                          : 'bg-[#C59B27] hover:bg-[#A47E1F] text-white'
+                      className={`w-full font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2 ${
+                        isAlreadyCheckedIn
+                          ? 'bg-gray-400 hover:bg-gray-500 dark:bg-[#262520] dark:border dark:border-[#3A3835] text-white dark:text-[#F0EBE3] dark:hover:bg-[#2A2926]'
+                          : 'bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#1D1D1A]'
                       }`}
                     >
                       {isCheckingIn ? (
@@ -3693,15 +3644,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                     {/* Existing Wristband Notification */}
                     {lookedUpChild.activeWristband && (
-                      <div className="bg-[#FAF6EB] border border-[#E5D5AE] rounded-2xl p-3.5 flex items-center justify-between text-xs">
+                      <div className="bg-[#FAF6EB] dark:bg-amber-950/20 border border-[#E5D5AE] dark:border-amber-900/40 rounded-2xl p-3.5 flex items-center justify-between text-xs">
                         <div className="flex items-center space-x-2">
                           <Tag className="w-4 h-4 text-[#C59B27]" />
-                          <span className="text-zinc-700 font-medium">Wristband:</span>
+                          <span className="text-zinc-700 dark:text-[#F0EBE3] font-medium">Wristband:</span>
                           <span className="font-mono font-bold text-[#C59B27]">
                             {lookedUpChild.activeWristband.wristbandCode}
                           </span>
                         </div>
-                        <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                        <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-[#C59B27]/20 text-emerald-800 dark:text-[#D4AF37]">
                           Active
                         </span>
                       </div>
@@ -3715,7 +3666,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           setWristbandInitialChild(lookedUpChild);
                           onNavigate('/volunteer/wristbands');
                         }}
-                        className="w-full bg-[#FAF6EB] border border-[#E5D5AE] hover:bg-[#F5EED9] text-[#9A7326] font-bold tracking-widest py-3 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer flex items-center justify-center space-x-2"
+                        className="w-full bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] hover:bg-[#F5EED9] dark:hover:bg-[#2A2926] text-[#9A7326] dark:text-[#D4AF37] font-bold tracking-widest py-3 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer flex items-center justify-center space-x-2"
                       >
                         <Tag className="h-4 w-4 text-[#C59B27]" />
                         <span>ASSIGN WRISTBAND</span>
@@ -3725,9 +3676,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     <button
                       onClick={handleResetScannerState}
                       data-component-version="volunteer-scan-another-action-v4"
-                      className="w-full border border-gray-300 hover:border-gray-400 text-gray-800 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white hover:bg-gray-50 flex items-center justify-center space-x-2"
+                      className="w-full border border-gray-300 dark:border-[#302E29] hover:border-gray-400 dark:hover:border-[#3A3835] text-gray-800 dark:text-[#F0EBE3] font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] flex items-center justify-center space-x-2"
                     >
-                      <QrCode className="h-4 w-4 text-gray-600 stroke-[2]" />
+                      <QrCode className="h-4 w-4 text-gray-600 dark:text-[#B8B0A5] stroke-[2]" />
                       <span>NEXT CHILD</span>
                     </button>
 
@@ -3740,7 +3691,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         photoUrl: lookedUpChild.photoUrl
                       })}
                       data-component-version="volunteer-alert-auto-linked-child-v1"
-                      className="w-full bg-rose-50 border border-rose-200 hover:border-rose-300 text-rose-700 hover:text-rose-800 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer flex items-center justify-center space-x-2"
+                      className="w-full bg-rose-50 dark:bg-red-950/25 border border-rose-200 dark:border-red-900/40 hover:border-rose-300 dark:hover:border-red-800/50 text-rose-700 dark:text-rose-300 hover:text-rose-800 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer flex items-center justify-center space-x-2"
                     >
                       <Bell className="h-4 w-4 animate-pulse" />
                       <span>Request help for this child</span>
@@ -3748,7 +3699,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   </div>
 
                   {/* Helper Reminder */}
-                  <div className="flex items-center justify-center space-x-1.5 text-[10px] text-gray-400 mt-2">
+                  <div className="flex items-center justify-center space-x-1.5 text-[10px] text-gray-400 dark:text-[#7A7570] mt-2">
                     <Info className="h-3.5 w-3.5" />
                     <span>Confirm the child photo before marking entry.</span>
                   </div>
@@ -3756,12 +3707,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                 {/* Authorized Pickup Card */}
                 {lookedUpChild.pickup ? (
-                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-authorized-pickup-v3">
-                    <h4 className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase">
+                  <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-authorized-pickup-v3">
+                    <h4 className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase">
                       Authorized Pickup
                     </h4>
                     <div className="flex items-center space-x-3.5">
-                      <div className="w-14 h-14 rounded-2xl overflow-hidden bg-gray-50 border border-gray-150 shrink-0 flex items-center justify-center">
+                      <div className="w-14 h-14 rounded-2xl overflow-hidden bg-gray-50 dark:bg-[#262520] border border-gray-150 dark:border-[#302E29] shrink-0 flex items-center justify-center">
                         {lookedUpChild.pickup.photoUrl ? (
                           <img
                             src={lookedUpChild.pickup.photoUrl}
@@ -3770,28 +3721,28 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                             referrerPolicy="no-referrer"
                           />
                         ) : (
-                          <User className="h-6 w-6 text-gray-300" />
+                          <User className="h-6 w-6 text-gray-300 dark:text-[#7A7570]" />
                         )}
                       </div>
                       <div className="min-w-0">
-                        <h5 className="text-sm font-bold text-gray-900 leading-tight">
+                        <h5 className="text-sm font-bold text-gray-900 dark:text-[#F0EBE3] leading-tight">
                           {lookedUpChild.pickup.fullName}
                         </h5>
                         <p className="text-[10px] text-[#C59B27] font-bold font-mono uppercase tracking-wider mt-0.5">
                           {lookedUpChild.pickup.relationship || 'Authorized Person'}
                         </p>
-                        <p className="text-xs text-gray-500 mt-0.5">
+                        <p className="text-xs text-gray-500 dark:text-[#B8B0A5] mt-0.5">
                           {lookedUpChild.pickup.phone || 'No phone number provided'}
                         </p>
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-3" data-component-version="volunteer-child-authorized-pickup-v3">
-                    <h4 className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase">
+                  <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-3" data-component-version="volunteer-child-authorized-pickup-v3">
+                    <h4 className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase">
                       Authorized Pickup
                     </h4>
-                    <p className="text-xs text-gray-500 leading-relaxed bg-gray-50 border border-gray-100 rounded-2xl p-4 text-center">
+                    <p className="text-xs text-gray-500 dark:text-[#7A7570] leading-relaxed bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#302E29] rounded-2xl p-4 text-center">
                       No pickup person has been added.
                     </p>
                   </div>
@@ -3807,13 +3758,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 <h2 className="text-2xl sm:text-3xl font-sans font-bold text-stone-900 dark:text-[#F0EBE3] tracking-tight">
                   Find child
                 </h2>
-                <p className="text-xs sm:text-sm text-stone-500 font-sans">
+                <p className="text-xs sm:text-sm text-stone-500 dark:text-[#B8B0A5] font-sans">
                   Scan a child pass or wristband, or enter a reference.
                 </p>
               </div>
 
               {/* Primary Unified Identification Input (Keyboard-wedge & Manual) */}
-              <div className="bg-white border border-stone-200/80 p-4 rounded-2xl shadow-xs space-y-3" data-component-version="volunteer-unified-scanner-input">
+              <div className="bg-white dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] p-4 rounded-2xl shadow-xs space-y-3" data-component-version="volunteer-unified-scanner-input">
                 <form onSubmit={handleManualVerifySubmit} className="space-y-3">
                   <div className="relative">
                     <input
@@ -3830,7 +3781,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       autoComplete="off"
                       autoCorrect="off"
                       spellCheck="false"
-                      className="w-full bg-stone-50/80 border border-stone-200 rounded-xl px-4 py-3 text-xs sm:text-sm font-sans font-semibold tracking-wide text-stone-900 placeholder:text-stone-400 placeholder:font-normal outline-none focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27]/20 focus:bg-white transition-all disabled:opacity-60 text-center uppercase"
+                      className="w-full bg-stone-50/80 dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-xl px-4 py-3 text-xs sm:text-sm font-sans font-semibold tracking-wide text-stone-900 dark:text-[#F0EBE3] placeholder:text-stone-400 dark:placeholder:text-[#7A7570] placeholder:font-normal outline-none focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27]/20 focus:bg-white dark:focus:bg-[#262520] transition-all disabled:opacity-60 text-center uppercase"
                     />
                     {manualCode && (
                       <button
@@ -3839,7 +3790,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           setManualCode('');
                           scannerInputRef.current?.focus();
                         }}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-600 rounded-full hover:bg-stone-100 transition-colors"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-600 dark:hover:text-[#F0EBE3] rounded-full hover:bg-stone-100 dark:hover:bg-[#2A2926] transition-colors"
                       >
                         <X className="h-3.5 w-3.5" />
                       </button>
@@ -3849,10 +3800,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   <button
                     type="submit"
                     disabled={scanLoading || !manualCode.trim()}
-                    className="w-full py-3 bg-stone-900 hover:bg-stone-800 disabled:bg-stone-100 disabled:text-stone-400 text-white font-sans font-semibold text-xs tracking-wider uppercase rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center space-x-2"
+                    className="w-full py-3 bg-stone-900 hover:bg-stone-800 dark:bg-[#C59B27] dark:hover:bg-[#B58E33] dark:text-[#1D1D1A] disabled:bg-stone-100 dark:disabled:bg-[#2A2926] disabled:text-stone-400 dark:disabled:text-[#7A7570] text-white font-sans font-semibold text-xs tracking-wider uppercase rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center space-x-2"
                   >
                     {scanLoading ? (
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white dark:border-[#1D1D1A]/30 dark:border-t-[#1D1D1A] rounded-full animate-spin"></div>
                     ) : (
                       <span>Find child</span>
                     )}
@@ -3862,23 +3813,23 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
               {/* Unassigned Wristband Alert & Action (Section 7) */}
               {unassignedWristbandInfo && (
-                <div className="bg-[#FAF6EB] border border-[#E5D5AE] rounded-2xl p-4 space-y-3 animate-fade-in" data-component-version="volunteer-unassigned-wristband-alert">
+                <div className="bg-[#FAF6EB] dark:bg-amber-950/20 border border-[#E5D5AE] dark:border-amber-900/40 rounded-2xl p-4 space-y-3 animate-fade-in" data-component-version="volunteer-unassigned-wristband-alert">
                   <div className="flex items-start space-x-3">
-                    <div className="p-2 bg-amber-100/80 rounded-xl text-[#9A7326] shrink-0 mt-0.5">
+                    <div className="p-2 bg-amber-100/80 dark:bg-amber-900/40 rounded-xl text-[#9A7326] dark:text-[#E5D5AE] shrink-0 mt-0.5">
                       <Tag className="h-4 w-4" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold text-stone-900 font-sans">
+                      <p className="text-xs font-semibold text-stone-900 dark:text-[#F0EBE3] font-sans">
                         This wristband has not been assigned yet.
                       </p>
-                      <p className="text-[11px] text-stone-500 mt-0.5 font-sans">
+                      <p className="text-[11px] text-stone-500 dark:text-[#B8B0A5] mt-0.5 font-sans">
                         To use this wristband, it must first be assigned to a child at the Wristband Desk.
                       </p>
                     </div>
                     <button
                       type="button"
                       onClick={() => setUnassignedWristbandInfo(null)}
-                      className="p-1 text-stone-400 hover:text-stone-600 rounded-lg hover:bg-stone-100 cursor-pointer"
+                      className="p-1 text-stone-400 hover:text-stone-600 dark:hover:text-[#F0EBE3] rounded-lg hover:bg-stone-100 dark:hover:bg-[#2A2926] cursor-pointer"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -3904,14 +3855,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
               {/* Camera Scanner Viewport */}
               {cameraUnavailable ? (
-                <div className="bg-stone-50 border border-stone-200/80 rounded-xl p-3.5 text-center space-y-1" data-component-version="volunteer-scan-manual-fallback-v3">
-                  <p className="font-sans font-medium text-xs text-stone-900">Camera unavailable</p>
-                  <p className="font-sans text-xs text-stone-500">
+                <div className="bg-stone-50 dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] rounded-xl p-3.5 text-center space-y-1" data-component-version="volunteer-scan-manual-fallback-v3">
+                  <p className="font-sans font-medium text-xs text-stone-900 dark:text-[#F0EBE3]">Camera unavailable</p>
+                  <p className="font-sans text-xs text-stone-500 dark:text-[#B8B0A5]">
                     Use the identification input above or search by child name below.
                   </p>
                 </div>
               ) : (
-                <div className="bg-white border border-stone-200/80 rounded-2xl overflow-hidden relative shadow-xs" data-component-version="volunteer-scan-viewport-v5">
+                <div className="bg-white dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] rounded-2xl overflow-hidden relative shadow-xs" data-component-version="volunteer-scan-viewport-v5">
                   <div className="aspect-[4/3] sm:aspect-[3/4] bg-stone-950 relative flex flex-col items-center justify-center overflow-hidden">
                     {!cameraActive && (
                       <div
@@ -3977,7 +3928,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         <button
                           type="button"
                           onClick={() => setCameraActive(true)}
-                          className="px-5 py-2.5 bg-white text-stone-900 font-sans font-semibold text-xs rounded-full hover:bg-stone-100 transition-colors shadow-sm flex items-center space-x-2 cursor-pointer"
+                          className="px-5 py-2.5 bg-white text-stone-900 dark:bg-[#262520] dark:text-[#F0EBE3] dark:hover:bg-[#2A2926] border border-transparent dark:border-[#3A3835] font-sans font-semibold text-xs rounded-full hover:bg-stone-100 transition-colors shadow-sm flex items-center space-x-2 cursor-pointer"
                         >
                           <Camera className="h-4 w-4" />
                           <span>Scan with camera</span>
@@ -3990,7 +3941,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
               {/* Child Search Field */}
               <div className="space-y-1.5 pt-2">
-                <h3 className="font-sans font-medium text-xs text-stone-500">Find a child by name</h3>
+                <h3 className="font-sans font-medium text-xs text-stone-500 dark:text-[#B8B0A5]">Find a child by name</h3>
                 <form 
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -4001,13 +3952,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   className="relative w-full"
                   data-component-version="volunteer-check-in-search-v4"
                 >
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-stone-400" />
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-stone-400 dark:text-[#7A7570]" />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search by child name or parent's phone"
-                    className="w-full bg-stone-50/60 border border-stone-200/80 rounded-xl pl-9 pr-4 py-2.5 text-xs text-stone-900 placeholder-stone-400 outline-none focus:border-stone-400 focus:bg-white transition-colors font-sans"
+                    className="w-full bg-stone-50/60 dark:bg-[#262520] border border-stone-200/80 dark:border-[#3A3835] rounded-xl pl-9 pr-4 py-2.5 text-xs text-stone-900 dark:text-[#F0EBE3] placeholder-stone-400 dark:placeholder-[#7A7570] outline-none focus:border-stone-400 dark:focus:border-[#C59B27] focus:bg-white dark:focus:bg-[#262520] transition-colors font-sans"
                   />
                 </form>
               </div>
@@ -4042,12 +3993,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                 return (
                   <div className="space-y-1.5" data-component-version="volunteer-check-in-recent-v4">
-                    <h3 className="font-sans font-medium text-xs text-stone-500">Recently checked in</h3>
-                    <div className="bg-white border border-stone-200/80 rounded-xl p-3.5">
+                    <h3 className="font-sans font-medium text-xs text-stone-500 dark:text-[#B8B0A5]">Recently checked in</h3>
+                    <div className="bg-white dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] rounded-xl p-3.5">
                       {lastCheckedInItem ? (
                         <div className="flex items-start space-x-3">
                           {/* Child photo / avatar */}
-                          <div className="w-10 h-10 rounded-full bg-stone-100 border border-stone-200/80 overflow-hidden flex items-center justify-center shrink-0">
+                          <div className="w-10 h-10 rounded-full bg-stone-100 dark:bg-[#262520] border border-stone-200/80 dark:border-[#302E29] overflow-hidden flex items-center justify-center shrink-0">
                             {matchedChild?.photoUrl ? (
                               <img
                                 src={matchedChild.photoUrl}
@@ -4056,7 +4007,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                                 referrerPolicy="no-referrer"
                               />
                             ) : (
-                              <span className="font-sans font-medium text-xs text-stone-600">
+                              <span className="font-sans font-medium text-xs text-stone-600 dark:text-[#B8B0A5]">
                                 {lastCheckedInItem.childName?.charAt(0)?.toUpperCase() || 'C'}
                               </span>
                             )}
@@ -4064,26 +4015,26 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                           <div className="min-w-0 flex-1">
                             <div className="flex items-start justify-between gap-2">
-                              <h4 className="font-sans font-semibold text-sm text-stone-900 leading-tight truncate">
+                              <h4 className="font-sans font-semibold text-sm text-stone-900 dark:text-[#F0EBE3] leading-tight truncate">
                                 {lastCheckedInItem.childName}
                               </h4>
                               {hasReviewIssue && (
-                                <span className="text-[11px] font-sans font-medium text-amber-800 bg-amber-50/80 px-2 py-0.5 rounded-md border border-amber-200/60 shrink-0">
+                                <span className="text-[11px] font-sans font-medium text-amber-800 dark:text-amber-300 bg-amber-50/80 dark:bg-amber-950/40 px-2 py-0.5 rounded-md border border-amber-200/60 dark:border-amber-900/50 shrink-0">
                                   Age check needed
                                 </span>
                               )}
                             </div>
-                            <p className="font-sans text-xs text-stone-500 mt-0.5">
+                            <p className="font-sans text-xs text-stone-500 dark:text-[#B8B0A5] mt-0.5">
                               {subtitle}
                             </p>
-                            <p className="font-sans text-xs text-stone-400 mt-0.5 flex items-center gap-1">
-                              <Check className="h-3 w-3 text-stone-400 stroke-[2]" />
+                            <p className="font-sans text-xs text-stone-400 dark:text-[#7A7570] mt-0.5 flex items-center gap-1">
+                              <Check className="h-3 w-3 text-stone-400 dark:text-[#7A7570] stroke-[2]" />
                               <span>Checked in at {formatTime(lastCheckedInItem.timestamp)}</span>
                             </p>
                           </div>
                         </div>
                       ) : (
-                        <p className="font-sans text-xs text-stone-500 py-1 text-center">
+                        <p className="font-sans text-xs text-stone-500 dark:text-[#7A7570] py-1 text-center">
                           No child has been checked in yet.
                         </p>
                       )}
@@ -4094,24 +4045,24 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
               {/* Attendance Summary */}
               <div className="space-y-1.5">
-                <h3 className="font-sans font-medium text-xs text-stone-500">Today</h3>
-                <div className="bg-white border border-stone-200/80 rounded-xl p-3">
-                  <div className="grid grid-cols-3 divide-x divide-stone-100 text-center">
+                <h3 className="font-sans font-medium text-xs text-stone-500 dark:text-[#B8B0A5]">Today</h3>
+                <div className="bg-white dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] rounded-xl p-3">
+                  <div className="grid grid-cols-3 divide-x divide-stone-100 dark:divide-[#302E29] text-center">
                     <div className="px-2 first:pl-0">
-                      <span className="block font-sans text-xs text-stone-500">Expected</span>
-                      <span className="block font-sans font-semibold text-base text-stone-900 mt-0.5">
+                      <span className="block font-sans text-xs text-stone-500 dark:text-[#7A7570]">Expected</span>
+                      <span className="block font-sans font-semibold text-base text-stone-900 dark:text-[#F0EBE3] mt-0.5">
                         {stats.expected || 0}
                       </span>
                     </div>
                     <div className="px-2">
-                      <span className="block font-sans text-xs text-stone-500">Checked in</span>
-                      <span className="block font-sans font-semibold text-base text-stone-900 mt-0.5">
+                      <span className="block font-sans text-xs text-stone-500 dark:text-[#7A7570]">Checked in</span>
+                      <span className="block font-sans font-semibold text-base text-stone-900 dark:text-[#F0EBE3] mt-0.5">
                         {stats.checkedIn || 0}
                       </span>
                     </div>
                     <div className="px-2 last:pr-0">
-                      <span className="block font-sans text-xs text-stone-500">Waiting</span>
-                      <span className="block font-sans font-semibold text-base text-stone-900 mt-0.5">
+                      <span className="block font-sans text-xs text-stone-500 dark:text-[#7A7570]">Waiting</span>
+                      <span className="block font-sans font-semibold text-base text-stone-900 dark:text-[#F0EBE3] mt-0.5">
                         {Math.max((stats.expected || 0) - (stats.checkedIn || 0), 0)}
                       </span>
                     </div>
@@ -4121,9 +4072,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
               {/* Calm Offline Notice (only shown when offline) */}
               {(isOffline || offlineService.isOffline()) && (
-                <div className="bg-stone-50 border border-stone-200/80 rounded-xl p-3.5 text-center space-y-1">
-                  <p className="font-sans font-medium text-xs text-stone-900">You're offline</p>
-                  <p className="font-sans text-xs text-stone-500">
+                <div className="bg-stone-50 dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] rounded-xl p-3.5 text-center space-y-1">
+                  <p className="font-sans font-medium text-xs text-stone-900 dark:text-[#F0EBE3]">You're offline</p>
+                  <p className="font-sans text-xs text-stone-500 dark:text-[#B8B0A5]">
                     Check-ins will be saved and sent when you're connected again.
                   </p>
                 </div>
@@ -4157,20 +4108,20 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               
               {/* Centered success block */}
               <div className="text-center space-y-4" data-component-version="volunteer-pickup-success-title-v1-stitch">
-                <div className="mx-auto w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 border border-emerald-100">
+                <div className="mx-auto w-14 h-14 bg-amber-500/10 dark:bg-[#C59B27]/15 rounded-2xl flex items-center justify-center text-[#C59B27] border border-[#C59B27]/30">
                   <Check className="h-6 w-6 stroke-[3]" />
                 </div>
                 <div className="space-y-1">
-                  <h2 className="text-3xl font-serif font-black text-gray-900 tracking-tight">Picked up</h2>
-                  <p className="text-xs text-gray-500 leading-normal max-w-sm mx-auto">
+                  <h2 className="text-3xl font-serif font-black text-gray-900 dark:text-[#F0EBE3] tracking-tight">Picked up</h2>
+                  <p className="text-xs text-gray-500 dark:text-[#B8B0A5] leading-normal max-w-sm mx-auto">
                     {pickupSuccessResult.child?.firstName || pickupSuccessResult.child?.fullName?.split(' ')[0] || 'This child'} has been released to the approved pickup person.
                   </p>
                 </div>
               </div>
 
               {/* Child summary card */}
-              <div className="bg-white border border-[#EAE8E1] rounded-3xl p-4 flex items-center space-x-3.5 shadow-xs" data-component-version="volunteer-pickup-success-child-card-v1-stitch">
-                <div className="w-12 h-12 rounded-2xl overflow-hidden border border-gray-100 bg-gray-50 flex items-center justify-center shrink-0">
+              <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-4 flex items-center space-x-3.5 shadow-xs" data-component-version="volunteer-pickup-success-child-card-v1-stitch">
+                <div className="w-12 h-12 rounded-2xl overflow-hidden border border-gray-100 dark:border-[#302E29] bg-gray-50 dark:bg-[#262520] flex items-center justify-center shrink-0">
                   {pickupSuccessResult.child?.photoUrl ? (
                     <img
                       src={pickupSuccessResult.child.photoUrl}
@@ -4179,51 +4130,51 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       referrerPolicy="no-referrer"
                     />
                   ) : (
-                    <User className="h-6 w-6 text-gray-400 stroke-[1.5]" />
+                    <User className="h-6 w-6 text-gray-400 dark:text-[#7A7570] stroke-[1.5]" />
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="text-sm font-serif font-bold text-gray-950 truncate">
+                  <h3 className="text-sm font-serif font-bold text-gray-950 dark:text-[#F0EBE3] truncate">
                     {pickupSuccessResult.child?.fullName}
                   </h3>
-                  <p className="text-[11px] text-gray-500 font-semibold mt-0.5">
+                  <p className="text-[11px] text-gray-500 dark:text-[#B8B0A5] font-semibold mt-0.5">
                     {(pickupSuccessResult.child?.age !== undefined && pickupSuccessResult.child?.age !== null) ? (pickupSuccessResult.child.age === 0 ? 'Under 1 year old' : `${pickupSuccessResult.child.age} years old`) : 'Verified age'} • {pickupSuccessResult.child?.classGroup || 'Class assigned'}
                   </p>
                 </div>
               </div>
 
               {/* Pickup details card */}
-              <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-pickup-success-details-v1-stitch">
-                <h4 className="text-xs font-serif font-bold text-gray-900 tracking-wide">
+              <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-pickup-success-details-v1-stitch">
+                <h4 className="text-xs font-serif font-bold text-gray-900 dark:text-[#F0EBE3] tracking-wide">
                   Pickup details
                 </h4>
                 <div className="space-y-3 text-xs">
-                  <div className="flex justify-between items-center py-1 border-b border-gray-50">
-                    <span className="text-gray-400 font-semibold">Picked up at</span>
-                    <span className="font-mono font-bold text-gray-900">
+                  <div className="flex justify-between items-center py-1 border-b border-gray-50 dark:border-[#302E29]">
+                    <span className="text-gray-400 dark:text-[#7A7570] font-semibold">Picked up at</span>
+                    <span className="font-mono font-bold text-gray-900 dark:text-[#F0EBE3]">
                       {pickupSuccessResult.pickup?.pickedUpAt ? new Date(pickupSuccessResult.pickup.pickedUpAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center py-1 border-b border-gray-50">
-                    <span className="text-gray-400 font-semibold">Picked up by</span>
-                    <span className="font-bold text-gray-900">
+                  <div className="flex justify-between items-center py-1 border-b border-gray-50 dark:border-[#302E29]">
+                    <span className="text-gray-400 dark:text-[#7A7570] font-semibold">Picked up by</span>
+                    <span className="font-bold text-gray-900 dark:text-[#F0EBE3]">
                       {pickupSuccessResult.pickup?.pickedUpBy?.fullName || 'Approved Pickup Person'}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center py-1 border-b border-gray-50">
-                    <span className="text-gray-400 font-semibold">Relationship</span>
-                    <span className="font-bold text-gray-950">
+                  <div className="flex justify-between items-center py-1 border-b border-gray-50 dark:border-[#302E29]">
+                    <span className="text-gray-400 dark:text-[#7A7570] font-semibold">Relationship</span>
+                    <span className="font-bold text-gray-950 dark:text-[#F0EBE3]">
                       {pickupSuccessResult.pickup?.pickedUpBy?.relationship || 'Parent'}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center py-1 border-b border-gray-50">
-                    <span className="text-gray-400 font-semibold">Confirmed by</span>
-                    <span className="font-bold text-gray-950">
+                  <div className="flex justify-between items-center py-1 border-b border-gray-50 dark:border-[#302E29]">
+                    <span className="text-gray-400 dark:text-[#7A7570] font-semibold">Confirmed by</span>
+                    <span className="font-bold text-gray-950 dark:text-[#F0EBE3]">
                       {pickupSuccessResult.pickup?.confirmedBy?.fullName || volunteerProfile?.full_name || 'Event Worker'}
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-1">
-                    <span className="text-gray-400 font-semibold">Pickup point</span>
+                    <span className="text-gray-400 dark:text-[#7A7570] font-semibold">Pickup point</span>
                     <span className="font-bold text-[#C59B27]">
                       {pickupSuccessResult.pickup?.point || 'Main exit'}
                     </span>
@@ -4232,14 +4183,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </div>
 
               {/* Checked before release card */}
-              <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-pickup-success-verification-v1-stitch">
-                <h4 className="text-xs font-serif font-bold text-gray-900 tracking-wide">
+              <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-pickup-success-verification-v1-stitch">
+                <h4 className="text-xs font-serif font-bold text-gray-900 dark:text-[#F0EBE3] tracking-wide">
                   Checked before release
                 </h4>
                 
                 <div className="grid grid-cols-2 gap-3.5">
                   {/* Child Photo Box */}
-                  <div className="relative aspect-square w-full rounded-2xl overflow-hidden border border-gray-100 bg-gray-50 flex flex-col justify-end">
+                  <div className="relative aspect-square w-full rounded-2xl overflow-hidden border border-gray-100 dark:border-[#302E29] bg-gray-50 dark:bg-[#262520] flex flex-col justify-end">
                     {pickupSuccessResult.child?.photoUrl ? (
                       <img
                         src={pickupSuccessResult.child.photoUrl}
@@ -4249,7 +4200,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       />
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <User className="h-8 w-8 text-gray-300 stroke-[1.5]" />
+                        <User className="h-8 w-8 text-gray-300 dark:text-[#7A7570] stroke-[1.5]" />
                       </div>
                     )}
                     <div className="relative z-10 bg-neutral-950/65 text-white text-[9px] font-bold text-center py-1.5 uppercase tracking-wider leading-none">
@@ -4258,7 +4209,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   </div>
 
                   {/* Pickup Person Photo Box */}
-                  <div className="relative aspect-square w-full rounded-2xl overflow-hidden border border-gray-100 bg-gray-50 flex flex-col justify-end">
+                  <div className="relative aspect-square w-full rounded-2xl overflow-hidden border border-gray-100 dark:border-[#302E29] bg-gray-50 dark:bg-[#262520] flex flex-col justify-end">
                     {pickupSuccessResult.pickup?.pickedUpBy?.photoUrl ? (
                       <img
                         src={pickupSuccessResult.pickup.pickedUpBy.photoUrl}
@@ -4268,7 +4219,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       />
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <User className="h-8 w-8 text-gray-300 stroke-[1.5]" />
+                        <User className="h-8 w-8 text-gray-300 dark:text-[#7A7570] stroke-[1.5]" />
                       </div>
                     )}
                     <div className="relative z-10 bg-neutral-950/65 text-white text-[9px] font-bold text-center py-1.5 uppercase tracking-wider leading-none">
@@ -4277,18 +4228,18 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   </div>
                 </div>
 
-                <div className="space-y-2 pt-1 text-xs font-semibold text-gray-900">
+                <div className="space-y-2 pt-1 text-xs font-semibold text-gray-900 dark:text-[#F0EBE3]">
                   <div className="flex items-center space-x-2">
-                    <div className="w-5 h-5 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-600 border border-emerald-100">
+                    <div className="w-5 h-5 bg-amber-500/10 dark:bg-[#C59B27]/15 rounded-full flex items-center justify-center text-[#C59B27] border border-[#C59B27]/30">
                       <Check className="h-3 w-3 stroke-[3]" />
                     </div>
-                    <span className="text-gray-800">Child photo matched</span>
+                    <span className="text-gray-800 dark:text-[#F0EBE3]">Child photo matched</span>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <div className="w-5 h-5 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-600 border border-emerald-100">
+                    <div className="w-5 h-5 bg-amber-500/10 dark:bg-[#C59B27]/15 rounded-full flex items-center justify-center text-[#C59B27] border border-[#C59B27]/30">
                       <Check className="h-3 w-3 stroke-[3]" />
                     </div>
-                    <span className="text-gray-800">Pickup person confirmed</span>
+                    <span className="text-gray-800 dark:text-[#F0EBE3]">Pickup person confirmed</span>
                   </div>
                 </div>
               </div>
@@ -4300,7 +4251,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     setPickupSuccessResult(null);
                     setPickupChild(null);
                   }}
-                  className="w-full bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold tracking-wider py-4 rounded-2xl text-xs uppercase flex items-center justify-center space-x-2 transition-all shadow-sm cursor-pointer"
+                  className="w-full bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#1D1D1A] font-bold tracking-wider py-4 rounded-2xl text-xs uppercase flex items-center justify-center space-x-2 transition-all shadow-sm cursor-pointer"
                 >
                   <QrCode className="h-4 w-4" />
                   <span>Scan another pass</span>
@@ -4312,7 +4263,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     setPickupSuccessResult(null);
                     onNavigate('/volunteer/children');
                   }}
-                  className="w-full bg-white border border-[#EAE8E1] hover:bg-gray-50 text-gray-800 font-bold tracking-wider py-3.5 rounded-2xl text-xs uppercase text-center transition-all cursor-pointer shadow-xs"
+                  className="w-full bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] hover:bg-gray-50 dark:hover:bg-[#262520] text-gray-800 dark:text-[#F0EBE3] font-bold tracking-wider py-3.5 rounded-2xl text-xs uppercase text-center transition-all cursor-pointer shadow-xs"
                 >
                   View child record
                 </button>
@@ -4329,18 +4280,18 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </div>
 
               {/* Stitch Metrics Card */}
-              <div className="grid grid-cols-3 gap-1 bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs text-center" data-component-version="volunteer-pickup-success-metrics-v1-stitch">
+              <div className="grid grid-cols-3 gap-1 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs text-center" data-component-version="volunteer-pickup-success-metrics-v1-stitch">
                 <div className="space-y-1">
-                  <span className="text-xl font-serif font-black text-gray-900 block">
+                  <span className="text-xl font-serif font-black text-gray-900 dark:text-[#F0EBE3] block">
                     {Number(pickupSuccessResult.stats?.inside ?? stats.checkedIn ?? 0)}
                   </span>
-                  <span className="text-[9px] font-mono font-bold text-gray-400 uppercase tracking-wider block">Children inside</span>
+                  <span className="text-[9px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block">Children inside</span>
                 </div>
-                <div className="space-y-1 border-x border-gray-100">
-                  <span className="text-xl font-serif font-black text-gray-900 block">
+                <div className="space-y-1 border-x border-gray-100 dark:border-[#302E29]">
+                  <span className="text-xl font-serif font-black text-gray-900 dark:text-[#F0EBE3] block">
                     {Number(pickupSuccessResult.stats?.pickedUp ?? stats.pickedUp ?? 0)}
                   </span>
-                  <span className="text-[9px] font-mono font-bold text-gray-400 uppercase tracking-wider block">Picked up</span>
+                  <span className="text-[9px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block">Picked up</span>
                 </div>
                 <div className="space-y-1">
                   <span className="text-xl font-serif font-black text-[#C59B27] block">
@@ -4356,10 +4307,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             <div className="space-y-6 animate-fade-in pb-12" data-view-version="volunteer-pickup-v5-clean-header" data-component-version="pickup-verification">
               
               {/* Back / Navigation Bar */}
-              <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-4">
+              <div className="flex items-center justify-between border-b border-[#EAE8E1] dark:border-[#302E29] pb-4">
                 <div className="flex items-center space-x-3">
-                  <h2 className="text-2xl font-bold text-gray-900 leading-tight tracking-tight font-serif">Pickup Verification</h2>
-                  <span className="bg-amber-50 text-amber-700 border border-amber-200 px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full">
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-[#F0EBE3] leading-tight tracking-tight font-serif">Pickup Verification</h2>
+                  <span className="bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-[#D4AF37] border border-amber-200 dark:border-amber-900/50 px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full">
                     Verification Required
                   </span>
                 </div>
@@ -4368,7 +4319,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     setPickupChild(null);
                     setPickupVerified(false);
                   }}
-                  className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 cursor-pointer transition-colors"
+                  className="p-1.5 text-gray-400 dark:text-[#B8B0A5] hover:text-gray-600 dark:hover:text-[#F0EBE3] rounded-full hover:bg-gray-100 dark:hover:bg-[#262520] cursor-pointer transition-colors"
                   title="Cancel release lookup"
                 >
                   <X className="h-5 w-5" />
@@ -4379,13 +4330,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 
                 {/* Left Side: Child to Release */}
-                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs flex flex-col items-center text-center space-y-4">
-                  <span className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase block">
+                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-6 shadow-xs flex flex-col items-center text-center space-y-4">
+                  <span className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase block">
                     Child to Release
                   </span>
                   
                   {/* Square Image Box with antique gold border corners */}
-                  <div className="relative w-40 h-40 rounded-2xl overflow-hidden border border-gray-100 bg-gray-50 shadow-inner flex items-center justify-center">
+                  <div className="relative w-40 h-40 rounded-2xl overflow-hidden border border-gray-100 dark:border-[#302E29] bg-gray-50 dark:bg-[#262520] shadow-inner flex items-center justify-center">
                     {/* Antique Gold Corner Accents */}
                     <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[#C59B27] rounded-tl-md"></div>
                     <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-[#C59B27] rounded-tr-md"></div>
@@ -4400,23 +4351,23 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         referrerPolicy="no-referrer"
                       />
                     ) : (
-                      <User className="h-16 w-16 text-gray-300 stroke-[1.2]" />
+                      <User className="h-16 w-16 text-gray-300 dark:text-[#7A7570] stroke-[1.2]" />
                     )}
                   </div>
 
                   <div className="space-y-1.5 w-full">
-                    <h3 className="text-lg font-bold text-gray-950 font-serif leading-snug truncate">
+                    <h3 className="text-lg font-bold text-gray-950 dark:text-[#F0EBE3] font-serif leading-snug truncate">
                       {pickupChild.fullName}
                     </h3>
                     
-                    <div className="flex items-center justify-center space-x-1.5 text-xs text-gray-500 font-semibold">
+                    <div className="flex items-center justify-center space-x-1.5 text-xs text-gray-500 dark:text-[#B8B0A5] font-semibold">
                       <span>{pickupChild.age !== undefined && pickupChild.age !== null ? (pickupChild.age === 0 ? 'Under 1 year old' : `${pickupChild.age} yrs`) : 'Verified age'}</span>
-                      <span className="text-gray-300">&bull;</span>
+                      <span className="text-gray-300 dark:text-[#302E29]">&bull;</span>
                       <span>{pickupChild.gender || 'Child'}</span>
                       {pickupChild.classGroup && (
                         <>
-                          <span className="text-gray-300">&bull;</span>
-                          <span className="bg-[#FAF9F5] border border-[#EAE8E1] text-[#C59B27] px-2 py-0.5 text-[9px] font-bold uppercase rounded-md">
+                          <span className="text-gray-300 dark:text-[#302E29]">&bull;</span>
+                          <span className="bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] text-[#C59B27] px-2 py-0.5 text-[9px] font-bold uppercase rounded-md">
                             {pickupChild.classGroup}
                           </span>
                         </>
@@ -4424,16 +4375,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     </div>
                   </div>
 
-                  <div className="w-full pt-3 border-t border-gray-50 text-left text-xs space-y-2">
+                  <div className="w-full pt-3 border-t border-gray-50 dark:border-[#302E29] text-left text-xs space-y-2">
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-400 font-mono text-[9px] font-bold uppercase">Pass Ref</span>
-                      <span className="font-mono font-bold text-gray-900 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-md">
+                      <span className="text-gray-400 dark:text-[#7A7570] font-mono text-[9px] font-bold uppercase">Pass Ref</span>
+                      <span className="font-mono font-bold text-gray-900 dark:text-[#F0EBE3] bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#302E29] px-2 py-0.5 rounded-md">
                         {pickupChild.passReference || '6E80A7'}
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-400 font-mono text-[9px] font-bold uppercase">Checked In At</span>
-                      <span className="font-semibold text-gray-800">
+                      <span className="text-gray-400 dark:text-[#7A7570] font-mono text-[9px] font-bold uppercase">Checked In At</span>
+                      <span className="font-semibold text-gray-800 dark:text-[#F0EBE3]">
                         {pickupChild.checkedInAt ? new Date(pickupChild.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Today'}
                       </span>
                     </div>
@@ -4441,13 +4392,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </div>
 
                 {/* Right Side: Approved Pickup Person */}
-                <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs flex flex-col items-center text-center space-y-4">
-                  <span className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase block">
+                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-6 shadow-xs flex flex-col items-center text-center space-y-4">
+                  <span className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase block">
                     Approved Pickup Person
                   </span>
                   
                   {/* Square Image Box with antique gold border corners */}
-                  <div className="relative w-40 h-40 rounded-2xl overflow-hidden border border-gray-100 bg-gray-50 shadow-inner flex items-center justify-center">
+                  <div className="relative w-40 h-40 rounded-2xl overflow-hidden border border-gray-100 dark:border-[#302E29] bg-gray-50 dark:bg-[#262520] shadow-inner flex items-center justify-center">
                     {/* Antique Gold Corner Accents */}
                     <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[#C59B27] rounded-tl-md"></div>
                     <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-[#C59B27] rounded-tr-md"></div>
@@ -4462,26 +4413,26 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         referrerPolicy="no-referrer"
                       />
                     ) : (
-                      <User className="h-16 w-16 text-gray-300 stroke-[1.2]" />
+                      <User className="h-16 w-16 text-gray-300 dark:text-[#7A7570] stroke-[1.2]" />
                     )}
                   </div>
 
                   <div className="space-y-1.5 w-full">
-                    <h3 className="text-lg font-bold text-gray-950 font-serif leading-snug truncate">
+                    <h3 className="text-lg font-bold text-gray-950 dark:text-[#F0EBE3] font-serif leading-snug truncate">
                       {pickupChild.pickup?.fullName || pickupChild.parentName || 'Authorized Pickup'}
                     </h3>
                     
                     <div className="flex items-center justify-center">
-                      <span className="bg-[#C59B27]/10 text-[#C59B27] border border-[#C59B27]/20 px-3 py-0.5 text-[10px] font-bold uppercase rounded-full tracking-wider">
+                      <span className="bg-[#C59B27]/10 dark:bg-[#C59B27]/20 text-[#C59B27] border border-[#C59B27]/20 dark:border-[#C59B27]/40 px-3 py-0.5 text-[10px] font-bold uppercase rounded-full tracking-wider">
                         {pickupChild.pickup?.relationship || 'Primary Parent'}
                       </span>
                     </div>
                   </div>
 
-                  <div className="w-full pt-3 border-t border-gray-50 text-left text-xs space-y-2">
+                  <div className="w-full pt-3 border-t border-gray-50 dark:border-[#302E29] text-left text-xs space-y-2">
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-400 font-mono text-[9px] font-bold uppercase">Phone Number</span>
-                      <span className="font-semibold text-gray-800">
+                      <span className="text-gray-400 dark:text-[#7A7570] font-mono text-[9px] font-bold uppercase">Phone Number</span>
+                      <span className="font-semibold text-gray-800 dark:text-[#F0EBE3]">
                         {pickupChild.pickup?.phone || pickupChild.parentPhone || 'N/A'}
                       </span>
                     </div>
@@ -4489,9 +4440,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       <div className="pt-1">
                         <a
                           href={`tel:${pickupChild.pickup?.phone || pickupChild.parentPhone}`}
-                          className="w-full py-2 bg-gray-50 border border-gray-200 hover:border-[#C59B27] hover:text-[#C59B27] rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 text-gray-700 transition-all shadow-xs cursor-pointer"
+                          className="w-full py-2 bg-gray-50 dark:bg-[#262520] border border-gray-200 dark:border-[#3A3835] hover:border-[#C59B27] hover:text-[#C59B27] rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 text-gray-700 dark:text-[#F0EBE3] transition-all shadow-xs cursor-pointer"
                         >
-                          <Phone className="h-3.5 w-3.5 text-gray-400" />
+                          <Phone className="h-3.5 w-3.5 text-gray-400 dark:text-[#7A7570]" />
                           <span>Call Pickup Person</span>
                         </a>
                       </div>
@@ -4502,8 +4453,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </div>
 
               {/* Care Notes & Support Section */}
-              <div className="bg-white border border-[#EAE8E1] rounded-3xl p-6 shadow-xs space-y-4">
-                <h4 className="text-[10px] font-mono font-bold text-gray-400 tracking-wider uppercase border-b border-gray-50 pb-2">
+              <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-6 shadow-xs space-y-4">
+                <h4 className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase border-b border-gray-50 dark:border-[#302E29] pb-2">
                   Safety & Care Notes
                 </h4>
                 
@@ -4518,22 +4469,22 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     return (
                       <div className="space-y-3">
                         {medicalNotes && (
-                          <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 flex items-start space-x-3 text-xs text-rose-950">
-                            <AlertTriangle className="h-5 w-5 shrink-0 text-rose-500 mt-0.5" />
+                          <div className="bg-rose-50 dark:bg-red-950/25 border border-rose-100 dark:border-red-900/40 rounded-2xl p-4 flex items-start space-x-3 text-xs text-rose-950 dark:text-rose-200">
+                            <AlertTriangle className="h-5 w-5 shrink-0 text-rose-500 dark:text-rose-400 mt-0.5" />
                             <div className="space-y-1">
-                              <h5 className="font-bold text-rose-800 font-mono text-[10px] uppercase tracking-wider">Medical Note / Allergies</h5>
-                              <p className="text-[11px] text-rose-700 leading-relaxed font-semibold">
+                              <h5 className="font-bold text-rose-800 dark:text-rose-300 font-mono text-[10px] uppercase tracking-wider">Medical Note / Allergies</h5>
+                              <p className="text-[11px] text-rose-700 dark:text-rose-200/90 leading-relaxed font-semibold">
                                 {medicalNotes}
                               </p>
                             </div>
                           </div>
                         )}
                         {supportNotes && (
-                          <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-start space-x-3 text-xs text-amber-950">
-                            <Info className="h-5 w-5 shrink-0 text-amber-500 mt-0.5" />
+                          <div className="bg-amber-50 dark:bg-amber-950/25 border border-amber-100 dark:border-amber-900/40 rounded-2xl p-4 flex items-start space-x-3 text-xs text-amber-950 dark:text-amber-200">
+                            <Info className="h-5 w-5 shrink-0 text-amber-500 dark:text-[#C59B27] mt-0.5" />
                             <div className="space-y-1">
-                              <h5 className="font-bold text-amber-800 font-mono text-[10px] uppercase tracking-wider">Extra Support Needs</h5>
-                              <p className="text-[11px] text-amber-700 leading-relaxed font-semibold">
+                              <h5 className="font-bold text-amber-800 dark:text-amber-300 font-mono text-[10px] uppercase tracking-wider">Extra Support Needs</h5>
+                              <p className="text-[11px] text-amber-700 dark:text-amber-200/90 leading-relaxed font-semibold">
                                 {supportNotes}
                               </p>
                             </div>
@@ -4544,11 +4495,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   }
 
                   return (
-                    <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl p-4 flex items-start space-x-3 text-xs text-gray-500">
-                      <Check className="h-5 w-5 shrink-0 text-emerald-500 mt-0.5" />
+                    <div className="bg-[#ECFDF5] dark:bg-[#262520] border border-[#A7F3D0] dark:border-[#302E29] rounded-2xl p-4 flex items-start space-x-3 text-xs text-gray-500 dark:text-[#B8B0A5]">
+                      <Check className="h-5 w-5 shrink-0 text-emerald-500 dark:text-[#C59B27] mt-0.5" />
                       <div className="space-y-0.5">
-                        <h5 className="font-bold text-emerald-800 font-mono text-[10px] uppercase tracking-wider">No Care Conditions</h5>
-                        <p className="text-[11px] text-emerald-700 leading-relaxed">
+                        <h5 className="font-bold text-emerald-800 dark:text-[#F0EBE3] font-mono text-[10px] uppercase tracking-wider">No Care Conditions</h5>
+                        <p className="text-[11px] text-emerald-700 dark:text-[#B8B0A5] leading-relaxed">
                           No allergies, medical concerns, or extra support guidelines registered for this child.
                         </p>
                       </div>
@@ -4558,27 +4509,27 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </div>
 
               {/* Safety Checkpoint / Consent Tickbox */}
-              <div className="bg-amber-50/40 border border-amber-200/50 rounded-3xl p-6 space-y-4">
+              <div className="bg-amber-50/40 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/40 rounded-3xl p-6 space-y-4">
                 <div className="flex items-start space-x-3">
-                  <div className="p-1 bg-amber-100 rounded-lg text-[#C59B27] shrink-0 mt-0.5">
+                  <div className="p-1 bg-amber-100 dark:bg-[#262520] rounded-lg text-[#C59B27] shrink-0 mt-0.5">
                     <ShieldCheck className="h-5 w-5" />
                   </div>
                   <div className="space-y-1">
-                    <h4 className="text-xs font-bold text-amber-900 font-serif">Security Checkpoint</h4>
-                    <p className="text-[11px] text-amber-700 leading-normal">
+                    <h4 className="text-xs font-bold text-amber-900 dark:text-amber-200 font-serif">Security Checkpoint</h4>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300/80 leading-normal">
                       Child safety is our utmost priority. You must match the physical person picking up the child against the authorized photo and details above.
                     </p>
                   </div>
                 </div>
 
-                <label className="flex items-start space-x-3 p-4 bg-white border border-amber-200 rounded-2xl cursor-pointer hover:bg-amber-50/30 transition-all select-none">
+                <label className="flex items-start space-x-3 p-4 bg-white dark:bg-[#21211E] border border-amber-200 dark:border-[#3A3835] rounded-2xl cursor-pointer hover:bg-amber-50/30 dark:hover:bg-[#262520] transition-all select-none">
                   <input
                     type="checkbox"
                     checked={pickupVerified}
                     onChange={(e) => setPickupVerified(e.target.checked)}
-                    className="mt-1 h-4.5 w-4.5 rounded-sm border-amber-300 text-[#C59B27] focus:ring-[#C59B27] transition-all cursor-pointer"
+                    className="mt-1 h-4.5 w-4.5 rounded-sm border-amber-300 dark:border-[#3A3835] text-[#C59B27] focus:ring-[#C59B27] transition-all cursor-pointer dark:bg-[#262520]"
                   />
-                  <span className="text-xs font-bold text-gray-800 leading-snug">
+                  <span className="text-xs font-bold text-gray-800 dark:text-[#F0EBE3] leading-snug">
                     I confirm that the physical pickup person's identity and face strictly matches the authorized photo and credentials above.
                   </span>
                 </label>
@@ -4590,7 +4541,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   onClick={() => handleConfirmPickupRelease(pickupChild)}
                   disabled={pickupLoading || !pickupVerified}
                   data-component-version="volunteer-pickup-release-action-v3"
-                  className="w-full bg-[#C59B27] hover:bg-[#A47E1F] disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold tracking-widest py-4 rounded-2xl text-xs transition-all shadow-md uppercase flex items-center justify-center space-x-2 cursor-pointer"
+                  className="w-full bg-[#C59B27] hover:bg-[#A47E1F] disabled:bg-gray-200 dark:disabled:bg-[#262520] disabled:text-gray-400 dark:disabled:text-[#7A7570] text-white dark:text-[#1D1D1A] font-bold tracking-widest py-4 rounded-2xl text-xs transition-all shadow-md uppercase flex items-center justify-center space-x-2 cursor-pointer"
                 >
                   {pickupLoading ? (
                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
@@ -4607,7 +4558,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     setPickupChild(null);
                     setPickupVerified(false);
                   }}
-                  className="w-full border border-gray-200 hover:bg-gray-50 text-gray-700 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white shadow-xs"
+                  className="w-full border border-gray-200 dark:border-[#302E29] hover:bg-gray-50 dark:hover:bg-[#2A2926] text-gray-700 dark:text-[#F0EBE3] font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white dark:bg-[#21211E] shadow-xs"
                 >
                   Cancel / Scan Another Pass
                 </button>
@@ -4621,7 +4572,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     photoUrl: pickupChild.photoUrl
                   })}
                   data-component-version="volunteer-alert-auto-linked-child-v1"
-                  className="w-full bg-rose-50 border border-rose-200 hover:border-rose-300 text-rose-700 hover:text-rose-800 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer flex items-center justify-center space-x-2"
+                  className="w-full bg-rose-50 dark:bg-red-950/25 border border-rose-200 dark:border-red-900/40 hover:border-rose-300 dark:hover:border-red-800/50 text-rose-700 dark:text-rose-300 hover:text-rose-800 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer flex items-center justify-center space-x-2"
                 >
                   <Bell className="h-4 w-4 animate-pulse" />
                   <span>Request help for this child</span>
@@ -4638,8 +4589,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </div>
 
               {/* Scan Viewfinder (Phase 4) */}
-              <div 
-                className="bg-white border border-[#EAE8E1] rounded-3xl overflow-hidden shadow-xs relative" 
+              <div
+                className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl overflow-hidden shadow-xs relative"
                 data-component-version="volunteer-pickup-scan-card-v1-stitch"
               >
                 <div className="aspect-[3/4] bg-neutral-950 relative flex flex-col items-center justify-center overflow-hidden">
@@ -4694,7 +4645,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           <select
                             value={selectedCameraId}
                             onChange={(e) => setSelectedCameraId(e.target.value)}
-                            className="text-[10px] font-bold text-gray-800 bg-white border border-gray-200 rounded-lg px-2 py-1 outline-none shadow-xs cursor-pointer"
+                            className="text-[10px] font-bold text-gray-800 dark:text-[#F0EBE3] bg-white dark:bg-[#262520] border border-gray-200 dark:border-[#3A3835] rounded-lg px-2 py-1 outline-none shadow-xs cursor-pointer"
                           >
                             {cameras.map((cam) => (
                               <option key={cam.deviceId} value={cam.deviceId}>
@@ -4705,7 +4656,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         )}
                         <button
                           onClick={() => setCameraActive(false)}
-                          className="bg-white/85 text-gray-800 hover:bg-white rounded-lg p-1.5 text-xs font-bold shadow-xs cursor-pointer"
+                          className="bg-white/85 dark:bg-[#262520]/85 text-gray-800 dark:text-[#F0EBE3] hover:bg-white dark:hover:bg-[#2A2926] rounded-lg p-1.5 text-xs font-bold shadow-xs cursor-pointer border border-transparent dark:border-[#3A3835]"
                         >
                           <X className="h-4 w-4" />
                         </button>
@@ -4725,15 +4676,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                       {cameraUnavailable ? (
                         <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-3 z-10">
-                          <p className="text-white font-serif font-bold text-sm">
+                          <p className="text-white dark:text-[#F0EBE3] font-serif font-bold text-sm">
                             {cameraPermissionDenied ? 'Camera Access Blocked' : 'Camera Unavailable'}
                           </p>
-                          <p className="text-[11px] text-white/60 max-w-[220px] mx-auto leading-relaxed">
+                          <p className="text-[11px] text-white/60 dark:text-[#B8B0A5] max-w-[220px] mx-auto leading-relaxed">
                             {cameraPermissionDenied 
                               ? 'Camera permissions are blocked. Please enable permissions in your settings or open this app in a new window to scan passes.'
                               : 'No cameras detected or available on this device.'}
                           </p>
-                          <p className="text-[9px] text-amber-400 italic max-w-[200px]">
+                          <p className="text-[9px] text-amber-400 dark:text-[#C59B27] italic max-w-[200px]">
                             You can enter the reference pass code manually instead.
                           </p>
                         </div>
@@ -4744,7 +4695,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                             setScanMode('check_out');
                             setCameraActive(true);
                           }}
-                          className="relative z-10 bg-white hover:bg-gray-50 text-gray-950 font-serif font-extrabold text-sm px-6 py-3 rounded-full flex items-center space-x-2 shadow-lg transition-all cursor-pointer border border-[#EAE8E1]"
+                          className="relative z-10 bg-white hover:bg-gray-50 dark:bg-[#262520] dark:hover:bg-[#2A2926] text-gray-950 dark:text-[#F0EBE3] font-serif font-extrabold text-sm px-6 py-3 rounded-full flex items-center space-x-2 shadow-lg transition-all cursor-pointer border border-[#EAE8E1] dark:border-[#3A3835] focus:outline-hidden dark:focus:ring-2 dark:focus:ring-[#C59B27]"
                         >
                           <QrCode className="h-4.5 w-4.5 text-[#C59B27]" />
                           <span>Scan child pass</span>
@@ -4759,17 +4710,17 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               <div className="space-y-3" data-component-version="volunteer-pickup-manual-pass-v1-stitch">
                 <button
                   onClick={() => setShowPickupManualInput(!showPickupManualInput)}
-                  className="w-full bg-white border border-[#EAE8E1] hover:bg-gray-50 text-gray-800 font-bold py-3.5 rounded-2xl text-xs transition-all uppercase cursor-pointer flex items-center justify-center space-x-2 shadow-xs"
+                  className="w-full bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] hover:bg-gray-50 dark:hover:bg-[#262520] text-gray-800 dark:text-[#F0EBE3] font-bold py-3.5 rounded-2xl text-xs transition-all uppercase cursor-pointer flex items-center justify-center space-x-2 shadow-xs"
                 >
-                  <Keyboard className="h-4 w-4 text-gray-600" />
+                  <Keyboard className="h-4 w-4 text-gray-600 dark:text-[#B8B0A5]" />
                   <span>Enter pass code manually</span>
                 </button>
 
                 {showPickupManualInput && (
-                  <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-4 animate-fade-in">
+                  <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4 animate-fade-in">
                     <div className="space-y-1 text-center">
-                      <h5 className="text-xs font-bold text-gray-900">Enter Pass Code</h5>
-                      <p className="text-[11px] text-gray-400">
+                      <h5 className="text-xs font-bold text-gray-900 dark:text-[#F0EBE3]">Enter Pass Code</h5>
+                      <p className="text-[11px] text-gray-400 dark:text-[#7A7570]">
                         Enter the 6-character pass reference code (e.g. 6E80A7)
                       </p>
                     </div>
@@ -4788,13 +4739,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           onChange={(e) => setPickupCode(e.target.value.toUpperCase())}
                           placeholder="e.g. 6E80A7"
                           disabled={pickupLoading}
-                          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold tracking-widest placeholder:tracking-normal outline-none focus:border-[#C59B27] focus:bg-white transition-all disabled:opacity-60 text-center uppercase"
+                          className="w-full bg-gray-50 dark:bg-[#262520] border border-gray-200 dark:border-[#3A3835] rounded-xl px-4 py-3 text-sm font-bold tracking-widest placeholder:tracking-normal outline-none focus:border-[#C59B27] focus:bg-white dark:focus:bg-[#262520] text-gray-900 dark:text-[#F0EBE3] placeholder:text-gray-400 dark:placeholder:text-[#7A7570] transition-all disabled:opacity-60 text-center uppercase"
                         />
                         {pickupCode && (
                           <button
                             type="button"
                             onClick={() => setPickupCode('')}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 dark:text-[#7A7570] hover:text-gray-600 dark:hover:text-[#F0EBE3] rounded-full hover:bg-gray-100 dark:hover:bg-[#2A2926]"
                           >
                             <X className="h-3.5 w-3.5" />
                           </button>
@@ -4804,7 +4755,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       <button
                         type="submit"
                         disabled={pickupLoading || !pickupCode}
-                        className="px-5 bg-[#C59B27] hover:bg-[#A47E1F] disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center uppercase"
+                        className="px-5 bg-[#C59B27] hover:bg-[#A47E1F] disabled:bg-gray-200 dark:disabled:bg-[#262520] disabled:text-gray-400 dark:disabled:text-[#7A7570] text-white dark:text-[#1D1D1A] font-bold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center uppercase"
                       >
                         {pickupLoading ? (
                           <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
@@ -4819,14 +4770,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
               {/* OR Divider (Phase 6) */}
               <div className="flex items-center space-x-3 py-1" data-component-version="volunteer-pickup-divider-v1-stitch">
-                <div className="flex-1 h-[1px] bg-gray-200"></div>
-                <span className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-widest">OR</span>
-                <div className="flex-1 h-[1px] bg-gray-200"></div>
+                <div className="flex-1 h-[1px] bg-gray-200 dark:bg-[#302E29]"></div>
+                <span className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-widest">OR</span>
+                <div className="flex-1 h-[1px] bg-gray-200 dark:bg-[#302E29]"></div>
               </div>
 
               {/* Search Field (Phase 7) */}
               <div className="relative" data-component-version="volunteer-pickup-search-v1-stitch">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-[#7A7570]" />
                 <input
                   type="text"
                   placeholder="Find child by name or parent phone"
@@ -4836,34 +4787,34 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       onNavigate('/volunteer/children');
                     }
                   }}
-                  className="w-full bg-white border border-[#EAE8E1] rounded-2xl pl-10 pr-4 py-3 text-xs font-semibold text-gray-800 placeholder-gray-400 focus:border-[#C59B27] outline-none transition-all shadow-xs"
+                  className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-2xl pl-10 pr-4 py-3 text-xs font-semibold text-gray-800 dark:text-[#F0EBE3] placeholder-gray-400 dark:placeholder-[#7A7570] focus:border-[#C59B27] outline-none transition-all shadow-xs"
                 />
               </div>
 
               {/* Confirm before release alert (Phase 8) */}
-              <div className="bg-amber-50/50 border border-amber-200/60 rounded-3xl p-5 shadow-xs flex items-start space-x-3 text-amber-800" data-component-version="volunteer-pickup-warning-v1-stitch">
-                <AlertTriangle className="h-4.5 w-4.5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40 rounded-3xl p-5 shadow-xs flex items-start space-x-3 text-amber-800 dark:text-[#F0EBE3]" data-component-version="volunteer-pickup-warning-v1-stitch">
+                <AlertTriangle className="h-4.5 w-4.5 text-amber-600 dark:text-[#C59B27] shrink-0 mt-0.5" />
                 <div className="space-y-0.5">
-                  <h5 className="text-xs font-bold text-amber-900">Confirm before release</h5>
-                  <p className="text-[11px] text-amber-700 leading-normal">
+                  <h5 className="text-xs font-bold text-amber-900 dark:text-amber-200">Confirm before release</h5>
+                  <p className="text-[11px] text-amber-700 dark:text-amber-300/80 leading-normal">
                     Check the child photo and pickup person before marking pickup.
                   </p>
                 </div>
               </div>
 
               {/* Pickup metrics (Phase 9) */}
-              <div className="grid grid-cols-3 gap-1 bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs text-center" data-component-version="volunteer-pickup-metrics-v1-stitch">
+              <div className="grid grid-cols-3 gap-1 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs text-center" data-component-version="volunteer-pickup-metrics-v1-stitch">
                 <div className="space-y-1">
-                  <span className="text-xl font-serif font-black text-gray-900 block">
+                  <span className="text-xl font-serif font-black text-gray-900 dark:text-[#F0EBE3] block">
                     {Number(pickupStats.inside || stats.checkedIn || 0)}
                   </span>
-                  <span className="text-[9px] font-mono font-bold text-gray-400 uppercase tracking-wider block">INSIDE</span>
+                  <span className="text-[9px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block">INSIDE</span>
                 </div>
-                <div className="space-y-1 border-x border-gray-100">
-                  <span className="text-xl font-serif font-black text-gray-900 block">
+                <div className="space-y-1 border-x border-gray-100 dark:border-[#302E29]">
+                  <span className="text-xl font-serif font-black text-gray-900 dark:text-[#F0EBE3] block">
                     {Number(pickupStats.pickedUp || stats.pickedUp || 0)}
                   </span>
-                  <span className="text-[9px] font-mono font-bold text-gray-400 uppercase tracking-wider block">PICKED UP</span>
+                  <span className="text-[9px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block">PICKED UP</span>
                 </div>
                 <div className="space-y-1">
                   <span className="text-xl font-serif font-black text-[#C59B27] block">
@@ -4874,14 +4825,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </div>
 
               {/* Last Picked Up card (Phase 10) */}
-              <div className="bg-white border border-[#EAE8E1] rounded-3xl p-5 shadow-xs space-y-3.5" data-component-version="volunteer-pickup-last-v1-stitch">
-                <h4 className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-[0.15em]">
+              <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-3.5" data-component-version="volunteer-pickup-last-v1-stitch">
+                <h4 className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-[0.15em]">
                   LAST PICKED UP
                 </h4>
                 {pickupLastChild ? (
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3 min-w-0">
-                      <div className="w-11 h-11 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center shrink-0 overflow-hidden">
+                      <div className="w-11 h-11 rounded-2xl bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#302E29] flex items-center justify-center shrink-0 overflow-hidden">
                         {pickupLastChild.photoUrl ? (
                           <img
                             src={pickupLastChild.photoUrl}
@@ -4890,30 +4841,30 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                             referrerPolicy="no-referrer"
                           />
                         ) : (
-                          <User className="h-5 w-5 text-gray-400 stroke-[1.5]" />
+                          <User className="h-5 w-5 text-gray-400 dark:text-[#7A7570] stroke-[1.5]" />
                         )}
                       </div>
                       <div className="min-w-0">
-                        <h5 className="text-sm font-serif font-bold text-gray-950 truncate">
+                        <h5 className="text-sm font-serif font-bold text-gray-950 dark:text-[#F0EBE3] truncate">
                           {pickupLastChild.childName || 'Child'}
                         </h5>
-                        <p className="text-[10px] text-gray-500 font-semibold mt-0.5">
+                        <p className="text-[10px] text-gray-500 dark:text-[#B8B0A5] font-semibold mt-0.5">
                           {(pickupLastChild.age !== undefined && pickupLastChild.age !== null) ? (pickupLastChild.age === 0 ? 'Under 1 year old' : `${pickupLastChild.age} yrs`) : (pickupLastChild.schoolClass || 'Class verified')}
                         </p>
                       </div>
                     </div>
                     
                     <div className="flex items-center space-x-2 shrink-0">
-                      <span className="text-[10px] text-gray-400 font-mono font-semibold">
+                      <span className="text-[10px] text-gray-400 dark:text-[#7A7570] font-mono font-semibold">
                         {new Date(pickupLastChild.timestamp || pickupLastChild.releasedAt || new Date()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
-                      <div className="w-5 h-5 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-600 border border-emerald-100">
+                      <div className="w-5 h-5 bg-amber-500/10 dark:bg-[#C59B27]/15 rounded-full flex items-center justify-center text-[#C59B27] border border-[#C59B27]/30">
                         <Check className="h-3 w-3 stroke-[3]" />
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <p className="text-xs text-gray-400 italic text-center py-2 bg-[#FAF9F6] border border-[#EAE8E1]/60 rounded-2xl">
+                  <p className="text-xs text-gray-400 dark:text-[#7A7570] italic text-center py-2 bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1]/60 dark:border-[#302E29] rounded-2xl">
                     No child has been picked up yet.
                   </p>
                 )}
@@ -4928,11 +4879,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             childProfileLoading ? (
               <ModuleLoadingState title="Loading child details..." />
             ) : childProfileError || !childProfileData ? (
-              <div className="bg-white border border-zinc-200/80 rounded-2xl p-8 text-center max-w-md mx-auto space-y-4 my-6 shadow-xs" data-component-version="volunteer-child-unavailable-state">
-                <User className="h-10 w-10 text-zinc-300 mx-auto" />
+              <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-2xl p-8 text-center max-w-md mx-auto space-y-4 my-6 shadow-xs" data-component-version="volunteer-child-unavailable-state">
+                <User className="h-10 w-10 text-zinc-300 dark:text-[#7A7570] mx-auto" />
                 <div className="space-y-1">
-                  <h3 className="text-sm font-sans font-semibold text-zinc-800">This child is no longer available.</h3>
-                  <p className="text-xs font-sans text-zinc-500">This registration may have been updated or removed.</p>
+                  <h3 className="text-sm font-sans font-semibold text-zinc-800 dark:text-[#F0EBE3]">This child is no longer available.</h3>
+                  <p className="text-xs font-sans text-zinc-500 dark:text-[#B8B0A5]">This registration may have been updated or removed.</p>
                 </div>
                 <button
                   type="button"
@@ -4941,7 +4892,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     setChildProfileError(null);
                     fetchChildrenDirectory(directoryPage, activeDirectoryFilter, searchQuery);
                   }}
-                  className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-sans font-medium rounded-xl transition-all cursor-pointer shadow-xs"
+                  className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 dark:bg-[#C59B27] dark:hover:bg-[#B58E33] dark:text-[#1D1D1A] text-white text-xs font-sans font-medium rounded-xl transition-all cursor-pointer shadow-xs"
                 >
                   Return to Children
                 </button>
@@ -4949,55 +4900,55 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             ) : (
               <div className="space-y-3.5 animate-fade-in pb-12 max-w-md mx-auto" data-view-version="volunteer-child-profile-v3-refined">
                 {/* Main Profile Card */}
-                <div className="bg-white border border-zinc-200/80 rounded-2xl shadow-xs overflow-hidden divide-y divide-zinc-100">
+                <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-2xl shadow-xs overflow-hidden divide-y divide-zinc-100 dark:divide-[#302E29]">
                   
                   {/* Header / Identity Section */}
                   <div className="p-5 text-center flex flex-col items-center">
-                    <div className="w-20 h-20 rounded-xl overflow-hidden bg-zinc-100 border border-zinc-200/80 shrink-0 flex items-center justify-center">
+                    <div className="w-20 h-20 rounded-xl overflow-hidden bg-zinc-100 dark:bg-[#262520] border border-zinc-200/80 dark:border-[#3A3835] shrink-0 flex items-center justify-center">
                       <SafeImage
                         src={childProfileData.child.photoUrl}
                         alt={childProfileData.child.fullName || childProfileData.child.name}
                         className="w-full h-full object-cover"
                         fallbackComponent={
-                          <span className="font-sans font-bold text-lg text-zinc-500">
+                          <span className="font-sans font-bold text-lg text-zinc-500 dark:text-[#B8B0A5]">
                             {(childProfileData.child.fullName || childProfileData.child.name || 'C').charAt(0).toUpperCase()}
                           </span>
                         }
                       />
                     </div>
 
-                    <h2 className="text-xl font-serif font-bold text-zinc-900 mt-3 tracking-tight">
+                    <h2 className="text-xl font-sans font-bold text-zinc-900 dark:text-[#F0EBE3] mt-3 tracking-tight">
                       {childProfileData.child.fullName || childProfileData.child.name}
                     </h2>
 
-                    <p className="text-xs font-sans text-zinc-600 font-medium mt-0.5">
+                    <p className="text-xs font-sans text-zinc-600 dark:text-[#B8B0A5] font-medium mt-0.5">
                       {formatChildAge(childProfileData.child.age)} · {cleanAgeGroup(childProfileData.child.ageGroup || childProfileData.child.classGroup)}
                     </p>
 
                     {(childProfileData.child.needsAgeReview || /review/i.test(childProfileData.child.ageGroup || '')) && (
-                      <p className="text-[11px] font-sans text-amber-700 font-medium mt-1">
+                      <p className="text-[11px] font-sans text-amber-700 dark:text-[#C59B27] font-medium mt-1">
                         Age needs confirmation
                       </p>
                     )}
 
                     <div className="mt-2">
                       {childProfileData.child.status === 'inside' && (
-                        <span className="text-xs font-sans font-semibold text-emerald-700">
+                        <span className="text-xs font-sans font-semibold text-emerald-700 dark:text-[#B8B0A5]">
                           Inside
                         </span>
                       )}
                       {childProfileData.child.status === 'not_arrived' && (
-                        <span className="text-xs font-sans font-medium text-zinc-500">
+                        <span className="text-xs font-sans font-medium text-zinc-500 dark:text-[#7A7570]">
                           Not arrived
                         </span>
                       )}
                       {childProfileData.child.status === 'picked_up' && (
-                        <span className="text-xs font-sans font-medium text-zinc-600">
+                        <span className="text-xs font-sans font-medium text-zinc-600 dark:text-[#B8B0A5]">
                           Picked up
                         </span>
                       )}
                       {childProfileData.child.status === 'needs_attention' && (
-                        <span className="text-xs font-sans font-semibold text-amber-700">
+                        <span className="text-xs font-sans font-semibold text-amber-700 dark:text-[#C59B27]">
                           Needs attention
                         </span>
                       )}
@@ -5009,7 +4960,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         <button
                           onClick={() => handlePreparePickup(childProfileData.child.id)}
                           disabled={pickupLoading}
-                          className="w-full py-2.5 bg-[#A47E1F] hover:bg-[#8e6c17] text-white text-xs font-sans font-medium rounded-xl transition-all shadow-xs flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
+                          className="w-full py-2.5 bg-[#A47E1F] hover:bg-[#8e6c17] dark:bg-[#C59B27] dark:hover:bg-[#B58E33] text-white dark:text-[#1D1D1A] text-xs font-sans font-medium rounded-xl transition-all shadow-xs flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
                         >
                           <LogOut className="h-4 w-4" />
                           <span>{pickupLoading ? 'Processing...' : 'Open pickup'}</span>
@@ -5017,13 +4968,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       ) : childProfileData.child.status === 'not_arrived' ? (
                         <button
                           onClick={() => onNavigate('/volunteer/scan')}
-                          className="w-full py-2.5 bg-[#A47E1F] hover:bg-[#8e6c17] text-white text-xs font-sans font-medium rounded-xl transition-all shadow-xs flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
+                          className="w-full py-2.5 bg-[#A47E1F] hover:bg-[#8e6c17] dark:bg-[#C59B27] dark:hover:bg-[#B58E33] text-white dark:text-[#1D1D1A] text-xs font-sans font-medium rounded-xl transition-all shadow-xs flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
                         >
                           <QrCode className="h-4 w-4" />
                           <span>Check in</span>
                         </button>
                       ) : (
-                        <div className="text-center py-1 text-xs font-sans text-zinc-500">
+                        <div className="text-center py-1 text-xs font-sans text-zinc-500 dark:text-[#B8B0A5]">
                           Child is picked up
                         </div>
                       )}
@@ -5037,9 +4988,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           status: childProfileData.child.status,
                           photoUrl: childProfileData.child.photoUrl
                         })}
-                        className="w-full mt-2 py-1.5 text-zinc-500 hover:text-zinc-800 text-xs font-sans font-medium transition-colors flex items-center justify-center space-x-1.5 cursor-pointer"
+                        className="w-full mt-2 py-1.5 text-zinc-500 hover:text-zinc-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] text-xs font-sans font-medium transition-colors flex items-center justify-center space-x-1.5 cursor-pointer"
                       >
-                        <Bell className="h-3.5 w-3.5 text-zinc-400" />
+                        <Bell className="h-3.5 w-3.5 text-zinc-400 dark:text-[#7A7570]" />
                         <span>Ask for help</span>
                       </button>
                     </div>
@@ -5047,11 +4998,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                   {/* 1. Current status section */}
                   <div className="p-4 space-y-2">
-                    <h3 className="text-xs font-sans font-semibold text-zinc-900">Current status</h3>
-                    <div className="text-xs font-sans text-zinc-600 space-y-1.5">
+                    <h3 className="text-xs font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3]">Current status</h3>
+                    <div className="text-xs font-sans text-zinc-600 dark:text-[#B8B0A5] space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-zinc-500">Attendance</span>
-                        <span className="font-medium text-zinc-900">
+                        <span className="text-zinc-500 dark:text-[#7A7570]">Attendance</span>
+                        <span className="font-medium text-zinc-900 dark:text-[#F0EBE3]">
                           {childProfileData.child.status === 'inside'
                             ? 'Inside'
                             : childProfileData.child.status === 'picked_up'
@@ -5061,8 +5012,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       </div>
                       {childProfileData.child.checkedInAt && (
                         <div className="flex items-center justify-between">
-                          <span className="text-zinc-500">Checked in</span>
-                          <span className="font-medium text-zinc-800">
+                          <span className="text-zinc-500 dark:text-[#7A7570]">Checked in</span>
+                          <span className="font-medium text-zinc-800 dark:text-[#B8B0A5]">
                             {new Date(childProfileData.child.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             {childProfileData.todayActivity?.checkedInBy?.fullName ? ` · by ${childProfileData.todayActivity.checkedInBy.fullName}` : ''}
                           </span>
@@ -5070,8 +5021,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       )}
                       {childProfileData.child.pickedUpAt && (
                         <div className="flex items-center justify-between">
-                          <span className="text-zinc-500">Picked up</span>
-                          <span className="font-medium text-zinc-800">
+                          <span className="text-zinc-500 dark:text-[#7A7570]">Picked up</span>
+                          <span className="font-medium text-zinc-800 dark:text-[#B8B0A5]">
                             {new Date(childProfileData.child.pickedUpAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             {childProfileData.todayActivity?.pickedUpBy?.fullName ? ` · by ${childProfileData.todayActivity.pickedUpBy.fullName}` : ''}
                           </span>
@@ -5082,26 +5033,26 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                   {/* 2. Parent / guardian section */}
                   <div className="p-4 space-y-2.5">
-                    <h3 className="text-xs font-sans font-semibold text-zinc-900">Parent / guardian</h3>
+                    <h3 className="text-xs font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3]">Parent / guardian</h3>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3 min-w-0">
-                        <div className="w-10 h-10 rounded-lg overflow-hidden bg-zinc-100 border border-zinc-200/80 shrink-0 flex items-center justify-center">
+                        <div className="w-10 h-10 rounded-lg overflow-hidden bg-zinc-100 dark:bg-[#262520] border border-zinc-200/80 dark:border-[#3A3835] shrink-0 flex items-center justify-center">
                           <SafeImage
                             src={childProfileData.parent?.photoUrl}
                             alt={childProfileData.parent?.fullName}
                             className="w-full h-full object-cover"
                             fallbackComponent={
-                              <span className="font-sans font-medium text-xs text-zinc-500">
+                              <span className="font-sans font-medium text-xs text-zinc-500 dark:text-[#B8B0A5]">
                                 {(childProfileData.parent?.fullName || 'P').charAt(0).toUpperCase()}
                               </span>
                             }
                           />
                         </div>
                         <div className="min-w-0">
-                          <h4 className="text-xs font-sans font-semibold text-zinc-900 truncate">
+                          <h4 className="text-xs font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3] truncate">
                             {childProfileData.parent?.fullName || 'Parent'}
                           </h4>
-                          <p className="text-xs font-sans text-zinc-500 font-mono">
+                          <p className="text-xs font-sans text-zinc-500 dark:text-[#7A7570] font-mono">
                             {childProfileData.parent?.phone || 'No phone number'}
                           </p>
                         </div>
@@ -5111,7 +5062,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         <div className="flex items-center space-x-1.5 shrink-0 pl-2">
                           <a
                             href={`tel:${childProfileData.parent.phone}`}
-                            className="p-2 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 text-zinc-700 rounded-lg transition-colors"
+                            className="p-2 bg-zinc-50 hover:bg-zinc-100 dark:bg-[#262520] dark:hover:bg-[#2A2926] border border-zinc-200 dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] rounded-lg transition-colors"
                             title="Call parent"
                           >
                             <Phone className="h-3.5 w-3.5" />
@@ -5120,7 +5071,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                             href={`https://wa.me/${childProfileData.parent.phone.replace(/[^0-9]/g, '')}`}
                             target="_blank"
                             rel="noreferrer"
-                            className="p-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-lg transition-colors"
+                            className="p-2 bg-emerald-50 hover:bg-emerald-100 dark:bg-[#262520] dark:hover:bg-[#2A2926] border border-emerald-200 dark:border-[#3A3835] text-emerald-700 dark:text-[#C59B27] rounded-lg transition-colors"
                             title="WhatsApp parent"
                           >
                             <MessageCircle className="h-3.5 w-3.5" />
@@ -5132,31 +5083,31 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                   {/* 3. Approved pickup section */}
                   <div className="p-4 space-y-2.5">
-                    <h3 className="text-xs font-sans font-semibold text-zinc-900">Approved pickup</h3>
+                    <h3 className="text-xs font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3]">Approved pickup</h3>
                     {childProfileData.pickupPeople?.[0] ? (
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-3 min-w-0">
-                          <div className="w-10 h-10 rounded-lg overflow-hidden bg-zinc-100 border border-zinc-200/80 shrink-0 flex items-center justify-center">
+                          <div className="w-10 h-10 rounded-lg overflow-hidden bg-zinc-100 dark:bg-[#262520] border border-zinc-200/80 dark:border-[#3A3835] shrink-0 flex items-center justify-center">
                             <SafeImage
                               src={childProfileData.pickupPeople[0].photoUrl}
                               alt={childProfileData.pickupPeople[0].fullName}
                               className="w-full h-full object-cover"
                               fallbackComponent={
-                                <span className="font-sans font-medium text-xs text-zinc-500">
+                                <span className="font-sans font-medium text-xs text-zinc-500 dark:text-[#B8B0A5]">
                                   {(childProfileData.pickupPeople[0].fullName || 'P').charAt(0).toUpperCase()}
                                 </span>
                               }
                             />
                           </div>
                           <div className="min-w-0">
-                            <h4 className="text-xs font-sans font-semibold text-zinc-900 truncate">
+                            <h4 className="text-xs font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3] truncate">
                               {childProfileData.pickupPeople[0].fullName}
                             </h4>
-                            <p className="text-[11px] font-sans text-emerald-700 font-medium">
+                            <p className="text-[11px] font-sans text-emerald-700 dark:text-[#C59B27] font-medium">
                               ID confirmed · {childProfileData.pickupPeople[0].relationship || 'Authorized'}
                             </p>
                             {childProfileData.pickupPeople[0].phone && (
-                              <p className="text-xs font-sans text-zinc-500 font-mono">
+                              <p className="text-xs font-sans text-zinc-500 dark:text-[#7A7570] font-mono">
                                 {childProfileData.pickupPeople[0].phone}
                               </p>
                             )}
@@ -5167,7 +5118,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           <div className="flex items-center space-x-1.5 shrink-0 pl-2">
                             <a
                               href={`tel:${childProfileData.pickupPeople[0].phone}`}
-                              className="p-2 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 text-zinc-700 rounded-lg transition-colors"
+                              className="p-2 bg-zinc-50 hover:bg-zinc-100 dark:bg-[#262520] dark:hover:bg-[#2A2926] border border-zinc-200 dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] rounded-lg transition-colors"
                               title="Call pickup person"
                             >
                               <Phone className="h-3.5 w-3.5" />
@@ -5176,7 +5127,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         )}
                       </div>
                     ) : (
-                      <p className="text-xs font-sans text-zinc-500 py-1">
+                      <p className="text-xs font-sans text-zinc-500 dark:text-[#B8B0A5] py-1">
                         No separate pickup person has been added. Primary collection is with the parent/guardian.
                       </p>
                     )}
@@ -5184,30 +5135,30 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                   {/* 4. Care information section */}
                   <div className="p-4 space-y-2">
-                    <h3 className="text-xs font-sans font-semibold text-zinc-900">Care information</h3>
+                    <h3 className="text-xs font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3]">Care information</h3>
                     {childProfileData.child.medicalNote || childProfileData.child.allergies || childProfileData.child.extraSupport ? (
                       <div className="space-y-2 text-xs font-sans">
                         {childProfileData.child.medicalNote && (
-                          <div className="p-3 bg-amber-50/50 border border-amber-200/60 rounded-xl space-y-1">
-                            <span className="text-[10px] font-semibold text-amber-800 uppercase tracking-wider block">Medical note</span>
-                            <p className="text-xs text-zinc-800 leading-relaxed">{childProfileData.child.medicalNote}</p>
+                          <div className="p-3 bg-amber-50/50 dark:bg-[#262520] border border-amber-200/60 dark:border-[#3A3835] rounded-xl space-y-1">
+                            <span className="text-[10px] font-semibold text-amber-800 dark:text-[#C59B27] uppercase tracking-wider block">Medical note</span>
+                            <p className="text-xs text-zinc-800 dark:text-[#F0EBE3] leading-relaxed">{childProfileData.child.medicalNote}</p>
                           </div>
                         )}
                         {childProfileData.child.allergies && (
-                          <div className="p-3 bg-amber-50/50 border border-amber-200/60 rounded-xl space-y-1">
-                            <span className="text-[10px] font-semibold text-amber-800 uppercase tracking-wider block">Allergies</span>
-                            <p className="text-xs text-zinc-800 leading-relaxed">{childProfileData.child.allergies}</p>
+                          <div className="p-3 bg-amber-50/50 dark:bg-[#262520] border border-amber-200/60 dark:border-[#3A3835] rounded-xl space-y-1">
+                            <span className="text-[10px] font-semibold text-amber-800 dark:text-[#C59B27] uppercase tracking-wider block">Allergies</span>
+                            <p className="text-xs text-zinc-800 dark:text-[#F0EBE3] leading-relaxed">{childProfileData.child.allergies}</p>
                           </div>
                         )}
                         {childProfileData.child.extraSupport && (
-                          <div className="p-3 bg-zinc-50 border border-zinc-200/60 rounded-xl space-y-1">
-                            <span className="text-[10px] font-semibold text-zinc-700 uppercase tracking-wider block">Support notes</span>
-                            <p className="text-xs text-zinc-800 leading-relaxed">{childProfileData.child.extraSupport}</p>
+                          <div className="p-3 bg-zinc-50 dark:bg-[#262520] border border-zinc-200/60 dark:border-[#3A3835] rounded-xl space-y-1">
+                            <span className="text-[10px] font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider block">Support notes</span>
+                            <p className="text-xs text-zinc-800 dark:text-[#F0EBE3] leading-relaxed">{childProfileData.child.extraSupport}</p>
                           </div>
                         )}
                       </div>
                     ) : (
-                      <p className="text-xs font-sans text-zinc-500 py-1">
+                      <p className="text-xs font-sans text-zinc-500 dark:text-[#7A7570] py-1">
                         No care notes have been added.
                       </p>
                     )}
@@ -5215,8 +5166,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                   {/* 5. Duty / room location section */}
                   <div className="p-4 space-y-1.5">
-                    <h3 className="text-xs font-sans font-semibold text-zinc-900">Duty / room location</h3>
-                    <p className="text-xs font-sans text-zinc-700">
+                    <h3 className="text-xs font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3]">Duty / room location</h3>
+                    <p className="text-xs font-sans text-zinc-700 dark:text-[#B8B0A5]">
                       {childProfileData.child.dutyLocation || childProfileData.child.classGroup
                         ? `${cleanAgeGroup(childProfileData.child.classGroup || childProfileData.child.dutyLocation)} room`
                         : 'Assigned to General Children section'}
@@ -5225,32 +5176,32 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                   {/* 6. Recent activity section */}
                   <div className="p-4 space-y-2">
-                    <h3 className="text-xs font-sans font-semibold text-zinc-900">Recent activity</h3>
-                    <div className="text-xs font-sans text-zinc-600 space-y-2">
+                    <h3 className="text-xs font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3]">Recent activity</h3>
+                    <div className="text-xs font-sans text-zinc-600 dark:text-[#B8B0A5] space-y-2">
                       <div className="flex items-start space-x-2.5">
-                        <div className={`w-2 h-2 rounded-full mt-1 shrink-0 ${childProfileData.todayActivity?.checkedInAt ? 'bg-emerald-500' : 'bg-zinc-300'}`} />
+                        <div className={`w-2 h-2 rounded-full mt-1 shrink-0 ${childProfileData.todayActivity?.checkedInAt ? 'bg-emerald-500 dark:bg-[#C59B27]' : 'bg-zinc-300 dark:bg-[#3A3835]'}`} />
                         <div>
-                          <p className="font-medium text-zinc-800">
+                          <p className={`font-medium ${childProfileData.todayActivity?.checkedInAt ? 'text-zinc-800 dark:text-[#B8B0A5]' : 'text-zinc-800 dark:text-[#7A7570]'}`}>
                             {childProfileData.todayActivity?.checkedInAt
                               ? `Checked in at ${new Date(childProfileData.todayActivity.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
                               : 'Not checked in yet'}
                           </p>
                           {childProfileData.todayActivity?.checkedInBy?.fullName && (
-                            <p className="text-[11px] text-zinc-500">By {childProfileData.todayActivity.checkedInBy.fullName}</p>
+                            <p className="text-[11px] text-zinc-500 dark:text-[#F0EBE3]">By {childProfileData.todayActivity.checkedInBy.fullName}</p>
                           )}
                         </div>
                       </div>
 
                       <div className="flex items-start space-x-2.5">
-                        <div className={`w-2 h-2 rounded-full mt-1 shrink-0 ${childProfileData.todayActivity?.pickedUpAt ? 'bg-zinc-700' : 'bg-zinc-300'}`} />
+                        <div className={`w-2 h-2 rounded-full mt-1 shrink-0 ${childProfileData.todayActivity?.pickedUpAt ? 'bg-zinc-700 dark:bg-[#B8B0A5]' : 'bg-zinc-300 dark:bg-[#3A3835]'}`} />
                         <div>
-                          <p className="font-medium text-zinc-800">
+                          <p className={`font-medium ${childProfileData.todayActivity?.pickedUpAt ? 'text-zinc-800 dark:text-[#B8B0A5]' : 'text-zinc-800 dark:text-[#7A7570]'}`}>
                             {childProfileData.todayActivity?.pickedUpAt
                               ? `Picked up at ${new Date(childProfileData.todayActivity.pickedUpAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
                               : 'Pending pickup'}
                           </p>
                           {childProfileData.todayActivity?.pickedUpBy?.fullName && (
-                            <p className="text-[11px] text-zinc-500">Released by {childProfileData.todayActivity.pickedUpBy.fullName}</p>
+                            <p className="text-[11px] text-zinc-500 dark:text-[#F0EBE3]">Released by {childProfileData.todayActivity.pickedUpBy.fullName}</p>
                           )}
                         </div>
                       </div>
@@ -5266,7 +5217,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               
               {/* Search Field */}
               <div className="relative" data-component-version="volunteer-children-search-v2-refined">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 dark:text-[#7A7570]" />
                 <form 
                   onSubmit={(e) => { 
                     e.preventDefault(); 
@@ -5280,7 +5231,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Find child by name or parent phone..."
-                    className="w-full bg-white border border-zinc-200/80 rounded-xl pl-10 pr-9 py-2.5 text-xs font-medium text-zinc-900 placeholder:text-zinc-400 shadow-xs focus:outline-none focus:ring-2 focus:ring-amber-500/15 focus:border-amber-600/50 transition-all"
+                    className="w-full bg-white dark:bg-[#262520] border border-zinc-200/80 dark:border-[#3A3835] rounded-xl pl-10 pr-9 py-2.5 text-xs font-medium text-zinc-900 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] shadow-xs focus:outline-none focus:ring-2 focus:ring-amber-500/15 dark:focus:ring-[#C59B27]/20 focus:border-amber-600/50 dark:focus:border-[#C59B27] transition-all"
                   />
                   {searchQuery && (
                     <button
@@ -5290,7 +5241,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         setDirectoryPage(1);
                         fetchChildrenDirectory(1, activeDirectoryFilter, ''); 
                       }}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-zinc-600 rounded-md hover:bg-zinc-100 transition-colors"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#F0EBE3] rounded-md hover:bg-zinc-100 dark:hover:bg-[#2A2926] transition-colors"
                       title="Clear search"
                     >
                       <X className="h-3.5 w-3.5" />
@@ -5313,9 +5264,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       key={chip.id}
                       onClick={() => setActiveDirectoryFilter(chip.id)}
                       className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium whitespace-nowrap transition-all duration-150 cursor-pointer ${
-                        isActive 
-                          ? 'bg-zinc-900 text-white shadow-xs' 
-                          : 'bg-white border border-zinc-200/80 text-zinc-600 hover:bg-zinc-50'
+                        isActive
+                          ? 'bg-zinc-900 text-white dark:bg-[#C59B27] dark:text-[#1D1D1A] shadow-xs'
+                          : 'bg-white dark:bg-[#262520] border border-zinc-200/80 dark:border-[#3A3835] text-zinc-600 dark:text-[#B8B0A5] hover:bg-zinc-50 dark:hover:bg-[#2A2926]'
                       }`}
                     >
                       {chip.label}
@@ -5325,37 +5276,37 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               </div>
 
               {/* Metrics Strip */}
-              <div className="bg-white border border-zinc-200/80 rounded-xl p-3 shadow-2xs" data-component-version="volunteer-children-metrics-v3-clean">
+              <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-xl p-3 shadow-2xs" data-component-version="volunteer-children-metrics-v3-clean">
                 <div className="grid grid-cols-4 gap-2 text-center">
                   <div className="flex flex-col justify-between">
-                    <span className="text-base font-sans font-bold text-zinc-900 leading-none">
+                    <span className="text-base font-sans font-bold text-zinc-900 dark:text-[#F0EBE3] leading-none">
                       {stats.expected || 0}
                     </span>
-                    <span className="text-[10px] font-sans text-zinc-400 font-medium mt-1 uppercase tracking-wider">
+                    <span className="text-[10px] font-sans text-zinc-400 dark:text-[#B8B0A5] font-medium mt-1 uppercase tracking-wider">
                       Expected
                     </span>
                   </div>
-                  <div className="flex flex-col justify-between border-l border-zinc-100">
-                    <span className="text-base font-sans font-bold text-emerald-700 leading-none">
+                  <div className="flex flex-col justify-between border-l border-zinc-100 dark:border-[#302E29]">
+                    <span className="text-base font-sans font-bold text-emerald-700 dark:text-[#F0EBE3] leading-none">
                       {stats.checkedIn || 0}
                     </span>
-                    <span className="text-[10px] font-sans text-zinc-400 font-medium mt-1 uppercase tracking-wider">
+                    <span className="text-[10px] font-sans text-zinc-400 dark:text-[#B8B0A5] font-medium mt-1 uppercase tracking-wider">
                       Inside
                     </span>
                   </div>
-                  <div className="flex flex-col justify-between border-l border-zinc-100">
-                    <span className="text-base font-sans font-bold text-zinc-600 leading-none">
+                  <div className="flex flex-col justify-between border-l border-zinc-100 dark:border-[#302E29]">
+                    <span className="text-base font-sans font-bold text-zinc-600 dark:text-[#F0EBE3] leading-none">
                       {stats.pickedUp || 0}
                     </span>
-                    <span className="text-[10px] font-sans text-zinc-400 font-medium mt-1 uppercase tracking-wider">
+                    <span className="text-[10px] font-sans text-zinc-400 dark:text-[#B8B0A5] font-medium mt-1 uppercase tracking-wider">
                       Picked Up
                     </span>
                   </div>
-                  <div className="flex flex-col justify-between border-l border-zinc-100">
-                    <span className="text-base font-sans font-bold text-amber-700 leading-none">
+                  <div className="flex flex-col justify-between border-l border-zinc-100 dark:border-[#302E29]">
+                    <span className="text-base font-sans font-bold text-amber-700 dark:text-[#C59B27] leading-none">
                       {stats.attention || 0}
                     </span>
-                    <span className="text-[10px] font-sans text-zinc-400 font-medium mt-1 uppercase tracking-wider">
+                    <span className="text-[10px] font-sans text-zinc-400 dark:text-[#B8B0A5] font-medium mt-1 uppercase tracking-wider">
                       Attention
                     </span>
                   </div>
@@ -5367,31 +5318,31 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 {searching ? (
                   <ListSkeleton items={4} />
                 ) : directoryError ? (
-                  <div className="bg-white border border-zinc-200/80 rounded-xl p-8 text-center text-rose-600">
+                  <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-xl p-8 text-center text-rose-600 dark:text-rose-400">
                     <p className="text-xs font-sans font-medium">We could not load children right now. Please check connection and try again.</p>
                   </div>
                 ) : directoryChildren.length > 0 ? (
-                  <div className="bg-white border border-zinc-200/80 rounded-xl divide-y divide-zinc-100 shadow-2xs overflow-hidden">
+                  <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-xl divide-y divide-zinc-100 dark:divide-[#302E29] shadow-2xs overflow-hidden">
                     {directoryChildren.map((child) => {
                       const isInside = child.entryStatus === 'checked_in' || child.entryStatus === 'inside';
                       const isPickedUp = child.entryStatus === 'picked_up' || child.entryStatus === 'checked_out';
                       const isAttention = child.entryStatus === 'under_review';
                       
                       let statusLabel = 'Not arrived';
-                      let statusColor = 'text-zinc-400';
+                      let statusColor = 'text-zinc-400 dark:text-[#7A7570]';
                       
                       if (isInside) {
                         statusLabel = 'Inside';
-                        statusColor = 'text-emerald-700';
+                        statusColor = 'text-emerald-700 dark:text-[#B8B0A5]';
                       } else if (isPickedUp) {
                         statusLabel = 'Picked up';
-                        statusColor = 'text-zinc-500';
+                        statusColor = 'text-zinc-500 dark:text-[#7A7570]';
                       } else if (isAttention) {
                         statusLabel = 'Needs attention';
-                        statusColor = 'text-amber-700';
+                        statusColor = 'text-amber-700 dark:text-[#C59B27]';
                       } else {
                         statusLabel = 'Not arrived';
-                        statusColor = 'text-zinc-400';
+                        statusColor = 'text-zinc-400 dark:text-[#7A7570]';
                       }
 
                       const ageText = formatChildAge(child.age);
@@ -5420,11 +5371,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         <div
                           key={child.childId}
                           onClick={() => setSelectedChildId(child.childId)}
-                          className="p-3.5 sm:px-4 flex items-center justify-between gap-3 hover:bg-zinc-50/70 transition-colors cursor-pointer group"
+                          className="p-3.5 sm:px-4 flex items-center justify-between gap-3 hover:bg-zinc-50/70 dark:hover:bg-[#262520]/70 transition-colors cursor-pointer group"
                         >
                           {/* Left Side: Photo & Details */}
                           <div className="flex items-center space-x-3 min-w-0 flex-1">
-                            <div className="w-11 h-11 rounded-lg overflow-hidden bg-zinc-100 border border-zinc-200/70 shrink-0 flex items-center justify-center">
+                            <div className="w-11 h-11 rounded-lg overflow-hidden bg-zinc-100 dark:bg-[#262520] border border-zinc-200/70 dark:border-[#3A3835] shrink-0 flex items-center justify-center">
                               {child.photoUrl ? (
                                 <SafeImage
                                   src={child.photoUrl}
@@ -5432,13 +5383,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                                   className="w-full h-full object-cover"
                                   containerClassName="w-full h-full"
                                   fallbackComponent={
-                                    <span className="font-sans text-xs font-semibold text-zinc-600">
+                                    <span className="font-sans text-xs font-semibold text-zinc-600 dark:text-[#B8B0A5]">
                                       {childInitials}
                                     </span>
                                   }
                                 />
                               ) : (
-                                <span className="font-sans text-xs font-semibold text-zinc-600">
+                                <span className="font-sans text-xs font-semibold text-zinc-600 dark:text-[#B8B0A5]">
                                   {childInitials}
                                 </span>
                               )}
@@ -5446,28 +5397,28 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                             <div className="min-w-0 flex-1 space-y-0.5">
                               <div className="flex items-center space-x-1.5 flex-wrap">
-                                <span className="font-sans text-sm font-semibold text-zinc-900 truncate leading-tight group-hover:text-amber-800 transition-colors">
+                                <span className="font-sans text-sm font-semibold text-zinc-900 dark:text-[#F0EBE3] truncate leading-tight group-hover:text-amber-800 dark:group-hover:text-[#C59B27] transition-colors">
                                   {child.childName}
                                 </span>
                                 {needsAgeReview && (
-                                  <span className="font-sans text-[11px] font-medium text-amber-700 shrink-0">
+                                  <span className="font-sans text-[11px] font-medium text-amber-700 dark:text-[#C59B27] shrink-0">
                                     · Age needs confirmation
                                   </span>
                                 )}
                               </div>
 
-                              <p className="font-sans text-xs text-zinc-500 font-medium leading-tight">
+                              <p className="font-sans text-xs text-zinc-500 dark:text-[#B8B0A5] font-medium leading-tight">
                                 {ageText}{cleanedGroup ? ` · ${cleanedGroup}` : ''}
                               </p>
 
                               {contact && (
-                                <p className="font-sans text-xs text-zinc-400 truncate leading-tight">
+                                <p className="font-sans text-xs text-zinc-400 dark:text-[#7A7570] truncate leading-tight">
                                   {contact}
                                 </p>
                               )}
 
                               {careNote && (
-                                <p className="font-sans text-[11px] font-medium text-amber-800/90 pt-0.5 leading-tight">
+                                <p className="font-sans text-[11px] font-medium text-amber-800/90 dark:text-[#C59B27] pt-0.5 leading-tight">
                                   {careNote}
                                 </p>
                               )}
@@ -5479,16 +5430,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                             <span className={`font-sans text-xs font-medium ${statusColor}`}>
                               {statusLabel}
                             </span>
-                            <ChevronRight className="h-4 w-4 text-zinc-300 group-hover:text-amber-700 transition-colors" />
+                            <ChevronRight className="h-4 w-4 text-zinc-300 dark:text-[#7A7570] group-hover:text-amber-700 dark:group-hover:text-[#C59B27] transition-colors" />
                           </div>
                         </div>
                       );
                     })}
                   </div>
                 ) : (
-                  <div className="bg-white border border-zinc-200/80 rounded-xl p-8 text-center text-zinc-400 shadow-2xs">
-                    <User className="h-8 w-8 text-zinc-300 mx-auto mb-2" />
-                    <p className="text-xs font-sans font-medium text-zinc-600">No child matches your search.</p>
+                  <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-xl p-8 text-center text-zinc-400 dark:text-[#7A7570] shadow-2xs">
+                    <User className="h-8 w-8 text-zinc-300 dark:text-[#7A7570] mx-auto mb-2" />
+                    <p className="text-xs font-sans font-medium text-zinc-600 dark:text-[#B8B0A5]">No child matches your search.</p>
                     {searchQuery && (
                       <button
                         type="button"
@@ -5497,7 +5448,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           setDirectoryPage(1);
                           fetchChildrenDirectory(1, activeDirectoryFilter, '');
                         }}
-                        className="mt-2 text-xs font-sans font-medium text-amber-700 hover:text-amber-800 underline cursor-pointer"
+                        className="mt-2 text-xs font-sans font-medium text-amber-700 hover:text-amber-800 dark:text-[#C59B27] dark:hover:text-[#E5D5AE] underline cursor-pointer"
                       >
                         Clear search
                       </button>
@@ -5508,10 +5459,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
               {/* Pagination controls */}
               {directoryPagination.totalPages > 1 && (
-                <div className="flex items-center justify-between pt-1 px-1 text-xs font-sans text-zinc-500" data-component-version="volunteer-children-pagination-v2-clean">
+                <div className="flex items-center justify-between pt-1 px-1 text-xs font-sans text-zinc-500 dark:text-[#B8B0A5]" data-component-version="volunteer-children-pagination-v2-clean">
                   <span>
                     Page {directoryPagination.page} of {directoryPagination.totalPages}
-                    <span className="text-zinc-400 ml-1">({directoryPagination.total} children)</span>
+                    <span className="text-zinc-400 dark:text-[#7A7570] ml-1">({directoryPagination.total} children)</span>
                   </span>
                   <div className="flex items-center space-x-1.5">
                     <button
@@ -5522,7 +5473,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         setDirectoryPage(prev);
                         fetchChildrenDirectory(prev, activeDirectoryFilter, searchQuery);
                       }}
-                      className="px-2.5 py-1 rounded-lg border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium text-xs flex items-center space-x-1"
+                      className="px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-700 dark:text-[#F0EBE3] hover:bg-zinc-50 dark:hover:bg-[#2A2926] disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium text-xs flex items-center space-x-1"
                     >
                       <ChevronLeft className="h-3.5 w-3.5" />
                       <span>Prev</span>
@@ -5535,7 +5486,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         setDirectoryPage(next);
                         fetchChildrenDirectory(next, activeDirectoryFilter, searchQuery);
                       }}
-                      className="px-2.5 py-1 rounded-lg border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium text-xs flex items-center space-x-1"
+                      className="px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-700 dark:text-[#F0EBE3] hover:bg-zinc-50 dark:hover:bg-[#2A2926] disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium text-xs flex items-center space-x-1"
                     >
                       <span>Next</span>
                       <ChevronRight className="h-3.5 w-3.5" />
@@ -5546,7 +5497,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
               {/* Helper Note */}
               <div className="text-center pt-2 pb-6" data-component-version="volunteer-children-helper-v2-refined">
-                <p className="text-xs text-zinc-400 font-normal">
+                <p className="text-xs text-zinc-400 dark:text-[#7A7570] font-normal">
                   Use search if a parent cannot open the child pass.
                 </p>
               </div>
@@ -5730,15 +5681,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
       {cleanRoute === '/volunteer/reports' && (
         /* ==================== 4. EVENT SUMMARY VIEW ==================== */
-        <div data-view-version="volunteer-summary-refined-v4" className="max-w-md mx-auto w-full space-y-5 pb-24 px-4 animate-fade-in">
+        <div data-view-version="volunteer-summary-refined-v4" className="w-full px-4 sm:px-5 space-y-5 pt-6 sm:pt-8 pb-24 animate-fade-in flex-1">
           {/* Main title & Subtitle */}
           <div className="space-y-0.5">
-            <h1 className="text-2xl font-serif font-bold text-zinc-900 tracking-tight">Summary</h1>
-            <p className="text-xs font-sans text-zinc-500">The General Assembly Children and Teens</p>
+            <h1 className="text-2xl font-sans font-bold text-zinc-900 dark:text-[#F0EBE3] tracking-tight">Summary</h1>
+            <p className="text-xs font-sans text-zinc-500 dark:text-[#B8B0A5]">The General Assembly Children and Teens</p>
           </div>
 
           {reportsLoading && !reportsData ? (
-            <ModuleLoadingState title="Preparing summary..." />
+            <ModuleLoadingState title="Preparing summary..." className="dark:bg-[#21211E] dark:border-[#302E29]" />
           ) : (
             <>
               {(() => {
@@ -5751,24 +5702,24 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   <div className="space-y-5">
                     {/* Today Stats */}
                     <div className="space-y-2">
-                      <h2 className="font-sans font-semibold text-xs text-zinc-500 uppercase tracking-wider">Today</h2>
-                      <div className="bg-white border border-zinc-200/80 rounded-2xl p-3.5 sm:p-4 shadow-2xs">
-                        <div className="grid grid-cols-4 divide-x divide-zinc-100 text-center">
+                      <h2 className="font-sans font-semibold text-xs text-zinc-500 dark:text-[#B8B0A5] uppercase tracking-wider">Today</h2>
+                      <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-2xl p-3.5 sm:p-4 shadow-2xs">
+                        <div className="grid grid-cols-4 divide-x divide-zinc-100 dark:divide-[#302E29] text-center">
                           <div className="px-1 first:pl-0">
-                            <span className="block font-sans text-[10px] sm:text-[11px] text-zinc-500 leading-tight">Expected</span>
-                            <span className="block font-sans font-semibold text-base sm:text-lg text-zinc-900 mt-1">{stats.expected || 0}</span>
+                            <span className="block font-sans text-[10px] sm:text-[11px] text-zinc-500 dark:text-[#B8B0A5] leading-tight">Expected</span>
+                            <span className="block font-sans font-semibold text-base sm:text-lg text-zinc-900 dark:text-[#F0EBE3] mt-1">{stats.expected || 0}</span>
                           </div>
                           <div className="px-1">
-                            <span className="block font-sans text-[10px] sm:text-[11px] text-zinc-500 leading-tight">Checked in</span>
-                            <span className="block font-sans font-semibold text-base sm:text-lg text-zinc-900 mt-1">{stats.checkedIn || 0}</span>
+                            <span className="block font-sans text-[10px] sm:text-[11px] text-zinc-500 dark:text-[#B8B0A5] leading-tight">Checked in</span>
+                            <span className="block font-sans font-semibold text-base sm:text-lg text-zinc-900 dark:text-[#F0EBE3] mt-1">{stats.checkedIn || 0}</span>
                           </div>
                           <div className="px-1">
-                            <span className="block font-sans text-[10px] sm:text-[11px] text-zinc-500 leading-tight">Picked up</span>
-                            <span className="block font-sans font-semibold text-base sm:text-lg text-zinc-900 mt-1">{stats.pickedUp || 0}</span>
+                            <span className="block font-sans text-[10px] sm:text-[11px] text-zinc-500 dark:text-[#B8B0A5] leading-tight">Picked up</span>
+                            <span className="block font-sans font-semibold text-base sm:text-lg text-zinc-900 dark:text-[#F0EBE3] mt-1">{stats.pickedUp || 0}</span>
                           </div>
                           <div className="px-1 last:pr-0">
-                            <span className="block font-sans text-[10px] sm:text-[11px] text-zinc-500 leading-tight">Inside</span>
-                            <span className="block font-sans font-semibold text-base sm:text-lg text-zinc-900 mt-1">
+                            <span className="block font-sans text-[10px] sm:text-[11px] text-zinc-500 dark:text-[#B8B0A5] leading-tight">Inside</span>
+                            <span className="block font-sans font-semibold text-base sm:text-lg text-zinc-900 dark:text-[#F0EBE3] mt-1">
                               {Math.max(0, (stats.checkedIn || 0) - (stats.pickedUp || 0))}
                             </span>
                           </div>
@@ -5781,33 +5732,33 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       <button
                         type="button"
                         onClick={() => setShowAttentionModal(true)}
-                        className="w-full text-left bg-white border border-amber-200/80 rounded-2xl p-4 shadow-2xs hover:bg-amber-50/20 active:bg-amber-50/40 transition-colors cursor-pointer group flex items-center justify-between gap-3"
+                        className="w-full text-left bg-white dark:bg-[#21211E] border border-amber-200/80 dark:border-[#302E29] rounded-2xl p-4 shadow-2xs hover:bg-amber-50/20 dark:hover:bg-[#262520] active:bg-amber-50/40 dark:active:bg-[#262520] transition-colors cursor-pointer group flex items-center justify-between gap-3"
                         id="btn-volunteer-summary-attention-row"
                       >
                         <div className="space-y-0.5 min-w-0 flex-1">
                           <div className="flex items-center justify-between">
-                            <span className="font-sans font-semibold text-xs text-zinc-900">Needs attention</span>
-                            <span className="font-sans font-semibold text-xs text-amber-800">{totalAttention}</span>
+                            <span className="font-sans font-semibold text-xs text-zinc-900 dark:text-[#F0EBE3]">Needs attention</span>
+                            <span className="font-sans font-semibold text-xs text-amber-800 dark:text-[#C59B27]">{totalAttention}</span>
                           </div>
-                          <p className="font-sans text-xs text-zinc-500 truncate">
+                          <p className="font-sans text-xs text-zinc-500 dark:text-[#B8B0A5] truncate">
                             {totalAttention === 1 ? '1 child needs their details checked' : `${totalAttention} children need their details checked`}
                           </p>
                         </div>
-                        <ChevronRight className="h-4 w-4 text-zinc-400 shrink-0 group-hover:text-zinc-600 transition-colors" />
+                        <ChevronRight className="h-4 w-4 text-zinc-400 dark:text-[#7A7570] shrink-0 group-hover:text-zinc-600 dark:group-hover:text-[#F0EBE3] transition-colors" />
                       </button>
                     ) : (
-                      <div className="bg-white border border-zinc-200/80 rounded-2xl p-4 shadow-2xs flex items-center justify-between">
+                      <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-2xl p-4 shadow-2xs flex items-center justify-between">
                         <div className="space-y-0.5">
-                          <span className="font-sans font-semibold text-xs text-zinc-900 block">Needs attention</span>
-                          <p className="font-sans text-xs text-zinc-400">All child details are up to date</p>
+                          <span className="font-sans font-semibold text-xs text-zinc-900 dark:text-[#F0EBE3] block">Needs attention</span>
+                          <p className="font-sans text-xs text-zinc-400 dark:text-[#7A7570]">All child details are up to date</p>
                         </div>
-                        <span className="font-sans text-xs text-zinc-400">0</span>
+                        <span className="font-sans text-xs text-zinc-400 dark:text-[#7A7570]">0</span>
                       </div>
                     )}
 
                     {/* Age Groups Section */}
                     <div className="space-y-2">
-                      <h2 className="font-sans font-semibold text-xs text-zinc-500 uppercase tracking-wider">Age groups</h2>
+                      <h2 className="font-sans font-semibold text-xs text-zinc-500 dark:text-[#B8B0A5] uppercase tracking-wider">Age groups</h2>
                       {(() => {
                         const ageGroupCards = [
                           { key: 'ages_1_3', name: 'Ages 1–3', matchKeys: ['creche', '1-3', 'toddler'], boys: 0, girls: 0, inside: 0, expected: 0 },
@@ -5861,22 +5812,22 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         }
 
                         return (
-                          <div className="bg-white border border-zinc-200/80 rounded-2xl divide-y divide-zinc-100 overflow-hidden shadow-2xs">
+                          <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-2xl divide-y divide-zinc-100 dark:divide-[#302E29] overflow-hidden shadow-2xs">
                             {ageGroupCards.map((group) => (
                               <div key={group.key} className="p-4 space-y-2.5">
                                 <div className="flex items-center justify-between gap-2">
-                                  <h3 className="font-sans font-semibold text-sm text-zinc-900 leading-snug">{group.name}</h3>
+                                  <h3 className="font-sans font-semibold text-sm text-zinc-900 dark:text-[#F0EBE3] leading-snug">{group.name}</h3>
                                   {group.expected > 0 && (
-                                    <span className="font-sans text-xs text-zinc-500 shrink-0">
+                                    <span className="font-sans text-xs text-zinc-500 dark:text-[#B8B0A5] shrink-0">
                                       Inside {group.inside} of {group.expected}
                                     </span>
                                   )}
                                 </div>
 
                                 {group.expected > 0 && (
-                                  <div className="h-1.5 w-full bg-zinc-100 rounded-full overflow-hidden">
+                                  <div className="h-1.5 w-full bg-zinc-100 dark:bg-[#302E29] rounded-full overflow-hidden">
                                     <div 
-                                      className="h-full bg-zinc-800 rounded-full transition-all duration-300"
+                                      className="h-full bg-zinc-800 dark:bg-[#C59B27] rounded-full transition-all duration-300"
                                       style={{ width: `${Math.min(100, Math.round((group.inside / Math.max(1, group.expected)) * 100))}%` }}
                                     />
                                   </div>
@@ -5884,16 +5835,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                                 <div className="grid grid-cols-3 gap-2 sm:gap-3 text-left pt-0.5">
                                   <div>
-                                    <span className="block font-sans text-xs text-zinc-500">Boys</span>
-                                    <span className="block font-sans font-semibold text-base text-zinc-900 mt-0.5">{group.boys}</span>
+                                    <span className="block font-sans text-xs text-zinc-500 dark:text-[#B8B0A5]">Boys</span>
+                                    <span className="block font-sans font-semibold text-base text-zinc-900 dark:text-[#F0EBE3] mt-0.5">{group.boys}</span>
                                   </div>
                                   <div>
-                                    <span className="block font-sans text-xs text-zinc-500">Girls</span>
-                                    <span className="block font-sans font-semibold text-base text-zinc-900 mt-0.5">{group.girls}</span>
+                                    <span className="block font-sans text-xs text-zinc-500 dark:text-[#B8B0A5]">Girls</span>
+                                    <span className="block font-sans font-semibold text-base text-zinc-900 dark:text-[#F0EBE3] mt-0.5">{group.girls}</span>
                                   </div>
                                   <div>
-                                    <span className="block font-sans text-xs text-zinc-500">Inside</span>
-                                    <span className="block font-sans font-semibold text-base text-zinc-900 mt-0.5">{group.inside}</span>
+                                    <span className="block font-sans text-xs text-zinc-500 dark:text-[#B8B0A5]">Inside</span>
+                                    <span className="block font-sans font-semibold text-base text-zinc-900 dark:text-[#F0EBE3] mt-0.5">{group.inside}</span>
                                   </div>
                                 </div>
                               </div>
@@ -5911,7 +5862,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           setActiveDirectoryFilter('inside');
                           onNavigate('/volunteer/children');
                         }}
-                        className="w-full py-3 bg-zinc-900 hover:bg-zinc-800 text-white font-sans font-medium text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center shadow-2xs"
+                        className="w-full py-3 bg-zinc-900 hover:bg-zinc-800 dark:bg-[#262520] dark:hover:bg-[#2A2926] text-white dark:text-[#F0EBE3] dark:border dark:border-[#3A3835] font-sans font-medium text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center shadow-2xs"
                         id="btn-volunteer-summary-view-inside"
                       >
                         <span>View children inside</span>
@@ -5922,7 +5873,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           setActiveDirectoryFilter('all');
                           onNavigate('/volunteer/children');
                         }}
-                        className="w-full py-3 bg-white hover:bg-zinc-50 border border-zinc-200/80 text-zinc-700 font-sans font-medium text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center"
+                        className="w-full py-3 bg-white hover:bg-zinc-50 dark:bg-[#262520] dark:hover:bg-[#2A2926] border border-zinc-200/80 dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] font-sans font-medium text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center"
                         id="btn-volunteer-summary-view-all"
                       >
                         <span>View all children</span>
@@ -5930,7 +5881,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     </div>
 
                     {/* Footer Note */}
-                    <p className="text-center font-sans text-xs text-zinc-400 pt-1">
+                    <p className="text-center font-sans text-xs text-zinc-400 dark:text-[#7A7570] pt-1">
                       Final report will be available after the event.
                     </p>
                   </div>
@@ -5944,17 +5895,17 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       {/* Attention Details Modal */}
       {showAttentionModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-5 space-y-4 max-h-[85vh] overflow-y-auto shadow-xl border border-zinc-200">
-            <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
+          <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl max-w-md w-full p-5 space-y-4 max-h-[85vh] overflow-y-auto shadow-xl border border-zinc-200 dark:border-[#302E29]">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-[#302E29]">
               <div>
-                <h3 className="font-sans font-semibold text-base text-zinc-900">Needs attention</h3>
-                <p className="font-sans text-xs text-zinc-500 mt-0.5">
+                <h3 className="font-sans font-semibold text-base text-zinc-900 dark:text-[#F0EBE3]">Needs attention</h3>
+                <p className="font-sans text-xs text-zinc-500 dark:text-[#B8B0A5] mt-0.5">
                   {reportsData?.needsAttention?.length === 1 ? '1 child needs details checked' : `${reportsData?.needsAttention?.length || 0} children need details checked`}
                 </p>
               </div>
               <button 
                 onClick={() => setShowAttentionModal(false)}
-                className="p-1.5 text-zinc-400 hover:text-zinc-600 rounded-full hover:bg-zinc-100 transition-colors"
+                className="p-1.5 text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#F0EBE3] rounded-full hover:bg-zinc-100 dark:hover:bg-[#262520] transition-colors"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -5984,10 +5935,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   }
 
                   return (
-                    <div key={item.id || idx} className="p-3.5 bg-zinc-50 border border-zinc-200/80 rounded-xl flex items-center justify-between gap-3 text-xs">
+                    <div key={item.id || idx} className="p-3.5 bg-zinc-50 dark:bg-[#262520] border border-zinc-200/80 dark:border-[#3A3835] rounded-xl flex items-center justify-between gap-3 text-xs">
                       <div className="flex items-center space-x-3 min-w-0 flex-1">
                         <div 
-                          className="w-10 h-10 rounded-lg overflow-hidden bg-zinc-100 border border-zinc-200 shrink-0 flex items-center justify-center text-zinc-600 font-sans font-semibold text-xs"
+                          className="w-10 h-10 rounded-lg overflow-hidden bg-zinc-100 dark:bg-[#1D1D1A] border border-zinc-200 dark:border-[#3A3835] shrink-0 flex items-center justify-center text-zinc-600 dark:text-[#B8B0A5] font-sans font-semibold text-xs"
                           data-component-version="volunteer-attention-child-photo-v3"
                         >
                           {resolvedPhotoUrl ? (
@@ -6009,8 +5960,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         </div>
 
                         <div className="space-y-0.5 min-w-0 flex-1">
-                          <h4 className="font-sans font-semibold text-zinc-900 text-xs truncate">{cleaned.name}</h4>
-                          <p className="font-sans text-[11px] text-zinc-500 truncate">{friendlyIssue}</p>
+                          <h4 className="font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3] text-xs truncate">{cleaned.name}</h4>
+                          <p className="font-sans text-[11px] text-zinc-500 dark:text-[#B8B0A5] truncate">{friendlyIssue}</p>
                         </div>
                       </div>
                       <button
@@ -6018,7 +5969,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           setShowAttentionModal(false);
                           handleResolveAction(item);
                         }}
-                        className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white font-sans font-medium text-xs rounded-lg transition-colors cursor-pointer shrink-0"
+                        className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 dark:bg-[#C59B27] dark:hover:bg-[#B58E33] text-white dark:text-[#1D1D1A] font-sans font-medium text-xs rounded-lg transition-colors cursor-pointer shrink-0"
                       >
                         Review
                       </button>
@@ -6026,7 +5977,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   );
                 })
               ) : (
-                <div className="py-6 text-center text-zinc-400 font-sans text-xs">
+                <div className="py-6 text-center text-zinc-400 dark:text-[#7A7570] font-sans text-xs">
                   No children currently need attention.
                 </div>
               )}
@@ -6041,17 +5992,17 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-4 z-50 animate-fade-in"
           data-view-version="volunteer-attention-detail-v5-refined"
         >
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl border border-[#EAE8E1]">
+          <div className="bg-white dark:bg-[#1D1D1A] rounded-3xl max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl border border-[#EAE8E1] dark:border-[#302E29]">
             {/* Header */}
             <div 
-              className="flex items-center justify-between pb-3 border-b border-gray-100"
+              className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-[#302E29]"
               data-component-version="volunteer-attention-detail-header-v5"
             >
               <div className="space-y-0.5">
-                <h3 className="text-xl font-serif font-bold text-neutral-900 leading-tight">
+                <h3 className="text-xl font-sans font-bold text-neutral-900 dark:text-[#F0EBE3] leading-tight">
                   Review child details
                 </h3>
-                <p className="text-xs font-sans text-neutral-500 leading-normal">
+                <p className="text-xs font-sans text-neutral-500 dark:text-[#B8B0A5] leading-normal">
                   Check the information below before continuing.
                 </p>
               </div>
@@ -6061,7 +6012,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   setSelectedAttentionItem(null);
                   setAttentionError(null);
                 }}
-                className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-full hover:bg-neutral-100 transition-colors cursor-pointer"
+                className="p-1.5 text-neutral-400 dark:text-[#7A7570] hover:text-neutral-600 dark:hover:text-[#F0EBE3] rounded-full hover:bg-neutral-100 dark:hover:bg-[#262520] transition-colors cursor-pointer"
                 aria-label="Close"
               >
                 <X className="h-5 w-5" />
@@ -6071,7 +6022,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             {/* Inline Error Message */}
             {attentionError && (
               <div 
-                className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-start gap-1.5 animate-fade-in font-sans"
+                className="p-3 bg-red-50 dark:bg-rose-950/20 border border-red-200 dark:border-rose-900/40 text-red-700 dark:text-rose-300 rounded-xl text-xs flex items-start gap-1.5 animate-fade-in font-sans"
                 data-component-version="volunteer-attention-safe-error-v3"
               >
                 <span className="shrink-0 font-medium">⚠️</span>
@@ -6116,12 +6067,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
               return (
                 <div 
-                  className="bg-neutral-50/80 border border-neutral-200/80 p-3.5 rounded-2xl flex items-center gap-3.5"
+                  className="bg-neutral-50/80 dark:bg-[#262520] border border-neutral-200/80 dark:border-[#3A3835] p-3.5 rounded-2xl flex items-center gap-3.5"
                   data-component-version="volunteer-attention-modal-child-summary-v3"
                 >
                   {/* Photo or Fallback */}
                   <div 
-                    className="w-14 h-14 rounded-xl bg-[#FAF6EB] border border-[#E5D5AE]/60 overflow-hidden shrink-0 flex items-center justify-center text-[#9A7326] font-sans font-bold text-base"
+                    className="w-14 h-14 rounded-xl bg-[#FAF6EB] dark:bg-[#1D1D1A] border border-[#E5D5AE]/60 dark:border-[#3A3835] overflow-hidden shrink-0 flex items-center justify-center text-[#9A7326] dark:text-[#C59B27] font-sans font-bold text-base"
                     data-component-version="volunteer-attention-child-photo-v3"
                   >
                     {resolvedPhotoUrl ? (
@@ -6131,13 +6082,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         className="w-full h-full object-cover"
                         containerClassName="w-full h-full flex items-center justify-center"
                         fallbackComponent={
-                          <span className="font-sans font-bold text-base text-[#9A7326]">
+                          <span className="font-sans font-bold text-base text-[#9A7326] dark:text-[#C59B27]">
                             {cleaned.name.charAt(0).toUpperCase()}
                           </span>
                         }
                       />
                     ) : (
-                      <span className="font-sans font-bold text-base text-[#9A7326]">
+                      <span className="font-sans font-bold text-base text-[#9A7326] dark:text-[#C59B27]">
                         {cleaned.name.charAt(0).toUpperCase()}
                       </span>
                     )}
@@ -6147,26 +6098,26 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <h4 
-                        className="text-sm font-semibold text-neutral-900 font-sans truncate leading-tight"
+                        className="text-sm font-semibold text-neutral-900 dark:text-[#F0EBE3] font-sans truncate leading-tight"
                         data-component-version="volunteer-attention-safe-child-display-v3"
                       >
                         {cleaned.name}
                       </h4>
                       {cleaned.ref && (
                         <span 
-                          className="text-[10px] font-mono font-medium px-1.5 py-0.5 bg-white text-neutral-600 border border-neutral-200 rounded shrink-0"
+                          className="text-[10px] font-mono font-medium px-1.5 py-0.5 bg-white dark:bg-[#1D1D1A] text-neutral-600 dark:text-[#B8B0A5] border border-neutral-200 dark:border-[#3A3835] rounded shrink-0"
                           data-component-version="volunteer-attention-child-reference-v3"
                         >
                           Ref: {cleaned.ref}
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-neutral-600 font-sans mt-0.5" data-component-version="volunteer-child-age-display-v3">
+                    <p className="text-xs text-neutral-600 dark:text-[#B8B0A5] font-sans mt-0.5" data-component-version="volunteer-child-age-display-v3">
                       {summaryLine}
                     </p>
                     {selectedAttentionItem.parent_name && (
-                      <p className="text-[11px] text-neutral-500 font-sans mt-0.5 truncate">
-                        <span className="font-medium text-neutral-700">Parent:</span> {selectedAttentionItem.parent_name} {selectedAttentionItem.parent_phone ? `(${selectedAttentionItem.parent_phone})` : ''}
+                      <p className="text-[11px] text-neutral-500 dark:text-[#7A7570] font-sans mt-0.5 truncate">
+                        <span className="font-medium text-neutral-700 dark:text-[#B8B0A5]">Parent:</span> {selectedAttentionItem.parent_name} {selectedAttentionItem.parent_phone ? `(${selectedAttentionItem.parent_phone})` : ''}
                       </p>
                     )}
                   </div>
@@ -6204,28 +6155,28 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
               return (
                 <div 
-                  className="p-3.5 bg-amber-50/50 border border-amber-200/60 rounded-2xl space-y-1.5"
+                  className="p-3.5 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40 rounded-2xl space-y-1.5"
                   data-component-version="volunteer-attention-reason-card-v5"
                 >
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2 text-amber-900">
-                      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
-                      <span className="text-xs font-sans font-semibold text-amber-900">
+                    <div className="flex items-center space-x-2 text-amber-900 dark:text-[#F0EBE3]">
+                      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-[#C59B27]" />
+                      <span className="text-xs font-sans font-semibold text-amber-900 dark:text-[#F0EBE3]">
                         {attentionTitle}
                       </span>
                     </div>
                     {/* NORMAL badge removed completely */}
                     {isHighPriority && (
-                      <span className="text-[10px] font-sans font-semibold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-300/60">
+                      <span className="text-[10px] font-sans font-semibold px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-[#C59B27] border border-amber-300/60 dark:border-amber-900/60">
                         High Priority
                       </span>
                     )}
                   </div>
-                  <p className="text-xs font-sans text-neutral-700 leading-relaxed">
+                  <p className="text-xs font-sans text-neutral-700 dark:text-[#B8B0A5] leading-relaxed">
                     {attentionDescription}
                   </p>
                   {(selectedAttentionItem.type === 'medical_note' || selectedAttentionItem.title === 'Medical note update') && (
-                    <div className="text-[11px] font-sans text-amber-900 bg-amber-100/50 p-2 rounded-xl border border-amber-200/40 mt-1 flex items-start gap-1.5">
+                    <div className="text-[11px] font-sans text-amber-900 dark:text-[#F0EBE3] bg-amber-100/50 dark:bg-amber-950/40 p-2 rounded-xl border border-amber-200/40 dark:border-amber-900/50 mt-1 flex items-start gap-1.5">
                       <span className="shrink-0 text-amber-600">❤️</span>
                       <span>Special guidelines are active to support the child's health and comfort.</span>
                     </div>
@@ -6236,21 +6187,21 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
             {/* What you can do */}
             <div 
-              className="space-y-1.5 text-xs text-neutral-600 font-sans pt-0.5"
+              className="space-y-1.5 text-xs text-neutral-600 dark:text-[#B8B0A5] font-sans pt-0.5"
               data-component-version="volunteer-attention-guidance-v5"
             >
-              <h5 className="font-semibold text-neutral-800 text-xs font-sans">What you can do</h5>
-              <ul className="space-y-1 text-xs text-neutral-500 font-sans pl-1">
+              <h5 className="font-semibold text-neutral-800 dark:text-[#F0EBE3] text-xs font-sans">What you can do</h5>
+              <ul className="space-y-1 text-xs text-neutral-500 dark:text-[#B8B0A5] font-sans pl-1">
                 <li className="flex items-center gap-2">
-                  <span className="text-neutral-400">•</span>
+                  <span className="text-neutral-400 dark:text-[#7A7570]">•</span>
                   <span>Confirm the child's details</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-neutral-400">•</span>
+                  <span className="text-neutral-400 dark:text-[#7A7570]">•</span>
                   <span>Add a note if something needs attention</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-neutral-400">•</span>
+                  <span className="text-neutral-400 dark:text-[#7A7570]">•</span>
                   <span>Ask for help if you are unsure</span>
                 </li>
               </ul>
@@ -6262,14 +6213,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               data-component-version="volunteer-attention-resolution-form-v5"
             >
               <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-neutral-700 font-sans">
+                <label className="text-xs font-semibold text-neutral-700 dark:text-[#F0EBE3] font-sans">
                   Volunteer note <span className="text-red-500">*</span>
                 </label>
-                <span className="text-[10px] text-neutral-400 font-mono">
+                <span className="text-[10px] text-neutral-400 dark:text-[#7A7570] font-mono">
                   {attentionNote.length}/200
                 </span>
               </div>
-              <p className="text-[11px] text-neutral-500 font-sans leading-normal">
+              <p className="text-[11px] text-neutral-500 dark:text-[#7A7570] font-sans leading-normal">
                 Add a short note about what was checked or why this needs support.
               </p>
               <textarea
@@ -6278,7 +6229,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 value={attentionNote}
                 onChange={(e) => setAttentionNote(e.target.value)}
                 placeholder="Share your assessment, care actions, or pickup verification notes..."
-                className="w-full text-xs p-3 bg-white border border-neutral-200 rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] focus:outline-none placeholder-neutral-400 font-sans leading-relaxed transition-all shadow-2xs"
+                className="w-full text-xs p-3 bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] focus:outline-none placeholder-neutral-400 dark:placeholder-[#7A7570] font-sans leading-relaxed transition-all shadow-2xs"
               />
             </div>
 
@@ -6305,16 +6256,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   });
                 }}
                 data-component-version="volunteer-alert-auto-linked-child-v2"
-                className="w-full py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-sans font-semibold text-xs rounded-xl transition-colors border border-rose-200/80 flex items-center justify-center space-x-2 cursor-pointer mt-1"
+                className="w-full py-2.5 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-sans font-semibold text-xs rounded-xl transition-colors border border-rose-200/80 dark:border-rose-900/40 flex items-center justify-center space-x-2 cursor-pointer mt-1"
               >
-                <Bell className="h-4 w-4 text-rose-600" />
+                <Bell className="h-4 w-4 text-rose-600 dark:text-rose-400" />
                 <span>Ask for help for this child</span>
               </button>
             )}
 
             {/* Actions Row */}
             <div 
-              className="flex flex-col sm:flex-row gap-2 pt-3 border-t border-neutral-100"
+              className="flex flex-col sm:flex-row gap-2 pt-3 border-t border-neutral-100 dark:border-[#302E29]"
               data-component-version="volunteer-attention-detail-footer-v5"
             >
               <button
@@ -6323,7 +6274,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   setSelectedAttentionItem(null);
                   setAttentionError(null);
                 }}
-                className="order-last sm:order-first px-4 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-sans font-semibold text-xs rounded-xl transition-colors cursor-pointer text-center sm:flex-1 h-11 flex items-center justify-center"
+                className="order-last sm:order-first px-4 py-2.5 bg-neutral-100 dark:bg-[#262520] hover:bg-neutral-200 dark:hover:bg-[#2A2926] text-neutral-700 dark:text-[#F0EBE3] border border-transparent dark:border-[#3A3835] font-sans font-semibold text-xs rounded-xl transition-colors cursor-pointer text-center sm:flex-1 h-11 flex items-center justify-center"
               >
                 Cancel
               </button>
@@ -6332,10 +6283,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               <button
                 onClick={() => handleResolveItem('escalate')}
                 disabled={resolvingAttention}
-                className="px-4 py-2.5 bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200/60 font-sans font-semibold text-xs rounded-xl transition-colors cursor-pointer text-center sm:flex-1 h-11 flex items-center justify-center gap-1.5"
+                className="px-4 py-2.5 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-[#C59B27] hover:bg-amber-100 dark:hover:bg-amber-950/50 border border-amber-200/60 dark:border-amber-900/40 font-sans font-semibold text-xs rounded-xl transition-colors cursor-pointer text-center sm:flex-1 h-11 flex items-center justify-center gap-1.5"
                 data-component-version="volunteer-attention-escalate-action-v5"
               >
-                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-[#C59B27]" />
                 <span>{resolvingAttention ? 'Saving...' : 'Escalate to admin'}</span>
               </button>
 
@@ -6351,7 +6302,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   }
                 }}
                 disabled={resolvingAttention}
-                className="px-4 py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] disabled:bg-neutral-300 text-white font-sans font-semibold text-xs rounded-xl transition-colors cursor-pointer text-center sm:flex-1 h-11 flex items-center justify-center shadow-xs"
+                className="px-4 py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] dark:hover:bg-[#B58E33] disabled:bg-neutral-300 dark:disabled:bg-[#262520] text-white dark:text-[#1D1D1A] font-sans font-semibold text-xs rounded-xl transition-colors cursor-pointer text-center sm:flex-1 h-11 flex items-center justify-center shadow-xs"
                 data-component-version={
                   selectedAttentionItem.action_text === 'RESOLVE' || selectedAttentionItem.actionText === 'RESOLVE' || selectedAttentionItem.type === 'missing_pickup_photo'
                     ? 'volunteer-attention-resolve-action-v5'
@@ -6374,19 +6325,19 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       {isSafetyModalOpen && (
         <div className="fixed inset-0 bg-neutral-950/70 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-fade-in">
           <div 
-            className="bg-white border border-[#EAE8E1] rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-scale-in flex flex-col max-h-[90vh]"
+            className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-scale-in flex flex-col max-h-[90vh]"
             data-view-version="volunteer-admin-help-v9-production-refined"
           >
             {/* Header */}
-            <div className="bg-white text-neutral-900 px-6 py-5 border-b border-neutral-100 flex items-center justify-between shrink-0">
+            <div className="bg-white dark:bg-[#1D1D1A] text-neutral-900 dark:text-[#F0EBE3] px-6 py-5 border-b border-neutral-100 dark:border-[#302E29] flex items-center justify-between shrink-0">
               <div className="space-y-0.5">
-                <h3 className="text-xl font-serif font-bold text-neutral-900 tracking-tight">Ask for help</h3>
-                <p className="text-xs font-sans text-neutral-500">Tell us what you need help with.</p>
+                <h3 className="text-xl font-serif font-bold text-neutral-900 dark:text-[#F0EBE3] tracking-tight">Ask for help</h3>
+                <p className="text-xs font-sans text-neutral-500 dark:text-[#B8B0A5]">Tell us what you need help with.</p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsSafetyModalOpen(false)}
-                className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-full hover:bg-neutral-100 transition-colors cursor-pointer"
+                className="p-1.5 text-neutral-400 dark:text-[#B8B0A5] hover:text-neutral-600 dark:hover:text-[#F0EBE3] rounded-full hover:bg-neutral-100 dark:hover:bg-[#262520] transition-colors cursor-pointer"
                 aria-label="Close"
               >
                 <X className="h-5 w-5" />
@@ -6401,10 +6352,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               className="flex-1 flex flex-col min-h-0"
               data-component-version="volunteer-help-form-v8-production"
             >
-              <div className="p-6 overflow-y-auto space-y-5 text-neutral-800 text-xs flex-1">
+              <div className="p-6 overflow-y-auto space-y-5 text-neutral-800 dark:text-[#F0EBE3] text-xs flex-1">
                 {/* Child Involved Section */}
                 <div className="space-y-2.5" data-component-version="volunteer-alert-child-selector-v2">
-                  <label className="text-xs font-sans font-semibold text-neutral-700 block">Who is this about?</label>
+                  <label className="text-xs font-sans font-semibold text-neutral-700 dark:text-[#F0EBE3] block">Who is this about?</label>
                   <div className="grid grid-cols-3 gap-2">
                     <button
                       type="button"
@@ -6413,8 +6364,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       }}
                       className={`py-2.5 px-2 rounded-xl text-center border text-xs font-sans transition-all cursor-pointer ${
                         safetyLinkOption === 'general'
-                          ? 'bg-amber-50/60 border-[#C59B27]/40 text-[#9A7326] font-semibold'
-                          : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50 font-medium'
+                          ? 'bg-amber-50/60 dark:bg-[#262520] border-[#C59B27]/40 dark:border-[#C59B27] text-[#9A7326] dark:text-[#F0EBE3] font-semibold shadow-xs'
+                          : 'border-neutral-200 dark:border-[#302E29] bg-white dark:bg-[#262520] text-neutral-700 dark:text-[#B8B0A5] hover:bg-neutral-50 dark:hover:bg-[#2A2926] font-medium'
                       }`}
                     >
                       General concern
@@ -6426,8 +6377,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       }}
                       className={`py-2.5 px-2 rounded-xl text-center border text-xs font-sans transition-all cursor-pointer ${
                         safetyLinkOption === 'link'
-                          ? 'bg-amber-50/60 border-[#C59B27]/40 text-[#9A7326] font-semibold'
-                          : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50 font-medium'
+                          ? 'bg-amber-50/60 dark:bg-[#262520] border-[#C59B27]/40 dark:border-[#C59B27] text-[#9A7326] dark:text-[#F0EBE3] font-semibold shadow-xs'
+                          : 'border-neutral-200 dark:border-[#302E29] bg-white dark:bg-[#262520] text-neutral-700 dark:text-[#B8B0A5] hover:bg-neutral-50 dark:hover:bg-[#2A2926] font-medium'
                       }`}
                     >
                       Choose a child
@@ -6439,8 +6390,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       }}
                       className={`py-2.5 px-2 rounded-xl text-center border text-xs font-sans transition-all cursor-pointer ${
                         safetyLinkOption === 'unidentified'
-                          ? 'bg-amber-50/60 border-[#C59B27]/40 text-[#9A7326] font-semibold'
-                          : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50 font-medium'
+                          ? 'bg-amber-50/60 dark:bg-[#262520] border-[#C59B27]/40 dark:border-[#C59B27] text-[#9A7326] dark:text-[#F0EBE3] font-semibold shadow-xs'
+                          : 'border-neutral-200 dark:border-[#302E29] bg-white dark:bg-[#262520] text-neutral-700 dark:text-[#B8B0A5] hover:bg-neutral-50 dark:hover:bg-[#2A2926] font-medium'
                       }`}
                     >
                       Child not identified
@@ -6448,64 +6399,64 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   </div>
 
                   {safetyLinkOption === 'general' && (
-                    <p className="text-[11px] font-sans text-neutral-500 mt-1 bg-neutral-50 p-2.5 rounded-xl border border-neutral-200/60">
+                    <p className="text-[11px] font-sans text-neutral-500 dark:text-[#B8B0A5] mt-1 bg-neutral-50 dark:bg-[#21211E] p-2.5 rounded-xl border border-neutral-200/60 dark:border-[#302E29]">
                       Use this when the request is not about a specific child.
                     </p>
                   )}
 
                   {safetyLinkOption === 'unidentified' && (
-                    <div className="space-y-3 mt-1 bg-amber-50/30 p-3.5 rounded-2xl border border-amber-200/50 animate-fade-in">
-                      <p className="text-[11px] font-sans text-amber-900 font-medium">
+                    <div className="space-y-3 mt-1 bg-amber-50/30 dark:bg-[#21211E] p-3.5 rounded-2xl border border-amber-200/50 dark:border-[#302E29] animate-fade-in">
+                      <p className="text-[11px] font-sans text-amber-900 dark:text-[#F0EBE3] font-medium">
                         Provide a brief description of the unidentified child for emergency triage:
                       </p>
                       <div className="space-y-2.5">
                         <div>
-                          <label className="text-[10px] font-sans font-semibold text-neutral-600 block mb-1">Temporary Label or Descriptive Identifier <span className="text-amber-600">*</span></label>
+                          <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] block mb-1">Temporary Label or Descriptive Identifier <span className="text-amber-600 dark:text-[#D4AF37]">*</span></label>
                           <input
                             type="text"
                             placeholder="e.g. lost boy in blue dinosaur t-shirt"
                             value={safetyUcName}
                             onChange={(e) => setSafetyUcName(e.target.value.substring(0, 50))}
-                            className="w-full bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                            className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] placeholder:text-neutral-400 dark:placeholder:text-[#7A7570] rounded-xl px-3 py-2 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
                           />
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                           <div>
-                            <label className="text-[10px] font-sans font-semibold text-neutral-600 block mb-1">Approx. Age Group</label>
+                            <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] block mb-1">Approx. Age Group</label>
                             <select
                               value={safetyUcAgeGroup}
                               onChange={(e) => setSafetyUcAgeGroup(e.target.value)}
-                              className="w-full bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                              className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] rounded-xl px-3 py-2 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
                             >
-                              <option value="Toddler (1-2)">Toddler (1-2)</option>
-                              <option value="Preschool (3-4)">Preschool (3-4)</option>
-                              <option value="Early Primary (5-6)">Early Primary (5-6)</option>
-                              <option value="Primary (7-9)">Primary (7-9)</option>
-                              <option value="Pre-Teen (10-12)">Pre-Teen (10-12)</option>
-                              <option value="Unknown">Unknown age</option>
+                              <option value="Toddler (1-2)" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Toddler (1-2)</option>
+                              <option value="Preschool (3-4)" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Preschool (3-4)</option>
+                              <option value="Early Primary (5-6)" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Early Primary (5-6)</option>
+                              <option value="Primary (7-9)" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Primary (7-9)</option>
+                              <option value="Pre-Teen (10-12)" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Pre-Teen (10-12)</option>
+                              <option value="Unknown" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Unknown age</option>
                             </select>
                           </div>
                           <div>
-                            <label className="text-[10px] font-sans font-semibold text-neutral-600 block mb-1">Approx. Gender</label>
+                            <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] block mb-1">Approx. Gender</label>
                             <select
                               value={safetyUcGender}
                               onChange={(e) => setSafetyUcGender(e.target.value)}
-                              className="w-full bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                              className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] rounded-xl px-3 py-2 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
                             >
-                              <option value="Female">Female</option>
-                              <option value="Male">Male</option>
-                              <option value="Unknown">Unknown / Other</option>
+                              <option value="Female" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Female</option>
+                              <option value="Male" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Male</option>
+                              <option value="Unknown" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Unknown / Other</option>
                             </select>
                           </div>
                         </div>
                         <div>
-                          <label className="text-[10px] font-sans font-semibold text-neutral-600 block mb-1">Further physical descriptions / clothing / behavior</label>
+                          <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] block mb-1">Further physical descriptions / clothing / behavior</label>
                           <textarea
                             rows={2}
                             placeholder="e.g. curly brown hair, carrying a green backpack, currently calm near front door..."
                             value={safetyUcDescription}
                             onChange={(e) => setSafetyUcDescription(e.target.value.substring(0, 200))}
-                            className="w-full bg-white border border-neutral-200 rounded-xl p-3 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none resize-none"
+                            className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] placeholder:text-neutral-400 dark:placeholder:text-[#7A7570] rounded-xl p-3 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none resize-none"
                           />
                         </div>
                       </div>
@@ -6517,15 +6468,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       {safetyChildContext ? (
                         /* Selected Child Card */
                         <div 
-                          className="bg-neutral-50 border border-neutral-200/80 rounded-2xl p-3.5 space-y-2"
+                          className="bg-neutral-50 dark:bg-[#21211E] border border-neutral-200/80 dark:border-[#302E29] rounded-2xl p-3.5 space-y-2"
                           data-component-version="volunteer-alert-selected-child-card-v2"
                         >
-                          <span className="text-[10px] font-sans font-semibold text-neutral-400 uppercase tracking-wider block">
+                          <span className="text-[10px] font-sans font-semibold text-neutral-400 dark:text-[#7A7570] uppercase tracking-wider block">
                             About
                           </span>
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex items-center space-x-3 min-w-0">
-                              <div className="w-10 h-10 rounded-xl overflow-hidden bg-[#FAF6EB] border border-[#E5D5AE]/60 shrink-0 flex items-center justify-center text-[#9A7326] font-sans font-bold text-xs">
+                              <div className="w-10 h-10 rounded-xl overflow-hidden bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE]/60 dark:border-[#302E29] shrink-0 flex items-center justify-center text-[#9A7326] dark:text-[#D4AF37] font-sans font-bold text-xs">
                                 {(() => {
                                   const photo = safetyChildContext.photoUrl;
                                   const resolvedUrl = photo ? (
@@ -6543,25 +6494,25 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                                         className="w-full h-full object-cover"
                                         containerClassName="w-full h-full flex items-center justify-center"
                                         fallbackComponent={
-                                          <span className="font-sans font-bold text-xs text-[#9A7326]">
-                                            {childInitial || <User className="h-4 w-4 text-gray-400" />}
+                                          <span className="font-sans font-bold text-xs text-[#9A7326] dark:text-[#D4AF37]">
+                                            {childInitial || <User className="h-4 w-4 text-gray-400 dark:text-[#7A7570]" />}
                                           </span>
                                         }
                                       />
                                     );
                                   }
                                   return (
-                                    <span className="font-sans font-bold text-xs text-[#9A7326]">
-                                      {childInitial || <User className="h-4 w-4 text-gray-400" />}
+                                    <span className="font-sans font-bold text-xs text-[#9A7326] dark:text-[#D4AF37]">
+                                      {childInitial || <User className="h-4 w-4 text-gray-400 dark:text-[#7A7570]" />}
                                     </span>
                                   );
                                 })()}
                               </div>
                               <div className="min-w-0">
-                                <h4 className="font-sans font-semibold text-neutral-900 text-xs truncate">
+                                <h4 className="font-sans font-semibold text-neutral-900 dark:text-[#F0EBE3] text-xs truncate">
                                   {safetyChildContext.fullName}
                                 </h4>
-                                <p className="text-[11px] text-neutral-500 font-sans mt-0.5">
+                                <p className="text-[11px] text-neutral-500 dark:text-[#B8B0A5] font-sans mt-0.5">
                                   {(() => {
                                     const ag = (safetyChildContext.ageGroup || '')
                                       .replace(/\s*\([^)]*review[^)]*\)/gi, '')
@@ -6575,7 +6526,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                             <button
                               type="button"
                               onClick={() => setSafetyChildContext(null)}
-                              className="text-xs font-sans font-semibold text-[#A47E1F] hover:text-[#8B6B1A] bg-white hover:bg-[#FAF6EB] border border-neutral-200 px-3 py-1.5 rounded-xl transition-colors cursor-pointer shrink-0"
+                              className="text-xs font-sans font-semibold text-[#A47E1F] dark:text-[#D4AF37] hover:text-[#8B6B1A] dark:hover:text-[#E5C158] bg-white dark:bg-[#262520] hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] border border-neutral-200 dark:border-[#302E29] px-3 py-1.5 rounded-xl transition-colors cursor-pointer shrink-0"
                             >
                               Change
                             </button>
@@ -6590,9 +6541,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                               placeholder="Type child or parent name..."
                               value={safetySearchQuery}
                               onChange={(e) => handleSafetyChildSearch(e.target.value)}
-                              className="w-full bg-white border border-neutral-200 rounded-xl pl-9 pr-4 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all"
+                              className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] placeholder:text-neutral-400 dark:placeholder:text-[#7A7570] rounded-xl pl-9 pr-4 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all"
                             />
-                            <Search className="absolute left-3 top-3 h-4 w-4 text-neutral-400" />
+                            <Search className="absolute left-3 top-3 h-4 w-4 text-neutral-400 dark:text-[#7A7570]" />
                             {safetySearching && (
                               <div className="absolute right-3 top-3">
                                 <div className="w-4 h-4 border-2 border-[#C59B27]/30 border-t-[#C59B27] rounded-full animate-spin"></div>
@@ -6601,7 +6552,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           </div>
 
                           {safetySearchResults.length > 0 && (
-                            <div className="bg-white border border-neutral-200 rounded-xl max-h-44 overflow-y-auto divide-y divide-neutral-100 shadow-sm">
+                            <div className="bg-white dark:bg-[#21211E] border border-neutral-200 dark:border-[#302E29] rounded-xl max-h-44 overflow-y-auto divide-y divide-neutral-100 dark:divide-[#302E29] shadow-sm">
                               {safetySearchResults.map((child: any) => {
                                 const childPhoto = child.photoUrl;
                                 const resolvedUrl = childPhoto ? (
@@ -6617,9 +6568,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                                   .trim();
 
                                 return (
-                                  <div key={child.childId} className="p-2.5 flex items-center justify-between hover:bg-neutral-50 transition-colors">
+                                  <div key={child.childId} className="p-2.5 flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-[#262520] transition-colors">
                                     <div className="flex items-center space-x-2.5 min-w-0 pr-2">
-                                      <div className="w-8 h-8 rounded-lg overflow-hidden bg-[#FAF6EB] border border-[#E5D5AE]/60 shrink-0 flex items-center justify-center text-[#9A7326] font-sans font-bold text-xs">
+                                      <div className="w-8 h-8 rounded-lg overflow-hidden bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE]/60 dark:border-[#302E29] shrink-0 flex items-center justify-center text-[#9A7326] dark:text-[#D4AF37] font-sans font-bold text-xs">
                                         {resolvedUrl ? (
                                           <SafeImage
                                             src={resolvedUrl}
@@ -6627,20 +6578,20 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                                             className="w-full h-full object-cover"
                                             containerClassName="w-full h-full flex items-center justify-center"
                                             fallbackComponent={
-                                              <span className="font-sans font-bold text-xs text-[#9A7326]">
-                                                {initial || <User className="h-4 w-4 text-gray-400" />}
+                                              <span className="font-sans font-bold text-xs text-[#9A7326] dark:text-[#D4AF37]">
+                                                {initial || <User className="h-4 w-4 text-gray-400 dark:text-[#7A7570]" />}
                                               </span>
                                             }
                                           />
                                         ) : (
-                                          <span className="font-sans font-bold text-xs text-[#9A7326]">
-                                            {initial || <User className="h-4 w-4 text-gray-400" />}
+                                          <span className="font-sans font-bold text-xs text-[#9A7326] dark:text-[#D4AF37]">
+                                            {initial || <User className="h-4 w-4 text-gray-400 dark:text-[#7A7570]" />}
                                           </span>
                                         )}
                                       </div>
                                       <div className="min-w-0">
-                                        <h5 className="font-sans font-semibold text-neutral-900 text-xs truncate">{cName}</h5>
-                                        <p className="text-[10px] text-neutral-500 font-sans">
+                                        <h5 className="font-sans font-semibold text-neutral-900 dark:text-[#F0EBE3] text-xs truncate">{cName}</h5>
+                                        <p className="text-[10px] text-neutral-500 dark:text-[#B8B0A5] font-sans">
                                           {cleanGroup || 'Class unknown'}
                                         </p>
                                       </div>
@@ -6656,7 +6607,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                                           photoUrl: child.photoUrl
                                         });
                                       }}
-                                      className="text-[11px] font-sans font-semibold text-[#A47E1F] bg-[#FAF6EB] border border-amber-200/50 px-2.5 py-1 rounded-lg hover:bg-amber-100/50 transition-colors cursor-pointer shrink-0"
+                                      className="text-[11px] font-sans font-semibold text-[#A47E1F] dark:text-[#D4AF37] bg-[#FAF6EB] dark:bg-[#262520] border border-amber-200/50 dark:border-[#302E29] px-2.5 py-1 rounded-lg hover:bg-amber-100/50 dark:hover:bg-[#2A2926] transition-colors cursor-pointer shrink-0"
                                     >
                                       Select
                                     </button>
@@ -6667,7 +6618,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           )}
 
                           {safetySearchQuery.trim() && safetySearchResults.length === 0 && !safetySearching && (
-                            <p className="text-[11px] text-neutral-400 italic text-center py-2 font-sans">No matching children found.</p>
+                            <p className="text-[11px] text-neutral-400 dark:text-[#7A7570] italic text-center py-2 font-sans">No matching children found.</p>
                           )}
                         </div>
                       )}
@@ -6677,7 +6628,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                 {/* Severity / Urgency Levels */}
                 <div className="space-y-2.5" data-component-version="volunteer-urgency-selector-v3-clean">
-                  <label className="text-xs font-sans font-semibold text-neutral-700 block">
+                  <label className="text-xs font-sans font-semibold text-neutral-700 dark:text-[#F0EBE3] block">
                     How urgent is it?
                   </label>
                   <div className="flex flex-col gap-2">
@@ -6705,18 +6656,18 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           type="button"
                           onClick={() => setSafetySeverity(level.value)}
                           className={`border rounded-xl p-3 text-left transition-all cursor-pointer flex flex-col space-y-0.5 ${
-                            isSelected 
-                              ? 'border-[#C59B27]/60 bg-amber-50/40 text-neutral-900' 
-                              : 'border-neutral-200/80 bg-white text-neutral-700 hover:bg-neutral-50/60'
+                            isSelected
+                              ? 'border-[#C59B27]/60 dark:border-[#C59B27] bg-amber-50/40 dark:bg-[#262520] text-neutral-900 dark:text-[#F0EBE3] shadow-xs'
+                              : 'border-neutral-200/80 dark:border-[#302E29] bg-white dark:bg-[#262520] text-neutral-700 dark:text-[#B8B0A5] hover:bg-neutral-50/60 dark:hover:bg-[#2A2926]'
                           }`}
                         >
                           <div className="flex items-center justify-between w-full">
-                            <span className="font-sans font-semibold text-xs text-neutral-900">{level.label}</span>
+                            <span className="font-sans font-semibold text-xs text-neutral-900 dark:text-[#F0EBE3]">{level.label}</span>
                             {isSelected && (
-                              <Check className="h-4 w-4 text-[#A47E1F] shrink-0" />
+                              <Check className="h-4 w-4 text-[#A47E1F] dark:text-[#D4AF37] shrink-0" />
                             )}
                           </div>
-                          <span className="text-[11px] font-sans leading-normal text-neutral-500">
+                          <span className="text-[11px] font-sans leading-normal text-neutral-500 dark:text-[#B8B0A5]">
                             {level.desc}
                           </span>
                         </button>
@@ -6725,12 +6676,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   </div>
 
                   {safetySeverity === 'urgent' && (
-                    <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 text-xs text-red-950 flex flex-col gap-2.5 animate-fade-in mt-2">
+                    <div className="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 rounded-xl p-3.5 text-xs text-red-950 dark:text-red-200 flex flex-col gap-2.5 animate-fade-in mt-2">
                       <div className="flex items-start gap-2">
-                        <ShieldAlert className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                        <ShieldAlert className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
                         <div>
-                          <p className="font-sans font-semibold text-red-700 text-xs">Send urgent alert?</p>
-                          <p className="mt-0.5 text-[11px] text-red-900 leading-relaxed font-sans">
+                          <p className="font-sans font-semibold text-red-700 dark:text-red-400 text-xs">Send urgent alert?</p>
+                          <p className="mt-0.5 text-[11px] text-red-900 dark:text-red-200 leading-relaxed font-sans">
                             This will notify enabled duty devices and may trigger repeating sound.
                           </p>
                         </div>
@@ -6740,10 +6691,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           type="checkbox"
                           checked={hasAcceptedUrgentWarning}
                           onChange={(e) => setHasAcceptedUrgentWarning(e.target.checked)}
-                          className="h-4 w-4 rounded border-red-300 text-red-600 focus:ring-red-500 cursor-pointer"
+                          className="h-4 w-4 rounded border-red-300 dark:border-red-800 text-red-600 dark:bg-[#262520] focus:ring-red-500 cursor-pointer"
                         />
-                        <span className="font-sans font-medium text-red-900 text-[11px]">
-                          I understand this triggers sound & vibration on duty devices. <span className="text-red-600">*</span>
+                        <span className="font-sans font-medium text-red-900 dark:text-red-200 text-[11px]">
+                          I understand this triggers sound & vibration on duty devices. <span className="text-red-600 dark:text-red-400">*</span>
                         </span>
                       </label>
                     </div>
@@ -6752,25 +6703,25 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                 {/* Category / Type Selector */}
                 <div className="space-y-1.5" data-component-version="alert-severity-category-contract-v1">
-                  <label className="text-xs font-sans font-semibold text-neutral-700 block">Category</label>
+                  <label className="text-xs font-sans font-semibold text-neutral-700 dark:text-[#F0EBE3] block">Category</label>
                   <select
                     value={safetyCategory}
                     onChange={(e) => setSafetyCategory(e.target.value)}
-                    className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all cursor-pointer"
+                    className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all cursor-pointer"
                   >
-                    <option value="child_care">General child care concern</option>
-                    <option value="pickup_issue">Pickup authorization issue</option>
-                    <option value="pass_issue">Pass scan or verification failure</option>
-                    <option value="medical_support">Medical or first aid support</option>
-                    <option value="security_concern">Security / missing child concerns</option>
-                    <option value="location_support">Room/classroom assistance</option>
-                    <option value="other">Other - Care support needed</option>
+                    <option value="child_care" className="dark:bg-[#262520] dark:text-[#F0EBE3]">General child care concern</option>
+                    <option value="pickup_issue" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Pickup authorization issue</option>
+                    <option value="pass_issue" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Pass scan or verification failure</option>
+                    <option value="medical_support" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Medical or first aid support</option>
+                    <option value="security_concern" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Security / missing child concerns</option>
+                    <option value="location_support" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Room/classroom assistance</option>
+                    <option value="other" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Other - Care support needed</option>
                   </select>
                 </div>
 
                 {/* Category-Specific Form Fields */}
-                <div className="bg-neutral-50/70 border border-neutral-200/80 rounded-2xl p-4 space-y-4 animate-fade-in" data-component-version="category-specific-fields-container">
-                  <h4 className="font-sans font-semibold text-xs text-neutral-900 border-b border-neutral-200/60 pb-2 flex items-center gap-1.5">
+                <div className="bg-neutral-50/70 dark:bg-[#21211E] border border-neutral-200/80 dark:border-[#302E29] rounded-2xl p-4 space-y-4 animate-fade-in" data-component-version="category-specific-fields-container">
+                  <h4 className="font-sans font-semibold text-xs text-neutral-900 dark:text-[#F0EBE3] border-b border-neutral-200/60 dark:border-[#302E29] pb-2 flex items-center gap-1.5">
                     <span className="h-1.5 w-1.5 rounded-full bg-[#C59B27]" />
                     Category details
                   </h4>
@@ -6778,22 +6729,22 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   {safetyCategory === 'child_care' && (
                     <div className="space-y-3">
                       <div>
-                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Specific Care Need <span className="text-rose-500">*</span></label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Specific Care Need <span className="text-rose-500">*</span></label>
                         <select
                           value={safetyCcSpecificNeeds}
                           onChange={(e) => setSafetyCcSpecificNeeds(e.target.value)}
-                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
                         >
-                          <option value="">-- Select care need --</option>
-                          <option value="Restroom assistance">Restroom assistance</option>
-                          <option value="Feeding help">Feeding help</option>
-                          <option value="Crying/unsettled">Crying / Unsettled</option>
-                          <option value="Spill/accident">Spill / Accident</option>
-                          <option value="Other care request">Other care request</option>
+                          <option value="" className="dark:bg-[#262520] dark:text-[#F0EBE3]">-- Select care need --</option>
+                          <option value="Restroom assistance" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Restroom assistance</option>
+                          <option value="Feeding help" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Feeding help</option>
+                          <option value="Crying/unsettled" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Crying / Unsettled</option>
+                          <option value="Spill/accident" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Spill / Accident</option>
+                          <option value="Other care request" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Other care request</option>
                         </select>
                       </div>
                       <div>
-                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1.5">Child Distress Level</label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1.5">Child Distress Level</label>
                         <div className="grid grid-cols-3 gap-2">
                           {['Mild', 'Moderate', 'Distressed'].map((lvl) => (
                             <button
@@ -6802,8 +6753,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                               onClick={() => setSafetyCcSeveritySubtype(lvl)}
                               className={`py-2 rounded-xl text-center text-xs font-sans font-semibold border transition-all cursor-pointer ${
                                 safetyCcSeveritySubtype === lvl
-                                  ? 'bg-[#C59B27]/10 border-[#C59B27]/30 text-[#A47E1F]'
-                                  : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50'
+                                  ? 'bg-[#C59B27]/10 dark:bg-[#262520] border-[#C59B27]/30 dark:border-[#C59B27] text-[#A47E1F] dark:text-[#F0EBE3] shadow-xs'
+                                  : 'border-neutral-200 dark:border-[#302E29] bg-white dark:bg-[#262520] text-neutral-700 dark:text-[#B8B0A5] hover:bg-neutral-50 dark:hover:bg-[#2A2926]'
                               }`}
                             >
                               {lvl}
@@ -6817,33 +6768,33 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   {safetyCategory === 'pickup_issue' && (
                     <div className="space-y-3">
                       <div>
-                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Reported Pickup Name <span className="text-rose-500">*</span></label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Reported Pickup Name <span className="text-rose-500">*</span></label>
                         <input
                           type="text"
                           placeholder="Name of person attempting pickup"
                           value={safetyPiReportedPickupName}
                           onChange={(e) => setSafetyPiReportedPickupName(e.target.value.substring(0, 100))}
-                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] placeholder:text-neutral-400 dark:placeholder:text-[#7A7570] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Relationship to Child <span className="text-rose-500">*</span></label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Relationship to Child <span className="text-rose-500">*</span></label>
                         <input
                           type="text"
                           placeholder="e.g. Uncle, Neighbor, Friend"
                           value={safetyPiRelationship}
                           onChange={(e) => setSafetyPiRelationship(e.target.value.substring(0, 50))}
-                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] placeholder:text-neutral-400 dark:placeholder:text-[#7A7570] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Contact Phone (Optional)</label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Contact Phone (Optional)</label>
                         <input
                           type="text"
                           placeholder="e.g. +1 (555) 019-2834"
                           value={safetyPiContactPhone}
                           onChange={(e) => setSafetyPiContactPhone(e.target.value.substring(0, 30))}
-                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] placeholder:text-neutral-400 dark:placeholder:text-[#7A7570] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
                         />
                       </div>
                     </div>
@@ -6852,26 +6803,26 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   {safetyCategory === 'pass_issue' && (
                     <div className="space-y-3">
                       <div>
-                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Scan Error Type <span className="text-rose-500">*</span></label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Scan Error Type <span className="text-rose-500">*</span></label>
                         <select
                           value={safetyPaErrorType}
                           onChange={(e) => setSafetyPaErrorType(e.target.value)}
-                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
                         >
-                          <option value="No match in roster">No match in roster</option>
-                          <option value="Expired pass">Expired pass</option>
-                          <option value="Duplicate check-in attempt">Duplicate check-in attempt</option>
-                          <option value="Device scan error">Device scan error</option>
+                          <option value="No match in roster" className="dark:bg-[#262520] dark:text-[#F0EBE3]">No match in roster</option>
+                          <option value="Expired pass" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Expired pass</option>
+                          <option value="Duplicate check-in attempt" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Duplicate check-in attempt</option>
+                          <option value="Device scan error" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Device scan error</option>
                         </select>
                       </div>
                       <div>
-                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Pass Code (Optional)</label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Pass Code (Optional)</label>
                         <input
                           type="text"
                           placeholder="e.g. PASS-8921"
                           value={safetyPaPassCode}
                           onChange={(e) => setSafetyPaPassCode(e.target.value.substring(0, 50))}
-                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none font-mono"
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] placeholder:text-neutral-400 dark:placeholder:text-[#7A7570] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none font-mono"
                         />
                       </div>
                     </div>
@@ -6880,19 +6831,19 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   {safetyCategory === 'medical_support' && (
                     <div className="space-y-3">
                       <div>
-                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Medical Symptom / Injury <span className="text-rose-500">*</span></label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Medical Symptom / Injury <span className="text-rose-500">*</span></label>
                         <select
                           value={safetyMsMedicalSymptom}
                           onChange={(e) => setSafetyMsMedicalSymptom(e.target.value)}
-                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
                         >
-                          <option value="">-- Select symptom --</option>
-                          <option value="Fever / Temperature">Fever / Temperature</option>
-                          <option value="Asthma / Breathing issue">Asthma / Breathing issue</option>
-                          <option value="Minor injury / cut / scrape">Minor injury / Cut / Scrape</option>
-                          <option value="Allergic reaction">Allergic reaction</option>
-                          <option value="Vomiting / Nausea">Vomiting / Nausea</option>
-                          <option value="Other medical symptom">Other medical symptom</option>
+                          <option value="" className="dark:bg-[#262520] dark:text-[#F0EBE3]">-- Select symptom --</option>
+                          <option value="Fever / Temperature" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Fever / Temperature</option>
+                          <option value="Asthma / Breathing issue" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Asthma / Breathing issue</option>
+                          <option value="Minor injury / cut / scrape" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Minor injury / Cut / Scrape</option>
+                          <option value="Allergic reaction" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Allergic reaction</option>
+                          <option value="Vomiting / Nausea" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Vomiting / Nausea</option>
+                          <option value="Other medical symptom" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Other medical symptom</option>
                         </select>
                       </div>
                       <label className="flex items-center space-x-2.5 p-1 cursor-pointer select-none">
@@ -6900,9 +6851,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           type="checkbox"
                           checked={safetyMsRequiresMedic}
                           onChange={(e) => setSafetyMsRequiresMedic(e.target.checked)}
-                          className="h-4 w-4 rounded border-neutral-300 text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
+                          className="h-4 w-4 rounded border-neutral-300 dark:border-[#3A3835] dark:bg-[#262520] text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
                         />
-                        <span className="font-sans font-medium text-neutral-800 text-[11px]">
+                        <span className="font-sans font-medium text-neutral-800 dark:text-[#F0EBE3] text-[11px]">
                           Requires on-site certified medic response
                         </span>
                       </label>
@@ -6912,36 +6863,36 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   {safetyCategory === 'security_concern' && (
                     <div className="space-y-3">
                       <div>
-                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">When Last Seen <span className="text-rose-500">*</span></label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">When Last Seen <span className="text-rose-500">*</span></label>
                         <select
                           value={safetyScLastSeenTime}
                           onChange={(e) => setSafetyScLastSeenTime(e.target.value)}
-                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
                         >
-                          <option value="Just now (under 2 mins)">Just now (under 2 mins)</option>
-                          <option value="5 mins ago">5 mins ago</option>
-                          <option value="10 mins ago">10 mins ago</option>
-                          <option value="30+ mins ago">30+ mins ago</option>
+                          <option value="Just now (under 2 mins)" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Just now (under 2 mins)</option>
+                          <option value="5 mins ago" className="dark:bg-[#262520] dark:text-[#F0EBE3]">5 mins ago</option>
+                          <option value="10 mins ago" className="dark:bg-[#262520] dark:text-[#F0EBE3]">10 mins ago</option>
+                          <option value="30+ mins ago" className="dark:bg-[#262520] dark:text-[#F0EBE3]">30+ mins ago</option>
                         </select>
                       </div>
                       <div>
-                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Clothing Description <span className="text-rose-500">*</span></label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Clothing Description <span className="text-rose-500">*</span></label>
                         <input
                           type="text"
                           placeholder="e.g. yellow jumper, jeans, white sandals"
                           value={safetyScClothingDescription}
                           onChange={(e) => setSafetyScClothingDescription(e.target.value.substring(0, 150))}
-                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] placeholder:text-neutral-400 dark:placeholder:text-[#7A7570] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Physical Appearance (Optional)</label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Physical Appearance (Optional)</label>
                         <input
                           type="text"
                           placeholder="e.g. height, hair style, glasses"
                           value={safetyScPhysicalAppearance}
                           onChange={(e) => setSafetyScPhysicalAppearance(e.target.value.substring(0, 150))}
-                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] placeholder:text-neutral-400 dark:placeholder:text-[#7A7570] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
                         />
                       </div>
                     </div>
@@ -6950,33 +6901,33 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   {safetyCategory === 'location_support' && (
                     <div className="space-y-3">
                       <div>
-                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Reason for Assistance <span className="text-rose-500">*</span></label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Reason for Assistance <span className="text-rose-500">*</span></label>
                         <select
                           value={safetyLsAssistanceReason}
                           onChange={(e) => setSafetyLsAssistanceReason(e.target.value)}
-                          className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
                         >
-                          <option value="Teacher break relief">Teacher break relief</option>
-                          <option value="Material / supply shortage">Material / supply shortage</option>
-                          <option value="Crowd control help">Crowd control help</option>
-                          <option value="Spill / clean-up needed">Spill / clean-up needed</option>
+                          <option value="Teacher break relief" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Teacher break relief</option>
+                          <option value="Material / supply shortage" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Material / supply shortage</option>
+                          <option value="Crowd control help" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Crowd control help</option>
+                          <option value="Spill / clean-up needed" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Spill / clean-up needed</option>
                         </select>
                       </div>
                       <div>
-                        <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Extra Volunteers Needed</label>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Extra Volunteers Needed</label>
                         <div className="flex items-center space-x-3 mt-1">
                           <button
                             type="button"
                             onClick={() => setSafetyLsVolunteerCountNeeded(Math.max(1, safetyLsVolunteerCountNeeded - 1))}
-                            className="w-9 h-9 border border-neutral-200 rounded-xl bg-white hover:bg-neutral-50 text-neutral-700 font-sans font-semibold transition-all text-sm flex items-center justify-center cursor-pointer select-none"
+                            className="w-9 h-9 border border-neutral-200 dark:border-[#302E29] rounded-xl bg-white dark:bg-[#262520] hover:bg-neutral-50 dark:hover:bg-[#2A2926] text-neutral-700 dark:text-[#F0EBE3] font-sans font-semibold transition-all text-sm flex items-center justify-center cursor-pointer select-none"
                           >
                             -
                           </button>
-                          <span className="font-mono font-bold text-sm w-8 text-center text-neutral-900">{safetyLsVolunteerCountNeeded}</span>
+                          <span className="font-mono font-bold text-sm w-8 text-center text-neutral-900 dark:text-[#F0EBE3]">{safetyLsVolunteerCountNeeded}</span>
                           <button
                             type="button"
                             onClick={() => setSafetyLsVolunteerCountNeeded(Math.min(5, safetyLsVolunteerCountNeeded + 1))}
-                            className="w-9 h-9 border border-neutral-200 rounded-xl bg-white hover:bg-neutral-50 text-neutral-700 font-sans font-semibold transition-all text-sm flex items-center justify-center cursor-pointer select-none"
+                            className="w-9 h-9 border border-neutral-200 dark:border-[#302E29] rounded-xl bg-white dark:bg-[#262520] hover:bg-neutral-50 dark:hover:bg-[#2A2926] text-neutral-700 dark:text-[#F0EBE3] font-sans font-semibold transition-all text-sm flex items-center justify-center cursor-pointer select-none"
                           >
                             +
                           </button>
@@ -6987,13 +6938,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                   {safetyCategory === 'other' && (
                     <div>
-                      <label className="text-[10px] font-sans font-semibold text-neutral-600 uppercase tracking-wider block mb-1">Specify Care Request <span className="text-rose-500">*</span></label>
+                      <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Specify Care Request <span className="text-rose-500">*</span></label>
                       <input
                         type="text"
                         placeholder="Please specify custom request..."
                         value={safetyOtCustomCareType}
                         onChange={(e) => setSafetyOtCustomCareType(e.target.value.substring(0, 100))}
-                        className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                        className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] placeholder:text-neutral-400 dark:placeholder:text-[#7A7570] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
                       />
                     </div>
                   )}
@@ -7013,7 +6964,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                 {/* Description Message */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-sans font-semibold text-neutral-700 block">
+                  <label className="text-xs font-sans font-semibold text-neutral-700 dark:text-[#F0EBE3] block">
                     Details / Message {(safetySeverity === 'important' || safetySeverity === 'urgent') && <span className="text-rose-500">*</span>}
                   </label>
                   <textarea
@@ -7025,23 +6976,23 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     }
                     value={safetyMessage}
                     onChange={(e) => setSafetyMessage(e.target.value)}
-                    className="w-full bg-white border border-neutral-200 rounded-2xl p-3.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all resize-none placeholder-neutral-400"
+                    className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] rounded-2xl p-3.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all resize-none placeholder-neutral-400 dark:placeholder:text-[#7A7570]"
                   />
-                  <p className="text-[10px] font-sans text-neutral-400 leading-normal">
+                  <p className="text-[10px] font-sans text-neutral-400 dark:text-[#7A7570] leading-normal">
                     Limit message to 500 characters. Admin team receives these alerts in real-time.
                   </p>
                 </div>
               </div>
 
               {/* Action Buttons & Validation Summary */}
-              <div className="p-5 bg-neutral-50/80 border-t border-neutral-100 flex flex-col space-y-3 shrink-0">
+              <div className="p-5 bg-neutral-50/80 dark:bg-[#1D1D1A] border-t border-neutral-100 dark:border-[#302E29] flex flex-col space-y-3 shrink-0">
                 {safetyValidationErrors.length > 0 && (
                   <div 
                     id="safety-validation-summary" 
-                    className="p-3 bg-rose-50 border border-rose-200 text-rose-900 rounded-xl space-y-1 text-[11px] font-sans animate-fade-in"
+                    className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-900 dark:text-rose-200 rounded-xl space-y-1 text-[11px] font-sans animate-fade-in"
                     data-component-version="volunteer-alert-validation-v7-visible"
                   >
-                    <p className="font-semibold text-rose-700">Please complete these details:</p>
+                    <p className="font-semibold text-rose-700 dark:text-rose-400">Please complete these details:</p>
                     <ul className="list-disc pl-4 space-y-0.5 font-medium">
                       {safetyValidationErrors.map((err, idx) => (
                         <li key={idx}>- {err}</li>
@@ -7054,7 +7005,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   <button
                     type="button"
                     onClick={() => setIsSafetyModalOpen(false)}
-                    className="flex-1 py-2.5 border border-neutral-200 hover:bg-neutral-100 text-neutral-700 font-sans font-semibold text-xs rounded-xl transition-colors text-center cursor-pointer bg-white"
+                    className="flex-1 py-2.5 border border-neutral-200 dark:border-[#302E29] hover:bg-neutral-100 dark:hover:bg-[#2A2926] text-neutral-700 dark:text-[#F0EBE3] font-sans font-semibold text-xs rounded-xl transition-colors text-center cursor-pointer bg-white dark:bg-[#262520]"
                   >
                     Cancel
                   </button>
@@ -7065,7 +7016,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     data-component-version="volunteer-help-submit-v8-production"
                     data-submit-state-version="volunteer-alert-submit-state-v7"
                     data-idempotency-version="volunteer-alert-idempotency-v5"
-                    className="flex-1 py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-semibold text-xs rounded-xl transition-colors text-center cursor-pointer flex items-center justify-center space-x-2 shadow-xs disabled:bg-neutral-300"
+                    className="flex-1 py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-semibold text-xs rounded-xl transition-colors text-center cursor-pointer flex items-center justify-center space-x-2 shadow-xs disabled:bg-neutral-300 dark:disabled:bg-[#262520] dark:disabled:text-[#7A7570] dark:disabled:border dark:disabled:border-[#302E29]"
                   >
                     {isSubmittingSafetyAlert ? (
                       <span className="flex items-center space-x-2">
@@ -7086,16 +7037,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       {/* 12. VOLUNTEER ALERTS HISTORY VIEW / FEEDBACK OVERLAY */}
       {showMyAlertsView && (
         <div className="fixed inset-0 bg-neutral-950/70 z-50 flex items-end sm:items-center justify-center backdrop-blur-xs animate-fade-in p-0 sm:p-4">
-          <div className="bg-white border-t sm:border border-stone-200 rounded-t-3xl sm:rounded-2xl w-full max-w-md max-h-[88vh] sm:max-h-[85vh] overflow-hidden flex flex-col animate-slide-up">
+          <div className="bg-white dark:bg-[#1D1D1A] border-t sm:border border-stone-200 dark:border-[#302E29] rounded-t-3xl sm:rounded-2xl w-full max-w-md max-h-[88vh] sm:max-h-[85vh] overflow-hidden flex flex-col animate-slide-up shadow-xl">
             {/* Header */}
-            <div className="px-5 py-4 sm:px-6 sm:py-5 border-b border-stone-200/80 shrink-0 flex items-start justify-between bg-white">
+            <div className="px-5 py-4 sm:px-6 sm:py-5 border-b border-stone-200/80 dark:border-[#302E29] shrink-0 flex items-start justify-between bg-white dark:bg-[#1D1D1A]">
               <div>
-                <h3 className="text-xl font-serif font-semibold text-stone-900 tracking-tight">My Care Requests</h3>
-                <p className="text-xs text-stone-500 font-sans mt-0.5">Requests you've raised and their current status.</p>
+                <h3 className="text-lg sm:text-xl font-sans font-semibold text-stone-900 dark:text-[#F0EBE3] tracking-tight">My Care Requests</h3>
+                <p className="text-xs text-stone-500 dark:text-[#B8B0A5] font-sans mt-0.5">Requests you've raised and their current status.</p>
               </div>
               <button
                 onClick={() => setShowMyAlertsView(false)}
-                className="p-1.5 -mr-1.5 text-stone-400 hover:text-stone-600 rounded-full hover:bg-stone-100 transition-colors cursor-pointer shrink-0"
+                className="p-1.5 -mr-1.5 text-stone-400 hover:text-stone-600 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] rounded-full hover:bg-stone-100 dark:hover:bg-[#262520] transition-colors cursor-pointer shrink-0"
                 aria-label="Close"
               >
                 <X className="h-5 w-5" />
@@ -7103,11 +7054,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             </div>
 
             {/* Scrollable Alerts List */}
-            <div className="p-4 sm:p-6 overflow-y-auto space-y-3.5 flex-1 bg-stone-50/50" data-view-version="volunteer-help-request-history-v2">
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-3.5 flex-1 bg-stone-50/50 dark:bg-[#21211E]" data-view-version="volunteer-help-request-history-v2">
               {mySafetyAlerts.length === 0 ? (
-                <div className="py-12 text-center space-y-1.5 font-sans">
-                  <p className="text-sm font-medium text-stone-700">No requests raised yet</p>
-                  <p className="text-xs text-stone-500">Care requests you submit will appear here.</p>
+                <div className="py-10 text-center space-y-1.5 font-sans">
+                  <p className="text-sm font-medium text-stone-700 dark:text-[#F0EBE3]">No requests raised yet</p>
+                  <p className="text-xs text-stone-500 dark:text-[#B8B0A5]">Care requests you submit will appear here.</p>
                 </div>
               ) : (
                 mySafetyAlerts.map((alert: any) => {
@@ -7118,53 +7069,53 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   return (
                     <div
                       key={alert.id}
-                      className="bg-white border border-stone-200/80 rounded-xl p-4 sm:p-5 shadow-xs space-y-3 font-sans"
+                      className="bg-white dark:bg-[#262520] border border-stone-200/80 dark:border-[#3A3835] rounded-xl p-4 sm:p-5 shadow-xs space-y-3 font-sans"
                     >
                       {/* Top Row: Single Natural Status + Timestamp */}
                       <div className="flex items-center justify-between">
                         <div>
                           {isResolved ? (
-                            <span className="text-xs font-medium text-emerald-700">
+                            <span className="text-xs font-medium text-stone-700 dark:text-[#B8B0A5]">
                               Resolved
                             </span>
                           ) : isUnderway ? (
-                            <span className="text-xs font-medium text-amber-700">
+                            <span className="text-xs font-medium text-amber-700 dark:text-[#D4AF37]">
                               Response underway
                             </span>
                           ) : isUrgent ? (
-                            <span className="text-xs font-medium text-rose-700">
+                            <span className="text-xs font-medium text-rose-700 dark:text-rose-400">
                               Needs response
                             </span>
                           ) : (
-                            <span className="text-xs font-medium text-stone-700">
+                            <span className="text-xs font-medium text-stone-700 dark:text-[#D4AF37]">
                               Needs response
                             </span>
                           )}
                         </div>
 
-                        <span className="text-xs text-stone-400 font-sans">
+                        <span className="text-xs text-stone-400 dark:text-[#B8B0A5] font-sans">
                           {formatAlertTimestamp(alert.created_at || alert.createdAt) || 'Just now'}
                         </span>
                       </div>
 
                       {/* Title & Clean Metadata */}
                       <div className="space-y-1">
-                        <h4 className="text-base font-serif font-semibold text-stone-900 tracking-tight leading-snug">
+                        <h4 className="text-base font-sans font-semibold text-stone-900 dark:text-[#F0EBE3] tracking-tight leading-snug">
                           {alert.title}
                         </h4>
 
                         {(alert.location_label || alert.child_name) && (
-                          <div className="space-y-0.5 text-xs font-sans text-stone-600">
+                          <div className="space-y-0.5 text-xs font-sans text-stone-600 dark:text-[#B8B0A5]">
                             {alert.location_label && (
                               <div>
-                                <span className="text-stone-400">Location:</span>{' '}
-                                <span className="text-stone-700 font-medium">{alert.location_label}</span>
+                                <span className="text-stone-400 dark:text-[#7A7570]">Location:</span>{' '}
+                                <span className="text-stone-700 dark:text-[#F0EBE3] font-medium">{alert.location_label}</span>
                               </div>
                             )}
                             {alert.child_name && (
                               <div>
-                                <span className="text-stone-400">Child:</span>{' '}
-                                <span className="text-stone-700 font-medium">{alert.child_name}</span>
+                                <span className="text-stone-400 dark:text-[#7A7570]">Child:</span>{' '}
+                                <span className="text-stone-700 dark:text-[#F0EBE3] font-medium">{alert.child_name}</span>
                               </div>
                             )}
                           </div>
@@ -7173,33 +7124,33 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                       {/* Request Message Quote */}
                       {alert.message && (
-                        <blockquote className="border-l-2 border-stone-300 pl-3 py-1 text-xs text-stone-700 italic font-sans leading-relaxed">
+                        <blockquote className="border-l-2 border-stone-300 dark:border-[#3A3835] pl-3 py-1 text-xs text-stone-700 dark:text-[#B8B0A5] italic font-sans leading-relaxed">
                           “{alert.message}”
                         </blockquote>
                       )}
 
                       {/* Response Progress & History */}
-                      <div className="pt-3 border-t border-stone-100 space-y-3" data-component-version="volunteer-alert-response-progress-v2">
-                        <div className="text-xs font-semibold text-stone-700 font-sans">Response progress</div>
+                      <div className="pt-3 border-t border-stone-100 dark:border-[#302E29] space-y-3" data-component-version="volunteer-alert-response-progress-v2">
+                        <div className="text-xs font-semibold text-stone-700 dark:text-[#B8B0A5] font-sans">Response progress</div>
 
                         {/* Clean Vertical Timeline */}
                         <div className="space-y-0">
                           {/* Step 1: Request sent */}
                           <div className="flex gap-2.5">
                             <div className="flex flex-col items-center shrink-0">
-                              <div className="w-2 h-2 rounded-full mt-1 bg-emerald-600" />
-                              <div className="w-px flex-1 bg-stone-200 mt-1" />
+                              <div className="w-2 h-2 rounded-full mt-1 bg-stone-500 dark:bg-[#7A7570]" />
+                              <div className="w-px flex-1 bg-stone-200 dark:bg-[#3A3835] mt-1" />
                             </div>
                             <div className="text-xs min-w-0 pb-3">
                               <div className="flex items-baseline gap-2">
-                                <span className="font-medium text-stone-800">Request sent</span>
+                                <span className="font-medium text-stone-800 dark:text-[#F0EBE3]">Request sent</span>
                                 {(alert.created_at || alert.createdAt) && (
-                                  <span className="text-[10px] text-stone-400 font-sans">
+                                  <span className="text-[10px] text-stone-400 dark:text-[#7A7570] font-sans">
                                     {formatTime(alert.created_at || alert.createdAt)}
                                   </span>
                                 )}
                               </div>
-                              <span className="text-[11px] text-stone-500 block">Sent to the care team</span>
+                              <span className="text-[11px] text-stone-500 dark:text-[#B8B0A5] block">Sent to the care team</span>
                             </div>
                           </div>
 
@@ -7208,33 +7159,33 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                             <div className="flex flex-col items-center shrink-0">
                               <div className={`w-2 h-2 rounded-full mt-1 ${
                                 isResolved
-                                  ? 'bg-emerald-600'
+                                  ? 'bg-stone-500 dark:bg-[#7A7570]'
                                   : isUnderway
-                                  ? 'bg-amber-500'
-                                  : 'bg-stone-300'
+                                  ? 'bg-amber-500 dark:bg-[#D4AF37]'
+                                  : 'bg-stone-300 dark:bg-[#3A3835]'
                               }`} />
-                              <div className="w-px flex-1 bg-stone-200 mt-1" />
+                              <div className="w-px flex-1 bg-stone-200 dark:bg-[#3A3835] mt-1" />
                             </div>
                             <div className="text-xs min-w-0 pb-3">
                               <div className="flex items-baseline gap-2">
                                 <span className={`font-medium ${
-                                  isResolved || isUnderway ? 'text-stone-800' : 'text-stone-400'
+                                  isResolved || isUnderway ? 'text-stone-800 dark:text-[#F0EBE3]' : 'text-stone-400 dark:text-[#7A7570]'
                                 }`}>
                                   {isResolved ? 'Care team responded' : isUnderway ? 'Response underway' : 'Response pending'}
                                 </span>
                                 {alert.acknowledged_at && (
-                                  <span className="text-[10px] text-stone-400 font-sans">
+                                  <span className="text-[10px] text-stone-400 dark:text-[#7A7570] font-sans">
                                     {formatTime(alert.acknowledged_at)}
                                   </span>
                                 )}
                               </div>
                               {alert.status === 'open' && (
-                                <span className="text-[11px] text-stone-400 block">
+                                <span className="text-[11px] text-stone-400 dark:text-[#7A7570] block">
                                   Waiting for care team to acknowledge
                                 </span>
                               )}
                               {(isUnderway || isResolved) && (
-                                <span className="text-[11px] text-stone-500 block">
+                                <span className="text-[11px] text-stone-500 dark:text-[#B8B0A5] block">
                                   {alert.acknowledged_by_name ? `${alert.acknowledged_by_name} acknowledged` : 'Admin responded'}
                                 </span>
                               )}
@@ -7245,23 +7196,23 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           <div className="flex gap-2.5">
                             <div className="flex flex-col items-center shrink-0">
                               <div className={`w-2 h-2 rounded-full mt-1 ${
-                                isResolved ? 'bg-emerald-600' : 'bg-stone-300'
+                                isResolved ? 'bg-stone-500 dark:bg-[#D4AF37]' : 'bg-stone-300 dark:bg-[#3A3835]'
                               }`} />
                             </div>
                             <div className="text-xs min-w-0">
                               <div className="flex items-baseline gap-2">
                                 <span className={`font-medium ${
-                                  isResolved ? 'text-stone-800' : 'text-stone-400'
+                                  isResolved ? 'text-stone-800 dark:text-[#F0EBE3]' : 'text-stone-400 dark:text-[#7A7570]'
                                 }`}>
                                   Resolved
                                 </span>
                                 {alert.resolved_at && (
-                                  <span className="text-[10px] text-stone-400 font-sans">
+                                  <span className="text-[10px] text-stone-400 dark:text-[#7A7570] font-sans">
                                     {formatTime(alert.resolved_at)}
                                   </span>
                                 )}
                               </div>
-                              <span className="text-[11px] text-stone-500 block">
+                              <span className="text-[11px] text-stone-500 dark:text-[#B8B0A5] block">
                                 {isResolved ? 'Request resolved' : 'Pending resolution'}
                               </span>
                             </div>
@@ -7276,17 +7227,17 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                             return null;
                           }
                           return (
-                            <div className="pt-2 border-t border-stone-100 text-xs font-sans text-stone-600 space-y-0.5">
-                              <span className="font-medium text-stone-700 block">Resolution</span>
+                            <div className="pt-2 border-t border-stone-100 dark:border-[#302E29] text-xs font-sans text-stone-600 dark:text-[#B8B0A5] space-y-0.5">
+                              <span className="font-medium text-stone-700 dark:text-[#F0EBE3] block">Resolution</span>
                               {isGeneric ? (
-                                <p className="text-stone-500">
+                                <p className="text-stone-500 dark:text-[#B8B0A5]">
                                   Resolved by {alert.resolved_by_name || 'the care team'}.
                                 </p>
                               ) : (
                                 <div className="space-y-0.5">
-                                  <p className="text-stone-700 italic">"{note}"</p>
+                                  <p className="text-stone-700 dark:text-[#F0EBE3] italic">"{note}"</p>
                                   {alert.resolved_by_name && (
-                                    <span className="text-[11px] text-stone-400 block not-italic">
+                                    <span className="text-[11px] text-stone-400 dark:text-[#7A7570] block not-italic">
                                       Resolved by {alert.resolved_by_name}
                                     </span>
                                   )}
@@ -7297,16 +7248,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         })()}
 
                         {/* Response History Disclosure & Child Details Action */}
-                        <div className="pt-2 border-t border-stone-100/80 space-y-2 font-sans">
+                        <div className="pt-2 border-t border-stone-100/80 dark:border-[#302E29] space-y-2 font-sans">
                           <VolunteerDetailedAlertProgress alertId={alert.id} />
 
                           <div className="pt-1">
                             <button
                               onClick={() => setActiveEmergencySummaryAlertId(alert.id)}
-                              className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-700 hover:text-stone-900 transition-colors cursor-pointer py-1 font-sans"
+                              className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-700 dark:text-[#B8B0A5] hover:text-stone-900 dark:hover:text-[#F0EBE3] transition-colors cursor-pointer py-1 font-sans"
                             >
                               <span>Child details</span>
-                              <span className="text-stone-400 text-sm leading-none" aria-hidden="true">→</span>
+                              <span className="text-stone-400 dark:text-[#7A7570] text-sm leading-none" aria-hidden="true">→</span>
                             </button>
                           </div>
                         </div>
@@ -7350,37 +7301,41 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       )}
 
       {cleanRoute === '/volunteer/readiness' && (
-        <DeviceReadinessView 
-          userRole="volunteer"
-          volunteerProfile={volunteerProfile}
-        />
+        <div className="w-full px-4 sm:px-5 pt-5 pb-24">
+          <DeviceReadinessView
+            userRole="volunteer"
+            volunteerProfile={volunteerProfile}
+          />
+        </div>
       )}
 
       {cleanRoute === '/volunteer/profile' && (
         /* ==================== 5. VOLUNTEER PROFILE VIEW ==================== */
-        <VolunteerProfileView
-          onSignOut={onSignOut}
-          showSuccess={showSuccess}
-          showError={showError}
-          showWarning={showWarning}
-          isOffline={isOffline}
-          hasParentProfile={hasParentProfile}
-          onSwitchExperience={onSwitchExperience}
-          isSwitchingExperience={isSwitchingExperience}
-        />
+        <div className="w-full px-4 sm:px-5">
+          <VolunteerProfileView
+            onSignOut={onSignOut}
+            showSuccess={showSuccess}
+            showError={showError}
+            showWarning={showWarning}
+            isOffline={isOffline}
+            hasParentProfile={hasParentProfile}
+            onSwitchExperience={onSwitchExperience}
+            isSwitchingExperience={isSwitchingExperience}
+          />
+        </div>
       )}
 
       {cleanRoute === '/volunteer/team-alerts' && (
         /* ==================== 6. VOLUNTEER TEAM SAFETY ALERTS VIEW ==================== */
-        <div className="min-h-screen bg-[#FAF9F6] text-zinc-900 pb-24" data-component-version="volunteer-team-alerts-v2-calm">
+        <div className="w-full px-4 sm:px-5 text-zinc-900 dark:text-[#F0EBE3] pt-6 sm:pt-8 pb-24 flex-1" data-component-version="volunteer-team-alerts-v2-calm">
           {/* Header Banner */}
-          <div className="bg-white border-b border-zinc-200/80 px-4 py-4 sm:px-6">
-            <div className="max-w-2xl mx-auto flex items-center justify-between gap-4">
+          <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-2xl p-4 sm:p-5">
+            <div className="w-full flex items-center justify-between gap-4">
               <div>
-                <h1 className="font-sans text-lg font-semibold tracking-tight text-zinc-900">
+                <h1 className="font-sans text-lg font-semibold tracking-tight text-zinc-900 dark:text-[#F0EBE3]">
                   Your safety alerts
                 </h1>
-                <p className="text-xs font-sans text-zinc-500 font-medium mt-0.5">
+                <p className="text-xs font-sans text-zinc-500 dark:text-[#B8B0A5] font-medium mt-0.5">
                   {volunteerProfile?.assignedArea || 'General Area'} · {volunteerProfile?.assignedTeam || 'General Volunteer'}
                 </p>
               </div>
@@ -7389,7 +7344,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 <button
                   type="button"
                   onClick={() => handleOpenSafetyAlertModal()}
-                  className="bg-[#A47E1F] hover:bg-[#8e6c17] text-white text-xs font-sans font-medium px-3 py-1.5 rounded-lg transition-all cursor-pointer shadow-2xs flex items-center space-x-1.5 active:scale-[0.99]"
+                  className="bg-[#A47E1F] hover:bg-[#8e6c17] dark:bg-[#C59B27] dark:hover:bg-[#B58E33] text-white dark:text-[#1D1D1A] text-xs font-sans font-medium px-3 py-1.5 rounded-lg transition-all cursor-pointer shadow-2xs flex items-center space-x-1.5 active:scale-[0.99]"
                 >
                   <AlertTriangle className="w-3.5 h-3.5" />
                   <span>Report a concern</span>
@@ -7400,7 +7355,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   onClick={() => fetchTeamSafetyAlerts()}
                   disabled={loadingTeamAlerts}
                   title="Refresh alerts"
-                  className="p-1.5 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                  className="p-1.5 text-zinc-400 dark:text-[#B8B0A5] hover:text-zinc-700 dark:hover:text-[#F0EBE3] hover:bg-zinc-100 dark:hover:bg-[#262520] rounded-lg transition-colors cursor-pointer disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loadingTeamAlerts ? 'animate-spin' : ''}`} />
                 </button>
@@ -7408,16 +7363,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             </div>
           </div>
 
-          <div className="max-w-2xl mx-auto px-4 mt-4 space-y-4">
+          <div className="w-full mt-4 space-y-4">
             {/* Filter Tabs - Restrained Segmented Control */}
-            <div className="flex bg-zinc-200/60 p-1 rounded-lg">
+            <div className="flex bg-zinc-200/60 dark:bg-[#21211E] border border-transparent dark:border-[#302E29] p-1 rounded-lg">
               <button
                 type="button"
                 onClick={() => setTeamAlertsTab('team')}
                 className={`flex-1 py-1.5 text-xs font-sans font-medium rounded-md transition-all cursor-pointer ${
                   teamAlertsTab === 'team'
-                    ? 'bg-white text-zinc-900 shadow-2xs'
-                    : 'text-zinc-500 hover:text-zinc-800'
+                    ? 'bg-white text-zinc-900 shadow-2xs dark:bg-[#262520] dark:text-[#F0EBE3] dark:shadow-none border border-transparent dark:border-[#3A3835]/50'
+                    : 'text-zinc-500 hover:text-zinc-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] dark:hover:bg-[#2A2926]'
                 }`}
               >
                 For my team
@@ -7427,8 +7382,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 onClick={() => setTeamAlertsTab('all')}
                 className={`flex-1 py-1.5 text-xs font-sans font-medium rounded-md transition-all cursor-pointer ${
                   teamAlertsTab === 'all'
-                    ? 'bg-white text-zinc-900 shadow-2xs'
-                    : 'text-zinc-500 hover:text-zinc-800'
+                    ? 'bg-white text-zinc-900 shadow-2xs dark:bg-[#262520] dark:text-[#F0EBE3] dark:shadow-none border border-transparent dark:border-[#3A3835]/50'
+                    : 'text-zinc-500 hover:text-zinc-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] dark:hover:bg-[#2A2926]'
                 }`}
               >
                 All open
@@ -7438,8 +7393,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 onClick={() => setTeamAlertsTab('resolved')}
                 className={`flex-1 py-1.5 text-xs font-sans font-medium rounded-md transition-all cursor-pointer ${
                   teamAlertsTab === 'resolved'
-                    ? 'bg-white text-zinc-900 shadow-2xs'
-                    : 'text-zinc-500 hover:text-zinc-800'
+                    ? 'bg-white text-zinc-900 shadow-2xs dark:bg-[#262520] dark:text-[#F0EBE3] dark:shadow-none border border-transparent dark:border-[#3A3835]/50'
+                    : 'text-zinc-500 hover:text-zinc-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] dark:hover:bg-[#2A2926]'
                 }`}
               >
                 Resolved
@@ -7484,11 +7439,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 const isResolvedTab = teamAlertsTab === 'resolved';
                 return (
                   <div className="py-16 text-center space-y-1.5">
-                    <ShieldCheck className="w-6 h-6 text-zinc-400 mx-auto" />
-                    <h3 className="font-sans font-semibold text-sm text-zinc-900">
+                    <ShieldCheck className="w-6 h-6 text-zinc-400 dark:text-[#C59B27] mx-auto" />
+                    <h3 className="font-sans font-semibold text-sm text-zinc-900 dark:text-[#F0EBE3]">
                       {isResolvedTab ? 'No resolved concerns' : 'No open concerns'}
                     </h3>
-                    <p className="font-sans text-xs text-zinc-500 max-w-xs mx-auto">
+                    <p className="font-sans text-xs text-zinc-500 dark:text-[#B8B0A5] max-w-xs mx-auto">
                       {isResolvedTab 
                         ? 'No resolved concerns yet.' 
                         : 'There are no unresolved safety concerns for your team.'}
@@ -7511,73 +7466,73 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     return (
                       <div
                         key={alert.id}
-                        className={`bg-white border rounded-xl p-4 transition-all shadow-2xs space-y-3 ${
+                        className={`bg-white dark:bg-[#21211E] border rounded-xl p-4 transition-all shadow-2xs space-y-3 ${
                           alert.status === 'resolved'
-                            ? 'border-zinc-200/70 bg-zinc-50/40 opacity-90'
+                            ? 'border-zinc-200/70 dark:border-[#302E29] bg-zinc-50/40 dark:bg-[#1D1D1A] opacity-90'
                             : isUrgent
-                            ? 'border-rose-200 bg-rose-50/10 border-l-4 border-l-rose-500'
-                            : 'border-zinc-200/80'
+                            ? 'border-rose-200 dark:border-rose-900/60 bg-rose-50/10 dark:bg-rose-950/20 border-l-4 border-l-rose-500'
+                            : 'border-zinc-200/80 dark:border-[#302E29]'
                         }`}
                       >
                         {/* Header Row: Category, Status/Priority, and Time */}
                         <div className="flex items-start justify-between gap-2">
                           <div>
-                            <h3 className="font-sans font-semibold text-sm text-zinc-900">
+                            <h3 className="font-sans font-semibold text-sm text-zinc-900 dark:text-[#F0EBE3]">
                               {formatAlertCategory(alert.category)}
                             </h3>
-                            <p className="text-xs font-sans text-zinc-500 mt-0.5 flex items-center space-x-1.5 flex-wrap">
+                            <p className="text-xs font-sans text-zinc-500 dark:text-[#B8B0A5] mt-0.5 flex items-center space-x-1.5 flex-wrap">
                               {priorityInfo.label && (
                                 <span className={priorityInfo.colorClass}>{priorityInfo.label}</span>
                               )}
-                              {priorityInfo.label && <span>·</span>}
+                              {priorityInfo.label && <span className="text-zinc-400 dark:text-[#7A7570]">·</span>}
                               <span className={statusInfo.colorClass}>{statusInfo.label}</span>
                             </p>
                           </div>
 
-                          <span className="text-[11px] font-sans text-zinc-400 shrink-0 whitespace-nowrap">
+                          <span className="text-[11px] font-sans text-zinc-400 dark:text-[#7A7570] shrink-0 whitespace-nowrap">
                             {formatAlertTimestamp(alert.created_at)}
                           </span>
                         </div>
 
                         {/* Reporter & Location */}
-                        <div className="text-xs font-sans text-zinc-500 leading-tight space-y-0.5">
+                        <div className="text-xs font-sans text-zinc-500 dark:text-[#B8B0A5] leading-tight space-y-0.5">
                           <p>
-                            Reported by <span className="font-medium text-zinc-800">{alert.raised_by_name || 'Volunteer'}</span>
+                            Reported by <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">{alert.raised_by_name || 'Volunteer'}</span>
                           </p>
                           {alert.location_label && (
-                            <p className="text-zinc-600">{alert.location_label}</p>
+                            <p className="text-zinc-600 dark:text-[#B8B0A5]">{alert.location_label}</p>
                           )}
                         </div>
 
                         {/* Description - Plain text, no quotation card styling */}
                         {alert.message && (
-                          <p className="text-xs font-sans text-zinc-700 leading-relaxed">
+                          <p className="text-xs font-sans text-zinc-700 dark:text-[#B8B0A5] leading-relaxed">
                             {alert.message}
                           </p>
                         )}
 
                         {/* Child Context if relevant */}
                         {alert.child_name && (
-                          <p className="text-xs font-sans text-zinc-600">
-                            <span className="text-zinc-400">Regarding: </span>
-                            <span className="font-medium text-zinc-800">{alert.child_name}</span>
+                          <p className="text-xs font-sans text-zinc-600 dark:text-[#B8B0A5]">
+                            <span className="text-zinc-400 dark:text-[#7A7570]">Regarding: </span>
+                            <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">{alert.child_name}</span>
                           </p>
                         )}
 
                         {/* Parent Contact if relevant */}
                         {alert.parent_name && alert.status !== 'resolved' && (
-                          <div className="flex items-center justify-between text-xs font-sans text-zinc-600 pt-0.5">
+                          <div className="flex items-center justify-between text-xs font-sans text-zinc-600 dark:text-[#B8B0A5] pt-0.5">
                             <div>
-                              <span className="text-zinc-400">Parent: </span>
-                              <span className="font-medium text-zinc-800">{alert.parent_name}</span>
+                              <span className="text-zinc-400 dark:text-[#7A7570]">Parent: </span>
+                              <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">{alert.parent_name}</span>
                               {alert.parent_phone && (
-                                <span className="text-zinc-500 font-mono ml-1.5">{alert.parent_phone}</span>
+                                <span className="text-zinc-500 dark:text-[#7A7570] font-mono ml-1.5">{alert.parent_phone}</span>
                               )}
                             </div>
                             {alert.parent_phone && (
                               <a
                                 href={`tel:${alert.parent_phone}`}
-                                className="text-xs text-[#A47E1F] hover:text-[#8e6c17] font-medium transition-colors cursor-pointer"
+                                className="text-xs text-[#A47E1F] hover:text-[#8e6c17] dark:text-[#C59B27] dark:hover:text-[#D4AF37] font-medium transition-colors cursor-pointer"
                               >
                                 Call parent
                               </a>
@@ -7587,12 +7542,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                         {/* Resolution section for resolved alerts */}
                         {alert.status === 'resolved' && (
-                          <div className="pt-2 border-t border-zinc-100 space-y-1 text-xs font-sans">
-                            <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Resolution</p>
+                          <div className="pt-2 border-t border-zinc-100 dark:border-[#302E29] space-y-1 text-xs font-sans">
+                            <p className="text-[11px] font-semibold text-zinc-500 dark:text-[#7A7570] uppercase tracking-wider">Resolution</p>
                             {alert.resolution_note && (
-                              <p className="text-xs text-zinc-700 leading-relaxed">{alert.resolution_note}</p>
+                              <p className="text-xs text-zinc-700 dark:text-[#B8B0A5] leading-relaxed">{alert.resolution_note}</p>
                             )}
-                            <p className="text-[11px] text-zinc-400">
+                            <p className="text-[11px] text-zinc-400 dark:text-[#7A7570]">
                               {alert.resolved_by_name ? `Resolved by ${alert.resolved_by_name}` : 'Resolved'}
                               {alert.resolved_at ? ` · ${formatAlertTimestamp(alert.resolved_at)}` : ''}
                             </p>
@@ -7601,13 +7556,13 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                         {/* Actions for active alerts */}
                         {alert.status !== 'resolved' && (
-                          <div className="flex items-center gap-2 pt-2 border-t border-zinc-100 flex-wrap">
+                          <div className="flex items-center gap-2 pt-2 border-t border-zinc-100 dark:border-[#302E29] flex-wrap">
                             {!isAck ? (
                               <button
                                 type="button"
                                 onClick={() => handleAcknowledgeTeamAlert(alert.id)}
                                 disabled={teamActionInProgress !== null}
-                                className="text-xs font-sans font-medium bg-[#A47E1F] hover:bg-[#8e6c17] text-white px-3.5 py-1.5 rounded-lg transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-50 active:scale-[0.99] shadow-2xs"
+                                className="text-xs font-sans font-medium bg-[#A47E1F] hover:bg-[#8e6c17] dark:bg-[#C59B27] dark:hover:bg-[#B58E33] text-white dark:text-[#1D1D1A] px-3.5 py-1.5 rounded-lg transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-50 active:scale-[0.99] shadow-2xs"
                               >
                                 {teamActionInProgress === alert.id ? (
                                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -7621,7 +7576,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                                 type="button"
                                 onClick={() => { resumeAudioContext(); setResolvingTeamAlert(alert); }}
                                 disabled={teamActionInProgress !== null}
-                                className="text-xs font-sans font-medium bg-emerald-700 hover:bg-emerald-800 text-white px-3.5 py-1.5 rounded-lg transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-50 active:scale-[0.99] shadow-2xs"
+                                className="text-xs font-sans font-medium bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-800 dark:hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-lg transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-50 active:scale-[0.99] shadow-2xs"
                               >
                                 <Check className="w-3.5 h-3.5" />
                                 <span>Resolve concern</span>
@@ -7633,7 +7588,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                                 type="button"
                                 onClick={() => handleEscalateTeamAlert(alert.id)}
                                 disabled={teamActionInProgress !== null}
-                                className="text-xs font-sans font-medium text-zinc-600 hover:text-rose-700 hover:bg-rose-50/60 border border-zinc-200/80 px-3 py-1.5 rounded-lg transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                                className="text-xs font-sans font-medium text-zinc-600 dark:text-[#B8B0A5] hover:text-rose-700 dark:hover:text-rose-400 hover:bg-rose-50/60 dark:hover:bg-rose-950/30 border border-zinc-200/80 dark:border-[#302E29] px-3 py-1.5 rounded-lg transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
                               >
                                 {teamActionInProgress === `escalate-${alert.id}` ? (
                                   <RefreshCw className="w-3 h-3 animate-spin" />
@@ -7662,28 +7617,28 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             onClick={() => setResolvingTeamAlert(null)}
             className="fixed inset-0 bg-black/40 backdrop-blur-xs" 
           />
-          <div className="relative bg-white border border-zinc-200/80 rounded-2xl w-full max-w-md p-6 shadow-xl space-y-4 max-h-[90vh] flex flex-col z-10">
-            <div className="flex items-center justify-between pb-2 border-b border-zinc-100">
-              <h4 className="font-sans font-semibold text-base text-zinc-900 flex items-center gap-2">
-                <Check className="w-5 h-5 text-emerald-600" />
+          <div className="relative bg-white dark:bg-[#1D1D1A] border border-zinc-200/80 dark:border-[#302E29] rounded-2xl w-full max-w-md p-6 shadow-xl space-y-4 max-h-[90vh] flex flex-col z-10">
+            <div className="flex items-center justify-between pb-2 border-b border-zinc-100 dark:border-[#302E29]">
+              <h4 className="font-sans font-semibold text-base text-zinc-900 dark:text-[#F0EBE3] flex items-center gap-2">
+                <Check className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                 Resolve concern
               </h4>
             </div>
 
             <form onSubmit={handleResolveTeamAlertSubmit} className="space-y-4 text-xs font-sans">
-              <div className="space-y-1 bg-zinc-50 border border-zinc-200/60 p-3 rounded-xl text-zinc-600">
-                <p>Concern: <strong className="text-zinc-800">{formatAlertCategory(resolvingTeamAlert.category)}</strong></p>
-                {resolvingTeamAlert.location_label && <p>Location: <strong className="text-zinc-800">{resolvingTeamAlert.location_label}</strong></p>}
-                {resolvingTeamAlert.child_name && <p>Child: <strong className="text-zinc-800">{resolvingTeamAlert.child_name}</strong></p>}
+              <div className="space-y-1 bg-zinc-50 dark:bg-[#21211E] border border-zinc-200/60 dark:border-[#302E29] p-3 rounded-xl text-zinc-600 dark:text-[#B8B0A5]">
+                <p>Concern: <strong className="text-zinc-800 dark:text-[#F0EBE3]">{formatAlertCategory(resolvingTeamAlert.category)}</strong></p>
+                {resolvingTeamAlert.location_label && <p>Location: <strong className="text-zinc-800 dark:text-[#F0EBE3]">{resolvingTeamAlert.location_label}</strong></p>}
+                {resolvingTeamAlert.child_name && <p>Child: <strong className="text-zinc-800 dark:text-[#F0EBE3]">{resolvingTeamAlert.child_name}</strong></p>}
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-zinc-700 block">Resolution note</label>
+                <label className="text-xs font-semibold text-zinc-700 dark:text-[#F0EBE3] block">Resolution note</label>
                 <textarea
                   value={teamResolutionNote}
                   onChange={(e) => setTeamResolutionNote(e.target.value)}
                   placeholder="Describe what was done to resolve this concern (e.g. parent contacted and child settled)..."
-                  className="w-full bg-zinc-50 border border-zinc-200 hover:border-zinc-300 focus:border-[#A47E1F] focus:ring-1 focus:ring-[#A47E1F] rounded-xl p-3 text-xs outline-none min-h-[90px] resize-none transition-all placeholder:text-zinc-400 text-zinc-900"
+                  className="w-full bg-zinc-50 dark:bg-[#21211E] border border-zinc-200 dark:border-[#302E29] hover:border-zinc-300 dark:hover:border-[#3A3835] focus:border-[#A47E1F] dark:focus:border-[#C59B27] focus:ring-1 focus:ring-[#A47E1F] dark:focus:ring-[#C59B27] rounded-xl p-3 text-xs outline-none min-h-[90px] resize-none transition-all placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] text-zinc-900 dark:text-[#F0EBE3]"
                   required
                 />
               </div>
@@ -7692,14 +7647,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 <button
                   type="button"
                   onClick={() => setResolvingTeamAlert(null)}
-                  className="px-3.5 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer"
+                  className="px-3.5 py-2 text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] hover:bg-zinc-100 dark:hover:bg-[#262520] dark:hover:text-[#F0EBE3] rounded-lg transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={teamActionInProgress !== null}
-                  className="px-4 py-2 text-xs font-medium bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                  className="px-4 py-2 text-xs font-medium bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-800 dark:hover:bg-emerald-700 text-white rounded-lg transition-colors cursor-pointer disabled:opacity-50"
                 >
                   {teamActionInProgress === `resolve-${resolvingTeamAlert.id}` ? (
                     <span className="flex items-center gap-1.5">
@@ -7716,114 +7671,146 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         </div>
       )}
 
-      {/* Persistent Bottom Tab Bar (Mobile / Tablet) */}
+      </div>
+
+      {/* Floating Quick Action Button (FAB) - Fixed above bottom nav, attached to 500px app container */}
+      {cleanRoute === '/volunteer/event' && (
+        <div
+          className="fixed bottom-20 left-1/2 -translate-x-1/2 w-full max-w-[500px] z-30 pointer-events-none px-4 sm:px-5 flex justify-end"
+          data-component-version="volunteer-floating-quick-actions"
+        >
+          <div ref={quickActionsRef} className="flex flex-col items-end pointer-events-auto">
+            {/* Expanded Action Menu */}
+            <div
+              className={`flex flex-col items-end gap-2 mb-2.5 transition-all duration-200 ease-out origin-bottom-right ${
+                isQuickActionsOpen
+                  ? 'opacity-100 translate-y-0 scale-100 pointer-events-auto'
+                  : 'opacity-0 translate-y-2 scale-95 pointer-events-none'
+              }`}
+              role="menu"
+              aria-orientation="vertical"
+              aria-label="Quick action options"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setIsQuickActionsOpen(false);
+                  handleOpenSafetyAlertModal();
+                }}
+                className="flex items-center gap-2 py-2 px-3.5 bg-white/95 dark:bg-[#21211E]/95 backdrop-blur-md border border-rose-200/80 dark:border-rose-900/50 hover:bg-rose-50/70 dark:hover:bg-rose-950/40 text-rose-700 dark:text-rose-400 font-sans font-medium text-xs rounded-full shadow-md hover:shadow-lg transition-all cursor-pointer"
+                id="btn-fab-request-help"
+              >
+                <HelpCircle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+                <span>Request admin help</span>
+              </button>
+
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setIsQuickActionsOpen(false);
+                  setShowMyAlertsView(true);
+                }}
+                className="flex items-center gap-2 py-2 px-3.5 bg-white/95 dark:bg-[#21211E]/95 backdrop-blur-md border border-[#EAE8E1] dark:border-[#302E29] hover:bg-stone-50 dark:hover:bg-[#262520] text-stone-700 dark:text-[#F0EBE3] font-sans font-medium text-xs rounded-full shadow-md hover:shadow-lg transition-all cursor-pointer"
+                id="btn-fab-my-requests"
+              >
+                <Clock className="w-3.5 h-3.5 text-[#C59B27] shrink-0" />
+                <span>My requests</span>
+                {mySafetyAlerts.filter(a => a.status !== 'resolved').length > 0 && (
+                  <span className="px-1.5 py-0.5 text-[10px] font-sans font-semibold rounded-full bg-[#FAF6EB] text-[#C59B27] dark:bg-[#262520] dark:text-[#D4AF37] dark:border dark:border-[#302E29] leading-none">
+                    {mySafetyAlerts.filter(a => a.status !== 'resolved').length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Circular Floating Trigger */}
+            <button
+              type="button"
+              onClick={() => setIsQuickActionsOpen(prev => !prev)}
+              aria-label="Quick actions"
+              aria-expanded={isQuickActionsOpen}
+              aria-haspopup="menu"
+              className="w-12 h-12 rounded-full bg-white/95 dark:bg-[#21211E]/95 backdrop-blur-md border border-[#EAE8E1] dark:border-[#302E29] shadow-lg hover:shadow-xl hover:bg-stone-50 dark:hover:bg-[#262520] flex items-center justify-center cursor-pointer transition-all duration-200 active:scale-95"
+              id="btn-volunteer-fab"
+            >
+              <Plus className={`w-5 h-5 text-[#C59B27] transition-transform duration-200 ease-out ${isQuickActionsOpen ? 'rotate-45' : 'rotate-0'}`} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Persistent Bottom Navigation locked within the Volunteer app shell */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-20 bg-white/95 backdrop-blur-md border-t border-stone-200/80 shadow-xs lg:hidden"
-        data-component-version="volunteer-navigation-v3-safe-routing"
+        className="fixed bottom-0 left-0 right-0 z-40 max-w-[500px] mx-auto bg-white/95 dark:bg-[#1D1D1A]/95 backdrop-blur-md border-t border-[#EAE8E1] dark:border-[#302E29] shadow-lg"
+        data-component-version="volunteer-navigation-v4-persistent-app"
         aria-label="Volunteer navigation"
       >
-        <div className="max-w-md mx-auto w-full h-16 px-2 py-1 flex items-center justify-around">
-          <button
-            onClick={() => onNavigate('/volunteer/event')}
-            className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
-              cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup'
-                ? 'text-[#C59B27]'
-                : 'text-stone-400 hover:text-stone-600'
-            }`}
-          >
-            <Calendar className="h-5 w-5 stroke-[1.75]" />
-            <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
-              cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
-            }`}>
-              Events
-            </span>
-          </button>
-
-          <button
-            onClick={() => {
-              setCameraActive(true);
-              onNavigate('/volunteer/scan');
-            }}
-            className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
-              cleanRoute === '/volunteer/scan'
-                ? 'text-[#C59B27]'
-                : 'text-stone-400 hover:text-stone-600'
-            }`}
-          >
-            <QrCode className="h-5 w-5 stroke-[1.75]" />
-            <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
-              cleanRoute === '/volunteer/scan' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
-            }`}>
-              Scan
-            </span>
-          </button>
-
-          <button
-            onClick={() => onNavigate('/volunteer/children')}
-            className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
-              cleanRoute === '/volunteer/children'
-                ? 'text-[#C59B27]'
-                : 'text-stone-400 hover:text-stone-600'
-            }`}
-          >
-            <Users className="h-5 w-5 stroke-[1.75]" />
-            <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
-              cleanRoute === '/volunteer/children' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
-            }`}>
-              Children
-            </span>
-          </button>
-
-          <button
-            onClick={() => onNavigate('/volunteer/reports')}
-            className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
-              cleanRoute === '/volunteer/reports'
-                ? 'text-[#C59B27]'
-                : 'text-stone-400 hover:text-stone-600'
-            }`}
-          >
-            <BarChart3 className="h-5 w-5 stroke-[1.75]" />
-            <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
-              cleanRoute === '/volunteer/reports' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
-            }`}>
-              Summary
-            </span>
-          </button>
-
-          {volunteerProfile && (
-            <button
-              onClick={() => onNavigate('/volunteer/team-alerts')}
-              data-component-version="volunteer-dashboard-icon-route-v2"
-              className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
-                cleanRoute === '/volunteer/team-alerts'
-                  ? 'text-[#C59B27]'
-                  : 'text-stone-400 hover:text-stone-600'
-              }`}
-            >
-              <ShieldAlert className="h-5 w-5 stroke-[1.75]" />
-              <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
-                cleanRoute === '/volunteer/team-alerts' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
-              }`}>
-                Safety
-              </span>
-            </button>
-          )}
-
-          <button
-            onClick={() => onNavigate('/volunteer/profile')}
-            className={`flex flex-col items-center justify-center py-1 px-2 min-w-[48px] transition-colors cursor-pointer ${
-              cleanRoute === '/volunteer/profile'
-                ? 'text-[#C59B27]'
-                : 'text-stone-400 hover:text-stone-600'
-            }`}
-          >
-            <User className="h-5 w-5 stroke-[1.75]" />
-            <span className={`text-[10px] font-sans tracking-tight mt-1 leading-none ${
-              cleanRoute === '/volunteer/profile' ? 'font-semibold text-[#C59B27]' : 'font-medium text-stone-500'
-            }`}>
-              Profile
-            </span>
-          </button>
+        <div className="w-full h-16 px-2 flex items-center justify-around">
+          {[
+            {
+              label: 'Events',
+              icon: <Calendar className="w-5 h-5 stroke-[1.75]" />,
+              isActive: cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup',
+              onClick: () => onNavigate('/volunteer/event'),
+              id: 'tab-volunteer-events'
+            },
+            {
+              label: 'Scan',
+              icon: <QrCode className="w-5 h-5 stroke-[1.75]" />,
+              isActive: cleanRoute === '/volunteer/scan',
+              onClick: () => {
+                setCameraActive(true);
+                onNavigate('/volunteer/scan');
+              },
+              id: 'tab-volunteer-scan'
+            },
+            {
+              label: 'Children',
+              icon: <Users className="w-5 h-5 stroke-[1.75]" />,
+              isActive: cleanRoute === '/volunteer/children',
+              onClick: () => onNavigate('/volunteer/children'),
+              id: 'tab-volunteer-children'
+            },
+            {
+              label: 'Summary',
+              icon: <BarChart3 className="w-5 h-5 stroke-[1.75]" />,
+              isActive: cleanRoute === '/volunteer/reports' || cleanRoute === '/volunteer/summary',
+              onClick: () => onNavigate('/volunteer/reports'),
+              id: 'tab-volunteer-summary'
+            },
+            {
+              label: 'Safety',
+              icon: <ShieldAlert className="w-5 h-5 stroke-[1.75]" />,
+              isActive: cleanRoute === '/volunteer/team-alerts' || cleanRoute === '/volunteer/safety',
+              onClick: () => onNavigate('/volunteer/team-alerts'),
+              id: 'tab-volunteer-safety'
+            },
+          ].map((item) => {
+            return (
+              <button
+                key={item.label}
+                id={item.id}
+                type="button"
+                onClick={item.onClick}
+                className={`flex flex-col items-center justify-center flex-1 py-1.5 rounded-xl transition-all cursor-pointer focus:outline-none ${
+                  item.isActive
+                    ? 'text-[#B89047] dark:text-[#D4AF37] font-semibold'
+                    : 'text-stone-400 dark:text-[#B8B0A5] hover:text-stone-600 dark:hover:text-[#F0EBE3]'
+                }`}
+              >
+                <div
+                  className={`p-1 rounded-lg transition-transform ${
+                    item.isActive ? 'bg-[#FAF6EB] dark:bg-[#262520] scale-110 text-[#C59B27] dark:text-[#D4AF37]' : ''
+                  }`}
+                >
+                  {item.icon}
+                </div>
+                <span className="text-[11px] font-sans mt-0.5 tracking-tight">{item.label}</span>
+              </button>
+            );
+          })}
         </div>
       </nav>
 
@@ -8319,15 +8306,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             onClick={() => setShowEventDetailsModal(false)} 
             className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity" 
           />
-          <div className="relative bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl space-y-6 z-10 border border-[#EAE8E1] max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-[#F4F3EF]">
-              <h3 className="text-lg font-serif font-semibold text-[#18181B]">
+          <div className="relative bg-white dark:bg-[#1D1D1A] rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl space-y-6 z-10 border border-[#EAE8E1] dark:border-[#302E29] max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-[#F4F3EF] dark:border-[#302E29]">
+              <h3 className="text-lg font-sans font-semibold text-[#18181B] dark:text-[#F0EBE3]">
                 Event details
               </h3>
               <button
                 type="button"
                 onClick={() => setShowEventDetailsModal(false)}
-                className="p-1.5 hover:bg-zinc-100 rounded-xl text-zinc-400 hover:text-zinc-600 transition-all cursor-pointer"
+                className="p-1.5 hover:bg-zinc-100 dark:hover:bg-[#262520] rounded-xl text-zinc-400 hover:text-zinc-600 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] transition-all cursor-pointer"
                 aria-label="Close"
               >
                 <X className="w-5 h-5" />
@@ -8336,23 +8323,23 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
             <div className="space-y-5">
               <div className="space-y-1">
-                <h2 className="text-xl sm:text-2xl font-serif font-bold text-[#18181B] leading-tight">
+                <h2 className="text-xl sm:text-2xl font-serif font-bold text-[#18181B] dark:text-[#F0EBE3] leading-tight">
                   {eventDetails?.title || 'The General Assembly'}
                 </h2>
-                <p className="text-sm font-sans font-medium text-[#C59B27]">
+                <p className="text-sm font-sans font-medium text-[#C59B27] dark:text-[#D4AF37]">
                   {eventDetails?.section_name 
                     ? eventDetails.section_name.replace(' Ministry', '') 
                     : 'Children & Teens'}
                 </p>
               </div>
 
-              <div className="flex items-start space-x-3 text-zinc-700 font-sans text-sm">
+              <div className="flex items-start space-x-3 text-zinc-700 dark:text-[#B8B0A5] font-sans text-sm">
                 <Calendar className="w-4 h-4 text-[#C59B27] shrink-0 mt-0.5" />
                 <div className="space-y-0.5">
-                  <div className="font-medium text-[#18181B]">
+                  <div className="font-medium text-[#18181B] dark:text-[#F0EBE3]">
                     {formatEventDateRange(eventDetails?.starts_at, eventDetails?.ends_at)}
                   </div>
-                  <div className="text-xs text-zinc-500">
+                  <div className="text-xs text-zinc-500 dark:text-[#B8B0A5]">
                     {eventDetails?.daily_start_time && eventDetails?.daily_end_time 
                       ? `${eventDetails.daily_start_time} – ${eventDetails.daily_end_time}` 
                       : '9:00 AM – 7:00 PM'}
@@ -8360,19 +8347,19 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </div>
               </div>
 
-              <div className="flex items-start space-x-3 text-zinc-700 font-sans text-sm">
+              <div className="flex items-start space-x-3 text-zinc-700 dark:text-[#B8B0A5] font-sans text-sm">
                 <MapPin className="w-4 h-4 text-[#C59B27] shrink-0 mt-0.5" />
-                <div className="text-[#18181B] font-medium leading-relaxed">
+                <div className="text-[#18181B] dark:text-[#F0EBE3] font-medium leading-relaxed">
                   {eventDetails?.location || 'Koinonia Global Auditorium & Children Pavilion, Abuja'}
                 </div>
               </div>
 
-              <div className="text-xs text-zinc-500 font-sans pt-1">
-                Serving with <span className="text-zinc-800 font-medium">{teamName || 'General Team'}</span>
+              <div className="text-xs text-zinc-500 dark:text-[#B8B0A5] font-sans pt-1">
+                Serving with <span className="text-zinc-800 dark:text-[#F0EBE3] font-medium">{teamName || 'General Team'}</span>
               </div>
 
               {eventDetails?.description && (
-                <div className="pt-2 border-t border-[#F4F3EF] text-xs text-zinc-600 font-sans leading-relaxed">
+                <div className="pt-2 border-t border-[#F4F3EF] dark:border-[#302E29] text-xs text-zinc-600 dark:text-[#B8B0A5] font-sans leading-relaxed">
                   {eventDetails.description}
                 </div>
               )}
@@ -8382,7 +8369,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               <button
                 type="button"
                 onClick={() => setShowEventDetailsModal(false)}
-                className="w-full py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-sans font-medium text-xs rounded-xl transition-all cursor-pointer text-center"
+                className="w-full py-2.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-[#262520] dark:hover:bg-[#2A2926] border border-transparent dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] font-sans font-medium text-xs rounded-xl transition-all cursor-pointer text-center"
               >
                 Close
               </button>
