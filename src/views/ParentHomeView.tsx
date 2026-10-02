@@ -4,7 +4,7 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { Button } from '../components/common/Button';
 import { EventPassPreviewCard } from '../components/common/EventPassPreviewCard';
 import { BrandLogo } from '../components/common/BrandLogo';
-import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell, ArrowLeft, Check, AlertCircle, Menu, Fingerprint, MapPin, RefreshCw, CheckCircle2, Phone } from 'lucide-react';
+import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell, ArrowLeft, Check, AlertCircle, Menu, Fingerprint, MapPin, RefreshCw, CheckCircle2, Phone, Copy } from 'lucide-react';
 import { REAL_ASSETS } from '../config/assets';
 import { useNotification } from '../context/NotificationContext';
 import { ThemeSwitcher } from '../components/common/ThemeSwitcher';
@@ -1119,7 +1119,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 <div className="flex flex-col items-center space-y-1.5 pt-1">
                   <div className="bg-white dark:bg-[#262520] p-2 rounded-xl border border-[#E5D5AE] dark:border-[#3A3835] w-20 h-20 flex items-center justify-center shadow-inner">
                     <img
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(c.passReference || c.id)}`}
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(c.passReference || '')}`}
                       alt=""
                       className="w-full h-full object-cover"
                       referrerPolicy="no-referrer"
@@ -2423,6 +2423,15 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                     </div>
                   );
                 }
+                if (!effectivePassCode) {
+                  return (
+                    <div className="bg-[#FAF8F3] dark:bg-[#201F1B] border border-dashed border-[#E5D5AE] dark:border-[#3A3835] rounded-2xl w-40 h-40 flex flex-col items-center justify-center p-4 text-center">
+                      <Ticket className="w-8 h-8 text-[#C59B27] mb-2 opacity-50" />
+                      <span className="text-[10px] font-bold text-zinc-700 dark:text-zinc-300 block">Pass pending</span>
+                      <span className="text-[8px] text-[#8E8B82] dark:text-[#A19D95] mt-1">Pass code will appear once issued</span>
+                    </div>
+                  );
+                }
                 return (
                   <>
                     <div data-component-version="parent-pass-qr-v4-stitch" className="bg-white p-3 rounded-2xl border border-[#E5D5AE] shadow-inner w-40 h-40 flex items-center justify-center relative">
@@ -2431,7 +2440,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                       <div className="absolute bottom-1.5 left-1.5 w-2 h-2 border-b border-l border-[#C59B27]/40 pointer-events-none" />
                       <div className="absolute bottom-1.5 right-1.5 w-2 h-2 border-b border-r border-[#C59B27]/40 pointer-events-none" />
                       <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(effectivePassCode || selectedDetailChild.id)}`}
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(effectivePassCode)}`}
                         alt="QR Code"
                         className="w-full h-full object-cover"
                         referrerPolicy="no-referrer"
@@ -2443,6 +2452,38 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                         Unlocked for this session
                       </span>
                     )}
+
+                    {/* Human-readable Pass Code Section */}
+                    <div
+                      data-component-version="parent-pass-code-display"
+                      className="flex flex-col items-center mt-2.5 mb-0.5 px-3.5 py-2.5 rounded-xl bg-[#FAF8F3] dark:bg-[#201F1B] border border-[#E5D5AE]/60 dark:border-[#3A3835] max-w-[260px] w-full text-center"
+                    >
+                      <span className="text-[9px] font-sans font-semibold uppercase tracking-[0.18em] text-[#8E8B82] dark:text-[#B8B0A5]">
+                        PASS CODE
+                      </span>
+                      <div className="flex items-center justify-center gap-1.5 mt-0.5 mb-0.5">
+                        <span className="text-sm sm:text-base font-mono font-bold tracking-wider text-[#18181B] dark:text-[#F0EBE3] select-all whitespace-nowrap">
+                          {effectivePassCode}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (navigator?.clipboard?.writeText) {
+                              navigator.clipboard.writeText(effectivePassCode);
+                              showSuccess('Copied', 'Pass code copied to clipboard.');
+                            }
+                          }}
+                          className="p-1 text-[#8E8B82] hover:text-[#C59B27] dark:hover:text-[#E5D5AE] transition-colors cursor-pointer rounded hover:bg-black/5 dark:hover:bg-white/5"
+                          title="Copy pass code"
+                          aria-label="Copy pass code"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <span className="text-[10px] font-sans text-[#8E8B82] dark:text-[#A19D95] leading-tight">
+                        Type this code if the QR cannot be scanned
+                      </span>
+                    </div>
                   </>
                 );
               })()}
