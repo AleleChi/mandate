@@ -3,8 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { sanitizeParentReturnRoute } from '../src/views/SignInView';
 import { sanitizeVolunteerReturnRoute } from '../src/views/VolunteerSignInView';
-import { resolveNotificationRoute } from '../src/components/common/MobileNotificationCentre';
+import {
+  resolveNotificationRoute,
+  PROTECTED_VOLUNTEER_ROUTES,
+  isProtectedVolunteerRoute
+} from '../src/components/common/MobileNotificationCentre';
 import { ParentApiError } from '../src/services/api';
+import { safeStorage } from '../src/utils/storage';
 
 async function runTests() {
   console.log('=== AUTH / ROLE ISOLATION REGRESSION TEST SUITE ===\n');
@@ -82,25 +87,28 @@ async function runTests() {
   passed++;
 
   // ----------------------------------------------------
-  // 8. Volunteer returnTo accepts /volunteer/*
+  // 8. Volunteer returnTo accepts real operational /volunteer/* routes
   // ----------------------------------------------------
-  console.log('--- 8. Volunteer returnTo accepts /volunteer/* ---');
+  console.log('--- 8. Volunteer returnTo accepts real operational /volunteer/* routes ---');
   assert.strictEqual(sanitizeVolunteerReturnRoute('/volunteer/event'), '/volunteer/event');
   assert.strictEqual(sanitizeVolunteerReturnRoute('/volunteer/scan'), '/volunteer/scan');
-  assert.strictEqual(sanitizeVolunteerReturnRoute('/volunteer/duty'), '/volunteer/duty');
+  assert.strictEqual(sanitizeVolunteerReturnRoute('/volunteer/children'), '/volunteer/children');
+  assert.strictEqual(sanitizeVolunteerReturnRoute('/volunteer/team-alerts'), '/volunteer/team-alerts');
   assert.strictEqual(sanitizeVolunteerReturnRoute('/volunteer/profile'), '/volunteer/profile');
-  console.log('  [PASS] Volunteer returnTo allows valid /volunteer/* destinations');
+  console.log('  [PASS] Volunteer returnTo allows verified operational /volunteer/* destinations');
   passed++;
 
   // ----------------------------------------------------
-  // 9. Volunteer returnTo rejects /parent/*
+  // 9. Volunteer returnTo rejects /parent/*, /admin/*, and non-operational routes
   // ----------------------------------------------------
-  console.log('--- 9. Volunteer returnTo rejects /parent/* ---');
+  console.log('--- 9. Volunteer returnTo rejects /parent/*, /admin/*, and non-operational routes ---');
   assert.strictEqual(sanitizeVolunteerReturnRoute('/parent/home'), '/volunteer/event');
   assert.strictEqual(sanitizeVolunteerReturnRoute('/parent/passes'), '/volunteer/event');
   assert.strictEqual(sanitizeVolunteerReturnRoute('/parent/children'), '/volunteer/event');
   assert.strictEqual(sanitizeVolunteerReturnRoute('/admin/events'), '/volunteer/event');
-  console.log('  [PASS] Volunteer returnTo rejects /parent/* and /admin/* destinations');
+  assert.strictEqual(sanitizeVolunteerReturnRoute('/volunteer/duty'), '/volunteer/event');
+  assert.strictEqual(sanitizeVolunteerReturnRoute('/volunteer/safety'), '/volunteer/event');
+  console.log('  [PASS] Volunteer returnTo rejects /parent/*, /admin/*, and non-operational routes');
   passed++;
 
   // ----------------------------------------------------
@@ -157,7 +165,7 @@ async function runTests() {
     createdAt: new Date().toISOString(),
     isRead: false,
     childId: 'child-abc',
-    metadata: { targetRoute: '/volunteer/safety' }
+    metadata: { targetRoute: '/volunteer/team-alerts' }
   };
   const blockedParentRoute = resolveNotificationRoute(crossSurfaceNotif, 'parent');
   assert.ok(
@@ -214,7 +222,6 @@ async function runTests() {
     path.join(process.cwd(), 'src/views/ParentHomeView.tsx'),
     'utf-8'
   );
-  // Look for the Event card Continue button action
   assert.ok(
     !parentHomeViewContent.includes("onClick={() => onNavigate('/parent/passes')}"),
     'ParentHomeView must not route Event Continue directly to /parent/passes'
@@ -226,7 +233,6 @@ async function runTests() {
   // 17. Parent Event Continue uses existing registration/event workflow
   // ----------------------------------------------------
   console.log('--- 17. Parent Event Continue uses existing registration/event workflow ---');
-  // Verify that Event Continue handles child draft resume, start new child, or child list
   assert.ok(
     parentHomeViewContent.includes('onResumeChildDraft') && parentHomeViewContent.includes('onStartNewChild'),
     'ParentHomeView must connect Event Continue to registration/draft workflow'
@@ -242,7 +248,6 @@ async function runTests() {
     path.join(process.cwd(), 'src/views/VolunteerEventDashboardView.tsx'),
     'utf-8'
   );
-  // Header should not contain a Home icon button
   assert.ok(
     !volunteerDashboardContent.includes('aria-label="Home"'),
     'VolunteerEventDashboardView header must not have a Home icon button'
@@ -258,7 +263,6 @@ async function runTests() {
   // 19. Existing bottom Volunteer Events navigation remains available
   // ----------------------------------------------------
   console.log('--- 19. Existing bottom Volunteer Events navigation remains available ---');
-  // Check for the Events bottom nav item in Volunteer view
   assert.ok(
     volunteerDashboardContent.includes("id: 'tab-volunteer-events'") && volunteerDashboardContent.includes("label: 'Events'"),
     'Volunteer bottom navigation must retain Events navigation tab'
@@ -274,12 +278,10 @@ async function runTests() {
     path.join(process.cwd(), 'src/App.tsx'),
     'utf-8'
   );
-  // ProtectedRoute must require authenticated user and must NOT redirect to /volunteer/event
   assert.ok(
     !appContent.includes("activeExperience === 'volunteer' ? '/volunteer/event' : '/parent/sign-in'"),
     'ProtectedRoute must NOT redirect to /volunteer/event on mismatch'
   );
-  // VolunteerProtectedRoute must require authenticated user and must NOT redirect to /parent/home
   assert.ok(
     !appContent.includes("activeExperience === 'parent' ? '/parent/home' : '/volunteer/sign-in'"),
     'VolunteerProtectedRoute must NOT redirect to /parent/home on mismatch'
@@ -291,16 +293,7 @@ async function runTests() {
   // 21. Dual-role identity entering /parent/sign-in remains Parent
   // ----------------------------------------------------
   console.log('--- 21. Dual-role identity entering /parent/sign-in remains Parent ---');
-  // A dual role user entering parent portal should have activeExperience set to 'parent'
-  const dualRoleUser = {
-    id: 'dual-user-1',
-    role: 'parent',
-    email: 'dual@koinonia.test'
-  };
   const dualRoleParentAccess = { exists: true, profile: { id: 'p-1', user_id: 'dual-user-1' } };
-  const dualRoleVolAccess = { exists: true, profile: { id: 'v-1', user_id: 'dual-user-1', status: 'approved' } };
-
-  // Explicit parent portal entry:
   const parentPath = '/parent/home';
   const isParentPath = parentPath.includes('/parent');
   const resolvedExperienceParent = isParentPath && dualRoleParentAccess.exists ? 'parent' : 'volunteer';
@@ -312,12 +305,227 @@ async function runTests() {
   // 22. Dual-role identity entering /volunteer/sign-in remains Volunteer
   // ----------------------------------------------------
   console.log('--- 22. Dual-role identity entering /volunteer/sign-in remains Volunteer ---');
-  // Explicit volunteer portal entry:
+  const dualRoleVolAccess = { exists: true, profile: { id: 'v-1', user_id: 'dual-user-1', status: 'approved' } };
   const volunteerPath = '/volunteer/event';
   const isVolunteerPath = volunteerPath.includes('/volunteer');
   const resolvedExperienceVolunteer = isVolunteerPath && dualRoleVolAccess.exists ? 'volunteer' : 'parent';
   assert.strictEqual(resolvedExperienceVolunteer, 'volunteer', 'Dual-role user accessing volunteer portal must remain volunteer');
   console.log('  [PASS] Dual-role identity entering Volunteer portal remains Volunteer');
+  passed++;
+
+  // ====================================================
+  // VOLUNTEER NOTIFICATION ROUTING AUDIT TESTS (23 - 32)
+  // ====================================================
+
+  // ----------------------------------------------------
+  // 23. /volunteer/duty is NOT considered a valid authenticated notification target
+  // ----------------------------------------------------
+  console.log('--- 23. /volunteer/duty is NOT considered a valid notification target ---');
+  assert.strictEqual(isProtectedVolunteerRoute('/volunteer/duty'), false, '/volunteer/duty must not be a protected volunteer route');
+  const dutyPayloadNotif = {
+    id: 'vol-duty-1',
+    title: 'Duty Assignment',
+    message: 'Report to your duty station',
+    createdAt: new Date().toISOString(),
+    isRead: false,
+    metadata: { targetRoute: '/volunteer/duty' }
+  };
+  const dutyResolved = resolveNotificationRoute(dutyPayloadNotif, 'volunteer');
+  assert.strictEqual(dutyResolved, '/volunteer/event', '/volunteer/duty must fall back to /volunteer/event');
+  console.log('  [PASS] /volunteer/duty is rejected and falls back to /volunteer/event');
+  passed++;
+
+  // ----------------------------------------------------
+  // 24. Unsupported Volunteer notification route falls back to /volunteer/event
+  // ----------------------------------------------------
+  console.log('--- 24. Unsupported Volunteer notification route falls back to /volunteer/event ---');
+  const unsupportedNotifs = [
+    '/volunteer/safety',
+    '/volunteer/random-action',
+    '/volunteer/nonexistent',
+    '/volunteer/invalid/deep'
+  ];
+  for (const unsupp of unsupportedNotifs) {
+    const res = resolveNotificationRoute(
+      {
+        id: 'unsupp-test',
+        title: 'Notice',
+        message: 'Info',
+        createdAt: new Date().toISOString(),
+        isRead: false,
+        metadata: { targetRoute: unsupp }
+      },
+      'volunteer'
+    );
+    assert.strictEqual(
+      res,
+      '/volunteer/event',
+      `Unsupported route ${unsupp} must fall back to /volunteer/event`
+    );
+  }
+  console.log('  [PASS] All unsupported Volunteer notification routes safely fall back to /volunteer/event');
+  passed++;
+
+  // ----------------------------------------------------
+  // 25. Volunteer notification cannot navigate to public landing content
+  // ----------------------------------------------------
+  console.log('--- 25. Volunteer notification cannot navigate to public landing content ---');
+  const publicTargets = ['/', '/child-safety', '/terms', '/privacy', '/contact', '/volunteer/duty'];
+  for (const pubTarget of publicTargets) {
+    const res = resolveNotificationRoute(
+      {
+        id: 'pub-test',
+        title: 'Policy Update',
+        message: 'Important general update',
+        createdAt: new Date().toISOString(),
+        isRead: false,
+        metadata: { targetRoute: pubTarget }
+      },
+      'volunteer'
+    );
+    assert.ok(
+      isProtectedVolunteerRoute(res),
+      `Public target ${pubTarget} must never be navigated to; must resolve to protected route: ${res}`
+    );
+    assert.strictEqual(res, '/volunteer/event');
+  }
+  console.log('  [PASS] Volunteer notification cannot navigate to public landing content');
+  passed++;
+
+  // ----------------------------------------------------
+  // 26. Volunteer notification cannot navigate to Parent
+  // ----------------------------------------------------
+  console.log('--- 26. Volunteer notification cannot navigate to Parent ---');
+  const parentTargets = ['/parent/home', '/parent/children', '/parent/passes', '/parent/profile'];
+  for (const pt of parentTargets) {
+    const res = resolveNotificationRoute(
+      {
+        id: 'pt-test',
+        title: 'Parent Notice',
+        message: 'Parent message',
+        createdAt: new Date().toISOString(),
+        isRead: false,
+        metadata: { targetRoute: pt }
+      },
+      'volunteer'
+    );
+    assert.strictEqual(res, '/volunteer/event');
+  }
+  console.log('  [PASS] Volunteer notification strictly rejects Parent destinations');
+  passed++;
+
+  // ----------------------------------------------------
+  // 27. Volunteer notification cannot navigate to Admin
+  // ----------------------------------------------------
+  console.log('--- 27. Volunteer notification cannot navigate to Admin ---');
+  const adminTargets = ['/admin/dashboard', '/admin/wristbands', '/admin/settings'];
+  for (const at of adminTargets) {
+    const res = resolveNotificationRoute(
+      {
+        id: 'at-test',
+        title: 'Admin Notice',
+        message: 'Admin message',
+        createdAt: new Date().toISOString(),
+        isRead: false,
+        metadata: { targetRoute: at }
+      },
+      'volunteer'
+    );
+    assert.strictEqual(res, '/volunteer/event');
+  }
+  console.log('  [PASS] Volunteer notification strictly rejects Admin destinations');
+  passed++;
+
+  // ----------------------------------------------------
+  // 28. Volunteer notification preserves authenticated session
+  // ----------------------------------------------------
+  console.log('--- 28. Volunteer notification preserves authenticated session ---');
+  // Notification navigation never throws or triggers auth clearance
+  const badNotif = {
+    id: 'corrupt-1',
+    title: undefined as any,
+    message: null as any,
+    createdAt: 'bad-date',
+    isRead: false,
+    metadata: { targetRoute: 'javascript:void(0)' }
+  };
+  assert.doesNotThrow(() => {
+    const res = resolveNotificationRoute(badNotif, 'volunteer');
+    assert.strictEqual(res, '/volunteer/event');
+  });
+  console.log('  [PASS] Volunteer notification route resolver is resilient and preserves session');
+  passed++;
+
+  // ----------------------------------------------------
+  // 29. Volunteer notification preserves active experience = volunteer
+  // ----------------------------------------------------
+  console.log('--- 29. Volunteer notification preserves active experience = volunteer ---');
+  safeStorage.setItem('koinonia_active_experience', 'volunteer');
+  const currentExp = safeStorage.getItem('koinonia_active_experience');
+  assert.strictEqual(currentExp, 'volunteer', 'Active experience must remain volunteer');
+  console.log('  [PASS] Active experience = volunteer is preserved');
+  passed++;
+
+  // ----------------------------------------------------
+  // 30. Safety notification resolves to the ACTUAL existing protected Safety route
+  // ----------------------------------------------------
+  console.log('--- 30. Safety notification resolves to ACTUAL protected Safety route (/volunteer/team-alerts) ---');
+  const safetyNotif = {
+    id: 'vol-safety-1',
+    title: 'Urgent Safety Alert',
+    message: 'Medical incident reported in Children Room 2',
+    createdAt: new Date().toISOString(),
+    isRead: false
+  };
+  const safetyResolved = resolveNotificationRoute(safetyNotif, 'volunteer');
+  assert.strictEqual(
+    safetyResolved,
+    '/volunteer/team-alerts',
+    'Safety/concern notification must route to /volunteer/team-alerts'
+  );
+  console.log('  [PASS] Safety notification maps to /volunteer/team-alerts');
+  passed++;
+
+  // ----------------------------------------------------
+  // 31. Event/duty notification resolves to the ACTUAL existing protected Event route
+  // ----------------------------------------------------
+  console.log('--- 31. Event/duty notification resolves to ACTUAL protected Event route (/volunteer/event) ---');
+  const eventDutyNotif = {
+    id: 'vol-event-1',
+    title: 'Serving Assignment Updated',
+    message: 'Your duty location has been assigned to Main Auditorium Gate 3',
+    createdAt: new Date().toISOString(),
+    isRead: false
+  };
+  const eventDutyResolved = resolveNotificationRoute(eventDutyNotif, 'volunteer');
+  assert.strictEqual(
+    eventDutyResolved,
+    '/volunteer/event',
+    'Event/duty notification must route to /volunteer/event'
+  );
+  console.log('  [PASS] Event/duty notification maps to /volunteer/event');
+  passed++;
+
+  // ----------------------------------------------------
+  // 32. Every Volunteer route accepted by notification routing corresponds to a real protected Volunteer route in App.tsx
+  // ----------------------------------------------------
+  console.log('--- 32. Every Volunteer route in allowlist is verified in App.tsx ---');
+  for (const route of PROTECTED_VOLUNTEER_ROUTES) {
+    assert.ok(
+      appContent.includes(`case '${route}':`),
+      `Protected volunteer route ${route} must have a matching case in App.tsx`
+    );
+  }
+  // Verify that neither /volunteer/duty nor /volunteer/safety are cases in App.tsx
+  assert.ok(
+    !appContent.includes("case '/volunteer/duty':"),
+    '/volunteer/duty must not be a protected route in App.tsx'
+  );
+  assert.ok(
+    !appContent.includes("case '/volunteer/safety':"),
+    '/volunteer/safety must not be a protected route in App.tsx'
+  );
+  console.log('  [PASS] All PROTECTED_VOLUNTEER_ROUTES correspond 1:1 with App.tsx protected routes');
   passed++;
 
   console.log(`\nAll ${passed} tests passed successfully!`);

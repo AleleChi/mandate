@@ -13,6 +13,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { safeStorage } from '../../utils/storage';
 
 export interface NotificationItem {
   id: string;
@@ -118,13 +119,34 @@ function getNotificationIcon(title: string, message: string) {
   return <Bell className="w-4 h-4 text-[#9A7326] dark:text-[#C59B27] shrink-0" />;
 }
 
+export const PROTECTED_VOLUNTEER_ROUTES = [
+  '/volunteer/event',
+  '/volunteer/dashboard',
+  '/volunteer/scan',
+  '/volunteer/children',
+  '/volunteer/reports',
+  '/volunteer/profile',
+  '/volunteer/pickup',
+  '/volunteer/team-alerts',
+  '/volunteer/readiness',
+  '/volunteer/wristbands'
+] as const;
+
+export type ProtectedVolunteerRoute = (typeof PROTECTED_VOLUNTEER_ROUTES)[number];
+
+export function isProtectedVolunteerRoute(route: string): route is ProtectedVolunteerRoute {
+  if (!route || route.includes('://') || route.startsWith('//')) return false;
+  const [basePath] = route.split('?');
+  return (PROTECTED_VOLUNTEER_ROUTES as readonly string[]).includes(basePath);
+}
+
 export function resolveNotificationRoute(
   notif: NotificationItem,
   surfaceOrRole?: 'volunteer' | 'parent' | string
 ): string {
   const currentSurface = surfaceOrRole === 'volunteer' ? 'volunteer' : 'parent';
   const lower = `${notif.title || ''} ${notif.message || ''}`.toLowerCase();
-  const payloadRoute = (
+  const rawPayload = (
     notif.metadata?.targetRoute ||
     notif.metadata?.route ||
     (notif as any).targetRoute ||
@@ -136,30 +158,49 @@ export function resolveNotificationRoute(
   let targetRoute = '';
 
   if (currentSurface === 'volunteer') {
-    if (payloadRoute && payloadRoute.startsWith('/volunteer/')) {
-      targetRoute = payloadRoute;
-    } else if (lower.includes('safety') || lower.includes('incident') || lower.includes('urgent')) {
-      targetRoute = '/volunteer/safety';
-    } else if (lower.includes('location') || lower.includes('duty') || lower.includes('serving')) {
-      targetRoute = '/volunteer/duty';
+    // 1. If payload explicitly supplies a valid protected operational Volunteer route, use it
+    if (rawPayload && isProtectedVolunteerRoute(rawPayload)) {
+      targetRoute = rawPayload;
+    } else if (
+      lower.includes('safety') ||
+      lower.includes('incident') ||
+      lower.includes('concern') ||
+      lower.includes('alert')
+    ) {
+      // Safety/concern notifications map to the authenticated team-alerts operational screen
+      targetRoute = '/volunteer/team-alerts';
+    } else if (
+      lower.includes('duty') ||
+      lower.includes('assignment') ||
+      lower.includes('serving') ||
+      lower.includes('location')
+    ) {
+      // Event / duty / assignment-type notifications map to the authenticated event screen
+      targetRoute = '/volunteer/event';
+    } else if (lower.includes('child') || lower.includes('children') || lower.includes('application')) {
+      targetRoute = '/volunteer/children';
+    } else if (lower.includes('scan') || lower.includes('check-in') || lower.includes('checked in')) {
+      targetRoute = '/volunteer/scan';
+    } else if (lower.includes('summary') || lower.includes('metric') || lower.includes('reports')) {
+      targetRoute = '/volunteer/reports';
+    } else if (lower.includes('readiness') || lower.includes('device')) {
+      targetRoute = '/volunteer/readiness';
+    } else if (lower.includes('wristband')) {
+      targetRoute = '/volunteer/wristbands';
     } else {
+      // Event / general operational notifications
       targetRoute = '/volunteer/event';
     }
 
-    // Strictly isolate Volunteer surface: MUST ONLY route to /volunteer/*
-    if (
-      !targetRoute.startsWith('/volunteer/') ||
-      targetRoute.startsWith('/parent') ||
-      targetRoute.startsWith('/admin') ||
-      targetRoute.includes('://') ||
-      targetRoute.startsWith('//')
-    ) {
+    // Strict allowlist barrier: MUST be a verified protected operational Volunteer route from App.tsx
+    // Any unsupported route (e.g. /volunteer/duty, /volunteer/safety, external, parent, etc.) falls back safely
+    if (!isProtectedVolunteerRoute(targetRoute)) {
       targetRoute = '/volunteer/event';
     }
   } else {
     // Parent surface
-    if (payloadRoute && payloadRoute.startsWith('/parent/')) {
-      targetRoute = payloadRoute;
+    if (rawPayload && rawPayload.startsWith('/parent/') && !rawPayload.includes('://') && !rawPayload.startsWith('//')) {
+      targetRoute = rawPayload;
     } else if (notif.childId) {
       if (lower.includes('pass') || (notif.title || '').toLowerCase().includes('pass')) {
         targetRoute = `/parent/children/${notif.childId}/pass`;
@@ -284,6 +325,11 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
 
     if (targetRoute && onNavigate) {
       try {
+        if (currentSurface === 'volunteer') {
+          safeStorage.setItem('koinonia_active_experience', 'volunteer');
+        } else if (currentSurface === 'parent') {
+          safeStorage.setItem('koinonia_active_experience', 'parent');
+        }
         onClose();
         onNavigate(targetRoute);
       } catch (err) {

@@ -10,12 +10,27 @@ import { AuthScreenShell } from '../components/common/AuthScreenShell';
 import { isWebAuthnSupported, base64URLToBuffer } from '../utils/passkey';
 import { safeStorage } from '../utils/storage';
 
+const VALID_OPERATIONAL_VOLUNTEER_ROUTES = [
+  '/volunteer/event',
+  '/volunteer/dashboard',
+  '/volunteer/scan',
+  '/volunteer/children',
+  '/volunteer/reports',
+  '/volunteer/profile',
+  '/volunteer/pickup',
+  '/volunteer/team-alerts',
+  '/volunteer/readiness',
+  '/volunteer/wristbands',
+  '/volunteer/pending-review'
+];
+
 export function sanitizeVolunteerReturnRoute(route?: string | null): AppRoute {
   if (!route) return '/volunteer/event';
   try {
     const decoded = decodeURIComponent(route).trim();
+    const [basePath] = decoded.split('?');
     if (
-      decoded.startsWith('/volunteer/') &&
+      VALID_OPERATIONAL_VOLUNTEER_ROUTES.includes(basePath) &&
       !decoded.startsWith('/parent') &&
       !decoded.startsWith('/admin') &&
       !decoded.includes('://') &&
