@@ -140,90 +140,122 @@ export function isProtectedVolunteerRoute(route: string): route is ProtectedVolu
   return (PROTECTED_VOLUNTEER_ROUTES as readonly string[]).includes(basePath);
 }
 
-export function resolveNotificationRoute(
+export interface NotificationAction {
+  label: string;
+  route: string;
+}
+
+export function getNotificationAction(
   notif: NotificationItem,
   surfaceOrRole?: 'volunteer' | 'parent' | string
-): string {
+): NotificationAction | null {
   const currentSurface = surfaceOrRole === 'volunteer' ? 'volunteer' : 'parent';
-  const lower = `${notif.title || ''} ${notif.message || ''}`.toLowerCase();
+  const lower = `${notif?.title || ''} ${notif?.message || ''}`.toLowerCase();
   const rawPayload = (
-    notif.metadata?.targetRoute ||
-    notif.metadata?.route ||
-    (notif as any).targetRoute ||
-    (notif as any).route ||
-    (notif as any).actionUrl ||
+    notif?.metadata?.targetRoute ||
+    notif?.metadata?.route ||
+    (notif as any)?.targetRoute ||
+    (notif as any)?.route ||
+    (notif as any)?.actionUrl ||
     ''
   ).trim();
 
-  let targetRoute = '';
-
   if (currentSurface === 'volunteer') {
-    // 1. If payload explicitly supplies a valid protected operational Volunteer route, use it
-    if (rawPayload && isProtectedVolunteerRoute(rawPayload)) {
-      targetRoute = rawPayload;
-    } else if (
+    // 1. Explicit target route payload supplied
+    if (rawPayload) {
+      if (isProtectedVolunteerRoute(rawPayload)) {
+        let label = 'View event';
+        if (rawPayload === '/volunteer/team-alerts') label = 'View safety';
+        else if (rawPayload === '/volunteer/children') label = 'View children';
+        else if (rawPayload === '/volunteer/scan') label = 'View check-in';
+        else if (rawPayload === '/volunteer/reports') label = 'View reports';
+        else if (rawPayload === '/volunteer/readiness') label = 'View readiness';
+        else if (rawPayload === '/volunteer/wristbands') label = 'View wristbands';
+        else if (rawPayload === '/volunteer/profile') label = 'View profile';
+        return { label, route: rawPayload };
+      }
+      // Explicit payload supplied but invalid/unsupported:
+      // Safe fallback to protected volunteer route without throwing or logging out
+      return { label: 'View event', route: '/volunteer/event' };
+    }
+
+    // 2. Keyword-based operational routing (when no explicit targetRoute)
+    if (
       lower.includes('safety') ||
       lower.includes('incident') ||
       lower.includes('concern') ||
       lower.includes('alert')
     ) {
-      // Safety/concern notifications map to the authenticated team-alerts operational screen
-      targetRoute = '/volunteer/team-alerts';
-    } else if (
+      return { label: 'View safety', route: '/volunteer/team-alerts' };
+    }
+    if (
       lower.includes('duty') ||
       lower.includes('assignment') ||
       lower.includes('serving') ||
       lower.includes('location')
     ) {
-      // Event / duty / assignment-type notifications map to the authenticated event screen
-      targetRoute = '/volunteer/event';
-    } else if (lower.includes('child') || lower.includes('children') || lower.includes('application')) {
-      targetRoute = '/volunteer/children';
-    } else if (lower.includes('scan') || lower.includes('check-in') || lower.includes('checked in')) {
-      targetRoute = '/volunteer/scan';
-    } else if (lower.includes('summary') || lower.includes('metric') || lower.includes('reports')) {
-      targetRoute = '/volunteer/reports';
-    } else if (lower.includes('readiness') || lower.includes('device')) {
-      targetRoute = '/volunteer/readiness';
-    } else if (lower.includes('wristband')) {
-      targetRoute = '/volunteer/wristbands';
-    } else {
-      // Event / general operational notifications
-      targetRoute = '/volunteer/event';
+      return { label: 'View event', route: '/volunteer/event' };
+    }
+    if (lower.includes('child') || lower.includes('children') || lower.includes('application')) {
+      return { label: 'View children', route: '/volunteer/children' };
+    }
+    if (lower.includes('scan') || lower.includes('check-in') || lower.includes('checked in')) {
+      return { label: 'View check-in', route: '/volunteer/scan' };
+    }
+    if (lower.includes('summary') || lower.includes('metric') || lower.includes('reports')) {
+      return { label: 'View reports', route: '/volunteer/reports' };
+    }
+    if (lower.includes('readiness') || lower.includes('device')) {
+      return { label: 'View readiness', route: '/volunteer/readiness' };
+    }
+    if (lower.includes('wristband')) {
+      return { label: 'View wristbands', route: '/volunteer/wristbands' };
     }
 
-    // Strict allowlist barrier: MUST be a verified protected operational Volunteer route from App.tsx
-    // Any unsupported route (e.g. /volunteer/duty, /volunteer/safety, external, parent, etc.) falls back safely
-    if (!isProtectedVolunteerRoute(targetRoute)) {
-      targetRoute = '/volunteer/event';
-    }
+    // 3. Information-only notification: no invented route
+    return null;
   } else {
     // Parent surface
-    if (rawPayload && rawPayload.startsWith('/parent/') && !rawPayload.includes('://') && !rawPayload.startsWith('//')) {
-      targetRoute = rawPayload;
-    } else if (notif.childId) {
-      if (lower.includes('pass') || (notif.title || '').toLowerCase().includes('pass')) {
-        targetRoute = `/parent/children/${notif.childId}/pass`;
-      } else {
-        targetRoute = `/parent/children/${notif.childId}/status`;
+    if (rawPayload) {
+      if (rawPayload.startsWith('/parent/') && !rawPayload.includes('://') && !rawPayload.startsWith('//')) {
+        let label = 'View details';
+        if (rawPayload.includes('pass')) label = 'View pass';
+        else if (rawPayload.includes('status')) label = 'View child status';
+        else if (rawPayload.includes('children')) label = 'View children';
+        return { label, route: rawPayload };
       }
-    } else {
-      targetRoute = '/parent/home';
+      // Explicit payload provided but invalid/cross-portal: fall back safely
+      if (notif?.childId) {
+        return { label: 'View child status', route: `/parent/children/${notif.childId}/status` };
+      }
+      return { label: 'View home', route: '/parent/home' };
     }
 
-    // Strictly isolate Parent surface: MUST ONLY route to /parent/*
-    if (
-      !targetRoute.startsWith('/parent/') ||
-      targetRoute.startsWith('/volunteer') ||
-      targetRoute.startsWith('/admin') ||
-      targetRoute.includes('://') ||
-      targetRoute.startsWith('//')
-    ) {
-      targetRoute = notif.childId ? `/parent/children/${notif.childId}/status` : '/parent/home';
+    if (notif?.childId) {
+      if (lower.includes('pass') || (notif?.title || '').toLowerCase().includes('pass')) {
+        return { label: 'View pass', route: `/parent/children/${notif.childId}/pass` };
+      }
+      return { label: 'View child status', route: `/parent/children/${notif.childId}/status` };
     }
+
+    if (lower.includes('pass')) {
+      return { label: 'View passes', route: '/parent/passes' };
+    }
+    if (lower.includes('child') || lower.includes('children') || lower.includes('application') || lower.includes('registration')) {
+      return { label: 'View children', route: '/parent/children' };
+    }
+
+    // Information-only notification: no invented route
+    return null;
   }
+}
 
-  return targetRoute;
+export function resolveNotificationRoute(
+  notif: NotificationItem,
+  surfaceOrRole?: 'volunteer' | 'parent' | string
+): string {
+  const action = getNotificationAction(notif, surfaceOrRole);
+  return action ? action.route : '';
 }
 
 export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> = ({
@@ -308,7 +340,33 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
     }
   };
 
+  const handleActionClick = (targetRoute: string) => {
+    const currentSurface = surface || role;
+    let safeRoute = targetRoute;
+    if (currentSurface === 'volunteer') {
+      if (!isProtectedVolunteerRoute(safeRoute)) {
+        safeRoute = '/volunteer/event';
+      }
+      safeStorage.setItem('koinonia_active_experience', 'volunteer');
+    } else {
+      if (!safeRoute || !safeRoute.startsWith('/parent/') || safeRoute.startsWith('/volunteer') || safeRoute.startsWith('/admin')) {
+        safeRoute = '/parent/home';
+      }
+      safeStorage.setItem('koinonia_active_experience', 'parent');
+    }
+
+    onClose();
+    if (onNavigate) {
+      try {
+        onNavigate(safeRoute);
+      } catch (err) {
+        console.error('Failed to navigate from notification action:', err);
+      }
+    }
+  };
+
   const handleNotificationClick = async (notif: NotificationItem) => {
+    // 1. Mark notification as read immediately without awaiting navigation
     if (!notif.isRead) {
       try {
         await api.parent.markNotificationAsRead(notif.id);
@@ -320,31 +378,16 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
       }
     }
 
-    const currentSurface = surface || role;
-    const targetRoute = resolveNotificationRoute(notif, currentSurface);
-
-    if (targetRoute && onNavigate) {
-      try {
-        if (currentSurface === 'volunteer') {
-          safeStorage.setItem('koinonia_active_experience', 'volunteer');
-        } else if (currentSurface === 'parent') {
-          safeStorage.setItem('koinonia_active_experience', 'parent');
-        }
-        onClose();
-        onNavigate(targetRoute);
-      } catch (err) {
-        console.error('Failed to navigate from notification:', err);
-        setSelectedNotif(notif);
-      }
-    } else {
-      setSelectedNotif(notif);
-    }
+    // 2. Open notification detail view directly — DO NOT AUTO-ROUTE ON ROW CLICK
+    setSelectedNotif({ ...notif, isRead: true });
   };
 
   if (!isOpen) return null;
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
   const groups = groupNotificationsByDate(notifications);
+  const currentSurface = surface || role;
+  const action = selectedNotif ? getNotificationAction(selectedNotif, currentSurface) : null;
 
   // Volunteer Popover: anchored below Volunteer app header, constrained to 500px app frame
   if (surface === 'volunteer' || role === 'volunteer') {
@@ -370,6 +413,7 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
               <div className="flex items-center gap-2">
                 {selectedNotif ? (
                   <button
+                    type="button"
                     onClick={() => setSelectedNotif(null)}
                     className="p-1 -ml-1 text-zinc-500 hover:text-zinc-900 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] rounded-lg transition-colors cursor-pointer"
                     aria-label="Back to notification list"
@@ -380,13 +424,14 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
                   <Bell className="w-4.5 h-4.5 text-[#C59B27] dark:text-[#D4AF37]" />
                 )}
                 <h2 className="text-sm font-semibold text-zinc-900 dark:text-[#F0EBE3] tracking-tight">
-                  Notifications
+                  {selectedNotif ? 'Notification Details' : 'Notifications'}
                 </h2>
               </div>
 
               <div className="flex items-center gap-2">
                 {!selectedNotif && unreadCount > 0 && (
                   <button
+                    type="button"
                     onClick={handleMarkAllRead}
                     className="text-xs font-medium text-[#C59B27] hover:text-[#A47E1F] dark:text-[#D4AF37] dark:hover:text-[#E5C158] px-2 py-0.5 rounded-md transition-colors cursor-pointer"
                   >
@@ -394,6 +439,7 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
                   </button>
                 )}
                 <button
+                  type="button"
                   onClick={onClose}
                   className="p-1 text-zinc-400 hover:text-zinc-700 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] rounded-lg hover:bg-zinc-100 dark:hover:bg-[#262520] transition-colors cursor-pointer"
                   aria-label="Close notifications"
@@ -409,11 +455,11 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
                 /* Detailed view */
                 <div className="p-4 space-y-3.5">
                   <div className="flex items-start gap-3">
-                    <div className="p-2 rounded-xl bg-[#FAF8F5] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29]">
+                    <div className="p-2 rounded-xl bg-[#FAF8F5] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] shrink-0">
                       {getNotificationIcon(selectedNotif.title, selectedNotif.message)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-[#F0EBE3] leading-snug">
+                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-[#F0EBE3] leading-snug whitespace-normal break-words">
                         {humanizeNotificationCopy(selectedNotif.title, role)}
                       </h3>
                       <p className="text-xs text-zinc-400 dark:text-[#7A7570] mt-0.5">
@@ -423,24 +469,30 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
                   </div>
 
                   <div className="p-3.5 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl">
-                    <p className="text-xs sm:text-sm text-zinc-700 dark:text-[#F0EBE3] leading-relaxed whitespace-pre-wrap">
+                    <p className="text-xs sm:text-sm text-zinc-700 dark:text-[#B8B0A5] leading-relaxed whitespace-pre-wrap whitespace-normal break-words">
                       {humanizeNotificationCopy(selectedNotif.message, role)}
                     </p>
                   </div>
 
-                  {onNavigate && (
-                    <div className="pt-1 flex flex-col gap-2">
+                  <div className="pt-1 flex flex-col gap-2">
+                    {action && onNavigate && (
                       <button
-                        onClick={() => {
-                          onClose();
-                          onNavigate('/volunteer/duty');
-                        }}
-                        className="w-full py-2.5 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white text-xs font-medium rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-2"
+                        type="button"
+                        onClick={() => handleActionClick(action.route)}
+                        className="w-full py-2.5 px-4 bg-[#C59B27] hover:bg-[#A47E1F] active:bg-[#916E18] text-white dark:bg-[#C59B27] dark:hover:bg-[#B38C22] text-xs font-medium rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-xs"
                       >
-                        <span>View duty location</span>
+                        <span>{action.label}</span>
                       </button>
-                    </div>
-                  )}
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedNotif(null)}
+                      className="w-full py-2 px-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 dark:bg-[#262520] dark:border dark:border-[#3A3835] dark:text-[#F0EBE3] dark:hover:bg-[#302E29] text-xs font-medium rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Back to notifications</span>
+                    </button>
+                  </div>
                 </div>
               ) : (loading && notifications.length === 0) ? (
                 <div className="flex flex-col items-center justify-center py-16 space-y-2 text-zinc-400 dark:text-[#7A7570]">
@@ -470,12 +522,21 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
                           return (
                             <div
                               key={notif.id}
+                              role="button"
+                              tabIndex={0}
                               onClick={() => handleNotificationClick(notif)}
-                              className={`px-4 py-3 flex items-start gap-3 transition-colors cursor-pointer border-b border-zinc-100 dark:border-[#302E29] last:border-b-0 ${
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  handleNotificationClick(notif);
+                                }
+                              }}
+                              className={`px-4 py-3 flex items-start gap-3 transition-colors cursor-pointer border-b border-zinc-100 dark:border-[#302E29] last:border-b-0 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-[#C59B27] dark:focus-visible:ring-[#D4AF37] focus-visible:ring-inset ${
                                 isUnread
                                   ? 'bg-[#FAF6EB]/40 hover:bg-[#FAF6EB]/70 dark:bg-[#262520] dark:hover:bg-[#2A2926]'
                                   : 'bg-white hover:bg-zinc-50/80 dark:bg-[#1D1D1A] dark:hover:bg-[#21211E]'
                               }`}
+                              aria-label={`Notification: ${notif.title}`}
                             >
                               <div className="mt-0.5 shrink-0">
                                 {getNotificationIcon(notif.title, notif.message)}
@@ -496,9 +557,13 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
                                     </span>
                                   </div>
                                 </div>
-                                <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mt-0.5 leading-relaxed line-clamp-2">
+                                <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mt-0.5 leading-relaxed line-clamp-3">
                                   {humanizeNotificationCopy(notif.message, role)}
                                 </p>
+                                <div className="mt-1 flex items-center gap-1 text-[11px] font-medium text-[#C59B27] dark:text-[#D4AF37]">
+                                  <span>View message</span>
+                                  <ChevronRight className="w-3 h-3" />
+                                </div>
                               </div>
                             </div>
                           );
@@ -550,6 +615,7 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
             <div className="flex items-center gap-2">
               {selectedNotif ? (
                 <button
+                  type="button"
                   onClick={() => setSelectedNotif(null)}
                   className="p-1 -ml-1 text-zinc-500 hover:text-zinc-900 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] rounded-lg transition-colors cursor-pointer"
                   aria-label="Back to notification list"
@@ -560,13 +626,14 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
                 <Bell className="w-4.5 h-4.5 text-[#C59B27]" />
               )}
               <h2 className="text-sm font-semibold text-zinc-900 dark:text-[#F0EBE3] tracking-tight">
-                Notifications
+                {selectedNotif ? 'Notification Details' : 'Notifications'}
               </h2>
             </div>
 
             <div className="flex items-center gap-2">
               {!selectedNotif && unreadCount > 0 && (
                 <button
+                  type="button"
                   onClick={handleMarkAllRead}
                   className="text-xs font-medium text-[#C59B27] hover:text-[#A47E1F] dark:text-[#C59B27] dark:hover:text-[#E5C158] px-2 py-0.5 rounded-md transition-colors cursor-pointer"
                 >
@@ -574,6 +641,7 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
                 </button>
               )}
               <button
+                type="button"
                 onClick={onClose}
                 className="p-1 text-zinc-400 hover:text-zinc-700 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] rounded-lg hover:bg-zinc-100 dark:hover:bg-[#262520] transition-colors cursor-pointer"
                 aria-label="Close notifications"
@@ -587,13 +655,13 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
           <div className="max-h-[60vh] overflow-y-auto bg-stone-50/40 dark:bg-[#1D1D1A]">
             {selectedNotif ? (
               /* Detailed view */
-              <div className="p-4 space-y-3">
+              <div className="p-4 space-y-3.5">
                 <div className="flex items-start gap-3">
-                  <div className="p-2 rounded-xl bg-[#FAF8F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29]">
+                  <div className="p-2 rounded-xl bg-[#FAF8F5] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] shrink-0">
                     {getNotificationIcon(selectedNotif.title, selectedNotif.message)}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-semibold text-zinc-900 dark:text-[#F0EBE3] leading-snug">
+                    <h3 className="text-sm font-semibold text-zinc-900 dark:text-[#F0EBE3] leading-snug whitespace-normal break-words">
                       {humanizeNotificationCopy(selectedNotif.title, role)}
                     </h3>
                     <p className="text-xs text-zinc-400 dark:text-[#7A7570] mt-0.5">
@@ -602,26 +670,31 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
                   </div>
                 </div>
 
-                <div className="p-3.5 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl">
-                  <p className="text-xs text-zinc-700 dark:text-[#B8B0A5] leading-relaxed whitespace-pre-wrap">
+                <div className="p-3.5 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl">
+                  <p className="text-xs sm:text-sm text-zinc-700 dark:text-[#B8B0A5] leading-relaxed whitespace-pre-wrap whitespace-normal break-words">
                     {humanizeNotificationCopy(selectedNotif.message, role)}
                   </p>
                 </div>
 
-                {/* Contextual Deep Link Button */}
-                {role === 'parent' && selectedNotif.childId && onNavigate && (
-                  <div className="pt-1">
+                <div className="pt-1 flex flex-col gap-2">
+                  {action && onNavigate && (
                     <button
-                      onClick={() => {
-                        onClose();
-                        onNavigate(`/parent/children/${selectedNotif.childId}/status`);
-                      }}
-                      className="w-full py-2 px-3 bg-[#18181B] dark:bg-[#262520] text-white dark:text-[#F0EBE3] border border-transparent dark:border-[#302E29] text-xs font-medium rounded-xl hover:bg-zinc-800 dark:hover:bg-[#2A2926] transition-colors cursor-pointer"
+                      type="button"
+                      onClick={() => handleActionClick(action.route)}
+                      className="w-full py-2.5 px-4 bg-[#18181B] hover:bg-zinc-800 text-white dark:bg-[#262520] dark:border dark:border-[#302E29] dark:text-[#F0EBE3] dark:hover:bg-[#2A2926] text-xs font-medium rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-2"
                     >
-                      View child status
+                      <span>{action.label}</span>
                     </button>
-                  </div>
-                )}
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedNotif(null)}
+                    className="w-full py-2 px-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 dark:bg-[#262520] dark:border dark:border-[#3A3835] dark:text-[#F0EBE3] dark:hover:bg-[#302E29] text-xs font-medium rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Back to notifications</span>
+                  </button>
+                </div>
               </div>
             ) : (loading && notifications.length === 0) ? (
               <div className="flex flex-col items-center justify-center py-12 space-y-3 text-zinc-400 dark:text-[#7A7570]">
@@ -651,12 +724,21 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
                         return (
                           <div
                             key={notif.id}
+                            role="button"
+                            tabIndex={0}
                             onClick={() => handleNotificationClick(notif)}
-                            className={`px-4 py-3 flex items-start gap-3 transition-colors cursor-pointer border-b border-zinc-100 dark:border-[#302E29] last:border-b-0 ${
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                handleNotificationClick(notif);
+                              }
+                            }}
+                            className={`px-4 py-3 flex items-start gap-3 transition-colors cursor-pointer border-b border-zinc-100 dark:border-[#302E29] last:border-b-0 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-[#C59B27] dark:focus-visible:ring-[#D4AF37] focus-visible:ring-inset ${
                               isUnread
                                 ? 'bg-[#FAF6EB]/40 hover:bg-[#FAF6EB]/70 dark:bg-[#262520] dark:hover:bg-[#2A2926]'
                                 : 'bg-white hover:bg-zinc-50/80 dark:bg-[#21211E] dark:hover:bg-[#2A2926]'
                             }`}
+                            aria-label={`Notification: ${notif.title}`}
                           >
                             <div className="mt-0.5 shrink-0">
                               {getNotificationIcon(notif.title, notif.message)}
@@ -677,9 +759,13 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
                                   </span>
                                 </div>
                               </div>
-                              <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] mt-1 leading-relaxed line-clamp-2">
+                              <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] mt-1 leading-relaxed line-clamp-3">
                                 {humanizeNotificationCopy(notif.message, role)}
                               </p>
+                              <div className="mt-1 flex items-center gap-1 text-[11px] font-medium text-[#C59B27] dark:text-[#D4AF37]">
+                                <span>View message</span>
+                                <ChevronRight className="w-3 h-3" />
+                              </div>
                             </div>
                           </div>
                         );

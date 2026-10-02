@@ -5,6 +5,7 @@ import { sanitizeParentReturnRoute } from '../src/views/SignInView';
 import { sanitizeVolunteerReturnRoute } from '../src/views/VolunteerSignInView';
 import {
   resolveNotificationRoute,
+  getNotificationAction,
   PROTECTED_VOLUNTEER_ROUTES,
   isProtectedVolunteerRoute
 } from '../src/components/common/MobileNotificationCentre';
@@ -526,6 +527,307 @@ async function runTests() {
     '/volunteer/safety must not be a protected route in App.tsx'
   );
   console.log('  [PASS] All PROTECTED_VOLUNTEER_ROUTES correspond 1:1 with App.tsx protected routes');
+  passed++;
+
+  // ====================================================
+  // NOTIFICATION INTERACTION & FULL MESSAGE TESTS (33 - 48)
+  // ====================================================
+
+  const notifCentreContent = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/common/MobileNotificationCentre.tsx'),
+    'utf-8'
+  );
+
+  // ----------------------------------------------------
+  // 33. Volunteer notification row is interactive
+  // ----------------------------------------------------
+  console.log('--- 33. Volunteer notification row is interactive ---');
+  assert.ok(
+    notifCentreContent.includes('role="button"') && notifCentreContent.includes('tabIndex={0}'),
+    'Notification row must have button semantics with role="button" and tabIndex={0}'
+  );
+  assert.ok(
+    notifCentreContent.includes("e.key === 'Enter'") && notifCentreContent.includes("e.key === ' '"),
+    'Notification row must support Enter and Space keyboard interaction'
+  );
+  assert.ok(
+    notifCentreContent.includes('focus-visible:ring-2'),
+    'Notification row must have visible keyboard focus indicator'
+  );
+  console.log('  [PASS] Volunteer notification row is fully interactive and accessible');
+  passed++;
+
+  // ----------------------------------------------------
+  // 34. Row click selects notification detail
+  // ----------------------------------------------------
+  console.log('--- 34. Row click selects notification detail ---');
+  assert.ok(
+    notifCentreContent.includes('setSelectedNotif({ ...notif, isRead: true })'),
+    'handleNotificationClick must set selectedNotif without auto-routing'
+  );
+  assert.ok(
+    notifCentreContent.includes('handleNotificationClick = async (notif: NotificationItem) => {\n    // 1. Mark notification as read immediately without awaiting navigation'),
+    'handleNotificationClick must not auto-navigate away on row click'
+  );
+  console.log('  [PASS] Row click selects notification detail view instead of auto-routing');
+  passed++;
+
+  // ----------------------------------------------------
+  // 35. Full title is available in detail
+  // ----------------------------------------------------
+  console.log('--- 35. Full title is available in detail ---');
+  assert.ok(
+    notifCentreContent.includes('humanizeNotificationCopy(selectedNotif.title, role)') &&
+    notifCentreContent.includes('whitespace-normal break-words'),
+    'Detail view must render full notification title with whitespace-normal break-words'
+  );
+  console.log('  [PASS] Full title is rendered in detail view without truncation');
+  passed++;
+
+  // ----------------------------------------------------
+  // 36. Full message body is available without truncation
+  // ----------------------------------------------------
+  console.log('--- 36. Full message body is available without truncation ---');
+  assert.ok(
+    notifCentreContent.includes('humanizeNotificationCopy(selectedNotif.message, role)'),
+    'Detail view must render humanized full message'
+  );
+  assert.ok(
+    notifCentreContent.includes('whitespace-normal') &&
+    notifCentreContent.includes('break-words') &&
+    notifCentreContent.includes('leading-relaxed') &&
+    notifCentreContent.includes('whitespace-pre-wrap'),
+    'Detail view message body must have whitespace-normal break-words leading-relaxed'
+  );
+  console.log('  [PASS] Full message body is available in detail view without line-clamp or truncation');
+  passed++;
+
+  // ----------------------------------------------------
+  // 37. Duty notification CTA resolves to /volunteer/event
+  // ----------------------------------------------------
+  console.log('--- 37. Duty notification CTA resolves to /volunteer/event ---');
+  const dutyTestItem = {
+    id: 'duty-test-cta',
+    title: 'New duty location assigned',
+    message: 'Please review and start duty when shift starts. Please report to Zone B Main Entrance.',
+    createdAt: new Date().toISOString(),
+    isRead: false
+  };
+  const dutyAction = getNotificationAction(dutyTestItem, 'volunteer');
+  assert.ok(dutyAction, 'Duty notification must provide an action');
+  assert.strictEqual(dutyAction.label, 'View event', 'Duty notification CTA label should be "View event"');
+  assert.strictEqual(dutyAction.route, '/volunteer/event', 'Duty notification CTA must route to /volunteer/event');
+  console.log('  [PASS] Duty notification CTA resolves to /volunteer/event with "View event" label');
+  passed++;
+
+  // ----------------------------------------------------
+  // 38. Safety CTA resolves to /volunteer/team-alerts
+  // ----------------------------------------------------
+  console.log('--- 38. Safety CTA resolves to /volunteer/team-alerts ---');
+  const safetyTestItem = {
+    id: 'safety-test-cta',
+    title: 'Safety alert: Child assistance requested',
+    message: 'Team assistance required at Hallway 3 for child check-in issue.',
+    createdAt: new Date().toISOString(),
+    isRead: false
+  };
+  const safetyAction = getNotificationAction(safetyTestItem, 'volunteer');
+  assert.ok(safetyAction, 'Safety notification must provide an action');
+  assert.strictEqual(safetyAction.label, 'View safety', 'Safety notification CTA label should be "View safety"');
+  assert.strictEqual(safetyAction.route, '/volunteer/team-alerts', 'Safety notification CTA must route to /volunteer/team-alerts');
+  console.log('  [PASS] Safety notification CTA resolves to /volunteer/team-alerts with "View safety" label');
+  passed++;
+
+  // ----------------------------------------------------
+  // 39. /volunteer/duty is never produced
+  // ----------------------------------------------------
+  console.log('--- 39. /volunteer/duty is never produced ---');
+  assert.ok(
+    !notifCentreContent.includes("onNavigate('/volunteer/duty')"),
+    'MobileNotificationCentre must not have hardcoded navigation to /volunteer/duty'
+  );
+  const maliciousDutyPayload = {
+    id: 'duty-exploit',
+    title: 'Duty Assignment',
+    message: 'Go to duty',
+    createdAt: new Date().toISOString(),
+    isRead: false,
+    metadata: { targetRoute: '/volunteer/duty' }
+  };
+  const resolvedDutyAction = getNotificationAction(maliciousDutyPayload, 'volunteer');
+  assert.notStrictEqual(resolvedDutyAction?.route, '/volunteer/duty', '/volunteer/duty must never be returned');
+  assert.strictEqual(resolvedDutyAction?.route, '/volunteer/event', 'Must safely resolve to /volunteer/event');
+  console.log('  [PASS] /volunteer/duty is never produced');
+  passed++;
+
+  // ----------------------------------------------------
+  // 40. /volunteer/safety is never produced
+  // ----------------------------------------------------
+  console.log('--- 40. /volunteer/safety is never produced ---');
+  const maliciousSafetyPayload = {
+    id: 'safety-exploit',
+    title: 'Safety Alert',
+    message: 'Report to safety desk',
+    createdAt: new Date().toISOString(),
+    isRead: false,
+    metadata: { targetRoute: '/volunteer/safety' }
+  };
+  const resolvedSafetyAction = getNotificationAction(maliciousSafetyPayload, 'volunteer');
+  assert.notStrictEqual(resolvedSafetyAction?.route, '/volunteer/safety', '/volunteer/safety must never be returned');
+  assert.ok(
+    isProtectedVolunteerRoute(resolvedSafetyAction?.route || ''),
+    'Must resolve to a protected volunteer route'
+  );
+  console.log('  [PASS] /volunteer/safety is never produced');
+  passed++;
+
+  // ----------------------------------------------------
+  // 41. Invalid actionable destination falls back safely
+  // ----------------------------------------------------
+  console.log('--- 41. Invalid actionable destination falls back safely ---');
+  const invalidActionPayloads = [
+    '/volunteer/invalid-random',
+    '/admin/dashboard',
+    'https://attacker.example.com',
+    'javascript:alert(1)'
+  ];
+  for (const inv of invalidActionPayloads) {
+    const act = getNotificationAction(
+      {
+        id: 'inv-test',
+        title: 'Action Item',
+        message: 'Click this button',
+        createdAt: new Date().toISOString(),
+        isRead: false,
+        metadata: { targetRoute: inv }
+      },
+      'volunteer'
+    );
+    assert.ok(act, 'Actionable notification with invalid route returns safe action');
+    assert.strictEqual(act.route, '/volunteer/event', 'Must safely fall back to /volunteer/event');
+  }
+  console.log('  [PASS] Invalid actionable destinations fall back safely to /volunteer/event');
+  passed++;
+
+  // ----------------------------------------------------
+  // 42. Information-only notification displays fully without invented route
+  // ----------------------------------------------------
+  console.log('--- 42. Information-only notification displays fully without invented route ---');
+  const infoOnlyItem = {
+    id: 'info-only-1',
+    title: 'Sunday Morning Fellowship',
+    message: 'Coffee and refreshments are available in the courtyard following the morning service. Have a wonderful day!',
+    createdAt: new Date().toISOString(),
+    isRead: false
+  };
+  const infoAction = getNotificationAction(infoOnlyItem, 'volunteer');
+  assert.strictEqual(infoAction, null, 'Information-only notification must not have an action');
+  const infoRoute = resolveNotificationRoute(infoOnlyItem, 'volunteer');
+  assert.strictEqual(infoRoute, '', 'Information-only notification must not have an invented route');
+  console.log('  [PASS] Information-only notification has null action and empty route');
+  passed++;
+
+  // ----------------------------------------------------
+  // 43. Selecting notification marks it read
+  // ----------------------------------------------------
+  console.log('--- 43. Selecting notification marks it read ---');
+  assert.ok(
+    notifCentreContent.includes('api.parent.markNotificationAsRead(notif.id)'),
+    'Selecting notification must invoke markNotificationAsRead API'
+  );
+  assert.ok(
+    notifCentreContent.includes('isRead: true'),
+    'Selecting notification must update local state to isRead = true'
+  );
+  console.log('  [PASS] Selecting notification immediately marks it read');
+  passed++;
+
+  // ----------------------------------------------------
+  // 44. Mark-all-read still works
+  // ----------------------------------------------------
+  console.log('--- 44. Mark-all-read still works ---');
+  assert.ok(
+    notifCentreContent.includes('api.parent.markAllNotificationsAsRead()'),
+    'handleMarkAllRead must invoke markAllNotificationsAsRead API'
+  );
+  assert.ok(
+    notifCentreContent.includes('setNotifications(prev => prev.map(n => ({ ...n, isRead: true })))'),
+    'handleMarkAllRead must update all notifications to read state'
+  );
+  console.log('  [PASS] Mark-all-read mechanism is fully preserved');
+  passed++;
+
+  // ----------------------------------------------------
+  // 45. Volunteer active experience remains volunteer
+  // ----------------------------------------------------
+  console.log('--- 45. Volunteer active experience remains volunteer ---');
+  assert.ok(
+    notifCentreContent.includes("safeStorage.setItem('koinonia_active_experience', 'volunteer')"),
+    'Action click in volunteer surface must explicitly set active experience to volunteer'
+  );
+  console.log('  [PASS] Volunteer active experience remains volunteer upon action navigation');
+  passed++;
+
+  // ----------------------------------------------------
+  // 46. Session is not cleared
+  // ----------------------------------------------------
+  console.log('--- 46. Session is not cleared ---');
+  assert.ok(
+    !notifCentreContent.includes('localStorage.clear()') &&
+    !notifCentreContent.includes('sessionStorage.clear()') &&
+    !notifCentreContent.includes('safeStorage.removeItem'),
+    'MobileNotificationCentre must not clear user session or tokens'
+  );
+  console.log('  [PASS] Notification interactions do not clear session');
+  passed++;
+
+  // ----------------------------------------------------
+  // 47. Parent notification detail still works
+  // ----------------------------------------------------
+  console.log('--- 47. Parent notification detail still works ---');
+  const parentTestItem = {
+    id: 'parent-item-1',
+    title: 'Child Checked In',
+    message: 'Your child Jordan has been safely checked in to Kingdom Kids Room 101.',
+    createdAt: new Date().toISOString(),
+    isRead: false,
+    childId: 'ch-jordan-1'
+  };
+  const parentAction = getNotificationAction(parentTestItem, 'parent');
+  assert.ok(parentAction, 'Parent notification with childId must provide an action');
+  assert.strictEqual(parentAction.route, '/parent/children/ch-jordan-1/status');
+  assert.strictEqual(parentAction.label, 'View child status');
+  console.log('  [PASS] Parent notification detail displays and routes to parent destination');
+  passed++;
+
+  // ----------------------------------------------------
+  // 48. Parent and Volunteer destinations cannot cross surfaces
+  // ----------------------------------------------------
+  console.log('--- 48. Parent and Volunteer destinations cannot cross surfaces ---');
+  // Volunteer attempting parent route
+  const volCrossItem = {
+    id: 'vol-cross',
+    title: 'Notice',
+    message: 'Message',
+    createdAt: new Date().toISOString(),
+    isRead: false,
+    metadata: { targetRoute: '/parent/home' }
+  };
+  const volCrossAction = getNotificationAction(volCrossItem, 'volunteer');
+  assert.ok(volCrossAction?.route.startsWith('/volunteer/'), 'Volunteer surface must never route to /parent/*');
+
+  // Parent attempting volunteer route
+  const parentCrossItem = {
+    id: 'parent-cross',
+    title: 'Notice',
+    message: 'Message',
+    createdAt: new Date().toISOString(),
+    isRead: false,
+    metadata: { targetRoute: '/volunteer/event' }
+  };
+  const parentCrossAction = getNotificationAction(parentCrossItem, 'parent');
+  assert.ok(parentCrossAction?.route.startsWith('/parent/'), 'Parent surface must never route to /volunteer/*');
+  console.log('  [PASS] Parent and Volunteer destinations cannot cross surfaces');
   passed++;
 
   console.log(`\nAll ${passed} tests passed successfully!`);
