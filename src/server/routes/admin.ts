@@ -32,6 +32,7 @@ import {
 import {
   provisionWristband,
   lookupWristbandByNfcUid,
+  lookupWristbandByIdentifier,
   bindWristbandToChild,
   deactivateWristbandAssignment,
   replaceWristband,
@@ -43,7 +44,9 @@ import {
   verifyWristbandTag,
   prepareWristband,
   verifyWristband,
-  assertCanProvisionWristband
+  assertCanProvisionWristband,
+  generateCodeOnlyWristbandBatch,
+  markCodeOnlyWristbandsReady
 } from '../services/wristbandService';
 
 const router = Router();
@@ -4453,10 +4456,10 @@ router.post('/events/:eventId/wristbands/verify-pack', authMiddleware, async (re
 // TGA 2026 PHASE 4B1: SCAN, PREPARE & PHYSICAL WRISTBAND VERIFICATION (ADMIN)
 // =============================================================================
 
-// POST /api/admin/events/:eventId/wristbands/prepare
-router.post('/events/:eventId/wristbands/prepare', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+// POST /api/admin/events/:eventId/wristbands/prepare & POST /api/admin/wristbands/prepare
+const handlePrepareWristband = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { eventId } = req.params;
+    const eventId = req.params.eventId || req.body?.eventId;
     const { nfcUid } = req.body || {};
 
     const actor = {
@@ -4492,7 +4495,141 @@ router.post('/events/:eventId/wristbands/prepare', authMiddleware, async (req: A
       code: 'INTERNAL_ERROR'
     });
   }
-});
+};
+
+router.post('/events/:eventId/wristbands/prepare', authMiddleware, handlePrepareWristband);
+router.post('/wristbands/prepare', authMiddleware, handlePrepareWristband);
+
+// POST /api/admin/events/:eventId/wristbands/generate-codes & POST /api/admin/wristbands/generate-codes
+const handleGenerateWristbandCodes = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const eventId = req.params.eventId || req.body?.eventId;
+    const quantity = parseInt(req.body?.quantity, 10);
+
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+
+    const result = await generateCodeOnlyWristbandBatch({
+      eventId,
+      quantity,
+      actor
+    });
+
+    res.status(201).json(result);
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error generating wristband codes:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate wristband codes.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+router.post('/events/:eventId/wristbands/generate-codes', authMiddleware, handleGenerateWristbandCodes);
+router.post('/wristbands/generate-codes', authMiddleware, handleGenerateWristbandCodes);
+
+// POST /api/admin/events/:eventId/wristbands/mark-ready & POST /api/admin/wristbands/mark-ready
+const handleMarkWristbandsReady = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const eventId = req.params.eventId || req.body?.eventId;
+    const { ids, rangeStart, rangeEnd } = req.body || {};
+
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+
+    const result = await markCodeOnlyWristbandsReady({
+      eventId,
+      ids,
+      rangeStart,
+      rangeEnd,
+      actor
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error marking wristbands ready:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to mark wristbands ready.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+router.post('/events/:eventId/wristbands/mark-ready', authMiddleware, handleMarkWristbandsReady);
+router.post('/wristbands/mark-ready', authMiddleware, handleMarkWristbandsReady);
+
+// GET /api/admin/events/:eventId/wristbands/export-csv & GET /api/admin/wristbands/export-csv
+const handleExportWristbandsCsv = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const eventId = (req.params.eventId || req.query.eventId || '') as string;
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+    assertCanProvisionWristband(actor);
+
+    if (!eventId) {
+      return res.status(400).json({ success: false, error: 'eventId is required' });
+    }
+
+    const { status, rangeStart, rangeEnd } = req.query as Record<string, string>;
+    let sql = 'SELECT wristband_code, status FROM wristbands WHERE event_id = ?';
+    const queryParams: any[] = [eventId];
+
+    if (status) {
+      sql += ' AND status = ?';
+      queryParams.push(status);
+    }
+    if (rangeStart && rangeEnd) {
+      sql += ' AND wristband_code >= ? AND wristband_code <= ?';
+      queryParams.push(rangeStart.trim().toUpperCase(), rangeEnd.trim().toUpperCase());
+    }
+
+    sql += ' ORDER BY wristband_code ASC';
+    const rows = await query<{ wristband_code: string; status: string }>(sql, queryParams);
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="wristbands_${eventId}_${Date.now()}.csv"`);
+
+    let csvContent = 'sequence,wristband_code,qr_payload,status\n';
+    rows.forEach((r, idx) => {
+      csvContent += `${idx + 1},${r.wristband_code},${r.wristband_code},${r.status}\n`;
+    });
+
+    res.send(csvContent);
+  } catch (err: any) {
+    console.error('Error exporting wristband CSV:', err);
+    res.status(500).json({ success: false, error: 'Failed to export wristband CSV.' });
+  }
+};
+
+router.get('/events/:eventId/wristbands/export-csv', authMiddleware, handleExportWristbandsCsv);
+router.get('/wristbands/export-csv', authMiddleware, handleExportWristbandsCsv);
 
 // POST /api/admin/wristbands/verify & POST /api/admin/events/:eventId/wristbands/verify
 const handleVerifyWristband = async (req: AuthenticatedRequest, res: Response) => {
@@ -4537,16 +4674,25 @@ const handleVerifyWristband = async (req: AuthenticatedRequest, res: Response) =
 
 router.post('/wristbands/verify', authMiddleware, handleVerifyWristband);
 router.post('/events/:eventId/wristbands/verify', authMiddleware, handleVerifyWristband);
-// POST & GET /api/admin/wristbands/lookup (Event-scoped lookup by NFC UID)
+// POST & GET /api/admin/wristbands/lookup (Event-scoped lookup by NFC UID or WB Code)
 const handleAdminWristbandLookup = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const eventId = (req.body?.eventId || req.query?.eventId || '') as string;
+    const identifier = (req.body?.identifier || req.query?.identifier || req.body?.wristbandCode || req.query?.wristbandCode || '') as string;
     const nfcUid = (req.body?.nfcUid || req.query?.nfcUid || '') as string;
 
-    const wristband = await lookupWristbandByNfcUid({
-      eventId,
-      rawUid: nfcUid
-    });
+    let wristband;
+    if (identifier) {
+      wristband = await lookupWristbandByIdentifier({
+        eventId,
+        identifier
+      });
+    } else {
+      wristband = await lookupWristbandByNfcUid({
+        eventId,
+        rawUid: nfcUid
+      });
+    }
 
     res.json({
       success: true,
@@ -4576,13 +4722,14 @@ router.get('/wristbands/lookup', authMiddleware, handleAdminWristbandLookup);
 // POST /api/admin/wristbands/bind (Admin binding)
 router.post('/wristbands/bind', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { eventId, childEventEntryId, nfcUid, wristbandId, idempotencyKey } = req.body || {};
+    const { eventId, childEventEntryId, nfcUid, wristbandId, wristbandCode, idempotencyKey } = req.body || {};
 
     const result = await bindWristbandToChild({
       eventId,
       childEventEntryId,
       nfcUid,
       wristbandId,
+      wristbandCode,
       idempotencyKey,
       actor: {
         id: req.user?.id || '',

@@ -16,7 +16,7 @@ export interface WristbandRow {
   id: string;
   event_id: string;
   wristband_code: string;
-  nfc_uid: string;
+  nfc_uid: string | null;
   status: WristbandStatus;
   created_by_user_id: string | null;
   created_at: string;
@@ -331,6 +331,7 @@ export interface BindWristbandParams {
   childEventEntryId: string;
   nfcUid?: string;
   wristbandId?: string;
+  wristbandCode?: string;
   idempotencyKey?: string;
   actor: ActorContext;
 }
@@ -996,6 +997,221 @@ export async function verifyWristband(params: VerifyWristbandParams): Promise<Ve
   });
 }
 
+export interface GenerateCodeOnlyWristbandBatchParams {
+  eventId: string;
+  quantity: number;
+  actor: ActorContext;
+}
+
+export interface GenerateCodeOnlyWristbandBatchResult {
+  success: boolean;
+  totalGenerated: number;
+  rangeStart: string;
+  rangeEnd: string;
+  wristbandCodes: string[];
+  eventId: string;
+  eventName: string;
+  message: string;
+}
+
+/**
+ * Generates an event-scoped batch of code-only wristbands in 'prepared' state without NFC hardware.
+ * Uses consecutive sequential WB codes (WB-000001, etc.) from the event-scoped sequence.
+ * Strictly PII-free.
+ */
+export async function generateCodeOnlyWristbandBatch(
+  params: GenerateCodeOnlyWristbandBatchParams
+): Promise<GenerateCodeOnlyWristbandBatchResult> {
+  const { eventId, quantity, actor } = params;
+
+  // 1. Authorization: Admin / Super Admin only
+  assertCanProvisionWristband(actor);
+
+  // 2. Validate Event
+  if (!eventId || typeof eventId !== 'string' || !eventId.trim()) {
+    throw new WristbandDomainError('eventId is required', 'EVENT_REQUIRED', 400);
+  }
+  const cleanEventId = eventId.trim();
+  const event = await queryOne<{ id: string; status: string; title?: string }>(
+    'SELECT id, status, title FROM events WHERE id = ?',
+    [cleanEventId]
+  );
+  if (!event) {
+    throw new WristbandDomainError(`Event not found: ${cleanEventId}`, 'EVENT_NOT_FOUND', 404);
+  }
+  if (['archived', 'closed', 'ended'].includes(event.status)) {
+    throw new WristbandDomainError(`Event is inactive (status: ${event.status})`, 'EVENT_INACTIVE', 400);
+  }
+
+  // 3. Validate quantity
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    throw new WristbandDomainError('Quantity must be a positive integer', 'INVALID_QUANTITY', 400);
+  }
+  if (quantity > 5000) {
+    throw new WristbandDomainError('Batch quantity cannot exceed 5000 wristbands', 'QUANTITY_TOO_LARGE', 400);
+  }
+
+  await ensureSupportingTables();
+
+  return transaction(async () => {
+    // Generate consecutive WB codes atomically using existing sequence
+    const codes = await generateNextWristbandCodes(cleanEventId, quantity);
+    const now = new Date().toISOString();
+
+    for (const code of codes) {
+      const id = `wb-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO wristbands (
+          id, event_id, wristband_code, nfc_uid, status,
+          created_by_user_id, created_at, updated_at
+        ) VALUES (?, ?, ?, NULL, 'prepared', ?, ?, ?)
+      `, [id, cleanEventId, code, actor.id || null, now, now]);
+    }
+
+    const rangeStart = codes[0];
+    const rangeEnd = codes[codes.length - 1];
+
+    // Audit log
+    await recordAuditLog({
+      userId: actor.id || null,
+      userRole: actor.role || 'admin',
+      action: 'WRISTBAND_CODES_GENERATED',
+      targetType: 'wristband_batch',
+      targetId: `${cleanEventId}_${rangeStart}_${rangeEnd}`,
+      details: {
+        eventId: cleanEventId,
+        quantity,
+        rangeStart,
+        rangeEnd,
+        status: 'prepared'
+      }
+    });
+
+    return {
+      success: true,
+      totalGenerated: quantity,
+      rangeStart,
+      rangeEnd,
+      wristbandCodes: codes,
+      eventId: cleanEventId,
+      eventName: event.title || 'TGA 2026',
+      message: `Successfully generated ${quantity} wristband codes (${rangeStart} to ${rangeEnd}).`
+    };
+  });
+}
+
+export interface MarkCodeOnlyWristbandsReadyParams {
+  eventId: string;
+  ids?: string[];
+  rangeStart?: string;
+  rangeEnd?: string;
+  actor: ActorContext;
+}
+
+export interface MarkCodeOnlyWristbandsReadyResult {
+  success: boolean;
+  updatedCount: number;
+  message: string;
+}
+
+/**
+ * Transitions prepared code-only wristbands to 'available' after physical labels are confirmed ready.
+ * STRICT INVARIANT:
+ * NFC-enabled wristbands CANNOT bypass physical NFC verification through this action.
+ * If any selected wristband has an NFC UID, this operation throws NFC_VERIFICATION_REQUIRED.
+ */
+export async function markCodeOnlyWristbandsReady(
+  params: MarkCodeOnlyWristbandsReadyParams
+): Promise<MarkCodeOnlyWristbandsReadyResult> {
+  const { eventId, ids, rangeStart, rangeEnd, actor } = params;
+
+  // 1. Authorization: Admin / Super Admin only
+  assertCanProvisionWristband(actor);
+
+  if (!eventId || typeof eventId !== 'string' || !eventId.trim()) {
+    throw new WristbandDomainError('eventId is required', 'EVENT_REQUIRED', 400);
+  }
+
+  const cleanEventId = eventId.trim();
+
+  // Find candidate wristbands
+  let sql = 'SELECT id, wristband_code, nfc_uid, status FROM wristbands WHERE event_id = ?';
+  const queryParams: any[] = [cleanEventId];
+
+  if (ids && ids.length > 0) {
+    const placeholders = ids.map(() => '?').join(',');
+    sql += ` AND id IN (${placeholders})`;
+    queryParams.push(...ids);
+  } else if (rangeStart && rangeEnd) {
+    sql += ' AND wristband_code >= ? AND wristband_code <= ?';
+    queryParams.push(rangeStart.trim().toUpperCase(), rangeEnd.trim().toUpperCase());
+  } else {
+    // If no specific IDs or range given, target all prepared code-only in this event
+    sql += " AND status = 'prepared' AND nfc_uid IS NULL";
+  }
+
+  const candidates = await query<WristbandRow>(sql, queryParams);
+
+  if (candidates.length === 0) {
+    throw new WristbandDomainError('No matching wristbands found to mark ready.', 'NO_WRISTBANDS_FOUND', 404);
+  }
+
+  // Invariant 11: Stricter NFC Check
+  // If ANY candidate has nfc_uid IS NOT NULL, reject code-only bypass!
+  const nfcBands = candidates.filter(w => w.nfc_uid !== null && w.nfc_uid !== undefined && w.nfc_uid !== '');
+  if (nfcBands.length > 0) {
+    throw new WristbandDomainError(
+      'NFC-enabled wristbands require physical NFC verification and cannot be marked ready via code-only batch readiness.',
+      'NFC_VERIFICATION_REQUIRED',
+      400,
+      { offendingCodes: nfcBands.slice(0, 5).map(b => b.wristband_code) }
+    );
+  }
+
+  // Filter to those currently 'prepared'
+  const preparedCodeOnly = candidates.filter(w => w.status === 'prepared' && !w.nfc_uid);
+  if (preparedCodeOnly.length === 0) {
+    throw new WristbandDomainError(
+      'Selected wristbands are not in prepared status or are already available.',
+      'NO_PREPARED_WRISTBANDS',
+      400
+    );
+  }
+
+  const now = new Date().toISOString();
+  const updateIds = preparedCodeOnly.map(w => w.id);
+  const placeholders = updateIds.map(() => '?').join(',');
+
+  await transaction(async () => {
+    await execute(`
+      UPDATE wristbands
+      SET status = 'available', updated_at = ?
+      WHERE id IN (${placeholders}) AND status = 'prepared' AND nfc_uid IS NULL
+    `, [now, ...updateIds]);
+
+    await recordAuditLog({
+      userId: actor.id || null,
+      userRole: actor.role || 'admin',
+      action: 'WRISTBAND_CODE_BATCH_READY',
+      targetType: 'wristband_batch',
+      targetId: `${cleanEventId}_ready_${updateIds.length}`,
+      details: {
+        eventId: cleanEventId,
+        updatedCount: updateIds.length,
+        rangeStart: preparedCodeOnly[0]?.wristband_code,
+        rangeEnd: preparedCodeOnly[preparedCodeOnly.length - 1]?.wristband_code
+      }
+    });
+  });
+
+  return {
+    success: true,
+    updatedCount: updateIds.length,
+    message: `Successfully marked ${updateIds.length} wristbands ready and available.`
+  };
+}
+
+
 /**
  * Event-scoped lookup of a physical wristband by NFC UID.
  * Never allows global UID lookups.
@@ -1045,11 +1261,99 @@ export async function lookupWristbandByNfcUid(params: {
 }
 
 /**
+ * Event-scoped lookup of a physical wristband by either NFC UID or printed WB code.
+ * Reuses existing canonical NFC normalizer and WB code lookup.
+ * Strictly event isolated.
+ */
+export async function lookupWristbandByIdentifier(params: {
+  eventId: string;
+  identifier: string;
+}): Promise<WristbandLookupResult> {
+  const { eventId, identifier } = params;
+
+  if (!eventId || typeof eventId !== 'string' || !eventId.trim()) {
+    throw new WristbandDomainError('eventId is required for wristband lookup', 'EVENT_REQUIRED', 400);
+  }
+  if (!identifier || typeof identifier !== 'string' || !identifier.trim()) {
+    throw new WristbandDomainError('identifier is required for wristband lookup', 'IDENTIFIER_REQUIRED', 400);
+  }
+
+  const raw = identifier.trim();
+
+  let canonicalUid: string | null = null;
+  if (isValidNfcUid(raw)) {
+    try {
+      canonicalUid = normalizeNfcUid(raw);
+    } catch {
+      canonicalUid = null;
+    }
+  }
+
+  let wristband: WristbandRow | null = null;
+  if (canonicalUid) {
+    wristband = await queryOne<WristbandRow>(
+      'SELECT * FROM wristbands WHERE event_id = ? AND nfc_uid = ?',
+      [eventId.trim(), canonicalUid]
+    );
+  }
+  if (!wristband) {
+    wristband = await queryOne<WristbandRow>(
+      'SELECT * FROM wristbands WHERE event_id = ? AND UPPER(wristband_code) = UPPER(?)',
+      [eventId.trim(), raw]
+    );
+  }
+
+  if (!wristband) {
+    // Check if it exists in another event to enforce strict event isolation error
+    let otherEventWb: WristbandRow | null = null;
+    if (canonicalUid) {
+      otherEventWb = await queryOne<WristbandRow>(
+        'SELECT * FROM wristbands WHERE nfc_uid = ?',
+        [canonicalUid]
+      );
+    }
+    if (!otherEventWb) {
+      otherEventWb = await queryOne<WristbandRow>(
+        'SELECT * FROM wristbands WHERE UPPER(wristband_code) = UPPER(?)',
+        [raw]
+      );
+    }
+
+    if (otherEventWb && otherEventWb.event_id !== eventId.trim()) {
+      throw new WristbandDomainError(
+        'Wristband belongs to a different event',
+        'EVENT_MISMATCH',
+        400
+      );
+    }
+
+    throw new WristbandDomainError(
+      'Wristband not found in this event context',
+      'WRISTBAND_NOT_FOUND',
+      404
+    );
+  }
+
+  const activeAssignment = await getActiveAssignmentForWristband(wristband.id);
+
+  return {
+    id: wristband.id,
+    eventId: wristband.event_id,
+    wristbandCode: wristband.wristband_code,
+    nfcUid: wristband.nfc_uid,
+    status: wristband.status,
+    isAssigned: !!activeAssignment,
+    assignedChildEventEntryId: activeAssignment?.child_event_entry_id || null,
+    assignedAt: activeAssignment?.assigned_at || null
+  };
+}
+
+/**
  * Binds an available wristband to a selected/check-in-ready child entry.
  * Enforces transactional atomicity, idempotency, lifecycle state eligibility, and database invariants.
  */
 export async function bindWristbandToChild(params: BindWristbandParams): Promise<BindWristbandResult> {
-  const { eventId, childEventEntryId, nfcUid, wristbandId, idempotencyKey, actor } = params;
+  const { eventId, childEventEntryId, nfcUid, wristbandId, wristbandCode, idempotencyKey, actor } = params;
 
   if (!eventId || typeof eventId !== 'string' || !eventId.trim()) {
     throw new WristbandDomainError('eventId is required', 'EVENT_REQUIRED', 400);
@@ -1057,8 +1361,8 @@ export async function bindWristbandToChild(params: BindWristbandParams): Promise
   if (!childEventEntryId || typeof childEventEntryId !== 'string' || !childEventEntryId.trim()) {
     throw new WristbandDomainError('childEventEntryId is required', 'CHILD_ENTRY_REQUIRED', 400);
   }
-  if (!nfcUid && !wristbandId) {
-    throw new WristbandDomainError('Either nfcUid or wristbandId must be provided', 'WRISTBAND_REQUIRED', 400);
+  if (!nfcUid && !wristbandId && !wristbandCode) {
+    throw new WristbandDomainError('Either nfcUid, wristbandId, or wristbandCode must be provided', 'WRISTBAND_REQUIRED', 400);
   }
 
   await ensureSupportingTables();
@@ -1080,6 +1384,12 @@ export async function bindWristbandToChild(params: BindWristbandParams): Promise
       let matchesWristband = false;
       if (wristbandId && existing.wristband_id === wristbandId) {
         matchesWristband = true;
+      } else if (wristbandCode) {
+        const wb = await queryOne<WristbandRow>(
+          'SELECT id FROM wristbands WHERE id = ? AND UPPER(wristband_code) = UPPER(?)',
+          [existing.wristband_id, wristbandCode.trim()]
+        );
+        if (wb) matchesWristband = true;
       } else if (nfcUid) {
         const canonicalUid = isValidNfcUid(nfcUid) ? normalizeNfcUid(nfcUid) : null;
         if (canonicalUid) {
@@ -1117,6 +1427,22 @@ export async function bindWristbandToChild(params: BindWristbandParams): Promise
       if (wristband.event_id !== eventId) {
         throw new WristbandDomainError('Wristband belongs to a different event', 'EVENT_MISMATCH', 400);
       }
+    } else if (wristbandCode) {
+      const codeTrimmed = wristbandCode.trim();
+      wristband = await queryOne<WristbandRow>(
+        'SELECT * FROM wristbands WHERE event_id = ? AND UPPER(wristband_code) = UPPER(?)',
+        [eventId.trim(), codeTrimmed]
+      );
+      if (!wristband) {
+        const anyWb = await queryOne<WristbandRow>(
+          'SELECT * FROM wristbands WHERE UPPER(wristband_code) = UPPER(?)',
+          [codeTrimmed]
+        );
+        if (anyWb && anyWb.event_id !== eventId.trim()) {
+          throw new WristbandDomainError('Wristband belongs to a different event', 'EVENT_MISMATCH', 400);
+        }
+        throw new WristbandDomainError('Wristband not found in this event context', 'WRISTBAND_NOT_FOUND', 404);
+      }
     } else if (nfcUid) {
       let canonicalUid: string;
       try {
@@ -1129,6 +1455,13 @@ export async function bindWristbandToChild(params: BindWristbandParams): Promise
         [eventId, canonicalUid]
       );
       if (!wristband) {
+        const anyWb = await queryOne<WristbandRow>(
+          'SELECT * FROM wristbands WHERE nfc_uid = ?',
+          [canonicalUid]
+        );
+        if (anyWb && anyWb.event_id !== eventId) {
+          throw new WristbandDomainError('Wristband belongs to a different event', 'EVENT_MISMATCH', 400);
+        }
         throw new WristbandDomainError('Wristband not found in this event context', 'WRISTBAND_NOT_FOUND', 404);
       }
     }

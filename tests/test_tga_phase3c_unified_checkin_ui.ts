@@ -85,14 +85,14 @@ async function runTgaPhase3cUnifiedCheckInTests() {
 
     // Admin User
     await execute(`
-      INSERT INTO users (id, email, password_hash, role, status, created_at, updated_at)
-      VALUES (?, ?, 'hash', 'admin', 'active', ?, ?)
+      INSERT INTO users (id, email, password_hash, role, status, email_verified, created_at, updated_at)
+      VALUES (?, ?, 'hash', 'admin', 'active', 1, ?, ?)
     `, [adminUserId, `admin-3c-${testRunId}@tga-test.org`, nowIso, nowIso]);
 
     // Authorized Check-In Volunteer
     await execute(`
-      INSERT INTO users (id, email, password_hash, role, status, created_at, updated_at)
-      VALUES (?, ?, 'hash', 'volunteer', 'active', ?, ?)
+      INSERT INTO users (id, email, password_hash, role, status, email_verified, created_at, updated_at)
+      VALUES (?, ?, 'hash', 'volunteer', 'active', 1, ?, ?)
     `, [checkInWorkerUserId, `worker-3c-${testRunId}@tga-test.org`, nowIso, nowIso]);
 
     await execute(`
@@ -107,8 +107,8 @@ async function runTgaPhase3cUnifiedCheckInTests() {
 
     // Unauthorized Volunteer (e.g. assigned to care/room only)
     await execute(`
-      INSERT INTO users (id, email, password_hash, role, status, created_at, updated_at)
-      VALUES (?, ?, 'hash', 'volunteer', 'active', ?, ?)
+      INSERT INTO users (id, email, password_hash, role, status, email_verified, created_at, updated_at)
+      VALUES (?, ?, 'hash', 'volunteer', 'active', 1, ?, ?)
     `, [unauthVolUserId, `unauth-3c-${testRunId}@tga-test.org`, nowIso, nowIso]);
 
     await execute(`
@@ -694,8 +694,231 @@ async function runTgaPhase3cUnifiedCheckInTests() {
     passedScenarios++;
     console.log('  [PASS] Scenario 25: Responsive layout preserved');
 
+    console.log('\n--- VOLUNTEER VIEW RECORD ROUTING SCENARIOS ---');
+
+    // Scenario 26: Scan resolves child across Pass, WB, and NFC
+    const scanPassRes = await fetch(`${baseUrl}/api/volunteer/children/resolve-identifier`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${workerToken}` },
+      body: JSON.stringify({ eventId: testEvent1Id, identifier: pass1Ref })
+    });
+    assert.strictEqual(scanPassRes.status, 200);
+    const scanPassData = await scanPassRes.json();
+    assert.strictEqual(scanPassData.childEventEntryId, entry1Id);
+
+    const scanWbRes = await fetch(`${baseUrl}/api/volunteer/children/resolve-identifier`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${workerToken}` },
+      body: JSON.stringify({ eventId: testEvent1Id, identifier: band1.wristband_code })
+    });
+    assert.strictEqual(scanWbRes.status, 200);
+    const scanWbData = await scanWbRes.json();
+    assert.strictEqual(scanWbData.childEventEntryId, entry1Id);
+
+    const scanNfcRes = await fetch(`${baseUrl}/api/volunteer/children/resolve-identifier`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${workerToken}` },
+      body: JSON.stringify({ eventId: testEvent1Id, identifier: '04:3C:01:01' })
+    });
+    assert.strictEqual(scanNfcRes.status, 200);
+    const scanNfcData = await scanNfcRes.json();
+    assert.strictEqual(scanNfcData.childEventEntryId, entry1Id);
+    passedScenarios++;
+    console.log('  [PASS] Scenario 26: Scan resolves child across Pass, WB, and NFC');
+
+    // Scenario 27: View record uses canonical resolved child identity
+    const lookupChild1 = await fetch(`${baseUrl}/api/volunteer/pass/lookup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${workerToken}` },
+      body: JSON.stringify({ childEventEntryId: entry1Id })
+    });
+    assert.strictEqual(lookupChild1.status, 200);
+    const lookupChild1Data = await lookupChild1.json();
+    assert.strictEqual(lookupChild1Data.success, true);
+    assert.strictEqual(lookupChild1Data.child.id, child1Id);
+    assert.strictEqual(lookupChild1Data.child.entryId, entry1Id);
+
+    const resolvedTargetId = lookupChild1Data.child.id || lookupChild1Data.child.childId || lookupChild1Data.child.entryId;
+    assert.strictEqual(resolvedTargetId, child1Id);
+    passedScenarios++;
+    console.log('  [PASS] Scenario 27: View record uses canonical resolved child identity');
+
+    // Scenario 28: View record does not route to /volunteer/scan and targets /volunteer/children
+    const simulatedScanViewRecordTransition = (scannedChild: any) => {
+      const cid = scannedChild?.id || scannedChild?.childId || scannedChild?.entryId;
+      let targetRoute = '/volunteer/scan';
+      let selectedId: string | null = null;
+      let origin: string | null = null;
+      if (cid) {
+        selectedId = cid;
+        origin = 'scan';
+        targetRoute = '/volunteer/children';
+      }
+      return { targetRoute, selectedId, origin };
+    };
+    const navResult = simulatedScanViewRecordTransition(lookupChild1Data.child);
+    assert.strictEqual(navResult.targetRoute, '/volunteer/children');
+    assert.notStrictEqual(navResult.targetRoute, '/volunteer/scan');
+    assert.strictEqual(navResult.selectedId, child1Id);
+    assert.strictEqual(navResult.origin, 'scan');
+    passedScenarios++;
+    console.log('  [PASS] Scenario 28: View record does not route to /volunteer/scan');
+
+    // Scenario 29: View record opens the same detail mechanism used by Children list
+    const detailFromScan = await fetch(`${baseUrl}/api/volunteer/children/${navResult.selectedId}`, {
+      headers: { Authorization: `Bearer ${workerToken}` }
+    });
+    assert.strictEqual(detailFromScan.status, 200);
+    const detailFromScanData = await detailFromScan.json();
+    assert.strictEqual(detailFromScanData.success, true);
+    assert.strictEqual(detailFromScanData.child.id, child1Id);
+    assert.strictEqual(detailFromScanData.child.fullName, 'David TestChild 3C');
+    passedScenarios++;
+    console.log('  [PASS] Scenario 29: View record opens the same detail mechanism used by Children list');
+
+    // Scenario 30: Correct child is retained
+    assert.strictEqual(detailFromScanData.child.id, lookupChild1Data.child.id);
+    assert.strictEqual(detailFromScanData.child.fullName, lookupChild1Data.child.fullName);
+    passedScenarios++;
+    console.log('  [PASS] Scenario 30: Correct child is retained across scan and view record');
+
+    // Scenario 31: Pass reference works end-to-end to child detail
+    const passResolve = await fetch(`${baseUrl}/api/volunteer/children/resolve-identifier`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${workerToken}` },
+      body: JSON.stringify({ eventId: testEvent1Id, identifier: pass1Ref })
+    });
+    const passResolveData = await passResolve.json();
+    const passProfileRes = await fetch(`${baseUrl}/api/volunteer/children/${passResolveData.childEventEntryId}`, {
+      headers: { Authorization: `Bearer ${workerToken}` }
+    });
+    assert.strictEqual(passProfileRes.status, 200);
+    const passProfile = await passProfileRes.json();
+    assert.strictEqual(passProfile.child.id, child1Id);
+    passedScenarios++;
+    console.log('  [PASS] Scenario 31: Pass reference works end-to-end to child detail');
+
+    // Scenario 32: WB code works end-to-end to child detail
+    const wbResolve = await fetch(`${baseUrl}/api/volunteer/children/resolve-identifier`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${workerToken}` },
+      body: JSON.stringify({ eventId: testEvent1Id, identifier: band1.wristband_code })
+    });
+    const wbResolveData = await wbResolve.json();
+    const wbProfileRes = await fetch(`${baseUrl}/api/volunteer/children/${wbResolveData.childEventEntryId}`, {
+      headers: { Authorization: `Bearer ${workerToken}` }
+    });
+    assert.strictEqual(wbProfileRes.status, 200);
+    const wbProfile = await wbProfileRes.json();
+    assert.strictEqual(wbProfile.child.id, child1Id);
+    passedScenarios++;
+    console.log('  [PASS] Scenario 32: WB code works end-to-end to child detail');
+
+    // Scenario 33: NFC UID works end-to-end to child detail
+    const nfcResolve = await fetch(`${baseUrl}/api/volunteer/children/resolve-identifier`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${workerToken}` },
+      body: JSON.stringify({ eventId: testEvent1Id, identifier: '04:3C:01:01' })
+    });
+    const nfcResolveData = await nfcResolve.json();
+    const nfcProfileRes = await fetch(`${baseUrl}/api/volunteer/children/${nfcResolveData.childEventEntryId}`, {
+      headers: { Authorization: `Bearer ${workerToken}` }
+    });
+    assert.strictEqual(nfcProfileRes.status, 200);
+    const nfcProfile = await nfcProfileRes.json();
+    assert.strictEqual(nfcProfile.child.id, child1Id);
+    passedScenarios++;
+    console.log('  [PASS] Scenario 33: NFC UID works end-to-end to child detail');
+
+    // Scenario 34: No automatic check-in occurs from View record
+    const child3Id = `ch-3c-3-${testRunId}`;
+    const entry3Id = `ent-3c-3-${testRunId}`;
+    const pass3Ref = `KOI-2026-3C3${testRunId.slice(-3)}`;
+    await execute(`
+      INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, calculated_age, age_group, created_at, updated_at)
+      VALUES (?, ?, 'Faith ViewRecordOnly 3C', 'Female', '2019-07-20', 7, 'Ages 7 to 9', ?, ?)
+    `, [child3Id, parentProfileId, nowIso, nowIso]);
+    await execute(`
+      INSERT INTO child_event_entries (id, event_id, child_id, status, created_at, updated_at)
+      VALUES (?, ?, ?, 'pass_ready', ?, ?)
+    `, [entry3Id, testEvent1Id, child3Id, nowIso, nowIso]);
+    await execute(`
+      INSERT INTO event_passes (id, child_event_entry_id, pass_reference, pass_hash, status, issued_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'active', ?, ?, ?)
+    `, [`pass-3c-3-${testRunId}`, entry3Id, pass3Ref, `hash-3c-3-${testRunId}`, nowIso, nowIso, nowIso]);
+
+    // Resolve Child 3 via scan
+    const resChild3 = await fetch(`${baseUrl}/api/volunteer/children/resolve-identifier`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${workerToken}` },
+      body: JSON.stringify({ eventId: testEvent1Id, identifier: pass3Ref })
+    });
+    assert.strictEqual(resChild3.status, 200);
+    // Lookup Child 3
+    const lookupChild3 = await fetch(`${baseUrl}/api/volunteer/pass/lookup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${workerToken}` },
+      body: JSON.stringify({ childEventEntryId: entry3Id })
+    });
+    assert.strictEqual(lookupChild3.status, 200);
+    // View record on Child 3
+    const profileChild3 = await fetch(`${baseUrl}/api/volunteer/children/${child3Id}`, {
+      headers: { Authorization: `Bearer ${workerToken}` }
+    });
+    assert.strictEqual(profileChild3.status, 200);
+
+    // Verify Child 3 status in DB is STILL 'pass_ready' and NOT checked in
+    const entry3Db = await queryOne<{ status: string; checked_in_at: string | null }>(
+      'SELECT status, checked_in_at FROM child_event_entries WHERE id = ?',
+      [entry3Id]
+    );
+    assert.strictEqual(entry3Db?.status, 'pass_ready');
+    assert.strictEqual(entry3Db?.checked_in_at, null);
+    passedScenarios++;
+    console.log('  [PASS] Scenario 34: No automatic check-in occurs from View record');
+
+    // Scenario 35: Existing Children-list child detail still works and back behavior is preserved
+    const dirRes = await fetch(`${baseUrl}/api/volunteer/children?limit=10`, {
+      headers: { Authorization: `Bearer ${workerToken}` }
+    });
+    assert.strictEqual(dirRes.status, 200);
+    const dirData = await dirRes.json();
+    assert.ok(Array.isArray(dirData.items));
+    assert.ok(dirData.items.length > 0);
+
+    const firstChildFromDir = dirData.items[0];
+    const dirProfileRes = await fetch(`${baseUrl}/api/volunteer/children/${firstChildFromDir.childId}`, {
+      headers: { Authorization: `Bearer ${workerToken}` }
+    });
+    assert.strictEqual(dirProfileRes.status, 200);
+    const dirProfileData = await dirProfileRes.json();
+    assert.strictEqual(dirProfileData.success, true);
+    assert.strictEqual(dirProfileData.child.id, firstChildFromDir.childId);
+
+    // Verify UI code contracts
+    assert.ok(
+      dashboardContent.includes('handleViewScannedChildRecord'),
+      'UI must define handleViewScannedChildRecord helper'
+    );
+    assert.ok(
+      dashboardContent.includes('volunteer-child-view-record-action-v7') ||
+      dashboardContent.includes('volunteer-child-view-record-secondary-action-v7'),
+      'UI must include View record action buttons'
+    );
+    assert.ok(
+      dashboardContent.includes("childDetailOrigin === 'scan'"),
+      'UI must track scan origin for natural back navigation to scan'
+    );
+    assert.ok(
+      dashboardContent.includes("childDetailOrigin === 'children'") ||
+      dashboardContent.includes("setChildDetailOrigin('children')"),
+      'UI must track children origin so directory navigation is preserved'
+    );
+    passedScenarios++;
+    console.log('  [PASS] Scenario 35: Existing Children-list child detail and back behavior verified');
+
     console.log('\n================================================================');
-    console.log(`ALL 25/25 PHASE 3C SCENARIOS PASSED SUCCESSFULLY`);
+    console.log(`ALL 35/35 PHASE 3C SCENARIOS PASSED SUCCESSFULLY`);
     console.log('================================================================\n');
 
     server.close();

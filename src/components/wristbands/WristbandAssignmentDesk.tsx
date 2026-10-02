@@ -57,8 +57,8 @@ export interface VerifiedWristband {
   id: string;
   eventId: string;
   wristbandCode: string;
-  nfcUid: string;
-  status: 'available' | 'active' | 'lost' | 'damaged' | 'decommissioned';
+  nfcUid: string | null;
+  status: 'available' | 'active' | 'lost' | 'damaged' | 'decommissioned' | 'prepared';
   isAssigned: boolean;
   assignedChildEventEntryId: string | null;
   assignedAt: string | null;

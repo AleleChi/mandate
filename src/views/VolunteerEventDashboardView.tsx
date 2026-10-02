@@ -486,6 +486,17 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [wristbandInitialChild, setWristbandInitialChild] = useState<any | null>(null);
   const [unassignedWristbandInfo, setUnassignedWristbandInfo] = useState<{ rawInput: string; message: string } | null>(null);
   const scannerInputRef = useRef<HTMLInputElement>(null);
+
+  // Compact Check-In Wristband Assignment states
+  const [isAssigningWristband, setIsAssigningWristband] = useState(false);
+  const [wristbandScanInput, setWristbandScanInput] = useState('');
+  const [isResolvingWristband, setIsResolvingWristband] = useState(false);
+  const [wristbandAssignmentError, setWristbandAssignmentError] = useState<string | null>(null);
+  const [stagedWristband, setStagedWristband] = useState<any | null>(null);
+  const [isBindingWristband, setIsBindingWristband] = useState(false);
+  const [justAssignedWristbandCode, setJustAssignedWristbandCode] = useState<string | null>(null);
+  const wristbandInlineInputRef = useRef<HTMLInputElement>(null);
+
   const [recentScans, setRecentScans] = useState<any[]>([]);
 
   // Check-in success states
@@ -516,6 +527,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   // Child Profile & Directory States
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
+  const [childDetailOrigin, setChildDetailOrigin] = useState<'scan' | 'children' | null>(null);
   const [childProfileData, setChildProfileData] = useState<any | null>(null);
   const [childProfileLoading, setChildProfileLoading] = useState(false);
   const [childProfileError, setChildProfileError] = useState<string | null>(null);
@@ -1515,6 +1527,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   useEffect(() => {
     if (cleanRoute !== '/volunteer/children') {
       setSelectedChildId(null);
+      setChildDetailOrigin(null);
     }
   }, [cleanRoute]);
 
@@ -1788,6 +1801,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     setCheckedInSuccessEntry(null);
     setIsCheckingIn(false);
     setUnassignedWristbandInfo(null);
+
+    // Reset compact wristband assignment state
+    setIsAssigningWristband(false);
+    setWristbandScanInput('');
+    setIsResolvingWristband(false);
+    setWristbandAssignmentError(null);
+    setStagedWristband(null);
+    setIsBindingWristband(false);
+    setJustAssignedWristbandCode(null);
     
     // Reset all lookup and deduplication refs
     isLookupInFlightRef.current = false;
@@ -2187,6 +2209,156 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     }
   };
 
+  // Navigate to child-detail record from scanned lookup without checking in
+  const handleViewScannedChildRecord = (child: any) => {
+    if (!child) return;
+    const cid = child.id || child.childId || child.entryId || child.childEventEntryId;
+    if (!cid) return;
+    setSelectedChildId(cid);
+    setChildDetailOrigin('scan');
+    handleResetScannerState();
+    onNavigate('/volunteer/children');
+  };
+
+  // Helper to translate wristband lookup & binding error codes to controlled human messages
+  const translateWristbandAssignmentError = (err: any): string => {
+    const code = err?.code || '';
+    const message = err?.message || err?.error || '';
+
+    switch (code) {
+      case 'WRISTBAND_NOT_FOUND':
+        return 'Wristband not found for this event.';
+      case 'WRISTBAND_NOT_VERIFIED':
+        return 'This wristband has not completed physical verification.';
+      case 'WRISTBAND_ALREADY_ASSIGNED':
+        return 'This wristband is already assigned.';
+      case 'CHILD_ALREADY_HAS_WRISTBAND':
+        return 'This child already has an active wristband.';
+      case 'EVENT_MISMATCH':
+        return 'Wristband not found for this event.';
+      case 'INVALID_NFC_UID':
+        return 'Invalid NFC UID or wristband code.';
+      case 'FORBIDDEN':
+        return 'You do not have permission to assign wristbands.';
+      case 'IDEMPOTENCY_CONFLICT':
+        return 'A conflicting operation was recently submitted. Please try again.';
+      default:
+        return message || 'Wristband not found for this event.';
+    }
+  };
+
+  // Lookup existing available wristband from current event inventory
+  const handleInlineWristbandLookup = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const rawInput = wristbandScanInput.trim();
+    if (!rawInput) return;
+
+    const eventId = eventDetails?.id || (lookedUpChild as any)?.eventId;
+    if (!eventId) {
+      setWristbandAssignmentError('Event context unavailable. Please refresh.');
+      return;
+    }
+
+    setWristbandAssignmentError(null);
+    setIsResolvingWristband(true);
+
+    try {
+      const res = await api.wristbands.lookup(
+        { eventId, identifier: rawInput },
+        'volunteer'
+      );
+
+      if (res?.success && res.wristband) {
+        const wb = res.wristband;
+        if (wb.status === 'available') {
+          setStagedWristband(wb);
+          setWristbandAssignmentError(null);
+        } else if (wb.status === 'prepared') {
+          setWristbandAssignmentError('This wristband has not completed physical verification.');
+          setStagedWristband(null);
+        } else if (wb.status === 'active') {
+          setWristbandAssignmentError('This wristband is already assigned.');
+          setStagedWristband(null);
+        } else if (wb.status === 'lost') {
+          setWristbandAssignmentError('This wristband is marked as lost and cannot be assigned.');
+          setStagedWristband(null);
+        } else if (wb.status === 'damaged') {
+          setWristbandAssignmentError('This wristband is marked as damaged and cannot be assigned.');
+          setStagedWristband(null);
+        } else if (wb.status === 'decommissioned') {
+          setWristbandAssignmentError('This wristband has been decommissioned and cannot be assigned.');
+          setStagedWristband(null);
+        } else {
+          setWristbandAssignmentError(`Wristband is not available (status: ${wb.status}).`);
+          setStagedWristband(null);
+        }
+      } else {
+        setWristbandAssignmentError('Wristband not found for this event.');
+        setStagedWristband(null);
+      }
+    } catch (err: any) {
+      setWristbandAssignmentError(translateWristbandAssignmentError(err));
+      setStagedWristband(null);
+    } finally {
+      setIsResolvingWristband(false);
+    }
+  };
+
+  // Confirm wristband binding to child entry
+  const handleConfirmInlineWristbandBinding = async () => {
+    if (!lookedUpChild || !stagedWristband || isBindingWristband) return;
+
+    const eventId = eventDetails?.id || (lookedUpChild as any)?.eventId;
+    const childEventEntryId = lookedUpChild.entryId || lookedUpChild.childEventEntryId || lookedUpChild.id;
+
+    if (!eventId || !childEventEntryId) {
+      setWristbandAssignmentError('Missing event or child entry context.');
+      return;
+    }
+
+    setIsBindingWristband(true);
+    setWristbandAssignmentError(null);
+
+    const idempotencyKey = `idem-checkin-wb-${childEventEntryId}-${stagedWristband.id}`;
+
+    try {
+      const res = await api.wristbands.bind(
+        {
+          eventId,
+          childEventEntryId,
+          wristbandId: stagedWristband.id,
+          wristbandCode: stagedWristband.wristbandCode,
+          idempotencyKey
+        },
+        'volunteer'
+      );
+
+      if (res && res.success) {
+        const assignedCode = stagedWristband.wristbandCode;
+        setJustAssignedWristbandCode(assignedCode);
+        setLookedUpChild((prev: any) => prev ? {
+          ...prev,
+          activeWristband: {
+            id: stagedWristband.id,
+            wristbandCode: assignedCode,
+            status: 'active',
+            assignedAt: new Date().toISOString()
+          }
+        } : null);
+        setStagedWristband(null);
+        setIsAssigningWristband(false);
+        setWristbandScanInput('');
+        showSuccess('Wristband assigned', `${assignedCode} successfully assigned to ${lookedUpChild.fullName}.`);
+      } else {
+        setWristbandAssignmentError('Failed to complete wristband assignment.');
+      }
+    } catch (err: any) {
+      setWristbandAssignmentError(translateWristbandAssignmentError(err));
+    } finally {
+      setIsBindingWristband(false);
+    }
+  };
+
   // Confirm and perform Check-in
   const handleConfirmCheckIn = async (child: any) => {
     if (isCheckingIn) return;
@@ -2569,7 +2741,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       }
                     } else if (cleanRoute === '/volunteer/children') {
                       if (selectedChildId) {
-                        setSelectedChildId(null);
+                        if (childDetailOrigin === 'scan') {
+                          setSelectedChildId(null);
+                          setChildDetailOrigin(null);
+                          onNavigate('/volunteer/scan');
+                        } else {
+                          setSelectedChildId(null);
+                          setChildDetailOrigin(null);
+                        }
                       } else {
                         onNavigate('/volunteer/event');
                       }
@@ -3422,6 +3601,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     <button
                       onClick={() => {
                         setSelectedChildId(checkedInSuccessChild.id);
+                        setChildDetailOrigin('scan');
                         handleResetScannerState();
                         onNavigate('/volunteer/children');
                       }}
@@ -3567,6 +3747,212 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   </div>
                 </div>
 
+                {/* Wristband Card */}
+                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-found-wristband-v1">
+                  <div className="flex items-center justify-between pb-1 border-b border-gray-50 dark:border-[#302E29]">
+                    <div className="flex items-center space-x-2 text-gray-900 dark:text-[#F0EBE3]">
+                      <Tag className="h-4.5 w-4.5 text-[#C59B27]" />
+                      <h4 className="text-sm font-serif font-bold">Wristband</h4>
+                    </div>
+                    {justAssignedWristbandCode && (
+                      <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-full bg-[#FAF6EB] dark:bg-[#262520] text-[#C59B27] dark:text-[#D4AF37] border border-[#E5D5AE] dark:border-[#3A3835]">
+                        ✓ Assigned
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Just Assigned Success Banner */}
+                  {justAssignedWristbandCode && (
+                    <div className="p-3.5 bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] rounded-2xl flex items-center space-x-3">
+                      <div className="p-1.5 bg-[#C59B27]/10 text-[#C59B27] rounded-lg shrink-0">
+                        <Check className="h-4 w-4 stroke-[3]" />
+                      </div>
+                      <div>
+                        <span className="text-[11px] font-bold text-[#9A7326] dark:text-[#D4AF37] block font-mono">
+                          ✓ Wristband assigned
+                        </span>
+                        <span className="font-mono font-bold text-gray-900 dark:text-[#F0EBE3] text-sm block">
+                          {justAssignedWristbandCode}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* State B: ACTIVE WRISTBAND ALREADY ASSIGNED */}
+                  {lookedUpChild.activeWristband ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-3.5 bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#3A3835] rounded-2xl">
+                        <div>
+                          <span className="text-[10px] text-gray-400 dark:text-[#7A7570] font-mono uppercase tracking-wider block">Wristband</span>
+                          <span className="font-mono font-bold text-gray-900 dark:text-[#F0EBE3] text-sm block mt-0.5">
+                            {lookedUpChild.activeWristband.wristbandCode}
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-mono font-bold uppercase px-2.5 py-1 rounded-full bg-[#FAF6EB] dark:bg-[#262520] text-[#C59B27] dark:text-[#D4AF37] border border-[#E5D5AE] dark:border-[#3A3835]">
+                          Assigned
+                        </span>
+                      </div>
+
+                      {/* State C: Replacement Guidance */}
+                      <div className="p-3 bg-gray-50/50 dark:bg-[#262520]/50 border border-gray-100 dark:border-[#302E29] rounded-2xl text-[11px] text-gray-500 dark:text-[#B8B0A5] flex items-center justify-between">
+                        <span>Lost or damaged wristband?</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWristbandInitialChild(lookedUpChild);
+                            onNavigate('/volunteer/wristbands');
+                          }}
+                          className="text-[#C59B27] hover:underline font-bold ml-2 cursor-pointer shrink-0"
+                        >
+                          Replacement Desk →
+                        </button>
+                      </div>
+                    </div>
+                  ) : isAssigningWristband ? (
+                    /* Compact Assignment In-Flow */
+                    <div className="space-y-4">
+                      {stagedWristband ? (
+                        /* Section 6: Confirmation Before Bind */
+                        <div className="p-4 bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#3A3835] rounded-2xl space-y-3">
+                          <div>
+                            <span className="text-[10px] text-gray-400 dark:text-[#7A7570] font-mono uppercase tracking-wider block">Child</span>
+                            <span className="font-serif font-bold text-gray-900 dark:text-[#F0EBE3] text-base block mt-0.5">
+                              {lookedUpChild.fullName}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3 border-t border-gray-100 dark:border-[#302E29] pt-2.5">
+                            <div>
+                              <span className="text-[10px] text-gray-400 dark:text-[#7A7570] font-mono uppercase tracking-wider block">Wristband</span>
+                              <span className="font-mono font-bold text-[#C59B27] text-sm block mt-0.5">
+                                {stagedWristband.wristbandCode}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-gray-400 dark:text-[#7A7570] font-mono uppercase tracking-wider block">Status</span>
+                              <span className="text-xs font-bold text-gray-800 dark:text-[#F0EBE3] block mt-0.5">
+                                Available
+                              </span>
+                            </div>
+                          </div>
+
+                          {wristbandAssignmentError && (
+                            <div className="p-2.5 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 rounded-xl text-xs text-red-600 dark:text-red-400 font-medium">
+                              {wristbandAssignmentError}
+                            </div>
+                          )}
+
+                          <div className="flex space-x-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setStagedWristband(null);
+                                setWristbandScanInput('');
+                                setWristbandAssignmentError(null);
+                                setTimeout(() => wristbandInlineInputRef.current?.focus(), 50);
+                              }}
+                              disabled={isBindingWristband}
+                              className="flex-1 border border-gray-300 dark:border-[#3A3835] hover:border-gray-400 text-gray-700 dark:text-[#F0EBE3] font-bold py-2.5 rounded-xl text-xs uppercase cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleConfirmInlineWristbandBinding}
+                              disabled={isBindingWristband}
+                              className="flex-1 bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#1D1D1A] font-bold py-2.5 rounded-xl text-xs uppercase cursor-pointer flex items-center justify-center space-x-1.5 shadow-sm"
+                            >
+                              {isBindingWristband ? (
+                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                              ) : (
+                                <span>Confirm assignment</span>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Section 3 & 4: Compact Scan or Tap Prompt */
+                        <form onSubmit={handleInlineWristbandLookup} className="space-y-3">
+                          <div className="p-3 bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#3A3835] rounded-2xl space-y-2">
+                            <label className="text-xs font-bold text-gray-800 dark:text-[#F0EBE3] block">
+                              Scan or enter wristband code
+                            </label>
+                            <p className="text-[11px] text-gray-500 dark:text-[#B8B0A5]">
+                              Scan printed WB QR code or enter code
+                            </p>
+                            <div className="flex space-x-2">
+                              <input
+                                ref={wristbandInlineInputRef}
+                                type="text"
+                                value={wristbandScanInput}
+                                onChange={(e) => setWristbandScanInput(e.target.value)}
+                                placeholder="WB-000123..."
+                                autoFocus
+                                disabled={isResolvingWristband}
+                                className="flex-1 px-3 py-2 text-xs font-mono bg-white dark:bg-[#21211E] border border-gray-300 dark:border-[#3A3835] rounded-xl text-gray-900 dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27]"
+                              />
+                              <button
+                                type="submit"
+                                disabled={isResolvingWristband || !wristbandScanInput.trim()}
+                                className="px-3 py-2 bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#1D1D1A] font-bold text-xs rounded-xl uppercase cursor-pointer disabled:opacity-50"
+                              >
+                                {isResolvingWristband ? (
+                                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                ) : (
+                                  'Lookup'
+                                )}
+                              </button>
+                            </div>
+                          </div>
+
+                          {wristbandAssignmentError && (
+                            <div className="p-2.5 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 rounded-xl text-xs text-red-600 dark:text-red-400 font-medium">
+                              {wristbandAssignmentError}
+                            </div>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsAssigningWristband(false);
+                              setWristbandScanInput('');
+                              setWristbandAssignmentError(null);
+                            }}
+                            className="w-full text-center text-xs text-gray-500 dark:text-[#B8B0A5] hover:text-gray-700 dark:hover:text-[#F0EBE3] py-1 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </form>
+                      )}
+                    </div>
+                  ) : (
+                    /* State A: NO WRISTBAND ASSIGNED */
+                    <div className="p-4 bg-gray-50/50 dark:bg-[#262520] border border-gray-100 dark:border-[#3A3835] rounded-2xl space-y-3">
+                      <div>
+                        <span className="text-[10px] text-gray-400 dark:text-[#7A7570] font-mono uppercase tracking-wider block">Wristband</span>
+                        <p className="text-sm font-semibold text-gray-800 dark:text-[#F0EBE3] mt-0.5">
+                          No wristband assigned
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAssigningWristband(true);
+                          setStagedWristband(null);
+                          setWristbandScanInput('');
+                          setWristbandAssignmentError(null);
+                          setTimeout(() => wristbandInlineInputRef.current?.focus(), 50);
+                        }}
+                        className="w-full bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] hover:bg-[#F5EED9] dark:hover:bg-[#2A2926] text-[#9A7326] dark:text-[#D4AF37] font-bold tracking-widest py-3 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer flex items-center justify-center space-x-2"
+                      >
+                        <Tag className="h-4 w-4 text-[#C59B27]" />
+                        <span>Assign wristband</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 {/* Entry Status Card */}
                 <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-found-entry-status-v3">
                   <h4 className="text-lg font-serif font-bold text-gray-950 dark:text-[#F0EBE3]">Entry Status</h4>
@@ -3590,66 +3976,52 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                   {/* Action buttons */}
                   <div className="space-y-3 pt-1">
-                    <button
-                      onClick={() => {
-                        if (isAlreadyCheckedIn) {
-                          showSuccess('Record Active', `${lookedUpChild.fullName} is already checked in.`);
-                        } else {
-                          handleConfirmCheckIn(lookedUpChild);
-                        }
-                      }}
-                      disabled={scanLoading || isCheckingIn}
-                      data-component-version="volunteer-child-checkin-action-v6"
-                      className={`w-full font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2 ${
-                        isAlreadyCheckedIn
-                          ? 'bg-gray-400 hover:bg-gray-500 dark:bg-[#262520] dark:border dark:border-[#3A3835] text-white dark:text-[#F0EBE3] dark:hover:bg-[#2A2926]'
-                          : 'bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#1D1D1A]'
-                      }`}
-                    >
-                      {isCheckingIn ? (
-                        <>
-                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                          <span>Checking in...</span>
-                        </>
-                      ) : scanLoading ? (
-                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                      ) : (
-                        <>
-                          <UserCheck className="h-4 w-4 stroke-[2.5]" />
-                          <span>{isAlreadyCheckedIn ? 'VIEW RECORD' : 'MARK CHECKED IN'}</span>
-                        </>
-                      )}
-                    </button>
-
-                    {/* Existing Wristband Notification */}
-                    {lookedUpChild.activeWristband && (
-                      <div className="bg-[#FAF6EB] dark:bg-amber-950/20 border border-[#E5D5AE] dark:border-amber-900/40 rounded-2xl p-3.5 flex items-center justify-between text-xs">
-                        <div className="flex items-center space-x-2">
-                          <Tag className="w-4 h-4 text-[#C59B27]" />
-                          <span className="text-zinc-700 dark:text-[#F0EBE3] font-medium">Wristband:</span>
-                          <span className="font-mono font-bold text-[#C59B27]">
-                            {lookedUpChild.activeWristband.wristbandCode}
-                          </span>
-                        </div>
-                        <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-[#C59B27]/20 text-emerald-800 dark:text-[#D4AF37]">
-                          Active
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Quick Assign Wristband Action if eligible and unassigned */}
-                    {!lookedUpChild.activeWristband && ['selected', 'pass_ready', 'checked_in'].includes(lookedUpChild.entryStatus || lookedUpChild.status) && (
+                    {isAlreadyCheckedIn ? (
                       <button
                         type="button"
-                        onClick={() => {
-                          setWristbandInitialChild(lookedUpChild);
-                          onNavigate('/volunteer/wristbands');
-                        }}
-                        className="w-full bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] hover:bg-[#F5EED9] dark:hover:bg-[#2A2926] text-[#9A7326] dark:text-[#D4AF37] font-bold tracking-widest py-3 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer flex items-center justify-center space-x-2"
+                        onClick={() => handleViewScannedChildRecord(lookedUpChild)}
+                        disabled={scanLoading || isCheckingIn}
+                        data-component-version="volunteer-child-view-record-action-v7"
+                        className="w-full bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#1D1D1A] font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2"
                       >
-                        <Tag className="h-4 w-4 text-[#C59B27]" />
-                        <span>ASSIGN WRISTBAND</span>
+                        <User className="h-4 w-4 stroke-[2.5]" />
+                        <span>View record</span>
                       </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmCheckIn(lookedUpChild)}
+                          disabled={scanLoading || isCheckingIn}
+                          data-component-version="volunteer-child-checkin-action-v6"
+                          className="w-full bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#1D1D1A] font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2"
+                        >
+                          {isCheckingIn ? (
+                            <>
+                              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                              <span>Checking in...</span>
+                            </>
+                          ) : scanLoading ? (
+                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                          ) : (
+                            <>
+                              <UserCheck className="h-4 w-4 stroke-[2.5]" />
+                              <span>{justAssignedWristbandCode ? 'CONTINUE CHECK-IN' : 'MARK CHECKED IN'}</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleViewScannedChildRecord(lookedUpChild)}
+                          disabled={scanLoading || isCheckingIn}
+                          data-component-version="volunteer-child-view-record-secondary-action-v7"
+                          className="w-full border border-gray-300 dark:border-[#302E29] hover:border-gray-400 dark:hover:border-[#3A3835] text-gray-850 dark:text-[#F0EBE3] font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer flex items-center justify-center space-x-2 bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520]"
+                        >
+                          <User className="h-4 w-4 text-gray-600 dark:text-[#B8B0A5] stroke-[2]" />
+                          <span>View record</span>
+                        </button>
+                      </>
                     )}
 
                     <button
@@ -4868,6 +5240,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   type="button"
                   onClick={() => {
                     setSelectedChildId(null);
+                    setChildDetailOrigin(null);
                     setChildProfileError(null);
                     fetchChildrenDirectory(directoryPage, activeDirectoryFilter, searchQuery);
                   }}
@@ -5349,7 +5722,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       return (
                         <div
                           key={child.childId}
-                          onClick={() => setSelectedChildId(child.childId)}
+                          onClick={() => {
+                            setSelectedChildId(child.childId);
+                            setChildDetailOrigin('children');
+                          }}
                           className="p-3.5 sm:px-4 flex items-center justify-between gap-3 hover:bg-zinc-50/70 dark:hover:bg-[#262520]/70 transition-colors cursor-pointer group"
                         >
                           {/* Left Side: Photo & Details */}
@@ -5618,6 +5994,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       const cid = lastVerifiedChild.id || lastVerifiedChild.childId;
                       if (cid) {
                         setSelectedChildId(cid);
+                        setChildDetailOrigin('scan');
                       }
                       setLastVerifiedChild(null);
                       onNavigate('/volunteer/children');

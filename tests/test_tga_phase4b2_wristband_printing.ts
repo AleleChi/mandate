@@ -627,7 +627,9 @@ async function runTgaPhase4b2WristbandPrintingTests() {
   }
 }
 
-runTgaPhase4b2WristbandPrintingTests().catch((err) => {
+runTgaPhase4b2WristbandPrintingTests().then(() => {
+  process.exit(0);
+}).catch((err) => {
   console.error('\n❌ TEST SUITE FAILED:', err);
   process.exit(1);
 });

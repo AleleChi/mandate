@@ -798,7 +798,7 @@ export const api = {
   },
 
   wristbands: {
-    async lookup(payload: { eventId: string; nfcUid: string }, role: 'admin' | 'volunteer' = 'volunteer') {
+    async lookup(payload: { eventId: string; nfcUid?: string; identifier?: string; wristbandCode?: string }, role: 'admin' | 'volunteer' = 'volunteer') {
       const endpoint = role === 'admin' ? '/api/admin/wristbands/lookup' : '/api/volunteer/wristbands/lookup';
       return api.request<{
         success: boolean;
@@ -806,8 +806,8 @@ export const api = {
           id: string;
           eventId: string;
           wristbandCode: string;
-          nfcUid: string;
-          status: 'available' | 'active' | 'lost' | 'damaged' | 'decommissioned';
+          nfcUid: string | null;
+          status: 'available' | 'active' | 'lost' | 'damaged' | 'decommissioned' | 'prepared';
           isAssigned: boolean;
           assignedChildEventEntryId: string | null;
           assignedAt: string | null;
@@ -822,6 +822,7 @@ export const api = {
       childEventEntryId: string;
       nfcUid?: string;
       wristbandId?: string;
+      wristbandCode?: string;
       idempotencyKey?: string;
     }, role: 'admin' | 'volunteer' = 'volunteer') {
       const endpoint = role === 'admin' ? '/api/admin/wristbands/bind' : '/api/volunteer/wristbands/bind';
@@ -951,7 +952,32 @@ export const api = {
         eventId: string;
       }>(`/api/admin/events/${eventId}/wristbands/prepare`, {
         method: 'POST',
-        body: JSON.stringify({ nfcUid })
+        body: JSON.stringify({ eventId, nfcUid })
+      });
+    },
+    async generateWristbandCodes(eventId: string, quantity: number) {
+      return api.request<{
+        success: boolean;
+        totalGenerated: number;
+        rangeStart: string;
+        rangeEnd: string;
+        wristbandCodes: string[];
+        eventId: string;
+        eventName: string;
+        message: string;
+      }>(`/api/admin/events/${eventId}/wristbands/generate-codes`, {
+        method: 'POST',
+        body: JSON.stringify({ eventId, quantity })
+      });
+    },
+    async markWristbandsReady(eventId: string, payload: { ids?: string[]; rangeStart?: string; rangeEnd?: string }) {
+      return api.request<{
+        success: boolean;
+        updatedCount: number;
+        message: string;
+      }>(`/api/admin/events/${eventId}/wristbands/mark-ready`, {
+        method: 'POST',
+        body: JSON.stringify({ eventId, ...payload })
       });
     },
     async verifyPhysicalWristband(payload: { eventId: string; wristbandCode: string; nfcUid: string }) {

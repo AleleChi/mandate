@@ -16,6 +16,7 @@ import { enqueueWhatsAppJob } from '../services/whatsapp/queue';
 import {
   bindWristbandToChild,
   lookupWristbandByNfcUid,
+  lookupWristbandByIdentifier,
   deactivateWristbandAssignment,
   replaceWristband,
   resolveEventChildIdentifier,
@@ -2870,13 +2871,14 @@ router.post('/wristbands/bind', authMiddleware, async (req: AuthenticatedRequest
       return res.status(401).json({ success: false, error: 'Authentication required', code: 'UNAUTHORIZED' });
     }
 
-    const { eventId, childEventEntryId, nfcUid, wristbandId, idempotencyKey } = req.body || {};
+    const { eventId, childEventEntryId, nfcUid, wristbandId, wristbandCode, idempotencyKey } = req.body || {};
 
     const result = await bindWristbandToChild({
       eventId,
       childEventEntryId,
       nfcUid,
       wristbandId,
+      wristbandCode,
       idempotencyKey,
       actor: {
         id: req.user.id,
@@ -2912,12 +2914,21 @@ const handleVolunteerWristbandLookup = async (req: AuthenticatedRequest, res: Re
     }
 
     const eventId = (req.body?.eventId || req.query?.eventId || '') as string;
+    const identifier = (req.body?.identifier || req.query?.identifier || req.body?.wristbandCode || req.query?.wristbandCode || '') as string;
     const nfcUid = (req.body?.nfcUid || req.query?.nfcUid || '') as string;
 
-    const wristband = await lookupWristbandByNfcUid({
-      eventId,
-      rawUid: nfcUid
-    });
+    let wristband;
+    if (identifier) {
+      wristband = await lookupWristbandByIdentifier({
+        eventId,
+        identifier
+      });
+    } else {
+      wristband = await lookupWristbandByNfcUid({
+        eventId,
+        rawUid: nfcUid
+      });
+    }
 
     res.json({
       success: true,

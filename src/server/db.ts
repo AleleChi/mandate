@@ -1740,7 +1740,7 @@ function initSqliteSchema(db: Database.Database) {
         id TEXT PRIMARY KEY,
         event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
         wristband_code TEXT NOT NULL,
-        nfc_uid TEXT NOT NULL,
+        nfc_uid TEXT,
         status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('prepared', 'available', 'active', 'lost', 'damaged', 'decommissioned')),
         created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
         created_at TEXT NOT NULL,
@@ -1793,17 +1793,17 @@ function initSqliteSchema(db: Database.Database) {
     db.exec(`CREATE TABLE IF NOT EXISTS wristband_operation_idempotency (idempotency_key TEXT PRIMARY KEY, operation_type TEXT NOT NULL, event_id TEXT NOT NULL, request_payload_hash TEXT NOT NULL, response_payload TEXT NOT NULL, created_at TEXT NOT NULL);`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_wb_op_idempotency_event ON wristband_operation_idempotency(event_id);`);
 
-    // 7. Phase 4B1: Ensure SQLite wristbands CHECK constraint includes 'prepared'
+    // 7. Phase 4B1 & Device-Independent Production: Ensure SQLite wristbands table has nullable nfc_uid and 'prepared' status
     try {
       const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='wristbands'").get() as any;
-      if (tableInfo && tableInfo.sql && !tableInfo.sql.includes("'prepared'")) {
+      if (tableInfo && tableInfo.sql && (!tableInfo.sql.includes("'prepared'") || tableInfo.sql.includes('nfc_uid TEXT NOT NULL'))) {
         db.pragma('foreign_keys = OFF');
         db.exec(`
           CREATE TABLE wristbands_mig (
             id TEXT PRIMARY KEY,
             event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
             wristband_code TEXT NOT NULL,
-            nfc_uid TEXT NOT NULL,
+            nfc_uid TEXT,
             status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('prepared', 'available', 'active', 'lost', 'damaged', 'decommissioned')),
             created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
             created_at TEXT NOT NULL,
@@ -1820,7 +1820,7 @@ function initSqliteSchema(db: Database.Database) {
         db.pragma('foreign_keys = ON');
       }
     } catch (migErr) {
-      console.warn('SQLite wristband status check migration note:', migErr);
+      console.warn('SQLite wristband schema check migration note:', migErr);
     }
   } catch (e) {
     console.error('Error creating wristband tables in SQLite:', e);
