@@ -21,6 +21,7 @@ import { PwaInstallBanner, PwaInstallGuideModal } from '../components/common/Pwa
 import { isAppInstalled, promptPwaInstall } from '../utils/pwaInstall';
 import { Download } from 'lucide-react';
 import parentHeroImg from '../assets/images/parent_hero_1783622066454.jpg';
+import * as QRCodeLib from 'qrcode';
 
 interface ParentHomeViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -48,19 +49,19 @@ const isRealUploadedPhoto = (url?: string) => {
 };
 
 // Clean fallback avatar component that guarantees no broken images or squished alt text
+const getInitials = (fullName: string): string => {
+  if (!fullName || !fullName.trim()) return 'CH';
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
+
 const FallbackAvatar: React.FC<{
   src?: string;
   name: string;
   className?: string;
 }> = ({ src, name, className = '' }) => {
   const [error, setError] = useState(false);
-
-  const getInitials = (fullName: string) => {
-    if (!fullName || !fullName.trim()) return 'SO';
-    const parts = fullName.trim().split(/\s+/);
-    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  };
 
   if (src && src.trim() !== '' && !error) {
     const resolved = resolveMediaUrl(src);
@@ -87,6 +88,373 @@ const FallbackAvatar: React.FC<{
   );
 };
 
+export const formatPassEventDates = (activeEvent?: { startsAt?: string; starts_at?: string; endsAt?: string; ends_at?: string } | null): string => {
+  if (!activeEvent) return '18th to 22nd November 2026';
+  const starts = activeEvent.startsAt || activeEvent.starts_at;
+  const ends = activeEvent.endsAt || activeEvent.ends_at;
+  if (!starts || !ends) return '18th to 22nd November 2026';
+  const formatDateStr = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      const day = d.getDate();
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const month = months[d.getMonth()];
+      const year = d.getFullYear();
+      const j = day % 10, k = day % 100;
+      let suffix = "th";
+      if (j === 1 && k !== 11) suffix = "st";
+      else if (j === 2 && k !== 12) suffix = "nd";
+      else if (j === 3 && k !== 13) suffix = "rd";
+      return `${day}${suffix} ${month} ${year}`;
+    } catch (e) { return dateStr; }
+  };
+  const formattedStarts = formatDateStr(starts);
+  const formattedEnds = formatDateStr(ends);
+  if (formattedStarts === formattedEnds) return formattedStarts;
+  return `${formattedStarts} – ${formattedEnds}`;
+};
+
+export function buildParentPassWhatsAppShareUrl(eventTitle?: string | null, childName?: string | null, passCode?: string | null): string {
+  const cleanTitle = (eventTitle || 'The General Assembly').trim();
+  const cleanChild = (childName || 'Child').trim();
+  const cleanCode = (passCode || '').trim();
+  const messageLines = [
+    'Koinonia Children & Teens',
+    cleanTitle,
+    '',
+    `Pass for: ${cleanChild}`,
+    `Pass code: ${cleanCode}`,
+    '',
+    'Present the QR or this code at the authorised check-in point.'
+  ];
+  return `https://wa.me/?text=${encodeURIComponent(messageLines.join('\n'))}`;
+}
+
+export async function renderPassCredentialToPngBlob({
+  eventTitle,
+  eventDates,
+  childName,
+  childAgeLabel,
+  childPhotoUrl,
+  effectivePassCode,
+  parentName,
+  parentPhone,
+  pickupName,
+  pickupRelation,
+}: {
+  eventTitle: string;
+  eventDates: string;
+  childName: string;
+  childAgeLabel: string;
+  childPhotoUrl?: string | null;
+  effectivePassCode: string;
+  parentName: string;
+  parentPhone: string;
+  pickupName: string;
+  pickupRelation: string;
+}): Promise<Blob> {
+  if (typeof document === 'undefined') {
+    const placeholder = `PNG-MOCK:${childName}:${effectivePassCode}`;
+    return new Blob([placeholder], { type: 'image/png' });
+  }
+
+  const width = 1080;
+  const height = 1580;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D context not available');
+
+  if (document.fonts) {
+    try {
+      await document.fonts.ready;
+    } catch (_) {}
+  }
+
+  // 1. Warm ivory background
+  ctx.fillStyle = '#FDFCF8';
+  ctx.fillRect(0, 0, width, height);
+
+  // 2. Framing & Corner brackets
+  ctx.strokeStyle = '#D9CFB0';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(36, 36, width - 72, height - 72);
+
+  const cornerSize = 32;
+  ctx.strokeStyle = 'rgba(197, 155, 39, 0.45)';
+  ctx.lineWidth = 2.5;
+
+  ctx.beginPath();
+  ctx.moveTo(50, 50 + cornerSize);
+  ctx.lineTo(50, 50);
+  ctx.lineTo(50 + cornerSize, 50);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(width - 50 - cornerSize, 50);
+  ctx.lineTo(width - 50, 50);
+  ctx.lineTo(width - 50, 50 + cornerSize);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(50, height - 50 - cornerSize);
+  ctx.lineTo(50, height - 50);
+  ctx.lineTo(50 + cornerSize, height - 50);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(width - 50 - cornerSize, height - 50);
+  ctx.lineTo(width - 50, height - 50);
+  ctx.lineTo(width - 50, height - 50 - cornerSize);
+  ctx.stroke();
+
+  // 3. Header
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#C59B27';
+  ctx.font = 'bold 26px "Plus Jakarta Sans", -apple-system, sans-serif';
+  ctx.fillText('K O I N O N I A', width / 2, 115);
+
+  ctx.fillStyle = '#8E8B82';
+  ctx.font = '600 18px "Plus Jakarta Sans", -apple-system, sans-serif';
+  ctx.fillText('CHILDREN & TEENS · OFFICIAL PASS', width / 2, 152);
+
+  ctx.strokeStyle = '#E8E0CA';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(72, 185);
+  ctx.lineTo(width - 72, 185);
+  ctx.stroke();
+
+  // 4. Event Title & Dates
+  ctx.fillStyle = '#18181B';
+  ctx.font = '600 42px "Cormorant Garamond", Georgia, serif';
+  ctx.fillText(eventTitle, width / 2, 240);
+
+  ctx.fillStyle = '#6B6860';
+  ctx.font = '500 22px "Plus Jakarta Sans", -apple-system, sans-serif';
+  ctx.fillText(eventDates, width / 2, 280);
+
+  // Status Badge
+  const badgeWidth = 140;
+  const badgeHeight = 32;
+  const badgeX = (width - badgeWidth) / 2;
+  const badgeY = 302;
+  ctx.fillStyle = '#FAF6EB';
+  ctx.beginPath();
+  if (ctx.roundRect) {
+    ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 6);
+  } else {
+    ctx.rect(badgeX, badgeY, badgeWidth, badgeHeight);
+  }
+  ctx.fill();
+  ctx.strokeStyle = '#E5D5AE';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.fillStyle = '#8C6D23';
+  ctx.font = 'bold 15px "Plus Jakarta Sans", -apple-system, sans-serif';
+  ctx.fillText('PASS ACTIVE', width / 2, badgeY + 22);
+
+  ctx.strokeStyle = '#EDE6D4';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(72, 355);
+  ctx.lineTo(width - 72, 355);
+  ctx.stroke();
+
+  // 5. Child Identity
+  const avatarY = 425;
+  const avatarRadius = 50;
+  let photoDrawn = false;
+  if (childPhotoUrl && isRealUploadedPhoto(childPhotoUrl)) {
+    try {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      const loaded = await new Promise<boolean>((resolve) => {
+        img.onload = () => resolve(true);
+        img.onerror = () => resolve(false);
+        img.src = childPhotoUrl;
+        setTimeout(() => resolve(false), 2000);
+      });
+      if (loaded) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(width / 2, avatarY, avatarRadius, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(img, (width / 2) - avatarRadius, avatarY - avatarRadius, avatarRadius * 2, avatarRadius * 2);
+        ctx.restore();
+        ctx.strokeStyle = '#D9CFB0';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(width / 2, avatarY, avatarRadius, 0, Math.PI * 2);
+        ctx.stroke();
+        photoDrawn = true;
+      }
+    } catch (_) {}
+  }
+
+  if (!photoDrawn) {
+    ctx.fillStyle = '#F5F1E8';
+    ctx.beginPath();
+    ctx.arc(width / 2, avatarY, avatarRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#D9CFB0';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(width / 2, avatarY, avatarRadius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = '#9A7326';
+    ctx.font = 'bold 44px "Cormorant Garamond", Georgia, serif';
+    ctx.fillText(getInitials(childName), width / 2, avatarY + 15);
+  }
+
+  ctx.fillStyle = '#18181B';
+  ctx.font = 'bold 46px "Cormorant Garamond", Georgia, serif';
+  ctx.fillText(childName, width / 2, 520);
+
+  ctx.fillStyle = '#6B6860';
+  ctx.font = '500 22px "Plus Jakarta Sans", -apple-system, sans-serif';
+  ctx.fillText(childAgeLabel, width / 2, 555);
+
+  ctx.strokeStyle = '#EDE6D4';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(72, 585);
+  ctx.lineTo(width - 72, 585);
+  ctx.stroke();
+
+  // 6. QR Code (Generous quiet zone)
+  const qrBoxSize = 380;
+  const qrBoxX = (width - qrBoxSize) / 2;
+  const qrBoxY = 620;
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.beginPath();
+  if (ctx.roundRect) {
+    ctx.roundRect(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize, 18);
+  } else {
+    ctx.rect(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize);
+  }
+  ctx.fill();
+  ctx.strokeStyle = '#D9CFB0';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  const qrCorner = 18;
+  ctx.strokeStyle = 'rgba(197, 155, 39, 0.6)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(qrBoxX + 12, qrBoxY + 12 + qrCorner); ctx.lineTo(qrBoxX + 12, qrBoxY + 12); ctx.lineTo(qrBoxX + 12 + qrCorner, qrBoxY + 12); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(qrBoxX + qrBoxSize - 12 - qrCorner, qrBoxY + 12); ctx.lineTo(qrBoxX + qrBoxSize - 12, qrBoxY + 12); ctx.lineTo(qrBoxX + qrBoxSize - 12, qrBoxY + 12 + qrCorner); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(qrBoxX + 12, qrBoxY + qrBoxSize - 12 - qrCorner); ctx.lineTo(qrBoxX + 12, qrBoxY + qrBoxSize - 12); ctx.lineTo(qrBoxX + 12 + qrCorner, qrBoxY + qrBoxSize - 12); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(qrBoxX + qrBoxSize - 12 - qrCorner, qrBoxY + qrBoxSize - 12); ctx.lineTo(qrBoxX + qrBoxSize - 12, qrBoxY + qrBoxSize - 12); ctx.lineTo(qrBoxX + qrBoxSize - 12, qrBoxY + qrBoxSize - 12 - qrCorner); ctx.stroke();
+
+  const qrDataUrl = await QRCodeLib.toDataURL(effectivePassCode, {
+    width: 320,
+    margin: 1,
+    errorCorrectionLevel: 'M',
+    color: { dark: '#18181B', light: '#FFFFFF' }
+  });
+
+  const qrImg = new Image();
+  await new Promise<void>((resolve, reject) => {
+    qrImg.onload = () => resolve();
+    qrImg.onerror = reject;
+    qrImg.src = qrDataUrl;
+  });
+  ctx.drawImage(qrImg, (width - 320) / 2, qrBoxY + 30, 320, 320);
+
+  // Pass Code Container
+  const codeBoxWidth = 520;
+  const codeBoxHeight = 88;
+  const codeBoxX = (width - codeBoxWidth) / 2;
+  const codeBoxY = 1030;
+
+  ctx.fillStyle = '#FAF9F6';
+  ctx.beginPath();
+  if (ctx.roundRect) {
+    ctx.roundRect(codeBoxX, codeBoxY, codeBoxWidth, codeBoxHeight, 12);
+  } else {
+    ctx.rect(codeBoxX, codeBoxY, codeBoxWidth, codeBoxHeight);
+  }
+  ctx.fill();
+  ctx.strokeStyle = '#E8E0CA';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  ctx.fillStyle = '#9A907A';
+  ctx.font = 'bold 15px "Plus Jakarta Sans", -apple-system, sans-serif';
+  ctx.fillText('PASS CODE', width / 2, codeBoxY + 30);
+
+  ctx.fillStyle = '#18181B';
+  ctx.font = 'bold 34px "JetBrains Mono", monospace';
+  ctx.fillText(effectivePassCode, width / 2, codeBoxY + 68);
+
+  ctx.fillStyle = '#C59B27';
+  ctx.font = 'bold 16px "Plus Jakarta Sans", -apple-system, sans-serif';
+  ctx.fillText('SHOW PASS FOR AT-GATE SECURITY', width / 2, 1150);
+
+  ctx.strokeStyle = '#EDE6D4';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(72, 1180);
+  ctx.lineTo(width - 72, 1180);
+  ctx.stroke();
+
+  // 7. Authorization Details (Two Columns)
+  ctx.textAlign = 'left';
+  const col1X = 120;
+  const col2X = 560;
+
+  ctx.fillStyle = '#9A907A';
+  ctx.font = 'bold 16px "Plus Jakarta Sans", -apple-system, sans-serif';
+  ctx.fillText('PRIMARY PARENT', col1X, 1225);
+
+  ctx.fillStyle = '#18181B';
+  ctx.font = '600 24px "Plus Jakarta Sans", -apple-system, sans-serif';
+  ctx.fillText(parentName, col1X, 1262);
+
+  ctx.fillStyle = '#6B6860';
+  ctx.font = '500 20px "Plus Jakarta Sans", -apple-system, sans-serif';
+  ctx.fillText(parentPhone, col1X, 1295);
+
+  ctx.fillStyle = '#9A907A';
+  ctx.font = 'bold 16px "Plus Jakarta Sans", -apple-system, sans-serif';
+  ctx.fillText('AUTHORISED PICKUP', col2X, 1225);
+
+  ctx.fillStyle = '#18181B';
+  ctx.font = '600 24px "Plus Jakarta Sans", -apple-system, sans-serif';
+  ctx.fillText(pickupName, col2X, 1262);
+
+  ctx.fillStyle = '#6B6860';
+  ctx.font = '500 20px "Plus Jakarta Sans", -apple-system, sans-serif';
+  ctx.fillText(pickupRelation, col2X, 1295);
+
+  ctx.strokeStyle = '#EDE6D4';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(72, 1345);
+  ctx.lineTo(width - 72, 1345);
+  ctx.stroke();
+
+  // 8. Security Instruction Note at Bottom
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#6B6860';
+  ctx.font = '500 21px "Plus Jakarta Sans", -apple-system, sans-serif';
+  ctx.fillText('Present this pass at arrival and pickup.', width / 2, 1405);
+  ctx.fillText('Release is restricted to authorised persons.', width / 2, 1440);
+
+  // 9. Convert Canvas to Blob
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error('Failed to generate PNG blob from canvas'));
+    }, 'image/png');
+  });
+}
+
 export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   onNavigate,
   parentProfile,
@@ -109,6 +477,8 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   const [activeTab, setActiveTab] = useState<BottomNavTab>(initialTab || 'Home');
   const [childToRemove, setChildToRemove] = useState<ChildItem | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
+  const [isSavingPass, setIsSavingPass] = useState(false);
+  const [isSharingWhatsApp, setIsSharingWhatsApp] = useState(false);
 
   const [notifications, setNotifications] = useState<any[]>([]);
   const [notificationsError, setNotificationsError] = useState<string | null>(null);
@@ -647,13 +1017,17 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 if (!cleanAgeGroup) cleanAgeGroup = 'Children';
 
                 return (
-                  <div key={`today-${child.id}`} className="bg-white dark:bg-[#21211E] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] dark:border-[#302E29] shadow-2xs space-y-3 font-sans">
-                    {/* Header: Photo, Name, Clean Age/Group, Status capsule top-right */}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start space-x-3 min-w-0">
-                        <FallbackAvatar src={child.photoUrl} name={child.name} className="w-10 h-10 rounded-full shrink-0 mt-0.5" />
+                  <div
+                    key={`today-${child.id}`}
+                    data-component-version="parent-arrival-card-v2"
+                    className="bg-[#FDFCF8] dark:bg-[#21211E] rounded-[20px] p-5 border border-[#EDE6D4] dark:border-[#302E29] shadow-2xs font-sans transition-colors"
+                  >
+                    {/* Identity row */}
+                    <div className="flex items-start justify-between gap-3 pb-4 border-b border-[#EDE6D4] dark:border-[#302E29]">
+                      <div className="flex items-start space-x-3.5 min-w-0">
+                        <FallbackAvatar src={child.photoUrl} name={child.name} className="w-11 h-11 rounded-full shrink-0 border border-[#D9CFB0] dark:border-[#3A3835]" />
                         <div className="min-w-0">
-                          <h4 className="text-sm font-sans font-semibold text-[#18181B] dark:text-[#F0EBE3] truncate leading-tight">
+                          <h4 className="text-[15px] font-sans font-semibold text-[#18181B] dark:text-[#F0EBE3] truncate leading-tight">
                             {child.name}
                           </h4>
                           <p className="text-xs text-[#71717A] dark:text-[#B8B0A5] mt-0.5 font-sans">
@@ -667,46 +1041,69 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                         </div>
                       </div>
                       <div className="shrink-0 pt-0.5">
-                        <StatusBadge status={child.status} size="sm" />
+                        {child.status === 'Pass ready' ? (
+                          <span className="shrink-0 text-[8.5px] font-bold uppercase tracking-[0.14em] px-2.5 py-1 rounded border bg-[#F0FAF1] border-[#BDE0C0] text-[#2E6B32] dark:bg-transparent dark:border-[#3A4E3B] dark:text-[#7DBF80]">
+                            Pass ready
+                          </span>
+                        ) : (
+                          <StatusBadge status={child.status} size="sm" />
+                        )}
                       </div>
                     </div>
 
-                    {/* Location and check-in details with clean divided rows */}
-                    <div className="p-3 bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl divide-y divide-zinc-200/60 dark:divide-[#302E29] text-xs font-sans">
+                    {/* Operational Details (clean editorial/operational hierarchy, no nested card) */}
+                    <div className="py-4 space-y-3.5 text-xs font-sans">
                       {!isCheckedIn ? (
                         <>
-                          <div className="flex items-center justify-between py-1.5 first:pt-0">
-                            <span className="text-[#71717A] dark:text-[#B8B0A5]">Planned location</span>
-                            <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">{plannedLocation}</span>
+                          <div className="space-y-1">
+                            <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-[#9A907A] dark:text-[#7A7570] block">
+                              Arrival
+                            </span>
+                            <div className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3]">
+                              {plannedLocation}
+                            </div>
+                            <div className="text-xs text-[#6B6860] dark:text-[#B8B0A5] font-medium">
+                              {checkInPoint}
+                            </div>
                           </div>
-                          <div className="flex items-center justify-between py-1.5">
-                            <span className="text-[#71717A] dark:text-[#B8B0A5]">Check-in point</span>
-                            <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">{checkInPoint}</span>
-                          </div>
-                          <div className="flex items-center justify-between py-1.5 last:pb-0">
-                            <span className="text-[#71717A] dark:text-[#B8B0A5]">Status</span>
-                            <span className="font-semibold text-[#B89047] dark:text-[#C59B27]">Not checked in</span>
+
+                          <div className="space-y-1 pt-0.5">
+                            <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-[#9A907A] dark:text-[#7A7570] block">
+                              Status
+                            </span>
+                            <div className="text-xs font-semibold text-[#B89047] dark:text-[#C59B27]">
+                              Not checked in
+                            </div>
                           </div>
                         </>
                       ) : (
                         <>
-                          <div className="flex items-center justify-between py-1.5 first:pt-0">
-                            <span className="text-[#71717A] dark:text-[#B8B0A5]">Current location</span>
-                            <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">{plannedLocation}</span>
+                          <div className="space-y-1">
+                            <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-[#9A907A] dark:text-[#7A7570] block">
+                              Current Location
+                            </span>
+                            <div className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3]">
+                              {plannedLocation}
+                            </div>
+                            <div className="text-xs text-[#6B6860] dark:text-[#B8B0A5] font-medium">
+                              Pickup: {pickupPoint}
+                            </div>
                           </div>
-                          <div className="flex items-center justify-between py-1.5">
-                            <span className="text-[#71717A] dark:text-[#B8B0A5]">Checked in at</span>
-                            <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">9:14 AM</span>
-                          </div>
-                          <div className="flex items-center justify-between py-1.5 last:pb-0">
-                            <span className="text-[#71717A] dark:text-[#B8B0A5]">Pickup point</span>
-                            <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">{pickupPoint}</span>
+
+                          <div className="space-y-1 pt-0.5">
+                            <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-[#9A907A] dark:text-[#7A7570] block">
+                              Status
+                            </span>
+                            <div className="text-xs font-semibold text-[#2E6B32] dark:text-[#7DBF80]">
+                              Checked in
+                            </div>
                           </div>
                         </>
                       )}
                     </div>
 
-                    <div className="pt-1">
+                    {/* Action Row */}
+                    <div className="pt-2 border-t border-[#EDE6D4] dark:border-[#302E29]">
                       {!isCheckedIn ? (
                         <button
                           type="button"
@@ -714,9 +1111,10 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                             setSelectedArrivalChild(child);
                             setShowArrivalGuideModal(true);
                           }}
-                          className="w-full py-2.5 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer focus:outline-none"
+                          className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl flex items-center justify-between text-xs sm:text-sm font-semibold text-[#9A7326] dark:text-[#C59B27] hover:bg-[#FAF6EB] dark:hover:bg-[#262520] active:bg-[#F5F0E1] dark:active:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27]/40"
                         >
-                          View arrival guide
+                          <span>View arrival guide</span>
+                          <ChevronRight className="w-4 h-4 text-[#C59B27] shrink-0" />
                         </button>
                       ) : (
                         <button
@@ -725,9 +1123,10 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                             setSelectedPickupChild(child);
                             setShowPickupDetailsModal(true);
                           }}
-                          className="w-full py-2.5 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer focus:outline-none"
+                          className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl flex items-center justify-between text-xs sm:text-sm font-semibold text-[#9A7326] dark:text-[#C59B27] hover:bg-[#FAF6EB] dark:hover:bg-[#262520] active:bg-[#F5F0E1] dark:active:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27]/40"
                         >
-                          View pickup details
+                          <span>View pickup details</span>
+                          <ChevronRight className="w-4 h-4 text-[#C59B27] shrink-0" />
                         </button>
                       )}
                     </div>
@@ -1078,46 +1477,44 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           {passReadyChildren.map(c => {
             const isCheckedIn = c.status === 'Checked in' || c.status === 'Inside';
             return (
-              <div 
-                key={c.id} 
-                data-component-version={isCheckedIn ? "parent-pass-card-checked-in-v2" : "parent-pass-ready-card-v2-stitch"}
-                className="w-full bg-[#FAF9F6] dark:bg-[#21211E] border border-[#E5D5AE] dark:border-[#302E29] rounded-3xl p-5 shadow-xs relative overflow-hidden space-y-4 text-left"
+              <div
+                key={c.id}
+                data-component-version={isCheckedIn ? "parent-pass-card-checked-in-v3" : "parent-pass-ready-card-v3"}
+                className="w-full bg-[#FDFCF8] dark:bg-[#1C1C19] border border-[#D9CFB0] dark:border-[#2E2C26] rounded-2xl overflow-hidden text-left"
               >
-                {/* Top-right status badge */}
-                <div className="absolute top-4 right-4">
-                  {isCheckedIn ? (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#E8F5E9] dark:bg-[#262520] border border-[#C8E6C9] dark:border-[#3A3835] text-[#2E7D32] dark:text-[#C59B27] text-[10px] font-bold uppercase tracking-wider">
-                      Checked in today
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] text-[#9A7326] dark:text-[#C59B27] text-[10px] font-bold uppercase tracking-wider">
-                      Pass ready
-                    </span>
-                  )}
-                </div>
-
-                {/* Centered photo & identity info */}
-                <div className="pt-2 flex flex-col items-center">
-                  <FallbackAvatar
-                    src={isRealUploadedPhoto(c.photoUrl) ? c.photoUrl : undefined}
-                    name={c.name}
-                    className="w-16 h-16 rounded-full border border-[#D9D6CE] dark:border-[#3A3835] text-lg font-bold shadow-2xs"
-                  />
-                  <h3 className="text-base font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3] mt-2.5 text-center leading-tight">{c.name}</h3>
-                  <p className="text-[11px] text-[#5C5A54] dark:text-[#B8B0A5] font-medium text-center mt-0.5">{c.age} years • {c.ageGroup}</p>
-                </div>
-
-                {/* Event info block */}
-                <div className="bg-white dark:bg-[#262520] p-3 rounded-xl border border-[#EAE8E1] dark:border-[#302E29] text-xs space-y-1">
-                  <span className="text-[10px] text-[#8E8B82] dark:text-[#B8B0A5] uppercase tracking-wider font-semibold block">Event</span>
-                  <span className="font-bold text-[#18181B] dark:text-[#F0EBE3] block leading-tight">
-                    {activeEvent ? `${activeEvent.sectionName || activeEvent.section_name || "Children and Teens"} ${activeEvent.title || "The General Assembly"}` : "Children and Teens The General Assembly"}
+                {/* Credential header stripe */}
+                <div className="px-5 pt-5 pb-4 border-b border-[#E8E0CA] dark:border-[#2A2825] flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <FallbackAvatar
+                      src={isRealUploadedPhoto(c.photoUrl) ? c.photoUrl : undefined}
+                      name={c.name}
+                      className="w-11 h-11 rounded-full border border-[#D9CFB0] dark:border-[#3A3835] text-sm font-bold shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <h3 className="font-serif-koinonia text-[19px] font-semibold text-[#18181B] dark:text-[#F0EBE3] leading-snug truncate">{c.name}</h3>
+                      <p className="text-[11px] text-[#6B6860] dark:text-[#B8B0A5] font-medium mt-px">{c.age} yrs · {c.ageGroup}</p>
+                    </div>
+                  </div>
+                  <span className={`shrink-0 text-[9px] font-bold uppercase tracking-[0.12em] px-2 py-0.5 rounded border ${
+                    isCheckedIn
+                      ? 'bg-[#F0FAF1] border-[#BDE0C0] text-[#2E6B32] dark:bg-transparent dark:border-[#3A4E3B] dark:text-[#7DBF80]'
+                      : 'bg-[#FAF6EB] border-[#E5D5AE] text-[#8C6D23] dark:bg-transparent dark:border-[#3A3835] dark:text-[#C59B27]'
+                  }`}>
+                    {isCheckedIn ? 'Checked in' : 'Pass ready'}
                   </span>
                 </div>
 
-                {/* Compact QR Preview */}
-                <div className="flex flex-col items-center space-y-1.5 pt-1">
-                  <div className="bg-white dark:bg-[#262520] p-2 rounded-xl border border-[#E5D5AE] dark:border-[#3A3835] w-20 h-20 flex items-center justify-center shadow-inner">
+                {/* Body */}
+                <div className="px-5 py-4 flex items-center justify-between gap-4">
+                  {/* Event label */}
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#9A907A] dark:text-[#8E8B82] block">Event</span>
+                    <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] leading-snug block mt-0.5 line-clamp-2">
+                      {activeEvent ? (activeEvent.title || 'The General Assembly') : 'The General Assembly'}
+                    </span>
+                  </div>
+                  {/* Compact QR */}
+                  <div className="shrink-0 bg-white dark:bg-[#262520] p-1.5 border border-[#D9CFB0] dark:border-[#3A3835] rounded-lg w-[72px] h-[72px] flex items-center justify-center">
                     <img
                       src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(c.passReference || '')}`}
                       alt=""
@@ -1125,31 +1522,30 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                       referrerPolicy="no-referrer"
                     />
                   </div>
-                  <span className="text-[9px] font-mono font-semibold tracking-wider text-[#8E8B82] dark:text-[#B8B0A5]">
-                    Show at entry
-                  </span>
                 </div>
 
-                {/* Gold Button */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const unlocked = unlockedPassByChildId[c.id];
-                    if (unlocked) {
-                      setSelectedDetailChild({
-                        ...c,
-                        passReference: unlocked.passReference,
-                        passLocked: false,
-                        pass: unlocked.pass || c.pass
-                      });
-                    } else {
-                      setSelectedDetailChild(c);
-                    }
-                  }}
-                  className="w-full py-3 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-sm transition-all shadow-2xs cursor-pointer focus:outline-none text-center"
-                >
-                  View pass
-                </button>
+                {/* Footer action */}
+                <div className="px-5 pb-5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const unlocked = unlockedPassByChildId[c.id];
+                      if (unlocked) {
+                        setSelectedDetailChild({
+                          ...c,
+                          passReference: unlocked.passReference,
+                          passLocked: false,
+                          pass: unlocked.pass || c.pass
+                        });
+                      } else {
+                        setSelectedDetailChild(c);
+                      }
+                    }}
+                    className="w-full py-2.5 px-4 rounded-lg bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-sm tracking-wide transition-colors cursor-pointer focus:outline-none text-center"
+                  >
+                    Open pass
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -2297,174 +2693,260 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       )}
 
       {/* Detailed Pass Modal */}
-      {selectedDetailChild && (selectedDetailChild.passReference || selectedDetailChild.passLocked || selectedDetailChild.status === 'Pass ready' || selectedDetailChild.status === 'Checked in' || selectedDetailChild.status === 'Inside' || selectedDetailChild.status === 'Picked up' || selectedDetailChild.status === 'Checked out') && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div 
-            data-view-version="parent-pass-detail-v6-from-overview"
-            className="bg-[#FAF9F6] text-[#18181B] rounded-3xl p-5 border border-[#E5D5AE] shadow-2xl max-w-sm w-full relative overflow-y-auto max-h-[90vh] space-y-5 animate-in fade-in zoom-in-95 text-left"
-          >
-            {/* Decorative corners */}
-            <div className="absolute top-0 left-0 w-8 h-8 border-t border-l border-[#C59B27]/20 m-2 pointer-events-none" />
-            <div className="absolute top-0 right-0 w-8 h-8 border-t border-r border-[#C59B27]/20 m-2 pointer-events-none" />
-            <div className="absolute bottom-0 left-0 w-8 h-8 border-b border-l border-[#C59B27]/20 m-2 pointer-events-none" />
-            <div className="absolute bottom-0 right-0 w-8 h-8 border-b border-r border-[#C59B27]/20 m-2 pointer-events-none" />
+      {selectedDetailChild && (selectedDetailChild.passReference || selectedDetailChild.passLocked || selectedDetailChild.status === 'Pass ready' || selectedDetailChild.status === 'Checked in' || selectedDetailChild.status === 'Inside' || selectedDetailChild.status === 'Picked up' || selectedDetailChild.status === 'Checked out') && (() => {
+        const isBiometricRequired = typeof window !== 'undefined' && localStorage.getItem('koinonia_pass_biometric_unlock') === 'true';
+        const unlocked = unlockedPassByChildId[selectedDetailChild.id];
+        const effectivePassCode = unlocked?.passReference || unlockedPassReferences[selectedDetailChild.id] || (!isBiometricRequired ? selectedDetailChild.passReference : null);
+        const isUnlocked = !isBiometricRequired || Boolean(
+          (unlocked && !unlocked.passLocked && !!effectivePassCode) ||
+          (!selectedDetailChild.passLocked && !!selectedDetailChild.passReference) ||
+          (isPassUnlockedForChild(selectedDetailChild.id) && !!effectivePassCode)
+        );
+        const requiresUnlock = !isUnlocked;
 
-            {/* Close Button */}
-            <button
-              onClick={() => setSelectedDetailChild(null)}
-              className="absolute top-3 right-3 p-1 rounded-full hover:bg-black/5 cursor-pointer focus:outline-none z-10"
+        const handleSavePass = async () => {
+          if (!effectivePassCode || requiresUnlock) {
+            showError('Pass unavailable', 'Please unlock or wait for pass issuance before saving.');
+            return;
+          }
+          if (isSavingPass) return;
+          setIsSavingPass(true);
+          try {
+            const childName = (selectedDetailChild.name || 'Child').trim();
+            const eventTitle = (activeEvent?.title || 'The General Assembly').trim();
+            const eventDates = formatPassEventDates(activeEvent);
+            const safeChildName = childName.replace(/[^a-zA-Z0-9_-]+/g, '-');
+            const safePassCode = effectivePassCode.trim().replace(/[^a-zA-Z0-9_-]+/g, '-');
+            const filename = `Koinonia-Pass-${safeChildName}-${safePassCode}.png`;
+
+            const pickupType = selectedDetailChild.draftData?.pickup?.pickupType;
+            const isOtherPerson = pickupType === 'other_person';
+            const pickupName = isOtherPerson
+              ? (selectedDetailChild.draftData?.pickup?.pickupPersonFullName || 'Authorized Pickup')
+              : 'Primary Parent Only';
+            const pickupRelation = isOtherPerson
+              ? (selectedDetailChild.draftData?.pickup?.pickupPersonRelationship || 'Secondary Authorized')
+              : 'No secondary listed';
+
+            const childAgeLabel = `${selectedDetailChild.age ? `${selectedDetailChild.age} yrs` : ''}${selectedDetailChild.ageGroup ? ` · ${selectedDetailChild.ageGroup}` : ''}`.trim();
+
+            const blob = await renderPassCredentialToPngBlob({
+              eventTitle,
+              eventDates,
+              childName,
+              childAgeLabel,
+              childPhotoUrl: selectedDetailChild.photoUrl,
+              effectivePassCode,
+              parentName: parentProfile.fullName,
+              parentPhone: parentProfile.phone,
+              pickupName,
+              pickupRelation,
+            });
+
+            // Offline copy in localStorage
+            try {
+              localStorage.setItem(`koinonia_pass_offline_${selectedDetailChild.id}`, JSON.stringify({
+                savedAt: new Date().toISOString(),
+                childName,
+                passCode: effectivePassCode,
+                eventTitle,
+                pickupSummary: pickupName,
+              }));
+            } catch (_) {}
+
+            const blobUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+
+            showSuccess('Pass saved', 'Credential downloaded as PNG image.');
+          } catch (saveErr) {
+            console.error('[SavePass] Failed to generate/download pass:', saveErr);
+            showError('Save failed', 'Unable to generate pass image. Please try again.');
+          } finally {
+            setIsSavingPass(false);
+          }
+        };
+
+        const handleWhatsAppShare = () => {
+          if (!effectivePassCode || requiresUnlock) {
+            showError('Pass unavailable', 'Please unlock or wait for pass issuance before sharing.');
+            return;
+          }
+          if (isSharingWhatsApp) return;
+          try {
+            setIsSharingWhatsApp(true);
+            const eventTitle = activeEvent?.title;
+            const childName = selectedDetailChild.name;
+            const waUrl = buildParentPassWhatsAppShareUrl(eventTitle, childName, effectivePassCode);
+            const win = window.open(waUrl, '_blank', 'noopener,noreferrer');
+            if (win) {
+              showSuccess('WhatsApp opened', 'Pass credential ready to share.');
+            } else {
+              showError('Opening WhatsApp blocked', 'Your browser blocked opening WhatsApp. Please allow pop-ups.');
+            }
+          } catch (err) {
+            console.error('[WhatsAppShare] Failed to open WhatsApp:', err);
+            showError('Sharing failed', 'Unable to open WhatsApp.');
+          } finally {
+            setIsSharingWhatsApp(false);
+          }
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+            <div
+              data-view-version="parent-pass-detail-v7-credential"
+              className="bg-[#FDFCF8] dark:bg-[#1D1D1A] text-[#18181B] dark:text-[#F0EBE3] rounded-2xl border border-[#D9CFB0] dark:border-[#302E29] shadow-xl max-w-sm w-full relative overflow-y-auto max-h-[92vh] text-left animate-in fade-in zoom-in-95"
             >
-              <X className="w-5 h-5 text-[#6B7280]" />
-            </button>
+              {/* Document header */}
+              <div className="px-6 pt-6 pb-5 border-b border-[#E8E0CA] dark:border-[#302E29] relative">
+                {/* Decorative corner marks — credential feel */}
+                <div className="absolute top-3 left-3 w-5 h-5 border-t border-l border-[#C59B27]/30 pointer-events-none" />
+                <div className="absolute top-3 right-3 w-5 h-5 border-t border-r border-[#C59B27]/30 pointer-events-none" />
 
-            {/* Official Koinonia logo/header */}
-            <div className="text-center pt-2 pb-1 border-b border-[#EAE8E1]/60 space-y-1">
-              <span className="font-serif-koinonia text-sm tracking-[0.25em] text-[#C59B27] font-bold block">KOINONIA</span>
-              <span className="text-[9px] tracking-widest text-[#8E8B82] uppercase font-semibold block">Official children's ministry pass</span>
-            </div>
+                <button
+                  onClick={() => setSelectedDetailChild(null)}
+                  className="absolute top-4 right-4 p-1 rounded hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer focus:outline-none z-10"
+                >
+                  <X className="w-4 h-4 text-[#8E8B82] dark:text-[#7A7570]" />
+                </button>
 
-            {/* Pass status pill */}
-            <div className="flex justify-center">
-              {selectedDetailChild.status === 'Checked in' || selectedDetailChild.status === 'Inside' ? (
-                <span data-component-version="parent-pass-checked-in-state-v2" className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#E8F5E9] border border-[#C8E6C9] text-[#2E7D32] text-[10px] font-bold uppercase tracking-wider">
-                  ● Checked in today
-                </span>
-              ) : (
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#FAF6EB] border border-[#E5D5AE] text-[#9A7326] text-[10px] font-bold uppercase tracking-wider">
-                  ● PASS ACTIVE & READY
-                </span>
-              )}
-            </div>
-
-            {/* Event title & date */}
-            <div className="text-center space-y-0.5">
-              <h3 className="text-base font-serif-koinonia font-bold text-[#18181B] tracking-tight">{activeEvent?.title || "The General Assembly"}</h3>
-              <p className="text-[11px] text-[#8E8B82] font-semibold flex items-center justify-center">
-                <Calendar className="w-3 h-3 mr-1 text-[#C59B27]" /> {(() => {
-                  const formatDateStr = (dateStr: string) => {
-                    try {
-                      const d = new Date(dateStr);
-                      if (isNaN(d.getTime())) return dateStr;
-                      const day = d.getDate();
-                      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                      const month = months[d.getMonth()];
-                      const year = d.getFullYear();
-                      
-                      const j = day % 10, k = day % 100;
-                      let suffix = "th";
-                      if (j === 1 && k !== 11) suffix = "st";
-                      else if (j === 2 && k !== 12) suffix = "nd";
-                      else if (j === 3 && k !== 13) suffix = "rd";
-                      
-                      return `${day}${suffix} ${month} ${year}`;
-                    } catch (e) {
-                      return dateStr;
-                    }
-                  };
-                  if (!activeEvent) return '18th to 22nd November 2026';
-                  const starts = activeEvent.startsAt || activeEvent.starts_at;
-                  const ends = activeEvent.endsAt || activeEvent.ends_at;
-                  if (!starts || !ends) return '18th to 22nd November 2026';
-                  const formattedStarts = formatDateStr(starts);
-                  const formattedEnds = formatDateStr(ends);
-                  if (formattedStarts === formattedEnds) return formattedStarts;
-                  return `${formattedStarts} to ${formattedEnds}`;
-                })()}
-              </p>
-            </div>
-
-            {/* Child photo & details */}
-            <div className="flex items-center space-x-3 bg-white p-3 rounded-2xl border border-[#EAE8E1]">
-              <div className="w-14 h-14 rounded-xl overflow-hidden border border-[#E5D5AE] shrink-0 bg-white flex items-center justify-center font-serif-koinonia text-sm font-bold text-[#9A7326]">
-                {isRealUploadedPhoto(selectedDetailChild.photoUrl) ? (
-                  <img
-                    src={selectedDetailChild.photoUrl}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <span>{(() => {
-                    if (!selectedDetailChild.name || !selectedDetailChild.name.trim()) return 'CH';
-                    const parts = selectedDetailChild.name.trim().split(/\s+/);
-                    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
-                    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-                  })()}</span>
-                )}
-              </div>
-              <div className="flex-1 min-w-0 text-left">
-                <h4 className="text-sm font-bold text-[#18181B] truncate">{selectedDetailChild.name}</h4>
-                <div className="flex items-center space-x-2 mt-0.5">
-                  <span className="text-[10px] text-[#5C5A54] bg-[#FAF6EB] px-2 py-0.5 rounded-md font-semibold">{selectedDetailChild.ageGroup}</span>
+                <div className="text-center space-y-1 pr-6">
+                  <span className="text-[9px] tracking-[0.3em] text-[#C59B27] font-bold uppercase block">KOINONIA</span>
+                  <span className="text-[8px] tracking-[0.18em] text-[#9A907A] dark:text-[#7A7570] uppercase font-semibold block">Children's Ministry · Official Pass</span>
                 </div>
               </div>
-            </div>
 
-            {/* QR Code */}
-            <div className="flex flex-col items-center justify-center space-y-2 py-1">
-              {(() => {
-                const isBiometricRequired = typeof window !== 'undefined' && localStorage.getItem('koinonia_pass_biometric_unlock') === 'true';
-                const unlocked = unlockedPassByChildId[selectedDetailChild.id];
-                const effectivePassCode = unlocked?.passReference || unlockedPassReferences[selectedDetailChild.id] || (!isBiometricRequired ? selectedDetailChild.passReference : null);
-                const isUnlocked = !isBiometricRequired || Boolean(
-                  (unlocked && !unlocked.passLocked && !!effectivePassCode) ||
-                  (!selectedDetailChild.passLocked && !!selectedDetailChild.passReference) ||
-                  (isPassUnlockedForChild(selectedDetailChild.id) && !!effectivePassCode)
-                );
-                const requiresUnlock = !isUnlocked;
-                if (requiresUnlock) {
-                  return (
-                    <div 
-                      className="bg-[#FAF8F3] border border-dashed border-[#E5D5AE] rounded-2xl w-40 h-40 flex flex-col items-center justify-center p-4 text-center cursor-pointer hover:bg-zinc-100/50 transition-colors relative"
-                      onClick={() => setUnlockModalOpen(true)}
-                    >
-                      <Fingerprint className="w-10 h-10 text-[#C59B27] stroke-[1.25] mb-2 animate-pulse" />
-                      <span className="text-[10px] font-bold text-zinc-700 block">Pass is locked</span>
-                      <span className="text-[8px] text-[#8E8B82] mt-1">Tap to secure unlock</span>
-                    </div>
-                  );
-                }
-                if (!effectivePassCode) {
-                  return (
-                    <div className="bg-[#FAF8F3] dark:bg-[#201F1B] border border-dashed border-[#E5D5AE] dark:border-[#3A3835] rounded-2xl w-40 h-40 flex flex-col items-center justify-center p-4 text-center">
-                      <Ticket className="w-8 h-8 text-[#C59B27] mb-2 opacity-50" />
-                      <span className="text-[10px] font-bold text-zinc-700 dark:text-zinc-300 block">Pass pending</span>
-                      <span className="text-[8px] text-[#8E8B82] dark:text-[#A19D95] mt-1">Pass code will appear once issued</span>
-                    </div>
-                  );
-                }
-                return (
-                  <>
-                    <div data-component-version="parent-pass-qr-v4-stitch" className="bg-white p-3 rounded-2xl border border-[#E5D5AE] shadow-inner w-40 h-40 flex items-center justify-center relative">
-                      <div className="absolute top-1.5 left-1.5 w-2 h-2 border-t border-l border-[#C59B27]/40 pointer-events-none" />
-                      <div className="absolute top-1.5 right-1.5 w-2 h-2 border-t border-r border-[#C59B27]/40 pointer-events-none" />
-                      <div className="absolute bottom-1.5 left-1.5 w-2 h-2 border-b border-l border-[#C59B27]/40 pointer-events-none" />
-                      <div className="absolute bottom-1.5 right-1.5 w-2 h-2 border-b border-r border-[#C59B27]/40 pointer-events-none" />
-                      <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(effectivePassCode)}`}
-                        alt="QR Code"
-                        className="w-full h-full object-cover"
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
-                    {isBiometricRequired && (
-                      <span className="text-[9px] font-semibold text-emerald-700 flex items-center justify-center gap-1">
-                        <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                        Unlocked for this session
-                      </span>
-                    )}
+              {/* Status + event */}
+              <div className="px-6 pt-4 pb-3 border-b border-[#EDE6D4] dark:border-[#302E29] space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="font-serif-koinonia text-[22px] font-semibold text-[#18181B] dark:text-[#F0EBE3] leading-snug">{activeEvent?.title || 'The General Assembly'}</h3>
+                  {selectedDetailChild.status === 'Checked in' || selectedDetailChild.status === 'Inside' ? (
+                    <span data-component-version="parent-pass-checked-in-state-v3" className="shrink-0 text-[8px] font-bold uppercase tracking-[0.12em] px-2 py-0.5 rounded border bg-[#F0FAF1] border-[#BDE0C0] text-[#2E6B32] dark:bg-transparent dark:border-[#3A4E3B] dark:text-[#7DBF80]">
+                      Checked in
+                    </span>
+                  ) : (
+                    <span className="shrink-0 text-[8px] font-bold uppercase tracking-[0.12em] px-2 py-0.5 rounded border bg-[#FAF6EB] border-[#E5D5AE] text-[#8C6D23] dark:bg-transparent dark:border-[#3A3835] dark:text-[#C59B27]">
+                      Pass active
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-[#6B6860] dark:text-[#7A7570] font-medium flex items-center gap-1.5">
+                  <Calendar className="w-3 h-3 text-[#C59B27] shrink-0" />
+                  {(() => {
+                    const formatDateStr = (dateStr: string) => {
+                      try {
+                        const d = new Date(dateStr);
+                        if (isNaN(d.getTime())) return dateStr;
+                        const day = d.getDate();
+                        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                        const month = months[d.getMonth()];
+                        const year = d.getFullYear();
+                        const j = day % 10, k = day % 100;
+                        let suffix = "th";
+                        if (j === 1 && k !== 11) suffix = "st";
+                        else if (j === 2 && k !== 12) suffix = "nd";
+                        else if (j === 3 && k !== 13) suffix = "rd";
+                        return `${day}${suffix} ${month} ${year}`;
+                      } catch (e) { return dateStr; }
+                    };
+                    if (!activeEvent) return '18th to 22nd November 2026';
+                    const starts = activeEvent.startsAt || activeEvent.starts_at;
+                    const ends = activeEvent.endsAt || activeEvent.ends_at;
+                    if (!starts || !ends) return '18th to 22nd November 2026';
+                    const formattedStarts = formatDateStr(starts);
+                    const formattedEnds = formatDateStr(ends);
+                    if (formattedStarts === formattedEnds) return formattedStarts;
+                    return `${formattedStarts} – ${formattedEnds}`;
+                  })()}
+                </p>
+              </div>
 
-                    {/* Human-readable Pass Code Section */}
-                    <div
-                      data-component-version="parent-pass-code-display"
-                      className="flex flex-col items-center mt-2.5 mb-0.5 px-3.5 py-2.5 rounded-xl bg-[#FAF8F3] dark:bg-[#201F1B] border border-[#E5D5AE]/60 dark:border-[#3A3835] max-w-[260px] w-full text-center"
-                    >
-                      <span className="text-[9px] font-sans font-semibold uppercase tracking-[0.18em] text-[#8E8B82] dark:text-[#B8B0A5]">
-                        PASS CODE
-                      </span>
-                      <div className="flex items-center justify-center gap-1.5 mt-0.5 mb-0.5">
-                        <span className="text-sm sm:text-base font-mono font-bold tracking-wider text-[#18181B] dark:text-[#F0EBE3] select-all whitespace-nowrap">
-                          {effectivePassCode}
+              {/* Child identity row */}
+              <div className="px-6 py-4 border-b border-[#EDE6D4] dark:border-[#302E29] flex items-center gap-4">
+                <div className="w-14 h-14 rounded-full overflow-hidden border border-[#D9CFB0] dark:border-[#3A3835] shrink-0 bg-[#F5F1E8] dark:bg-[#262520] flex items-center justify-center font-serif-koinonia text-lg font-semibold text-[#9A7326] dark:text-[#C59B27]">
+                  {isRealUploadedPhoto(selectedDetailChild.photoUrl) ? (
+                    <img src={selectedDetailChild.photoUrl} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <span>{getInitials(selectedDetailChild.name)}</span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-serif-koinonia text-[22px] font-semibold text-[#18181B] dark:text-[#F0EBE3] leading-tight truncate">{selectedDetailChild.name}</h4>
+                  <p className="text-[11px] text-[#6B6860] dark:text-[#B8B0A5] font-medium mt-0.5">{selectedDetailChild.age} yrs · {selectedDetailChild.ageGroup}</p>
+                </div>
+              </div>
+
+              {/* QR + pass code */}
+              <div className="px-6 py-5 border-b border-[#EDE6D4] dark:border-[#302E29] flex flex-col items-center gap-3">
+                {(() => {
+                  const isBiometricRequired = typeof window !== 'undefined' && localStorage.getItem('koinonia_pass_biometric_unlock') === 'true';
+                  const unlocked = unlockedPassByChildId[selectedDetailChild.id];
+                  const effectivePassCode = unlocked?.passReference || unlockedPassReferences[selectedDetailChild.id] || (!isBiometricRequired ? selectedDetailChild.passReference : null);
+                  const isUnlocked = !isBiometricRequired || Boolean(
+                    (unlocked && !unlocked.passLocked && !!effectivePassCode) ||
+                    (!selectedDetailChild.passLocked && !!selectedDetailChild.passReference) ||
+                    (isPassUnlockedForChild(selectedDetailChild.id) && !!effectivePassCode)
+                  );
+                  const requiresUnlock = !isUnlocked;
+                  if (requiresUnlock) {
+                    return (
+                      <div
+                        className="border border-dashed border-[#D9CFB0] dark:border-[#3A3835] rounded-xl w-40 h-40 flex flex-col items-center justify-center gap-2 text-center cursor-pointer hover:bg-[#FAF6EB]/60 dark:hover:bg-[#262520]/60 transition-colors"
+                        onClick={() => setUnlockModalOpen(true)}
+                      >
+                        <Fingerprint className="w-9 h-9 text-[#C59B27] stroke-[1.25] animate-pulse" />
+                        <span className="text-[10px] font-semibold text-[#3D3A32] dark:text-[#B8B0A5]">Pass is locked</span>
+                        <span className="text-[9px] text-[#8E8B82] dark:text-[#7A7570]">Tap to unlock</span>
+                      </div>
+                    );
+                  }
+                  if (!effectivePassCode) {
+                    return (
+                      <div className="border border-dashed border-[#D9CFB0] dark:border-[#3A3835] rounded-xl w-40 h-40 flex flex-col items-center justify-center gap-2 text-center">
+                        <Ticket className="w-8 h-8 text-[#C59B27] opacity-40" />
+                        <span className="text-[10px] font-semibold text-[#3D3A32] dark:text-[#B8B0A5]">Pass pending</span>
+                        <span className="text-[9px] text-[#8E8B82] dark:text-[#7A7570]">Code will appear once issued</span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <>
+                      {/* QR */}
+                      <div data-component-version="parent-pass-qr-v5" className="bg-white dark:bg-[#21211E] border border-[#D9CFB0] dark:border-[#3A3835] rounded-xl p-3 w-40 h-40 flex items-center justify-center relative">
+                        <div className="absolute top-1.5 left-1.5 w-2.5 h-2.5 border-t border-l border-[#C59B27]/50 pointer-events-none" />
+                        <div className="absolute top-1.5 right-1.5 w-2.5 h-2.5 border-t border-r border-[#C59B27]/50 pointer-events-none" />
+                        <div className="absolute bottom-1.5 left-1.5 w-2.5 h-2.5 border-b border-l border-[#C59B27]/50 pointer-events-none" />
+                        <div className="absolute bottom-1.5 right-1.5 w-2.5 h-2.5 border-b border-r border-[#C59B27]/50 pointer-events-none" />
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(effectivePassCode)}`}
+                          alt="QR Code"
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
+
+                      {isBiometricRequired && (
+                        <span className="text-[9px] font-semibold text-emerald-600 dark:text-emerald-500 flex items-center justify-center gap-1">
+                          <ShieldCheck className="w-3 h-3" />
+                          Unlocked for this session
                         </span>
+                      )}
+
+                      {/* Pass code */}
+                      <div
+                        data-component-version="parent-pass-code-display"
+                        className="w-full flex items-center justify-between px-4 py-3 rounded-lg border border-[#E8E0CA] dark:border-[#3A3835] bg-[#FDFCF8] dark:bg-[#262520]"
+                      >
+                        <div>
+                          <span className="text-[8px] font-semibold uppercase tracking-[0.18em] text-[#9A907A] dark:text-[#7A7570] block">PASS CODE</span>
+                          <span className="text-sm font-mono font-bold tracking-wider text-[#18181B] dark:text-[#F0EBE3] select-all mt-0.5 block">{effectivePassCode}</span>
+                        </div>
                         <button
                           type="button"
                           onClick={() => {
@@ -2473,102 +2955,106 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                               showSuccess('Copied', 'Pass code copied to clipboard.');
                             }
                           }}
-                          className="p-1 text-[#8E8B82] hover:text-[#C59B27] dark:hover:text-[#E5D5AE] transition-colors cursor-pointer rounded hover:bg-black/5 dark:hover:bg-white/5"
+                          className="p-1.5 text-[#9A907A] dark:text-[#7A7570] hover:text-[#C59B27] dark:hover:text-[#C59B27] transition-colors cursor-pointer rounded hover:bg-[#FAF6EB] dark:hover:bg-[#302E29]"
                           title="Copy pass code"
                           aria-label="Copy pass code"
                         >
                           <Copy className="w-3.5 h-3.5" />
                         </button>
                       </div>
-                      <span className="text-[10px] font-sans text-[#8E8B82] dark:text-[#A19D95] leading-tight">
-                        Type this code if the QR cannot be scanned
-                      </span>
-                    </div>
-                  </>
-                );
-              })()}
-              <span className="text-[9px] font-mono font-bold tracking-[0.2em] text-[#C59B27] uppercase">
-                SHOW PASS FOR AT-GATE SECURITY
-              </span>
-            </div>
+                      <span className="text-[9px] text-[#9A907A] dark:text-[#7A7570] font-medium">Type this code if the QR cannot be scanned</span>
+                    </>
+                  );
+                })()}
+                <span className="text-[8px] font-bold tracking-[0.22em] text-[#C59B27] uppercase mt-1">SHOW PASS FOR AT-GATE SECURITY</span>
+              </div>
 
-            {/* Parent and pickup person details */}
-            <div className="border-t border-[#EAE8E1] pt-3 space-y-2.5 text-xs text-left">
-              <div className="grid grid-cols-2 gap-3 bg-white p-2.5 rounded-xl border border-[#EAE8E1]">
-                <div>
-                  <span className="text-[10px] text-[#8E8B82] block font-medium uppercase">Primary Parent</span>
-                  <span className="font-semibold text-[#18181B] truncate block">{parentProfile.fullName}</span>
-                  <span className="text-[10px] text-[#5C5A54] font-medium block">{parentProfile.phone}</span>
+              {/* Authorization details */}
+              <div className="px-6 py-4.5 border-b border-[#EDE6D4] dark:border-[#302E29] grid grid-cols-2 gap-x-6 text-xs dark:bg-[#201F1B]">
+                <div className="space-y-0.5">
+                  <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#9A907A] dark:text-[#7A7570] block">Primary Parent</span>
+                  <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] block truncate text-xs">{parentProfile.fullName}</span>
+                  <span className="text-[10px] text-[#6B6860] dark:text-[#B8B0A5] font-medium block leading-normal">{parentProfile.phone}</span>
                 </div>
-                <div>
-                  <span className="text-[10px] text-[#8E8B82] block font-medium uppercase">Authorized Pickup</span>
+                <div className="space-y-0.5">
+                  <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#9A907A] dark:text-[#7A7570] block">Authorised Pickup</span>
                   {selectedDetailChild.draftData?.pickup?.pickupType === 'other_person' ? (
                     <>
-                      <span className="font-semibold text-[#18181B] truncate block">
-                        {selectedDetailChild.draftData.pickup.pickupPersonFullName}
-                      </span>
-                      <span className="text-[10px] text-[#5C5A54] font-medium block">
-                        {selectedDetailChild.draftData.pickup.pickupPersonRelationship}
-                      </span>
+                      <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] block truncate text-xs">{selectedDetailChild.draftData.pickup.pickupPersonFullName}</span>
+                      <span className="text-[10px] text-[#6B6860] dark:text-[#B8B0A5] font-medium block leading-normal">{selectedDetailChild.draftData.pickup.pickupPersonRelationship}</span>
                     </>
                   ) : (
                     <>
-                      <span className="font-semibold text-[#18181B] truncate block">Primary Parent Only</span>
-                      <span className="text-[10px] text-[#8E8B82] font-medium block font-sans">No secondary listed</span>
+                      <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] block text-xs">Primary Parent Only</span>
+                      <span className="text-[10px] text-[#9A907A] dark:text-[#7A7570] font-medium block leading-normal">No secondary listed</span>
                     </>
                   )}
                 </div>
               </div>
 
-              {/* Pickup confirmation note */}
-              <div className="bg-[#FAF6EB]/40 p-2.5 rounded-xl text-[10px] text-[#9A7326] font-medium flex items-start gap-1.5 border border-[#E5D5AE]/20 leading-normal">
-                <ShieldCheck className="w-3.5 h-3.5 text-[#C59B27] shrink-0 mt-0.5" />
-                <span>
-                  Important: Present this secure digital pass during arrival check-in and pickup release. Release is strictly restricted to listed authorized persons.
-                </span>
+              {/* Security note */}
+              <div className="px-6 py-3 border-b border-[#EDE6D4] dark:border-[#302E29]">
+                <p className="text-[10px] text-[#6B6860] dark:text-[#7A7570] leading-relaxed flex items-start gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#C59B27] shrink-0 mt-px" />
+                  Present this pass at arrival and pickup. Release is restricted to authorised persons listed above.
+                </p>
               </div>
-            </div>
 
-            {/* Action buttons */}
-            <div className="flex items-center gap-3 pt-1">
-              <button
-                type="button"
-                data-component-version="parent-pass-save-action-v2"
-                onClick={() => showSuccess('Pass saved successfully', 'Pass has been offline-secured to your device storage.')}
-                className="flex-1 py-3 px-4 rounded-2xl bg-[#18181B] text-white text-xs font-bold hover:bg-[#27272A] transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm"
-              >
-                <span>Save pass</span>
-              </button>
-              <button
-                type="button"
-                data-component-version="parent-pass-whatsapp-action-v2"
-                onClick={() => {
-                  showInfo('Opening WhatsApp', 'You can share this child\'s pass directly from WhatsApp.');
-                }}
-                className="flex-1 py-3 px-4 rounded-2xl bg-white border border-[#EAE8E1] text-[#18181B] text-xs font-bold hover:bg-[#FAF9F6] transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm"
-              >
-                <MessageCircle className="w-4 h-4 text-[#B89047]" />
-                <span>Share to WhatsApp</span>
-              </button>
-            </div>
+              {/* Action buttons */}
+              <div className="px-6 py-5 space-y-3">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    data-component-version="parent-pass-save-action-v3"
+                    onClick={handleSavePass}
+                    disabled={isSavingPass || !effectivePassCode || requiresUnlock}
+                    aria-label={`Save pass credential for ${selectedDetailChild.name}`}
+                    className="flex-1 py-2.5 px-4 rounded-lg bg-[#18181B] dark:bg-[#F0EBE3] text-white dark:text-[#18181B] text-xs font-semibold tracking-wide hover:bg-[#27272A] dark:hover:bg-[#D9D6CE] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#C59B27] flex items-center justify-center gap-2"
+                  >
+                    {isSavingPass ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <span>Save pass</span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    data-component-version="parent-pass-whatsapp-action-v3"
+                    onClick={handleWhatsAppShare}
+                    disabled={isSharingWhatsApp || !effectivePassCode || requiresUnlock}
+                    aria-label={`Share pass via WhatsApp for ${selectedDetailChild.name}`}
+                    className="flex-1 py-2.5 px-4 rounded-lg bg-[#FDFCF8] dark:bg-[#21211E] border border-[#D9CFB0] dark:border-[#302E29] text-[#18181B] dark:text-[#F0EBE3] text-xs font-semibold tracking-wide hover:bg-[#FAF6EB] dark:hover:bg-[#262520] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#C59B27] flex items-center justify-center gap-2"
+                  >
+                    <MessageCircle className="w-4 h-4 text-[#B89047]" />
+                    <span>{isSharingWhatsApp ? 'Opening...' : 'WhatsApp'}</span>
+                  </button>
+                </div>
+                <div className="text-center">
+                  <button
+                    type="button"
+                    data-component-version="parent-pass-status-link-v3"
+                    onClick={() => {
+                      setSelectedDetailChild(null);
+                      onNavigate(`/parent/children/${selectedDetailChild.id}/status`);
+                    }}
+                    className="text-[11px] text-[#9A7326] dark:text-[#C59B27] font-semibold hover:underline inline-flex items-center gap-0.5"
+                  >
+                    View child status <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
 
-            {/* View child status button */}
-            <div className="text-center pt-2">
-              <button
-                type="button"
-                data-component-version="parent-pass-status-link-v2"
-                onClick={() => {
-                  setSelectedDetailChild(null);
-                  onNavigate(`/parent/children/${selectedDetailChild.id}/status`);
-                }}
-                className="text-xs text-[#9A7326] font-bold hover:underline inline-flex items-center"
-              >
-                View child status <ChevronRight className="w-3 h-3 ml-0.5" />
-              </button>
+              {/* Bottom corner marks */}
+              <div className="absolute bottom-3 left-3 w-5 h-5 border-b border-l border-[#C59B27]/30 pointer-events-none" />
+              <div className="absolute bottom-3 right-3 w-5 h-5 border-b border-r border-[#C59B27]/30 pointer-events-none" />
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
 
       {/* Pass Biometrics Unlock Modal */}
       <DeviceSecurityModal
