@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { query, queryOne, execute, transaction } from '../db';
 import { authMiddleware, AuthenticatedRequest } from '../auth';
 import { sendChildReviewReceivedEmail } from '../services/email';
-import { validateParentProfile, validateChildDraftStep, validatePhoneNumber } from '../utils/validation';
+import { validateParentProfile, validateChildDraftStep, validatePhoneNumber, validateChildName, validateDateOfBirth } from '../utils/validation';
 import { getPassesForParent, issuePassForChild, isChildPassAuthorized } from '../services/passService';
 import { getCurrentEvent, getCurrentEventId, getEventById } from '../services/eventService';
 import { checkEventEligibility } from '../services/eligibilityService';
@@ -594,28 +594,80 @@ async function performSaveDraftInternal(req: AuthenticatedRequest, draft: any, c
   }
   const currentEventId = currentEvent.id;
 
-  const childId = draft.id && draft.id.startsWith('child-') ? draft.id : (childIdParam || crypto.randomUUID());
+  const childId = childIdParam || draft.id || crypto.randomUUID();
   const now = new Date().toISOString();
 
-  if (childId && !childId.startsWith('child-')) {
-    const checkOwner = await queryOne('SELECT parent_profile_id FROM children WHERE id = ?', [childId]);
-    if (checkOwner && checkOwner.parent_profile_id !== req.parentProfile!.id) {
+  let existingChild = null;
+  if (childId) {
+    existingChild = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
+    if (existingChild && existingChild.parent_profile_id !== req.parentProfile!.id) {
       throw new Error('UNAUTHORIZED_CHILD_ACCESS');
     }
   }
 
-  const fullName = (draft.childDetails?.fullName || draft.fullName || 'Untitled Child').trim();
-  const gender = draft.childDetails?.gender || draft.gender || 'Not specified';
-  const dob = draft.childDetails?.dateOfBirth || draft.dob || '';
-  const photo = draft.childDetails?.photo || draft.photoUrl || '';
-  const relationship = draft.childDetails?.relationshipToChild || draft.relationship || 'Parent';
+  const rawFullName = draft.childDetails?.fullName !== undefined
+    ? draft.childDetails.fullName
+    : (draft.fullName !== undefined ? draft.fullName : (existingChild ? existingChild.full_name : ''));
+  const fullName = typeof rawFullName === 'string' ? rawFullName.trim() : '';
 
-  const childPhotoId = await resolveToMediaFileId(photo);
+  // Minimal server-side guard: A parent must never be able to persist a child record
+  // whose identifying information is effectively blank.
+  if (!fullName || fullName === 'Untitled Child' || fullName.replace(/[\s\-_.]/g, '').length === 0) {
+    const err: any = new Error('Enter your child’s name before saving.');
+    err.statusCode = 400;
+    err.code = 'CHILD_NAME_REQUIRED';
+    throw err;
+  }
+
+  // Reject malicious tags in draft name
+  if (/<[^>]*>/.test(fullName) || /<script/i.test(fullName)) {
+    const err: any = new Error('Enter a valid child name.');
+    err.statusCode = 400;
+    err.code = 'INVALID_CHILD_NAME';
+    throw err;
+  }
+
+  // Format validation for other partially entered fields
+  const rawDob = draft.childDetails?.dateOfBirth !== undefined
+    ? draft.childDetails.dateOfBirth
+    : (draft.dob !== undefined ? draft.dob : (existingChild ? existingChild.date_of_birth : ''));
+  const dob = typeof rawDob === 'string' ? rawDob.trim() : '';
+  if (dob) {
+    const dobValidation = validateDateOfBirth(dob, 'childDob');
+    if (!dobValidation.valid) {
+      const err: any = new Error(dobValidation.message || 'Invalid date of birth.');
+      err.statusCode = 400;
+      err.code = dobValidation.code || 'INVALID_DOB';
+      throw err;
+    }
+  }
+
+  const rawGender = draft.childDetails?.gender !== undefined
+    ? draft.childDetails.gender
+    : (draft.gender !== undefined ? draft.gender : (existingChild ? existingChild.gender : 'Not specified'));
+  const gender = typeof rawGender === 'string' && rawGender.trim() ? rawGender.trim() : 'Not specified';
+  if (gender !== 'Not specified' && !['Male', 'Female'].includes(gender)) {
+    const err: any = new Error('Invalid gender selected.');
+    err.statusCode = 400;
+    err.code = 'INVALID_GENDER';
+    throw err;
+  }
+
+  const rawPhoto = draft.childDetails?.photo !== undefined
+    ? draft.childDetails.photo
+    : (draft.photoUrl !== undefined ? draft.photoUrl : '');
+  const photo = typeof rawPhoto === 'string' ? rawPhoto.trim() : '';
+
+  const rawRelationship = draft.childDetails?.relationshipToChild !== undefined
+    ? draft.childDetails.relationshipToChild
+    : (draft.relationship !== undefined ? draft.relationship : (existingChild ? existingChild.relationship_to_child : 'Parent'));
+  const relationship = typeof rawRelationship === 'string' && rawRelationship.trim() ? rawRelationship.trim() : 'Parent';
+
+  const childPhotoId = photo ? await resolveToMediaFileId(photo) : (existingChild ? existingChild.photo_file_id : null);
 
   const { calculatedAge, ageGroup, needsAgeReview } = calculateAgeAndGroup(dob);
 
   await transaction(async () => {
-    const existingChild = await queryOne('SELECT id FROM children WHERE id = ? AND parent_profile_id = ?', [childId, req.parentProfile!.id]);
     if (existingChild) {
       await execute(`
         UPDATE children SET

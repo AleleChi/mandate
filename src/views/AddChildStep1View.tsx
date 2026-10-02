@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { AppRoute, AddChildDraft } from '../types';
 import { ArrowLeft, ChevronDown, Info } from 'lucide-react';
 import { PremiumSelect } from '../components/common/PremiumSelect';
@@ -11,7 +11,7 @@ import { validateChildName } from '../utils/validation';
 interface AddChildStep1ViewProps {
   onNavigate: (route: AppRoute) => void;
   initialDraft?: AddChildDraft | null;
-  onSaveDraft: (draft: AddChildDraft, isFinishLater?: boolean) => void;
+  onSaveDraft: (draft: AddChildDraft, isFinishLater?: boolean) => Promise<boolean> | void | Promise<void>;
 }
 
 export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
@@ -37,6 +37,14 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Field refs for accessible focus and scroll
+  const photoContainerRef = useRef<HTMLDivElement>(null);
+  const fullNameInputRef = useRef<HTMLInputElement>(null);
+  const genderContainerRef = useRef<HTMLDivElement>(null);
+  const dobContainerRef = useRef<HTMLDivElement>(null);
+  const relationshipContainerRef = useRef<HTMLDivElement>(null);
 
   const calculateAgeAndGroup = (dobString: string) => {
     if (!dobString) {
@@ -89,15 +97,22 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
 
   const handleContinue = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving || isUploadingPhoto) return;
+
     const newErrors: Record<string, string> = {};
 
     if (!photoUrl.trim()) {
       newErrors.photo = 'Add the child’s photo.';
     }
 
-    const nameError = validateChildName(fullName);
-    if (nameError) {
-      newErrors.fullName = nameError;
+    const trimmedName = fullName.trim();
+    if (!trimmedName) {
+      newErrors.fullName = 'Enter the child’s full name.';
+    } else {
+      const nameError = validateChildName(trimmedName);
+      if (nameError) {
+        newErrors.fullName = nameError;
+      }
     }
 
     if (!gender) {
@@ -121,6 +136,19 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
+      // Focus/scroll to first invalid field
+      if (newErrors.photo && photoContainerRef.current) {
+        photoContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (newErrors.fullName && fullNameInputRef.current) {
+        fullNameInputRef.current.focus();
+        fullNameInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (newErrors.gender && genderContainerRef.current) {
+        genderContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (newErrors.dob && dobContainerRef.current) {
+        dobContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (newErrors.relationship && relationshipContainerRef.current) {
+        relationshipContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       return;
     }
 
@@ -129,7 +157,7 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
       ...initialDraft,
       id: initialDraft?.id || `child-${Date.now()}`,
       photoUrl,
-      fullName: fullName.trim(),
+      fullName: trimmedName,
       gender,
       dob,
       age: ageData.ageYears,
@@ -138,7 +166,7 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
       needsReview: needsAgeReviewVal,
       childDetails: {
         photo: photoUrl,
-        fullName: fullName.trim(),
+        fullName: trimmedName,
         gender,
         dateOfBirth: dob,
         calculatedAge: ageData.ageYears,
@@ -152,15 +180,55 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
     onNavigate('/parent/children/new/care-details');
   };
 
-  const handleSaveAndFinishLater = () => {
-    const hasAnyData = photoUrl.trim() || fullName.trim() || gender || dob || relationship;
-    if (hasAnyData) {
+  const handleSaveAndFinishLater = async () => {
+    if (isSaving || isUploadingPhoto) return;
+
+    const trimmedName = fullName.trim();
+    if (!trimmedName) {
+      setErrors((prev) => ({
+        ...prev,
+        fullName: 'Enter your child’s name before saving.'
+      }));
+      fullNameInputRef.current?.focus();
+      fullNameInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    // Format validation if name entered
+    const nameFormatError = validateChildName(trimmedName);
+    if (nameFormatError) {
+      setErrors((prev) => ({
+        ...prev,
+        fullName: nameFormatError
+      }));
+      fullNameInputRef.current?.focus();
+      fullNameInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    // Format validation for other partially entered fields
+    if (dob) {
+      const parsed = new Date(dob);
+      const today = new Date();
+      today.setHours(23, 59, 59, 999);
+      if (parsed > today) {
+        setErrors((prev) => ({
+          ...prev,
+          dob: 'Date of birth cannot be in the future.'
+        }));
+        dobContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+    }
+
+    setIsSaving(true);
+    try {
       const needsAgeReviewVal = ageData.ageYears !== null && ageData.ageYears < 1;
       const draftData: AddChildDraft = {
         ...initialDraft,
         id: initialDraft?.id || `child-${Date.now()}`,
         photoUrl: photoUrl.trim() || '',
-        fullName: fullName.trim(),
+        fullName: trimmedName,
         gender: gender || 'Not specified',
         dob: dob || '',
         age: ageData.ageYears !== null ? ageData.ageYears : null,
@@ -169,7 +237,7 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
         needsReview: needsAgeReviewVal,
         childDetails: {
           photo: photoUrl.trim() || '',
-          fullName: fullName.trim(),
+          fullName: trimmedName,
           gender: gender || 'Not specified',
           dateOfBirth: dob || '',
           calculatedAge: ageData.ageYears !== null ? ageData.ageYears : null,
@@ -178,9 +246,17 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
           needsAgeReview: needsAgeReviewVal
         }
       };
-      onSaveDraft(draftData, true);
+
+      const result = await onSaveDraft(draftData, true);
+      // Only after a successful server response return to Parent Home
+      if (result !== false) {
+        onNavigate('/parent/home');
+      }
+    } catch (err) {
+      console.error('Save for later failed:', err);
+    } finally {
+      setIsSaving(false);
     }
-    onNavigate('/parent/home');
   };
 
   return (
@@ -226,7 +302,7 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
 
         <form onSubmit={handleContinue} className="space-y-5" noValidate>
           {/* Photo upload */}
-          <div className="flex flex-col items-center pt-1">
+          <div ref={photoContainerRef} className="flex flex-col items-center pt-1">
             <PhotoUploadBox
               value={photoUrl}
               onUploaded={(url) => {
@@ -246,38 +322,50 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
 
           {/* 1. Child's full name */}
           <div>
-            <label className="text-xs font-semibold text-[#18181B] block mb-1">
+            <label htmlFor="child-full-name" className="text-xs font-semibold text-[#18181B] block mb-1">
               Child’s full name
             </label>
             <input
+              id="child-full-name"
+              ref={fullNameInputRef}
               type="text"
               placeholder="First and last name"
               value={fullName}
+              aria-invalid={!!errors.fullName}
+              aria-describedby={errors.fullName ? "child-full-name-error" : undefined}
               onChange={(e) => {
                 setFullName(e.target.value);
                 if (errors.fullName) setErrors((prev) => ({ ...prev, fullName: undefined }));
               }}
-              className="w-full py-2 px-0 bg-transparent border-0 border-b border-[#D9D6CE] text-sm text-[#18181B] placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#C59B27] focus:ring-0 rounded-none transition-colors"
+              className={`w-full py-2 px-0 bg-transparent border-0 border-b ${
+                errors.fullName ? 'border-red-500' : 'border-[#D9D6CE]'
+              } text-sm text-[#18181B] placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#C59B27] focus:ring-0 rounded-none transition-colors`}
             />
-            {errors.fullName && <p className="text-xs text-red-600 mt-1 font-medium">{errors.fullName}</p>}
+            {errors.fullName && (
+              <p id="child-full-name-error" role="alert" className="text-xs text-red-600 mt-1 font-medium">
+                {errors.fullName}
+              </p>
+            )}
           </div>
 
           {/* 2. Gender */}
-          <PremiumSelect
-            variant="underline"
-            label="Gender"
-            value={gender}
-            placeholder="Select gender"
-            options={['Male', 'Female']}
-            error={errors.gender}
-            onChange={(val) => {
-              setGender(val);
-              if (errors.gender) setErrors((prev) => ({ ...prev, gender: undefined }));
-            }}
-          />
+          <div ref={genderContainerRef}>
+            <PremiumSelect
+              variant="underline"
+              label="Gender"
+              value={gender}
+              placeholder="Select gender"
+              options={['Male', 'Female']}
+              error={errors.gender}
+              onChange={(val) => {
+                setGender(val);
+                if (errors.gender) setErrors((prev) => ({ ...prev, gender: undefined }));
+              }}
+            />
+          </div>
 
           {/* 3. Date of birth */}
-          <div>
+          <div ref={dobContainerRef}>
             <KoinoniaDatePicker
               label="Date of birth"
               value={dob}
@@ -308,18 +396,20 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
           </div>
 
           {/* 5. Relationship to child */}
-          <PremiumSelect
-            variant="underline"
-            label="Relationship to child"
-            value={relationship}
-            placeholder="Select relationship"
-            options={['Mother', 'Father', 'Guardian', 'Grandparent', 'Aunt', 'Uncle', 'Other']}
-            error={errors.relationship}
-            onChange={(val) => {
-              setRelationship(val);
-              if (errors.relationship) setErrors((prev) => ({ ...prev, relationship: undefined }));
-            }}
-          />
+          <div ref={relationshipContainerRef}>
+            <PremiumSelect
+              variant="underline"
+              label="Relationship to child"
+              value={relationship}
+              placeholder="Select relationship"
+              options={['Mother', 'Father', 'Guardian', 'Grandparent', 'Aunt', 'Uncle', 'Other']}
+              error={errors.relationship}
+              onChange={(val) => {
+                setRelationship(val);
+                if (errors.relationship) setErrors((prev) => ({ ...prev, relationship: undefined }));
+              }}
+            />
+          </div>
 
           {/* Information note */}
           {ageData.ageYears !== null && ageData.ageYears < 2 && (
@@ -333,14 +423,7 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
           <div className="pt-2 space-y-2.5">
             <Button
               type="submit"
-              disabled={isUploadingPhoto || !(
-                photoUrl.trim() !== '' &&
-                fullName.trim() !== '' &&
-                validateChildName(fullName) === undefined &&
-                gender !== '' &&
-                (dob && new Date(dob) <= (() => { const d = new Date(); d.setHours(23,59,59,999); return d; })()) &&
-                relationship !== ''
-              )}
+              disabled={isUploadingPhoto || isSaving}
               fullWidth
               size="lg"
             >
@@ -348,11 +431,11 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
             </Button>
             <button
               type="button"
-              disabled={isUploadingPhoto}
+              disabled={isUploadingPhoto || isSaving}
               onClick={handleSaveAndFinishLater}
               className="w-full py-2.5 text-xs sm:text-sm font-medium text-[#3F3F46] hover:text-[#9A7326] hover:underline active:opacity-80 transition-all duration-200 cursor-pointer focus:outline-none text-center block disabled:opacity-55"
             >
-              Save and finish later
+              {isSaving ? 'Saving...' : 'Save and finish later'}
             </button>
           </div>
         </form>

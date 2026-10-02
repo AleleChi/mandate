@@ -589,7 +589,7 @@ export default function App() {
     showSuccess('Signed out', 'You have been successfully signed out.');
   };
 
-  const handleSaveDraft = async (draft: AddChildDraft, isFinishLater?: boolean) => {
+  const handleSaveDraft = async (draft: AddChildDraft, isFinishLater?: boolean): Promise<boolean> => {
     setAddChildDraft(draft);
     if (draft.id) {
       safeStorage.setItem('koinonia_active_draft_id', draft.id);
@@ -615,12 +615,15 @@ export default function App() {
           } else {
             showSuccess('Progress saved');
           }
+          return true;
         }
+        return false;
       } catch (e: any) {
         console.error('Failed to save draft to backend:', e);
         if (isFinishLater) {
-          showError('Something went wrong', 'We could not save your progress.');
+          showError('Something went wrong', e?.message || 'We could not save your progress.');
         }
+        return false;
       }
     } else if (isFinishLater) {
       const name = (draft.childDetails?.fullName || draft.fullName || '').trim();
@@ -654,9 +657,12 @@ export default function App() {
           }
           return [draftChild, ...prev];
         });
+        showSuccess('Progress saved', 'You can continue later from Home.');
+        return true;
       }
-      showSuccess('Progress saved', 'You can continue later from Home.');
+      return false;
     }
+    return true;
   };
 
   const handleSubmitReview = async (draft: AddChildDraft): Promise<boolean> => {
