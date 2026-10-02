@@ -10,6 +10,23 @@ import { AuthScreenShell } from '../components/common/AuthScreenShell';
 import { isWebAuthnSupported, base64URLToBuffer } from '../utils/passkey';
 import { safeStorage } from '../utils/storage';
 
+export function sanitizeVolunteerReturnRoute(route?: string | null): AppRoute {
+  if (!route) return '/volunteer/event';
+  try {
+    const decoded = decodeURIComponent(route).trim();
+    if (
+      decoded.startsWith('/volunteer/') &&
+      !decoded.startsWith('/parent') &&
+      !decoded.startsWith('/admin') &&
+      !decoded.includes('://') &&
+      !decoded.startsWith('//')
+    ) {
+      return decoded as AppRoute;
+    }
+  } catch {}
+  return '/volunteer/event';
+}
+
 interface VolunteerSignInViewProps {
   onNavigate: (route: AppRoute) => void;
   onSignInSuccess?: (user: any, profile: any) => void;
@@ -79,7 +96,19 @@ export const VolunteerSignInView: React.FC<VolunteerSignInViewProps> = ({
       );
 
       if (loginRes.success && loginRes.user) {
+        // Enforce Volunteer portal isolation: require volunteer profile or volunteer role
+        const hasVolunteerAccess = Boolean(
+          loginRes.volunteerProfile ||
+          ['volunteer', 'staff', 'admin', 'super_admin'].includes(loginRes.user.role)
+        );
+        if (!hasVolunteerAccess) {
+          setError('Volunteer Access has not been requested for this email.');
+          showWarning('Access Blocked', 'This account is not registered for volunteer access.');
+          return;
+        }
+
         showSuccess('Welcome back', 'Signed in securely with your device.');
+        safeStorage.setItem('koinonia_active_experience', 'volunteer');
         if (onSignInSuccess) {
           onSignInSuccess(loginRes.user, loginRes.volunteerProfile || loginRes.profile);
         }
@@ -87,17 +116,11 @@ export const VolunteerSignInView: React.FC<VolunteerSignInViewProps> = ({
         const returnRoute = safeStorage.getItem('koinonia_return_route');
         if (returnRoute) {
           safeStorage.removeItem('koinonia_return_route');
-          onNavigate(returnRoute as AppRoute);
+          onNavigate(sanitizeVolunteerReturnRoute(returnRoute));
           return;
         }
 
-        if (loginRes.user.role === 'volunteer') {
-          onNavigate('/volunteer/event' as AppRoute);
-        } else if (loginRes.user.role === 'admin') {
-          onNavigate('/admin/overview' as AppRoute);
-        } else {
-          onNavigate('/parent/home' as AppRoute);
-        }
+        onNavigate('/volunteer/event');
       } else {
         setError(loginRes.error || "We couldn't sign in with this device. Please try again or use your password.");
       }
@@ -180,6 +203,8 @@ export const VolunteerSignInView: React.FC<VolunteerSignInViewProps> = ({
       const cleanEmail = email.trim().toLowerCase();
       const res = await api.volunteer.signIn({ email: cleanEmail, password });
 
+      safeStorage.setItem('koinonia_active_experience', 'volunteer');
+
       if (onSignInSuccess) {
         onSignInSuccess(res.user, res.profile);
       }
@@ -189,13 +214,13 @@ export const VolunteerSignInView: React.FC<VolunteerSignInViewProps> = ({
       const returnRoute = safeStorage.getItem('koinonia_return_route');
       if (returnRoute) {
         safeStorage.removeItem('koinonia_return_route');
-        onNavigate(returnRoute as AppRoute);
+        onNavigate(sanitizeVolunteerReturnRoute(returnRoute));
         return;
       }
 
       // Route checks
       if (res.nextRoute) {
-        onNavigate(res.nextRoute);
+        onNavigate(sanitizeVolunteerReturnRoute(res.nextRoute));
       } else {
         const status = res.profile?.status;
         if (status === 'pending_review') {

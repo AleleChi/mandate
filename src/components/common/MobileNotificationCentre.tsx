@@ -118,6 +118,73 @@ function getNotificationIcon(title: string, message: string) {
   return <Bell className="w-4 h-4 text-[#9A7326] dark:text-[#C59B27] shrink-0" />;
 }
 
+export function resolveNotificationRoute(
+  notif: NotificationItem,
+  surfaceOrRole?: 'volunteer' | 'parent' | string
+): string {
+  const currentSurface = surfaceOrRole === 'volunteer' ? 'volunteer' : 'parent';
+  const lower = `${notif.title || ''} ${notif.message || ''}`.toLowerCase();
+  const payloadRoute = (
+    notif.metadata?.targetRoute ||
+    notif.metadata?.route ||
+    (notif as any).targetRoute ||
+    (notif as any).route ||
+    (notif as any).actionUrl ||
+    ''
+  ).trim();
+
+  let targetRoute = '';
+
+  if (currentSurface === 'volunteer') {
+    if (payloadRoute && payloadRoute.startsWith('/volunteer/')) {
+      targetRoute = payloadRoute;
+    } else if (lower.includes('safety') || lower.includes('incident') || lower.includes('urgent')) {
+      targetRoute = '/volunteer/safety';
+    } else if (lower.includes('location') || lower.includes('duty') || lower.includes('serving')) {
+      targetRoute = '/volunteer/duty';
+    } else {
+      targetRoute = '/volunteer/event';
+    }
+
+    // Strictly isolate Volunteer surface: MUST ONLY route to /volunteer/*
+    if (
+      !targetRoute.startsWith('/volunteer/') ||
+      targetRoute.startsWith('/parent') ||
+      targetRoute.startsWith('/admin') ||
+      targetRoute.includes('://') ||
+      targetRoute.startsWith('//')
+    ) {
+      targetRoute = '/volunteer/event';
+    }
+  } else {
+    // Parent surface
+    if (payloadRoute && payloadRoute.startsWith('/parent/')) {
+      targetRoute = payloadRoute;
+    } else if (notif.childId) {
+      if (lower.includes('pass') || (notif.title || '').toLowerCase().includes('pass')) {
+        targetRoute = `/parent/children/${notif.childId}/pass`;
+      } else {
+        targetRoute = `/parent/children/${notif.childId}/status`;
+      }
+    } else {
+      targetRoute = '/parent/home';
+    }
+
+    // Strictly isolate Parent surface: MUST ONLY route to /parent/*
+    if (
+      !targetRoute.startsWith('/parent/') ||
+      targetRoute.startsWith('/volunteer') ||
+      targetRoute.startsWith('/admin') ||
+      targetRoute.includes('://') ||
+      targetRoute.startsWith('//')
+    ) {
+      targetRoute = notif.childId ? `/parent/children/${notif.childId}/status` : '/parent/home';
+    }
+  }
+
+  return targetRoute;
+}
+
 export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> = ({
   isOpen,
   onClose,
@@ -212,36 +279,17 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
       }
     }
 
-    // Determine deep link
-    const lower = `${notif.title} ${notif.message}`.toLowerCase();
-    let targetRoute = '';
-
-    if (role === 'volunteer') {
-      if (lower.includes('safety') || lower.includes('incident') || lower.includes('urgent')) {
-        targetRoute = '/volunteer/safety';
-      } else if (lower.includes('location') || lower.includes('duty') || lower.includes('serving')) {
-        targetRoute = '/volunteer/duty';
-      } else {
-        setSelectedNotif(notif);
-        return;
-      }
-    } else {
-      // Parent role
-      if (notif.childId) {
-        if (lower.includes('pass') || notif.title.toLowerCase().includes('pass')) {
-          targetRoute = `/parent/children/${notif.childId}/pass`;
-        } else {
-          targetRoute = `/parent/children/${notif.childId}/status`;
-        }
-      } else {
-        setSelectedNotif(notif);
-        return;
-      }
-    }
+    const currentSurface = surface || role;
+    const targetRoute = resolveNotificationRoute(notif, currentSurface);
 
     if (targetRoute && onNavigate) {
-      onClose();
-      onNavigate(targetRoute);
+      try {
+        onClose();
+        onNavigate(targetRoute);
+      } catch (err) {
+        console.error('Failed to navigate from notification:', err);
+        setSelectedNotif(notif);
+      }
     } else {
       setSelectedNotif(notif);
     }

@@ -407,21 +407,27 @@ export default function App() {
         const hasVolAccess = isVolApproved || isStaffOrAdmin;
         const hasParentAccess = accessData.access.parent && accessData.access.parent.exists;
 
-        if (storedExp === 'volunteer' && hasVolAccess) {
+        const currentPath = typeof window !== 'undefined' ? (window.location.pathname + window.location.hash) : '';
+        const isVolunteerPath = currentPath.includes('/volunteer');
+        const isParentPath = currentPath.includes('/parent');
+
+        // The portal the user explicitly entered must remain authoritative
+        if (isParentPath && (hasParentAccess || accessData.user.role === 'parent')) {
+          setActiveExperience('parent');
+          safeStorage.setItem('koinonia_active_experience', 'parent');
+        } else if (isVolunteerPath && hasVolAccess) {
+          setActiveExperience('volunteer');
+          safeStorage.setItem('koinonia_active_experience', 'volunteer');
+        } else if (storedExp === 'volunteer' && hasVolAccess) {
           setActiveExperience('volunteer');
         } else if (storedExp === 'parent' && (hasParentAccess || accessData.user.role === 'parent')) {
           setActiveExperience('parent');
+        } else if (hasParentAccess || accessData.user.role === 'parent') {
+          setActiveExperience('parent');
+        } else if (hasVolAccess) {
+          setActiveExperience('volunteer');
         } else {
-          const currentPath = typeof window !== 'undefined' ? (window.location.pathname + window.location.hash) : '';
-          if (hasVolAccess && currentPath.includes('/volunteer')) {
-            setActiveExperience('volunteer');
-          } else if (hasParentAccess) {
-            setActiveExperience('parent');
-          } else if (hasVolAccess) {
-            setActiveExperience('volunteer');
-          } else {
-            setActiveExperience(accessData.user.role === 'admin' || accessData.user.role === 'super_admin' ? 'admin' : 'parent');
-          }
+          setActiveExperience(accessData.user.role === 'admin' || accessData.user.role === 'super_admin' ? 'admin' : 'parent');
         }
       } else {
         api.clearToken();
@@ -432,15 +438,19 @@ export default function App() {
         setActiveExperience(null);
         safeStorage.removeItem('koinonia_active_experience');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Initial checkAuth failed:', err);
-      api.clearToken();
-      setUser(null);
-      setParentProfile(initialParentProfile);
-      setVolunteerProfile(null);
-      setChildrenList([]);
-      setActiveExperience(null);
-      safeStorage.removeItem('koinonia_active_experience');
+      // ONLY clear authentication/session on genuine 401 UNAUTHORIZED authentication failures
+      // A 403 or network error must NEVER clear token or log the user out!
+      if (err?.code === 'UNAUTHORIZED' || err?.status === 401) {
+        api.clearToken();
+        setUser(null);
+        setParentProfile(initialParentProfile);
+        setVolunteerProfile(null);
+        setChildrenList([]);
+        setActiveExperience(null);
+        safeStorage.removeItem('koinonia_active_experience');
+      }
     } finally {
       setIsCheckingAuth(false);
     }
@@ -833,32 +843,21 @@ export default function App() {
       return <RedirectToSignIn next={currentRoute} />;
     }
 
-    // Redirect to volunteer dashboard if user explicitly selected volunteer experience
-    if (activeExperience === 'volunteer' && currentRoute.startsWith('/parent')) {
-      return <RedirectToRoute route="/volunteer/event" />;
-    }
-
     if (requiredRole && user.role !== requiredRole) {
       const hasValidParentProfile = parentProfile && (parentProfile.fullName?.trim() || parentProfile.phone?.trim());
       const isParentAllowed = requiredRole === 'parent' && (
-        ['volunteer', 'staff', 'admin', 'super_admin', 'team'].includes(user.role) ||
+        user.role === 'parent' ||
         hasValidParentProfile ||
-        activeExperience === 'parent'
+        ['admin', 'super_admin'].includes(user.role)
       );
 
-      if (isParentAllowed) {
-        // Allowed to view parent pages
-      } else if (user.role === 'volunteer' || user.role === 'staff') {
-        return <RedirectToRoute route="/volunteer/event" />;
-      } else if (user.role === 'admin' || user.role === 'super_admin') {
-        return <RedirectToRoute route="/admin/overview" />;
-      } else {
+      if (!isParentAllowed) {
         return (
           <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] p-4">
             <div className="bg-white rounded-3xl p-8 border border-[#EAE8E1] shadow-sm max-w-md w-full text-center space-y-6">
-              <h3 className="text-xl font-serif-koinonia font-bold text-[#18181B]">Access Denied</h3>
+              <h3 className="text-xl font-serif-koinonia font-bold text-[#18181B]">Parent Access Required</h3>
               <p className="text-sm text-[#6B7280]">
-                You do not have access to this area. Your account role is <span className="font-semibold">{user.role}</span>.
+                You do not have active parent access. Please sign in with a parent account or register your profile.
               </p>
               <Button onClick={handleSignOut} variant="primary" fullWidth>
                 Sign Out
@@ -934,16 +933,23 @@ export default function App() {
       return <RedirectToRoute route="/volunteer/sign-in" />;
     }
 
-    // Redirect to parent home if user explicitly selected parent experience
-    if (activeExperience === 'parent' && currentRoute.startsWith('/volunteer')) {
-      return <RedirectToRoute route="/parent/home" />;
-    }
-
     const allowedRoles = ['volunteer', 'staff', 'admin', 'super_admin'];
     const isVolunteerApproved = volunteerProfile && (volunteerProfile.status === 'active' || volunteerProfile.status === 'approved');
 
     if (!allowedRoles.includes(user.role) && !isVolunteerApproved) {
-      return <RedirectToRoute route="/parent/home" />;
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] p-4">
+          <div className="bg-white rounded-3xl p-8 border border-[#EAE8E1] shadow-sm max-w-md w-full text-center space-y-6">
+            <h3 className="text-xl font-serif-koinonia font-bold text-[#18181B]">Volunteer Access Required</h3>
+            <p className="text-sm text-[#6B7280]">
+              You do not have active volunteer access. Please sign in with a volunteer account or contact your team leader.
+            </p>
+            <Button onClick={handleSignOut} variant="primary" fullWidth>
+              Sign Out
+            </Button>
+          </div>
+        </div>
+      );
     }
 
     const emailVerified = user.email_verified === 1 || user.email_verified === true || user.email_verified === '1';
@@ -1015,6 +1021,8 @@ export default function App() {
 
   const handleSignInSuccess = (userData: any, profileData: any) => {
     setUser(userData);
+    setActiveExperience('parent');
+    safeStorage.setItem('koinonia_active_experience', 'parent');
     if (profileData) {
       setParentProfile(normalizeParentProfile(profileData));
       setParentEmail(profileData.email || '');
@@ -1512,6 +1520,8 @@ export default function App() {
             onNavigate={navigate}
             onSignInSuccess={async (u, p) => {
               setUser(u);
+              setActiveExperience('volunteer');
+              safeStorage.setItem('koinonia_active_experience', 'volunteer');
               if (p) {
                 setVolunteerProfile(p);
               }
@@ -1525,6 +1535,8 @@ export default function App() {
             onNavigate={navigate}
             onSignInSuccess={async (u, p) => {
               setUser(u);
+              setActiveExperience('volunteer');
+              safeStorage.setItem('koinonia_active_experience', 'volunteer');
               if (p) {
                 setVolunteerProfile(p);
               }

@@ -2601,27 +2601,6 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
             {/* Right: Notifications & Profile Avatar */}
             <div className="justify-self-end flex items-center space-x-2">
-              {hasParentProfile && (
-                <button
-                  disabled={isSwitchingExperience}
-                  onClick={() => {
-                    if (onSwitchExperience) {
-                      onSwitchExperience('parent');
-                    } else {
-                      onNavigate('/parent/home');
-                    }
-                  }}
-                  className="p-1.5 text-[#C59B27] hover:text-[#A47E1F] rounded-full hover:bg-[#FAF6EB] dark:hover:bg-[#21211E] flex items-center justify-center cursor-pointer transition-colors disabled:opacity-50"
-                  title="Switch to Parent Access"
-                >
-                  {isSwitchingExperience ? (
-                    <RefreshCw className="h-4.5 w-4.5 animate-spin" />
-                  ) : (
-                    <Home className="h-4.5 w-4.5" />
-                  )}
-                </button>
-              )}
-
               {/* Notification Bell */}
               <button
                 onClick={() => {

@@ -7,6 +7,24 @@ import { validateEmailSyntax } from '../utils/validation';
 import { Button } from '../components/common/Button';
 import { AuthScreenShell } from '../components/common/AuthScreenShell';
 import { isWebAuthnSupported, base64URLToBuffer } from '../utils/passkey';
+import { safeStorage } from '../utils/storage';
+
+export function sanitizeParentReturnRoute(route?: string | null): AppRoute {
+  if (!route) return '/parent/home';
+  try {
+    const decoded = decodeURIComponent(route).trim();
+    if (
+      decoded.startsWith('/parent/') &&
+      !decoded.startsWith('/volunteer') &&
+      !decoded.startsWith('/admin') &&
+      !decoded.includes('://') &&
+      !decoded.startsWith('//')
+    ) {
+      return decoded as AppRoute;
+    }
+  } catch {}
+  return '/parent/home';
+}
 
 interface SignInViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -79,21 +97,26 @@ export const SignInView: React.FC<SignInViewProps> = ({
       );
 
       if (loginRes.success && loginRes.user) {
+        // Enforce Parent portal isolation: must have parent profile or parent role
+        const hasParentAccess = Boolean(loginRes.profile || loginRes.user.role === 'parent');
+        if (!hasParentAccess) {
+          setError('This account is registered for volunteer access only and does not have a parent profile.');
+          return;
+        }
+
         if (onSetParentEmail && loginRes.user.email) {
           onSetParentEmail(loginRes.user.email);
         }
         showSuccess('Welcome back', 'Signed in securely with your device.');
+        safeStorage.setItem('koinonia_active_experience', 'parent');
         if (onSignInSuccess) {
-          onSignInSuccess(loginRes.user, loginRes.profile || loginRes.volunteerProfile);
+          onSignInSuccess(loginRes.user, loginRes.profile);
         }
 
-        if (loginRes.user.role === 'volunteer') {
-          onNavigate('/volunteer/event' as AppRoute);
-        } else if (loginRes.user.role === 'admin') {
-          onNavigate('/admin/overview' as AppRoute);
-        } else {
-          onNavigate('/parent/home' as AppRoute);
-        }
+        const getSearchParams = () => new URLSearchParams(window.location.search || (window.location.hash.includes('?') ? window.location.hash.substring(window.location.hash.indexOf('?')) : ''));
+        const searchParams = getSearchParams();
+        const nextRoute = searchParams.get('next');
+        onNavigate(sanitizeParentReturnRoute(nextRoute));
       } else {
         setError(loginRes.error || "We couldn't sign in with this device. Please try again or use your password.");
       }
@@ -171,17 +194,16 @@ export const SignInView: React.FC<SignInViewProps> = ({
     try {
       const cleanEmail = email.trim().toLowerCase();
       const res = await api.auth.signIn({ email: cleanEmail, password });
+
+      const hasParentAccess = Boolean(res.profile || res.user.role === 'parent');
+      if (!hasParentAccess) {
+        setError('This account is registered for volunteer access only and does not have a parent profile.');
+        return;
+      }
+
       if (onSetParentEmail) onSetParentEmail(cleanEmail);
       showSuccess('Welcome back', 'Your parent account is ready.');
-
-      const isProfileComplete = (p: any) => {
-        if (!p) return false;
-        const fullName = p.fullName || p.full_name;
-        const phone = p.phone || p.phone_number;
-        if (!fullName || !fullName.trim()) return false;
-        if (!phone || !phone.trim()) return false;
-        return true;
-      };
+      safeStorage.setItem('koinonia_active_experience', 'parent');
 
       if (onSignInSuccess) {
         onSignInSuccess(res.user, res.profile);
@@ -191,11 +213,7 @@ export const SignInView: React.FC<SignInViewProps> = ({
       const searchParams = getSearchParams();
       const nextRoute = searchParams.get('next');
 
-      if (nextRoute) {
-        onNavigate(decodeURIComponent(nextRoute) as AppRoute);
-      } else {
-        onNavigate('/parent/home');
-      }
+      onNavigate(sanitizeParentReturnRoute(nextRoute));
     } catch (err: any) {
       const { message, code } = extractApiError(err);
       
@@ -203,7 +221,7 @@ export const SignInView: React.FC<SignInViewProps> = ({
         const cleanEmail = email.trim().toLowerCase();
         const searchParams = new URLSearchParams(window.location.search || (window.location.hash.includes('?') ? window.location.hash.substring(window.location.hash.indexOf('?')) : ''));
         const nextRoute = searchParams.get('next');
-        const nextParam = nextRoute ? `&next=${encodeURIComponent(nextRoute)}` : '';
+        const nextParam = nextRoute ? `&next=${encodeURIComponent(sanitizeParentReturnRoute(nextRoute))}` : '';
         onNavigate(`/parent/create-account?email=${encodeURIComponent(cleanEmail)}${nextParam}` as AppRoute);
         return;
       }
@@ -217,11 +235,12 @@ export const SignInView: React.FC<SignInViewProps> = ({
         }
         const searchParams = new URLSearchParams(window.location.search || (window.location.hash.includes('?') ? window.location.hash.substring(window.location.hash.indexOf('?')) : ''));
         const nextRoute = searchParams.get('next');
-        if (nextRoute) {
-          onNavigate(decodeURIComponent(nextRoute) as AppRoute);
-        } else {
-          onNavigate('/parent/home');
-        }
+        onNavigate(sanitizeParentReturnRoute(nextRoute));
+        return;
+      }
+
+      if (code === 'NO_PARENT_ACCESS') {
+        setError('This account does not have a parent profile. Please register for parent access or use the volunteer portal.');
         return;
       }
 

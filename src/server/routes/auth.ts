@@ -519,6 +519,13 @@ router.post(['/sign-in', '/login'], async (req: AuthenticatedRequest, res: Respo
     }
 
     const profile = await resolveParentProfileForUser(user.id, user.email);
+    if (user.role !== 'parent' && user.role !== 'admin' && !profile) {
+      return res.status(403).json({
+        success: false,
+        code: 'NO_PARENT_ACCESS',
+        message: 'Parent Access has not been registered for this account.'
+      });
+    }
     const token = generateToken(user.id);
 
     const emailVerified = user.email_verified === 1 || user.email_verified === true || user.email_verified === '1';

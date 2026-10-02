@@ -27,19 +27,21 @@ export class ParentApiError extends Error {
   description: string;
   code?: string;
   data?: any;
-  constructor(message: string, description: string = 'Please try again.', code?: string, data?: any) {
+  status?: number;
+  constructor(message: string, description: string = 'Please try again.', code?: string, data?: any, status?: number) {
     super(message);
     this.name = 'ParentApiError';
     this.description = description;
     this.code = code;
     this.data = data;
+    this.status = status;
   }
 }
 
-export function extractApiError(err: any): { message: string; description: string; code?: string } {
+export function extractApiError(err: any): { message: string; description: string; code?: string; status?: number } {
   console.error('[extractApiError - Caught Source Error]:', err);
   if (err instanceof ParentApiError) {
-    return { message: err.message, description: err.description, code: err.code };
+    return { message: err.message, description: err.description, code: err.code, status: err.status };
   }
   const raw = (typeof err === 'string' ? err : err?.message || '').trim();
   if (!raw || raw.includes('Failed to fetch') || raw.includes('NetworkError') || raw.includes('Load failed') || raw.includes('Connection problem')) {
@@ -121,10 +123,10 @@ export const api = {
       const text = await res.text().catch(() => '');
       if (text.trim().startsWith('<')) {
         if (!res.ok) {
-          if (res.status === 401) throw new ParentApiError('Unauthorized', 'Please log in to continue.', 'UNAUTHORIZED');
-          if (res.status === 403) throw new ParentApiError('Access denied', 'You do not have permission to access this resource.', 'FORBIDDEN');
-          if (res.status === 404) throw new ParentApiError('Not found', 'The requested resource was not found.', 'NOT_FOUND');
-          throw new ParentApiError('Server error', `The server returned an invalid response (status ${res.status}).`, 'SERVER_ERROR');
+          if (res.status === 401) throw new ParentApiError('Unauthorized', 'Please log in to continue.', 'UNAUTHORIZED', undefined, 401);
+          if (res.status === 403) throw new ParentApiError('Access denied', 'You do not have permission to access this resource.', 'FORBIDDEN', undefined, 403);
+          if (res.status === 404) throw new ParentApiError('Not found', 'The requested resource was not found.', 'NOT_FOUND', undefined, 404);
+          throw new ParentApiError('Server error', `The server returned an invalid response (status ${res.status}).`, 'SERVER_ERROR', undefined, res.status);
         }
         throw new ParentApiError('Connection problem', 'The server returned an invalid response. Please try again.');
       }
@@ -137,11 +139,11 @@ export const api = {
 
     if (!res.ok) {
       if (res.status === 401) {
-        throw new ParentApiError('Your session has expired. Please sign in again.', 'Please sign in again to continue.', 'UNAUTHORIZED');
+        throw new ParentApiError('Your session has expired. Please sign in again.', 'Please sign in again to continue.', 'UNAUTHORIZED', data, 401);
       }
       if (res.status === 403) {
-        const forbiddenMsg = data?.error || data?.message || 'Only a Super Admin can send WhatsApp test messages.';
-        throw new ParentApiError(forbiddenMsg, 'You do not have permission to perform this action.', 'FORBIDDEN');
+        const forbiddenMsg = data?.error || data?.message || 'You do not have permission to perform this action.';
+        throw new ParentApiError(forbiddenMsg, 'You do not have permission to perform this action.', 'FORBIDDEN', data, 403);
       }
 
       let rawError = data.error || data.message || `Request failed (${res.status})`;
@@ -153,9 +155,9 @@ export const api = {
       const lower = rawError.toLowerCase();
       const containsForbidden = FORBIDDEN_WORDS.some(w => lower.includes(w));
       if (containsForbidden || res.status >= 500) {
-        throw new ParentApiError('Something went wrong', 'Please try again.', errorCode, data);
+        throw new ParentApiError('Something went wrong', 'Please try again.', errorCode, data, res.status);
       }
-      throw new ParentApiError(rawError, 'Please try again.', errorCode, data);
+      throw new ParentApiError(rawError, 'Please try again.', errorCode, data, res.status);
     }
     return data as T;
   },

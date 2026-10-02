@@ -562,7 +562,24 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
             <button
               type="button"
-              onClick={() => handleTabChange('Passes')}
+              onClick={() => {
+                const draftChild = childrenList.find(c => c.status === 'Draft' || c.status === 'Incomplete');
+                if (draftChild) {
+                  if (onResumeChildDraft) {
+                    onResumeChildDraft(draftChild);
+                  } else {
+                    onNavigate('/parent/children/new');
+                  }
+                } else if (childrenList.length === 0) {
+                  if (onStartNewChild) {
+                    onStartNewChild();
+                  } else {
+                    onNavigate('/parent/children/new');
+                  }
+                } else {
+                  handleTabChange('Children');
+                }
+              }}
               className="w-full py-3 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-sm transition-all shadow-2xs cursor-pointer focus:outline-none"
             >
               Continue
