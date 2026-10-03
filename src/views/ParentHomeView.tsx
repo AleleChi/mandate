@@ -1071,7 +1071,16 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
                     {/* Operational Details (clean editorial/operational hierarchy, no nested card) */}
                     <div className="py-4 space-y-3.5 text-xs font-sans">
-                      {!isCheckedIn ? (
+                      {child.status === 'Incomplete' || child.status === 'Draft' ? (
+                        <div className="space-y-1">
+                          <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-[#9A907A] dark:text-[#7A7570] block">
+                            Registration
+                          </span>
+                          <div className="text-xs font-semibold text-[#B89047] dark:text-[#C59B27]">
+                            Not yet submitted — continue to complete
+                          </div>
+                        </div>
+                      ) : !isCheckedIn ? (
                         <>
                           <div className="space-y-1">
                             <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-[#9A907A] dark:text-[#7A7570] block">
@@ -1122,7 +1131,19 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
                     {/* Action Row */}
                     <div className="pt-2 border-t border-[#EDE6D4] dark:border-[#302E29]">
-                      {!isCheckedIn ? (
+                      {child.status === 'Incomplete' || child.status === 'Draft' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onResumeChildDraft) onResumeChildDraft(child);
+                            else onNavigate(`/parent/children/${child.id}/edit`);
+                          }}
+                          className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl flex items-center justify-between text-xs sm:text-sm font-semibold text-[#9A7326] dark:text-[#C59B27] hover:bg-[#FAF6EB] dark:hover:bg-[#262520] active:bg-[#F5F0E1] dark:active:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27]/40"
+                        >
+                          <span>Continue registration →</span>
+                          <ChevronRight className="w-4 h-4 text-[#C59B27] shrink-0" />
+                        </button>
+                      ) : !isCheckedIn ? (
                         <button
                           type="button"
                           onClick={() => {
