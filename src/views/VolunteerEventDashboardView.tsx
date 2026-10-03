@@ -1799,7 +1799,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     setLookedUpChild(null);
     setCheckedInSuccessChild(null);
     setCheckedInSuccessEntry(null);
+    setSelectedChildId(null);
+    setChildDetailOrigin(null);
+    setChildProfileData(null);
+    setChildProfileError(null);
     setIsCheckingIn(false);
+    setScanLoading(false);
     setUnassignedWristbandInfo(null);
 
     // Reset compact wristband assignment state
@@ -1826,6 +1831,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     
     // Restart camera
     setCameraActive(true);
+
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
 
     setTimeout(() => {
       scannerInputRef.current?.focus();
@@ -2216,7 +2225,45 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     if (!cid) return;
     setSelectedChildId(cid);
     setChildDetailOrigin('scan');
-    handleResetScannerState();
+    if (child.fullName || child.childName) {
+      setChildProfileData({
+        success: true,
+        child: {
+          id: child.id || cid,
+          entryId: child.entryId || cid,
+          fullName: child.fullName || child.childName,
+          firstName: (child.fullName || child.childName || '').split(' ')[0],
+          age: child.calculatedAge || child.age || 0,
+          ageGroup: child.ageGroup || child.classGroup,
+          needsAgeReview: !!child.needsAgeReview,
+          gender: child.gender,
+          classGroup: child.classGroup || child.ageGroup,
+          dutyLocation: child.dutyLocation || child.schoolClass || null,
+          photoUrl: child.photoUrl,
+          status: child.entryStatus === 'checked_in' || child.entryStatus === 'inside' ? 'inside' : 'not_arrived',
+          checkedInAt: child.checkedInAt || child.checked_in_at || null,
+          checkedInBy: child.checkedInBy || null,
+          pickedUpAt: child.pickedUpAt || null,
+          pickedUpBy: null,
+          medicalNote: child.medicalNotes || child.medicalNote || null,
+          allergies: child.allergies || null,
+          extraSupport: child.supportNotes || child.extraSupport || null
+        },
+        parent: child.parent || {
+          id: child.parentId || '',
+          fullName: child.parentName || '',
+          relationship: child.parentRelationship || 'Parent / Guardian',
+          phone: child.parentPhone || '',
+          whatsapp: child.parentWhatsapp || '',
+          photoUrl: child.parentPhotoUrl || ''
+        },
+        pickupPeople: child.pickup ? [child.pickup] : [],
+        event: {
+          name: eventDetails?.title || 'The General Assembly'
+        }
+      });
+      setChildProfileError(null);
+    }
     onNavigate('/volunteer/children');
   };
 
@@ -3635,282 +3682,303 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             const extraSupportText = lookedUpChild.supportNotes || lookedUpChild.extraSupport || '';
 
             return (
-              <div className="space-y-6 max-w-md mx-auto w-full pb-12" data-view-version="volunteer-child-found-v7-clean-header">
-                {/* Scan successful & Child found title */}
-                <div className="text-center pt-2 pb-1 space-y-1.5" data-component-version="volunteer-child-found-title-v1-stitch">
-                  <div className="inline-flex items-center space-x-1.5 text-[10px] font-bold text-[#C59B27] uppercase tracking-wider font-mono">
-                    <span className="p-1 bg-[#C59B27]/10 text-[#C59B27] rounded-full flex items-center justify-center">
-                      <Check className="h-3 w-3 stroke-[3]" />
-                    </span>
-                    <span>Scan successful</span>
-                  </div>
-                  <h2 className="text-3xl font-serif font-bold text-gray-950 dark:text-[#F0EBE3] leading-tight">Child found</h2>
-                </div>
-
-                {/* Child Identity Card */}
-                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-found-card-v3">
-                  {/* Photo area */}
-                  <div className="w-full aspect-[4/3] rounded-2xl overflow-hidden bg-gray-50 dark:bg-[#262520] border border-gray-150 dark:border-[#302E29] relative">
-                    {lookedUpChild.photoUrl ? (
-                      <img
-                        src={lookedUpChild.photoUrl}
-                        alt={lookedUpChild.fullName}
-                        className="w-full h-full object-cover"
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 dark:text-[#7A7570]">
-                        <User className="h-14 w-14 stroke-[1]" />
-                        <span className="text-xs font-semibold text-gray-400 dark:text-[#7A7570] mt-2">No photo available</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Child details */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <h3 className="text-xl font-serif font-bold text-gray-900 dark:text-[#F0EBE3] leading-tight truncate">
-                        {lookedUpChild.fullName}
-                      </h3>
-                      <span className="bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] text-[#C59B27] px-2.5 py-0.5 text-[10px] font-bold uppercase rounded-md tracking-wider shrink-0 leading-none">
-                        {lookedUpChild.identificationSource || 'Pass'}
-                      </span>
+              <div className="space-y-3.5 max-w-md mx-auto w-full pb-16 px-4" data-view-version="volunteer-child-found-v8-workstation">
+                {/* 1. CHILD IDENTITY AREA */}
+                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-xs" data-component-version="volunteer-child-found-card-v4">
+                  <div className="flex items-start gap-3.5">
+                    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden bg-gray-100 dark:bg-[#262520] border border-gray-200/80 dark:border-[#3A3835] shrink-0 flex items-center justify-center">
+                      {lookedUpChild.photoUrl ? (
+                        <img
+                          src={lookedUpChild.photoUrl}
+                          alt={lookedUpChild.fullName}
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <User className="h-7 w-7 text-gray-400 dark:text-[#7A7570]" />
+                      )}
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-[#B8B0A5] font-medium" data-component-version="volunteer-child-age-display-v2-under-one">
-                      {calculateAge(lookedUpChild.dateOfBirth) || 'Age verified'}
-                    </p>
-                  </div>
-
-                  {/* Two column grid */}
-                  <div className="grid grid-cols-2 gap-4 border-t border-gray-100 dark:border-[#302E29] pt-3.5 text-xs">
-                    <div>
-                      <span className="text-[10px] text-gray-400 dark:text-[#7A7570] font-mono uppercase tracking-wider block">Class</span>
-                      <span className="font-semibold text-gray-800 dark:text-[#F0EBE3] block mt-0.5 truncate">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="text-base sm:text-lg font-sans font-bold text-gray-900 dark:text-[#F0EBE3] leading-snug truncate">
+                          {lookedUpChild.fullName}
+                        </h3>
+                        <span className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-md tracking-wider shrink-0 leading-none ${
+                          isAlreadyCheckedIn
+                            ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40'
+                            : 'bg-stone-50 dark:bg-[#262520] text-stone-700 dark:text-[#B8B0A5] border border-stone-200 dark:border-[#3A3835]'
+                        }`}>
+                          {isAlreadyCheckedIn ? 'Checked in' : 'Ready for check-in'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600 dark:text-[#B8B0A5] font-medium mt-0.5 font-sans" data-component-version="volunteer-child-age-display-v2-under-one">
+                        {calculateAge(lookedUpChild.dateOfBirth) || lookedUpChild.age ? `${calculateAge(lookedUpChild.dateOfBirth) || lookedUpChild.age} · ` : ''}
                         {lookedUpChild.ageGroup || lookedUpChild.className || 'General Room'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-gray-400 dark:text-[#7A7570] font-mono uppercase tracking-wider block">Gender</span>
-                      <span className="font-semibold text-gray-800 dark:text-[#F0EBE3] block mt-0.5 capitalize">
-                        {lookedUpChild.gender || 'Not specified'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Care Notes Card */}
-                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-found-care-notes-v3">
-                  <div className="flex items-center space-x-2 text-gray-900 dark:text-[#F0EBE3] pb-1 border-b border-gray-50 dark:border-[#302E29]">
-                    <ShieldCheck className="h-4.5 w-4.5 text-gray-500 dark:text-[#C59B27]" />
-                    <h4 className="text-sm font-serif font-bold">Care Notes</h4>
-                  </div>
-                  
-                  <div className="space-y-3 text-xs">
-                    {/* Medical Note Row */}
-                    <div className="bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#3A3835] rounded-2xl p-3 flex items-start space-x-2.5">
-                      <span className={`${medicalNoteText ? 'text-[#E07A5F]' : 'text-gray-400 dark:text-[#7A7570]'} font-bold text-[10px] mt-0.5`}>
-                        {medicalNoteText ? '⚠️' : '✓'}
-                      </span>
-                      <div>
-                        <span className={`text-[9px] font-bold ${medicalNoteText ? 'text-[#E07A5F]' : 'text-gray-400 dark:text-[#7A7570]'} uppercase tracking-wider block font-mono`}>Medical Note</span>
-                        <p className={`${medicalNoteText ? 'text-gray-850 dark:text-[#F0EBE3] font-semibold' : 'text-gray-500 dark:text-[#7A7570] font-medium'} mt-0.5 leading-relaxed`}>
-                          {medicalNoteText || 'None required.'}
+                      </p>
+                      {lookedUpChild.passReference && (
+                        <p className="text-[11px] font-mono text-gray-400 dark:text-[#7A7570] mt-0.5">
+                          Pass: {lookedUpChild.passReference}
                         </p>
-                      </div>
-                    </div>
-
-                    {/* Allergies Row */}
-                    <div className="bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#3A3835] rounded-2xl p-3 flex items-start space-x-2.5">
-                      <span className={`${allergiesText ? 'text-[#E07A5F]' : 'text-gray-400 dark:text-[#7A7570]'} font-bold text-[10px] mt-0.5`}>
-                        {allergiesText ? '⚠️' : '✓'}
-                      </span>
-                      <div>
-                        <span className={`text-[9px] font-bold ${allergiesText ? 'text-[#E07A5F]' : 'text-gray-400 dark:text-[#7A7570]'} uppercase tracking-wider block font-mono`}>Allergies</span>
-                        <p className={`${allergiesText ? 'text-gray-850 dark:text-[#F0EBE3] font-semibold' : 'text-gray-500 dark:text-[#7A7570] font-medium'} mt-0.5 leading-relaxed`}>
-                          {allergiesText || 'No allergy added.'}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Extra Support Row */}
-                    <div className="bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#3A3835] rounded-2xl p-3 flex items-start space-x-2.5">
-                      <span className={`${extraSupportText ? 'text-[#E07A5F]' : 'text-gray-400 dark:text-[#7A7570]'} font-bold text-[10px] mt-0.5`}>
-                        {extraSupportText ? '⚠️' : '✓'}
-                      </span>
-                      <div>
-                        <span className={`text-[9px] font-bold ${extraSupportText ? 'text-[#E07A5F]' : 'text-gray-400 dark:text-[#7A7570]'} uppercase tracking-wider block font-mono`}>Extra Support</span>
-                        <p className={`${extraSupportText ? 'text-gray-850 dark:text-[#F0EBE3] font-semibold' : 'text-gray-500 dark:text-[#7A7570] font-medium'} mt-0.5 leading-relaxed`}>
-                          {extraSupportText || 'None required.'}
-                        </p>
-                      </div>
+                      )}
                     </div>
                   </div>
-                </div>
 
-                {/* Wristband Card */}
-                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-found-wristband-v1">
-                  <div className="flex items-center justify-between pb-1 border-b border-gray-50 dark:border-[#302E29]">
-                    <div className="flex items-center space-x-2 text-gray-900 dark:text-[#F0EBE3]">
-                      <Tag className="h-4.5 w-4.5 text-[#C59B27]" />
-                      <h4 className="text-sm font-serif font-bold">Wristband</h4>
-                    </div>
-                    {justAssignedWristbandCode && (
-                      <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-full bg-[#FAF6EB] dark:bg-[#262520] text-[#C59B27] dark:text-[#D4AF37] border border-[#E5D5AE] dark:border-[#3A3835]">
-                        ✓ Assigned
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Just Assigned Success Banner */}
-                  {justAssignedWristbandCode && (
-                    <div className="p-3.5 bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] rounded-2xl flex items-center space-x-3">
-                      <div className="p-1.5 bg-[#C59B27]/10 text-[#C59B27] rounded-lg shrink-0">
-                        <Check className="h-4 w-4 stroke-[3]" />
-                      </div>
-                      <div>
-                        <span className="text-[11px] font-bold text-[#9A7326] dark:text-[#D4AF37] block font-mono">
-                          ✓ Wristband assigned
+                  {/* Care Notes if present */}
+                  {(medicalNoteText || (allergiesText && allergiesText.toLowerCase() !== 'no') || (extraSupportText && extraSupportText.toLowerCase() !== 'no')) && (
+                    <div className="mt-3 pt-3 border-t border-gray-100 dark:border-[#302E29] flex flex-wrap gap-1.5 text-xs font-sans">
+                      {medicalNoteText && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-red-950/20 text-rose-700 dark:text-rose-300 border border-rose-200/50 dark:border-red-900/30 font-medium">
+                          <span className="text-[10px]">⚠️</span> Medical: {medicalNoteText}
                         </span>
-                        <span className="font-mono font-bold text-gray-900 dark:text-[#F0EBE3] text-sm block">
-                          {justAssignedWristbandCode}
+                      )}
+                      {allergiesText && allergiesText.toLowerCase() !== 'no' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300 border border-amber-200/50 dark:border-amber-900/30 font-medium">
+                          <span className="text-[10px]">⚠️</span> Allergy: {allergiesText}
                         </span>
-                      </div>
+                      )}
+                      {extraSupportText && extraSupportText.toLowerCase() !== 'no' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 border border-blue-200/50 dark:border-blue-900/30 font-medium">
+                          Support: {extraSupportText}
+                        </span>
+                      )}
                     </div>
                   )}
+                </div>
 
-                  {/* State B: ACTIVE WRISTBAND ALREADY ASSIGNED */}
-                  {lookedUpChild.activeWristband ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between p-3.5 bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#3A3835] rounded-2xl">
-                        <div>
-                          <span className="text-[10px] text-gray-400 dark:text-[#7A7570] font-mono uppercase tracking-wider block">Wristband</span>
-                          <span className="font-mono font-bold text-gray-900 dark:text-[#F0EBE3] text-sm block mt-0.5">
-                            {lookedUpChild.activeWristband.wristbandCode}
-                          </span>
-                        </div>
-                        <span className="text-[11px] font-mono font-bold uppercase px-2.5 py-1 rounded-full bg-[#FAF6EB] dark:bg-[#262520] text-[#C59B27] dark:text-[#D4AF37] border border-[#E5D5AE] dark:border-[#3A3835]">
-                          Assigned
+                {/* 2. ENTRY STATUS SECTION */}
+                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-xs space-y-3" data-component-version="volunteer-child-found-entry-status-v3">
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase">
+                      Entry Status
+                    </div>
+                    {isAlreadyCheckedIn ? (
+                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-[#F0EBE3]">
+                        <span className="w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                          <Check className="h-3.5 w-3.5 stroke-[3]" />
+                        </span>
+                        <span>Already checked in</span>
+                        <span className="text-xs font-normal text-gray-500 dark:text-[#7A7570] ml-1">
+                          · Checked in at {formatTime(lookedUpChild.checkedInAt || lookedUpChild.checked_in_at || new Date().toISOString())}
                         </span>
                       </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-[#F0EBE3]">
+                        <span className="w-5 h-5 rounded-full bg-amber-100 dark:bg-amber-950/40 text-[#C59B27] flex items-center justify-center shrink-0">
+                          <Clock className="h-3.5 w-3.5 stroke-[2.5]" />
+                        </span>
+                        <span>Ready for check-in</span>
+                      </div>
+                    )}
+                  </div>
 
-                      {/* State C: Replacement Guidance */}
-                      <div className="p-3 bg-gray-50/50 dark:bg-[#262520]/50 border border-gray-100 dark:border-[#302E29] rounded-2xl text-[11px] text-gray-500 dark:text-[#B8B0A5] flex items-center justify-between">
-                        <span>Lost or damaged wristband?</span>
+                  {/* Action buttons */}
+                  <div className="space-y-2.5 pt-1">
+                    {isAlreadyCheckedIn ? (
+                      <>
+                        {/* PRIMARY: View child record */}
                         <button
                           type="button"
-                          onClick={() => {
-                            setWristbandInitialChild(lookedUpChild);
-                            onNavigate('/volunteer/wristbands');
-                          }}
-                          className="text-[#C59B27] hover:underline font-bold ml-2 cursor-pointer shrink-0"
+                          onClick={() => handleViewScannedChildRecord(lookedUpChild)}
+                          disabled={scanLoading || isCheckingIn}
+                          data-component-version="volunteer-child-view-record-action-v7"
+                          className="w-full min-h-[46px] bg-[#18181B] hover:bg-[#27272A] dark:bg-[#C59B27] dark:hover:bg-[#B58E33] text-white dark:text-[#18181B] font-sans font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center space-x-2"
                         >
-                          Replacement Desk →
+                          <User className="h-4 w-4" />
+                          <span>View child record →</span>
                         </button>
+
+                        {/* SECONDARY: Next child */}
+                        <button
+                          type="button"
+                          onClick={handleResetScannerState}
+                          data-component-version="volunteer-scan-another-action-v4"
+                          className="w-full min-h-[44px] border border-gray-200 dark:border-[#302E29] hover:border-gray-300 dark:hover:border-[#3A3835] text-gray-800 dark:text-[#F0EBE3] font-sans font-semibold text-xs uppercase tracking-wider rounded-xl transition-all bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] cursor-pointer flex items-center justify-center space-x-2"
+                        >
+                          <QrCode className="h-4 w-4 text-gray-500 dark:text-[#B8B0A5]" />
+                          <span>Next child</span>
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {/* PRIMARY: Mark checked in */}
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmCheckIn(lookedUpChild)}
+                          disabled={scanLoading || isCheckingIn}
+                          data-component-version="volunteer-child-checkin-action-v6"
+                          className="w-full min-h-[46px] bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#18181B] font-sans font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center space-x-2"
+                        >
+                          {isCheckingIn ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                              <span>Checking in...</span>
+                            </>
+                          ) : (
+                            <>
+                              <UserCheck className="h-4 w-4 stroke-[2.5]" />
+                              <span>{justAssignedWristbandCode ? 'Continue check-in' : 'Mark checked in'}</span>
+                            </>
+                          )}
+                        </button>
+
+                        {/* SECONDARY: View child record */}
+                        <button
+                          type="button"
+                          onClick={() => handleViewScannedChildRecord(lookedUpChild)}
+                          disabled={scanLoading || isCheckingIn}
+                          data-component-version="volunteer-child-view-record-secondary-action-v7"
+                          className="w-full min-h-[44px] border border-gray-200 dark:border-[#302E29] hover:border-gray-300 dark:hover:border-[#3A3835] text-gray-800 dark:text-[#F0EBE3] font-sans font-semibold text-xs uppercase tracking-wider rounded-xl transition-all bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] cursor-pointer flex items-center justify-center space-x-2"
+                        >
+                          <User className="h-4 w-4 text-gray-500 dark:text-[#B8B0A5]" />
+                          <span>View child record →</span>
+                        </button>
+
+                        {/* SECONDARY: Next child */}
+                        <button
+                          type="button"
+                          onClick={handleResetScannerState}
+                          data-component-version="volunteer-scan-another-action-v4"
+                          className="w-full min-h-[44px] border border-gray-200 dark:border-[#302E29] hover:border-gray-300 dark:hover:border-[#3A3835] text-gray-700 dark:text-[#B8B0A5] font-sans font-semibold text-xs uppercase tracking-wider rounded-xl transition-all bg-transparent hover:bg-gray-50 dark:hover:bg-[#262520] cursor-pointer flex items-center justify-center space-x-2"
+                        >
+                          <QrCode className="h-4 w-4 text-gray-400 dark:text-[#7A7570]" />
+                          <span>Next child</span>
+                        </button>
+                      </>
+                    )}
+
+                    {/* ESCALATION: Request help */}
+                    <div className="pt-1 border-t border-gray-100 dark:border-[#302E29]">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSafetyAlertModal({
+                          id: lookedUpChild.id,
+                          fullName: lookedUpChild.fullName,
+                          ageGroup: lookedUpChild.ageGroup || lookedUpChild.className,
+                          status: lookedUpChild.entryStatus || lookedUpChild.status,
+                          photoUrl: lookedUpChild.photoUrl
+                        })}
+                        data-component-version="volunteer-alert-auto-linked-child-v1"
+                        className="w-full min-h-[40px] text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 font-sans font-medium text-xs rounded-lg transition-colors cursor-pointer flex items-center justify-center space-x-1.5 hover:bg-rose-50/50 dark:hover:bg-red-950/20"
+                      >
+                        <Bell className="h-3.5 w-3.5" />
+                        <span>Request help for this child</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. WRISTBAND SECTION */}
+                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-xs space-y-3" data-component-version="volunteer-child-found-wristband-v1">
+                  <div className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase">
+                    Wristband
+                  </div>
+
+                  {lookedUpChild.activeWristband ? (
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="font-mono font-bold text-gray-900 dark:text-[#F0EBE3] text-sm block">
+                          {lookedUpChild.activeWristband.wristbandCode}
+                        </span>
+                        <span className="text-[11px] font-sans text-emerald-600 dark:text-emerald-400 font-medium">
+                          Active
+                        </span>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWristbandInitialChild(lookedUpChild);
+                          onNavigate('/volunteer/wristbands');
+                        }}
+                        className="text-xs text-[#C59B27] hover:underline font-semibold cursor-pointer"
+                      >
+                        Replace wristband →
+                      </button>
                     </div>
                   ) : isAssigningWristband ? (
-                    /* Compact Assignment In-Flow */
-                    <div className="space-y-4">
-                      {stagedWristband ? (
-                        /* Section 6: Confirmation Before Bind */
-                        <div className="p-4 bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#3A3835] rounded-2xl space-y-3">
-                          <div>
-                            <span className="text-[10px] text-gray-400 dark:text-[#7A7570] font-mono uppercase tracking-wider block">Child</span>
-                            <span className="font-serif font-bold text-gray-900 dark:text-[#F0EBE3] text-base block mt-0.5">
-                              {lookedUpChild.fullName}
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3 border-t border-gray-100 dark:border-[#302E29] pt-2.5">
-                            <div>
-                              <span className="text-[10px] text-gray-400 dark:text-[#7A7570] font-mono uppercase tracking-wider block">Wristband</span>
-                              <span className="font-mono font-bold text-[#C59B27] text-sm block mt-0.5">
-                                {stagedWristband.wristbandCode}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-[10px] text-gray-400 dark:text-[#7A7570] font-mono uppercase tracking-wider block">Status</span>
-                              <span className="text-xs font-bold text-gray-800 dark:text-[#F0EBE3] block mt-0.5">
-                                Available
-                              </span>
-                            </div>
-                          </div>
-
-                          {wristbandAssignmentError && (
-                            <div className="p-2.5 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 rounded-xl text-xs text-red-600 dark:text-red-400 font-medium">
-                              {wristbandAssignmentError}
-                            </div>
-                          )}
-
-                          <div className="flex space-x-2 pt-1">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setStagedWristband(null);
-                                setWristbandScanInput('');
-                                setWristbandAssignmentError(null);
-                                setTimeout(() => wristbandInlineInputRef.current?.focus(), 50);
-                              }}
-                              disabled={isBindingWristband}
-                              className="flex-1 border border-gray-300 dark:border-[#3A3835] hover:border-gray-400 text-gray-700 dark:text-[#F0EBE3] font-bold py-2.5 rounded-xl text-xs uppercase cursor-pointer"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleConfirmInlineWristbandBinding}
-                              disabled={isBindingWristband}
-                              className="flex-1 bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#1D1D1A] font-bold py-2.5 rounded-xl text-xs uppercase cursor-pointer flex items-center justify-center space-x-1.5 shadow-sm"
-                            >
-                              {isBindingWristband ? (
-                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                              ) : (
-                                <span>Confirm assignment</span>
-                              )}
-                            </button>
-                          </div>
+                    stagedWristband ? (
+                      <div className="p-3.5 bg-gray-50 dark:bg-[#262520] border border-gray-200/60 dark:border-[#3A3835] rounded-xl space-y-3">
+                        <div>
+                          <span className="font-mono font-bold text-[#C59B27] text-sm block">
+                            {stagedWristband.wristbandCode}
+                          </span>
+                          <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                            Available
+                          </span>
                         </div>
-                      ) : (
-                        /* Section 3 & 4: Compact Scan or Tap Prompt */
-                        <form onSubmit={handleInlineWristbandLookup} className="space-y-3">
-                          <div className="p-3 bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#3A3835] rounded-2xl space-y-2">
-                            <label className="text-xs font-bold text-gray-800 dark:text-[#F0EBE3] block">
-                              Scan or enter wristband code
-                            </label>
-                            <p className="text-[11px] text-gray-500 dark:text-[#B8B0A5]">
-                              Scan printed WB QR code or enter code
-                            </p>
-                            <div className="flex space-x-2">
-                              <input
-                                ref={wristbandInlineInputRef}
-                                type="text"
-                                value={wristbandScanInput}
-                                onChange={(e) => setWristbandScanInput(e.target.value)}
-                                placeholder="WB-000123..."
-                                autoFocus
-                                disabled={isResolvingWristband}
-                                className="flex-1 px-3 py-2 text-xs font-mono bg-white dark:bg-[#21211E] border border-gray-300 dark:border-[#3A3835] rounded-xl text-gray-900 dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27]"
-                              />
-                              <button
-                                type="submit"
-                                disabled={isResolvingWristband || !wristbandScanInput.trim()}
-                                className="px-3 py-2 bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#1D1D1A] font-bold text-xs rounded-xl uppercase cursor-pointer disabled:opacity-50"
-                              >
-                                {isResolvingWristband ? (
-                                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                                ) : (
-                                  'Lookup'
-                                )}
-                              </button>
-                            </div>
-                          </div>
+                        <p className="text-xs text-gray-700 dark:text-[#F0EBE3] font-medium">
+                          Assign to {lookedUpChild.fullName}
+                        </p>
 
-                          {wristbandAssignmentError && (
-                            <div className="p-2.5 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 rounded-xl text-xs text-red-600 dark:text-red-400 font-medium">
-                              {wristbandAssignmentError}
-                            </div>
-                          )}
+                        {wristbandAssignmentError && (
+                          <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">
+                            {wristbandAssignmentError}
+                          </p>
+                        )}
 
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={handleConfirmInlineWristbandBinding}
+                            disabled={isBindingWristband}
+                            className="flex-1 min-h-[44px] bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#18181B] font-sans font-bold text-xs uppercase rounded-xl cursor-pointer flex items-center justify-center space-x-1"
+                          >
+                            {isBindingWristband ? (
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            ) : (
+                              <span>Confirm assignment</span>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setStagedWristband(null);
+                              setWristbandScanInput('');
+                              setWristbandAssignmentError(null);
+                              setTimeout(() => wristbandInlineInputRef.current?.focus(), 50);
+                            }}
+                            disabled={isBindingWristband}
+                            className="min-h-[44px] px-4 border border-gray-200 dark:border-[#3A3835] text-gray-600 dark:text-[#B8B0A5] hover:text-gray-900 dark:hover:text-[#F0EBE3] font-sans font-semibold text-xs uppercase rounded-xl cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <form onSubmit={handleInlineWristbandLookup} className="space-y-2.5">
+                        <label className="text-xs font-semibold text-gray-800 dark:text-[#F0EBE3] block">
+                          Scan or enter wristband code
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            ref={wristbandInlineInputRef}
+                            type="text"
+                            value={wristbandScanInput}
+                            onChange={(e) => setWristbandScanInput(e.target.value)}
+                            placeholder="WB-000123..."
+                            autoFocus
+                            disabled={isResolvingWristband}
+                            className="flex-1 min-h-[44px] px-3 text-xs font-mono bg-stone-50/80 dark:bg-[#262520] border border-gray-200 dark:border-[#3A3835] rounded-xl text-gray-900 dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27]"
+                          />
+                          <button
+                            type="submit"
+                            disabled={isResolvingWristband || !wristbandScanInput.trim()}
+                            className="min-h-[44px] px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#18181B] font-sans font-bold text-xs uppercase rounded-xl cursor-pointer disabled:opacity-50"
+                          >
+                            {isResolvingWristband ? (
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            ) : (
+                              'Lookup'
+                            )}
+                          </button>
+                        </div>
+
+                        {wristbandAssignmentError && (
+                          <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">
+                            {wristbandAssignmentError}
+                          </p>
+                        )}
+
+                        <div className="text-right">
                           <button
                             type="button"
                             onClick={() => {
@@ -3918,23 +3986,18 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                               setWristbandScanInput('');
                               setWristbandAssignmentError(null);
                             }}
-                            className="w-full text-center text-xs text-gray-500 dark:text-[#B8B0A5] hover:text-gray-700 dark:hover:text-[#F0EBE3] py-1 cursor-pointer"
+                            className="text-xs text-gray-500 hover:text-gray-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] font-medium cursor-pointer"
                           >
                             Cancel
                           </button>
-                        </form>
-                      )}
-                    </div>
+                        </div>
+                      </form>
+                    )
                   ) : (
-                    /* State A: NO WRISTBAND ASSIGNED */
-                    <div className="p-4 bg-gray-50/50 dark:bg-[#262520] border border-gray-100 dark:border-[#3A3835] rounded-2xl space-y-3">
-                      <div>
-                        <span className="text-[10px] text-gray-400 dark:text-[#7A7570] font-mono uppercase tracking-wider block">Wristband</span>
-                        <p className="text-sm font-semibold text-gray-800 dark:text-[#F0EBE3] mt-0.5">
-                          No wristband assigned
-                        </p>
-                      </div>
-
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500 dark:text-[#B8B0A5]">
+                        No wristband assigned
+                      </span>
                       <button
                         type="button"
                         onClick={() => {
@@ -3944,126 +4007,22 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           setWristbandAssignmentError(null);
                           setTimeout(() => wristbandInlineInputRef.current?.focus(), 50);
                         }}
-                        className="w-full bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] hover:bg-[#F5EED9] dark:hover:bg-[#2A2926] text-[#9A7326] dark:text-[#D4AF37] font-bold tracking-widest py-3 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer flex items-center justify-center space-x-2"
+                        className="text-xs text-[#C59B27] hover:underline font-bold cursor-pointer"
                       >
-                        <Tag className="h-4 w-4 text-[#C59B27]" />
-                        <span>Assign wristband</span>
+                        Assign wristband →
                       </button>
                     </div>
                   )}
                 </div>
 
-                {/* Entry Status Card */}
-                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-found-entry-status-v3">
-                  <h4 className="text-lg font-serif font-bold text-gray-950 dark:text-[#F0EBE3]">Entry Status</h4>
-                  
-                  {/* Status Info Box */}
-                  <div className={`flex items-start space-x-3.5 ${isAlreadyCheckedIn ? 'bg-amber-50/60 dark:bg-amber-950/25 border-amber-200/60 dark:border-amber-900/40' : 'bg-gray-50/50 dark:bg-[#262520] border-gray-100 dark:border-[#3A3835]'} border rounded-2xl p-4`}>
-                    <div className={`p-2 ${isAlreadyCheckedIn ? 'bg-amber-100 dark:bg-[#262520] text-amber-700 dark:text-[#C59B27]' : 'bg-amber-50 dark:bg-[#262520] text-amber-600 dark:text-[#C59B27]'} rounded-xl shrink-0`}>
-                      <Clock className="h-5 w-5 stroke-[2]" />
-                    </div>
-                    <div>
-                      <h5 className={`text-sm font-bold ${isAlreadyCheckedIn ? 'text-amber-900 dark:text-amber-200' : 'text-gray-900 dark:text-[#F0EBE3]'} leading-tight`}>
-                        {isAlreadyCheckedIn ? 'Already checked in' : 'Not checked in yet'}
-                      </h5>
-                      <p className={`text-xs ${isAlreadyCheckedIn ? 'text-amber-700 dark:text-amber-300/80' : 'text-gray-500 dark:text-[#B8B0A5]'} mt-0.5`}>
-                        {isAlreadyCheckedIn 
-                          ? `Checked in at ${formatTime(lookedUpChild.checkedInAt || lookedUpChild.checked_in_at || new Date().toISOString())}` 
-                          : 'Ready for processing'}
-                      </p>
-                    </div>
+                {/* 4. AUTHORIZED PICKUP */}
+                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-xs space-y-3" data-component-version="volunteer-child-authorized-pickup-v3">
+                  <div className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase">
+                    Authorized Pickup
                   </div>
-
-                  {/* Action buttons */}
-                  <div className="space-y-3 pt-1">
-                    {isAlreadyCheckedIn ? (
-                      <button
-                        type="button"
-                        onClick={() => handleViewScannedChildRecord(lookedUpChild)}
-                        disabled={scanLoading || isCheckingIn}
-                        data-component-version="volunteer-child-view-record-action-v7"
-                        className="w-full bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#1D1D1A] font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2"
-                      >
-                        <User className="h-4 w-4 stroke-[2.5]" />
-                        <span>View record</span>
-                      </button>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleConfirmCheckIn(lookedUpChild)}
-                          disabled={scanLoading || isCheckingIn}
-                          data-component-version="volunteer-child-checkin-action-v6"
-                          className="w-full bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#1D1D1A] font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2"
-                        >
-                          {isCheckingIn ? (
-                            <>
-                              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                              <span>Checking in...</span>
-                            </>
-                          ) : scanLoading ? (
-                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                          ) : (
-                            <>
-                              <UserCheck className="h-4 w-4 stroke-[2.5]" />
-                              <span>{justAssignedWristbandCode ? 'CONTINUE CHECK-IN' : 'MARK CHECKED IN'}</span>
-                            </>
-                          )}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleViewScannedChildRecord(lookedUpChild)}
-                          disabled={scanLoading || isCheckingIn}
-                          data-component-version="volunteer-child-view-record-secondary-action-v7"
-                          className="w-full border border-gray-300 dark:border-[#302E29] hover:border-gray-400 dark:hover:border-[#3A3835] text-gray-850 dark:text-[#F0EBE3] font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer flex items-center justify-center space-x-2 bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520]"
-                        >
-                          <User className="h-4 w-4 text-gray-600 dark:text-[#B8B0A5] stroke-[2]" />
-                          <span>View record</span>
-                        </button>
-                      </>
-                    )}
-
-                    <button
-                      onClick={handleResetScannerState}
-                      data-component-version="volunteer-scan-another-action-v4"
-                      className="w-full border border-gray-300 dark:border-[#302E29] hover:border-gray-400 dark:hover:border-[#3A3835] text-gray-800 dark:text-[#F0EBE3] font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] flex items-center justify-center space-x-2"
-                    >
-                      <QrCode className="h-4 w-4 text-gray-600 dark:text-[#B8B0A5] stroke-[2]" />
-                      <span>NEXT CHILD</span>
-                    </button>
-
-                    <button
-                      onClick={() => handleOpenSafetyAlertModal({
-                        id: lookedUpChild.id,
-                        fullName: lookedUpChild.fullName,
-                        ageGroup: lookedUpChild.ageGroup || lookedUpChild.className,
-                        status: lookedUpChild.entryStatus || lookedUpChild.status,
-                        photoUrl: lookedUpChild.photoUrl
-                      })}
-                      data-component-version="volunteer-alert-auto-linked-child-v1"
-                      className="w-full bg-rose-50 dark:bg-red-950/25 border border-rose-200 dark:border-red-900/40 hover:border-rose-300 dark:hover:border-red-800/50 text-rose-700 dark:text-rose-300 hover:text-rose-800 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer flex items-center justify-center space-x-2"
-                    >
-                      <Bell className="h-4 w-4 animate-pulse" />
-                      <span>Request help for this child</span>
-                    </button>
-                  </div>
-
-                  {/* Helper Reminder */}
-                  <div className="flex items-center justify-center space-x-1.5 text-[10px] text-gray-400 dark:text-[#7A7570] mt-2">
-                    <Info className="h-3.5 w-3.5" />
-                    <span>Confirm the child photo before marking entry.</span>
-                  </div>
-                </div>
-
-                {/* Authorized Pickup Card */}
-                {lookedUpChild.pickup ? (
-                  <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-authorized-pickup-v3">
-                    <h4 className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase">
-                      Authorized Pickup
-                    </h4>
-                    <div className="flex items-center space-x-3.5">
-                      <div className="w-14 h-14 rounded-2xl overflow-hidden bg-gray-50 dark:bg-[#262520] border border-gray-150 dark:border-[#302E29] shrink-0 flex items-center justify-center">
+                  {lookedUpChild.pickup ? (
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-100 dark:bg-[#262520] border border-gray-200/80 dark:border-[#302E29] shrink-0 flex items-center justify-center">
                         {lookedUpChild.pickup.photoUrl ? (
                           <img
                             src={lookedUpChild.pickup.photoUrl}
@@ -4072,32 +4031,25 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                             referrerPolicy="no-referrer"
                           />
                         ) : (
-                          <User className="h-6 w-6 text-gray-300 dark:text-[#7A7570]" />
+                          <User className="h-6 w-6 text-gray-400 dark:text-[#7A7570]" />
                         )}
                       </div>
                       <div className="min-w-0">
-                        <h5 className="text-sm font-bold text-gray-900 dark:text-[#F0EBE3] leading-tight">
+                        <h5 className="text-sm font-sans font-bold text-gray-900 dark:text-[#F0EBE3] truncate">
                           {lookedUpChild.pickup.fullName}
                         </h5>
-                        <p className="text-[10px] text-[#C59B27] font-bold font-mono uppercase tracking-wider mt-0.5">
+                        <p className="text-xs text-gray-500 dark:text-[#B8B0A5] font-medium">
                           {lookedUpChild.pickup.relationship || 'Authorized Person'}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-[#B8B0A5] mt-0.5">
-                          {lookedUpChild.pickup.phone || 'No phone number provided'}
+                          {lookedUpChild.pickup.phone ? ` · ${lookedUpChild.pickup.phone}` : ''}
                         </p>
                       </div>
                     </div>
-                  </div>
-                ) : (
-                  <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-3" data-component-version="volunteer-child-authorized-pickup-v3">
-                    <h4 className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase">
-                      Authorized Pickup
-                    </h4>
-                    <p className="text-xs text-gray-500 dark:text-[#7A7570] leading-relaxed bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#302E29] rounded-2xl p-4 text-center">
+                  ) : (
+                    <p className="text-xs text-gray-500 dark:text-[#7A7570]">
                       No pickup person has been added.
                     </p>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             );
           })() : (

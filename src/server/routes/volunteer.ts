@@ -3900,11 +3900,10 @@ router.get('/children/:childId', authMiddleware, async (req: AuthenticatedReques
              p.photo_file_id as parent_photo_id
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
-      JOIN parent_profiles p ON c.parent_profile_id = p.id
+      LEFT JOIN parent_profiles p ON c.parent_profile_id = p.id AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
       WHERE (c.id = ? OR e.id = ?) AND e.event_id = ?
         AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
         AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
-        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
         AND e.status != 'removed'
     `, [childId, childId, currentEventId]);
 

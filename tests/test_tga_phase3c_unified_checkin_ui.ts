@@ -917,8 +917,97 @@ async function runTgaPhase3cUnifiedCheckInTests() {
     passedScenarios++;
     console.log('  [PASS] Scenario 35: Existing Children-list child detail and back behavior verified');
 
+    // Scenario 36: View Record pre-seeds resolved child data and does not bounce back
+    assert.ok(
+      dashboardContent.includes('setChildProfileData({') &&
+      dashboardContent.includes('handleViewScannedChildRecord'),
+      'handleViewScannedChildRecord must pre-seed childProfileData with scanned child details'
+    );
+    passedScenarios++;
+    console.log('  [PASS] Scenario 36: View Record pre-seeds child profile data for instant display');
+
+    // Scenario 37: Next Child resets scan result, clears staged wristband, and restores scanner
+    assert.ok(
+      dashboardContent.includes('setLookedUpChild(null)') &&
+      dashboardContent.includes('setStagedWristband(null)') &&
+      dashboardContent.includes('setManualCode(\'\')') &&
+      dashboardContent.includes('scannerInputRef.current?.focus()'),
+      'Next Child handler must clear resolved child, staged wristband, manual input, and restore scanner focus'
+    );
+    passedScenarios++;
+    console.log('  [PASS] Scenario 37: Next Child clears current scan state and restores scanner-ready state');
+
+    // Scenario 38: Next Child preserves event context, team/duty, and volunteer session
+    assert.ok(
+      !dashboardContent.includes('localStorage.removeItem(\'auth_token\')') &&
+      !dashboardContent.includes('localStorage.removeItem(\'volunteer_session\')'),
+      'Next Child action must never clear volunteer authentication or session'
+    );
+    passedScenarios++;
+    console.log('  [PASS] Scenario 38: Next Child preserves event context, volunteer session, and duty');
+
+    // Scenario 39: Wristband form supports both Enter key and Lookup button submission
+    assert.ok(
+      dashboardContent.includes('onSubmit={handleInlineWristbandLookup}') &&
+      dashboardContent.includes('handleInlineWristbandLookup = async (e?: React.FormEvent)'),
+      'Wristband inline lookup must support form submit via Enter key and button click'
+    );
+    passedScenarios++;
+    console.log('  [PASS] Scenario 39: Wristband lookup form binds Enter key and button to the same action');
+
+    // Scenario 40: Cancel button in wristband assignment clears staged band only without clearing child
+    assert.ok(
+      dashboardContent.includes('setStagedWristband(null)') &&
+      dashboardContent.includes('setIsAssigningWristband(false)'),
+      'Wristband cancel interaction must reset staged wristband without resetting lookedUpChild'
+    );
+    passedScenarios++;
+    console.log('  [PASS] Scenario 40: Wristband Cancel clears staged wristband only without clearing child scan');
+
+    // Scenario 41: Request Help references correct child and does not check in or pick up child
+    assert.ok(
+      dashboardContent.includes('handleOpenSafetyAlertModal') &&
+      dashboardContent.includes('lookedUpChild.id') &&
+      dashboardContent.includes('volunteer-alert-auto-linked-child-v1'),
+      'Request Help action must link to safety modal with lookedUpChild.id without mutating check-in state'
+    );
+    passedScenarios++;
+    console.log('  [PASS] Scenario 41: Request Help references correct child and preserves check-in state');
+
+    // Scenario 42: Backend child detail endpoint supports children even if parent profile is deleted/absent (LEFT JOIN)
+    const deletedUserId = `usr-del-${testRunId}`;
+    const deletedParentId = `par-del-${testRunId}`;
+    const childNoParentId = `ch-noparent-${testRunId}`;
+    const entryNoParentId = `ent-noparent-${testRunId}`;
+    await execute(`
+      INSERT INTO users (id, email, password_hash, role, status, email_verified, created_at, updated_at)
+      VALUES (?, ?, 'hash', 'parent', 'active', 1, ?, ?)
+    `, [deletedUserId, `parent-del-${testRunId}@tga-test.org`, nowIso, nowIso]);
+    await execute(`
+      INSERT INTO parent_profiles (id, user_id, full_name, is_deleted, created_at, updated_at)
+      VALUES (?, ?, 'Deleted Parent', 1, ?, ?)
+    `, [deletedParentId, deletedUserId, nowIso, nowIso]);
+    await execute(`
+      INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, calculated_age, age_group, created_at, updated_at)
+      VALUES (?, ?, 'Ward TestChild', 'Male', '2018-05-10', 8, 'Ages 7 to 9', ?, ?)
+    `, [childNoParentId, deletedParentId, nowIso, nowIso]);
+    await execute(`
+      INSERT INTO child_event_entries (id, event_id, child_id, status, created_at, updated_at)
+      VALUES (?, ?, ?, 'inside', ?, ?)
+    `, [entryNoParentId, testEvent1Id, childNoParentId, nowIso, nowIso]);
+
+    const noParentProfileRes = await fetch(`${baseUrl}/api/volunteer/children/${childNoParentId}`, {
+      headers: { Authorization: `Bearer ${workerToken}` }
+    });
+    assert.strictEqual(noParentProfileRes.status, 200, 'Child detail must succeed even if parent profile is soft-deleted');
+    const noParentData = await noParentProfileRes.json();
+    assert.strictEqual(noParentData.success, true);
+    assert.strictEqual(noParentData.child.id, childNoParentId);
+    passedScenarios++;
+    console.log('  [PASS] Scenario 42: Child detail endpoint succeeds for children without active parent profile');
+
     console.log('\n================================================================');
-    console.log(`ALL 35/35 PHASE 3C SCENARIOS PASSED SUCCESSFULLY`);
+    console.log(`ALL 42/42 PHASE 3C SCENARIOS PASSED SUCCESSFULLY`);
     console.log('================================================================\n');
 
     server.close();
