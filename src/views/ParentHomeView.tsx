@@ -1421,19 +1421,19 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   const renderPassesTab = () => {
     // 1. passReadyChildren: child.pass exists / pass is active/issued/pass_ready.
     // Checked in/inside/picked up states are still treated as pass ready (and don't disappear)
-    const passReadyChildren = childrenList.filter(c => 
-      (c.status === 'Pass ready' || c.status === 'Checked in' || c.status === 'Inside' || c.status === 'Picked up' || c.status === 'Checked out' || c.passReference) && 
+    const passReadyChildren = childrenList.filter(c =>
+      (c.status === 'Pass ready' || c.status === 'Checked in' || c.status === 'Inside' || c.status === 'Picked up' || c.status === 'Checked out' || c.passReference) &&
       c.status !== 'Withdrawn'
     );
 
     // 2. waitingChildren: under review, selected with no pass yet, pending, review reopened, no active pass but submitted
-    const waitingChildren = childrenList.filter(c => 
+    const waitingChildren = childrenList.filter(c =>
       (c.status === 'Under review' || c.status === 'Selected' || c.status === 'Waiting list' || c.status === 'Not selected' || (c.status as string) === 'Review reopened') &&
       !passReadyChildren.some(pr => pr.id === c.id)
     );
 
     // 3. draftChildren: draft, incomplete, not registered / not submitted
-    const draftChildren = childrenList.filter(c => 
+    const draftChildren = childrenList.filter(c =>
       (c.status === 'Draft' || c.status === 'Incomplete' || c.status === 'Not registered') &&
       !passReadyChildren.some(pr => pr.id === c.id) &&
       !waitingChildren.some(w => w.id === c.id)
@@ -1444,216 +1444,327 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
     const draftCount = draftChildren.length;
 
     return (
-      <div data-view-version="parent-passes-v12-stitch-multi-child-overview" className="space-y-6 pb-10 text-left">
-        {/* Page Title & Subtitle */}
-        <div data-component-version="parent-passes-title-v2-stitch" className="space-y-1">
-          <h2 className="text-2xl font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3]">Passes</h2>
-          <p className="text-xs text-[#5C5A54] dark:text-[#B8B0A5] font-medium">Passes will appear here when children are selected.</p>
+      <div data-view-version="parent-passes-v13-premium-wallet" className="pb-16 text-left">
+
+        {/* --- Page Intro --- */}
+        <div data-component-version="parent-passes-title-v3-premium" className="mb-5">
+          <h2 className="text-[22px] font-serif-koinonia font-semibold text-[#18181B] dark:text-[#F0EBE3] leading-snug">
+            My Passes
+          </h2>
+          <p className="text-[12px] text-[#8B867D] dark:text-[#7A7570] font-medium mt-0.5 tracking-wide">
+            Event credentials for your children.
+          </p>
         </div>
 
-        {/* Summary Counters */}
-        <div data-component-version="parent-passes-summary-v2-stitch" className="grid grid-cols-3 gap-3">
-          <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-3 text-center shadow-2xs">
-            <span className="text-[10px] font-semibold text-[#8E8B82] dark:text-[#B8B0A5] uppercase tracking-wider block">Pass ready</span>
-            <span className="text-lg font-bold text-[#18181B] dark:text-[#F0EBE3] mt-1 block">{passReadyCount}</span>
+        {/* --- Unified Summary Strip --- */}
+        <div
+          data-component-version="parent-passes-summary-strip-v1"
+          className="flex items-stretch bg-[#FDFCF8] dark:bg-[#21211E] border border-[#EDE6D4] dark:border-[#302E29] rounded-xl overflow-hidden mb-6"
+        >
+          <div className="flex-1 flex flex-col items-center justify-center py-3 px-2">
+            <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#9A7326] dark:text-[#C59B27] block">
+              Pass ready
+            </span>
+            <span className="text-[22px] font-bold text-[#18181B] dark:text-[#F0EBE3] leading-none mt-1">
+              {passReadyCount}
+            </span>
           </div>
-          <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-3 text-center shadow-2xs">
-            <span className="text-[10px] font-semibold text-[#8E8B82] dark:text-[#B8B0A5] uppercase tracking-wider block">Waiting</span>
-            <span className="text-lg font-bold text-[#18181B] dark:text-[#F0EBE3] mt-1 block">{waitingCount}</span>
+          <div className="w-px self-stretch bg-[#EDE6D4] dark:bg-[#302E29]" />
+          <div className="flex-1 flex flex-col items-center justify-center py-3 px-2">
+            <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#8B867D] dark:text-[#7A7570] block">
+              Waiting
+            </span>
+            <span className="text-[22px] font-bold text-[#18181B] dark:text-[#F0EBE3] leading-none mt-1">
+              {waitingCount}
+            </span>
           </div>
-          <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-3 text-center shadow-2xs">
-            <span className="text-[10px] font-semibold text-[#8E8B82] dark:text-[#B8B0A5] uppercase tracking-wider block">Draft</span>
-            <span className="text-lg font-bold text-[#18181B] dark:text-[#F0EBE3] mt-1 block">{draftCount}</span>
+          <div className="w-px self-stretch bg-[#EDE6D4] dark:bg-[#302E29]" />
+          <div className="flex-1 flex flex-col items-center justify-center py-3 px-2">
+            <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#8B867D] dark:text-[#7A7570] block">
+              Draft
+            </span>
+            <span className="text-[22px] font-bold text-[#18181B] dark:text-[#F0EBE3] leading-none mt-1">
+              {draftCount}
+            </span>
           </div>
         </div>
 
-        {/* Empty State when no children exist */}
+        {/* --- Empty state when no children exist --- */}
         {childrenList.length === 0 && (
-          <div data-component-version="parent-pass-empty-state-v2" className="bg-white dark:bg-[#21211E] rounded-3xl p-8 border border-[#EAE8E1] dark:border-[#302E29] text-center space-y-4 shadow-2xs">
-            <div className="w-12 h-12 rounded-2xl bg-[#FAF6EB] dark:bg-[#262520] text-[#C59B27] flex items-center justify-center mx-auto border border-[#E5D5AE] dark:border-[#3A3835]">
-              <QrCode className="w-6 h-6 opacity-60" />
+          <div data-component-version="parent-pass-empty-state-v3" className="bg-[#FDFCF8] dark:bg-[#21211E] rounded-2xl p-8 border border-[#EDE6D4] dark:border-[#302E29] text-center space-y-4">
+            <div className="w-11 h-11 rounded-xl bg-[#FAF6EB] dark:bg-[#262520] text-[#C59B27] flex items-center justify-center mx-auto border border-[#E5D5AE] dark:border-[#3A3835]">
+              <QrCode className="w-5 h-5 opacity-60" />
             </div>
             <div className="space-y-1">
-              <h3 className="text-base font-bold text-[#18181B] dark:text-[#F0EBE3]">Passes under preparation</h3>
-              <p className="text-xs text-[#6B7280] dark:text-[#B8B0A5] max-w-xs mx-auto">
+              <h3 className="text-[15px] font-semibold text-[#18181B] dark:text-[#F0EBE3]">Passes under preparation</h3>
+              <p className="text-[12px] text-[#8B867D] dark:text-[#7A7570] max-w-xs mx-auto leading-relaxed">
                 Once details sent for review are verified by the care team, your digital passes will appear here.
               </p>
             </div>
           </div>
         )}
 
-        {/* Child Pass Overview Cards */}
-        <div className="space-y-5">
-          {/* Pass-Ready Children Cards */}
-          {passReadyChildren.map(c => {
-            const isCheckedIn = c.status === 'Checked in' || c.status === 'Inside';
-            return (
-              <div
-                key={c.id}
-                data-component-version={isCheckedIn ? "parent-pass-card-checked-in-v3" : "parent-pass-ready-card-v3"}
-                className="w-full bg-[#FDFCF8] dark:bg-[#1C1C19] border border-[#D9CFB0] dark:border-[#2E2C26] rounded-2xl overflow-hidden text-left"
-              >
-                {/* Credential header stripe */}
-                <div className="px-5 pt-5 pb-4 border-b border-[#E8E0CA] dark:border-[#2A2825] flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <FallbackAvatar
-                      src={isRealUploadedPhoto(c.photoUrl) ? c.photoUrl : undefined}
-                      name={c.name}
-                      className="w-11 h-11 rounded-full border border-[#D9CFB0] dark:border-[#3A3835] text-sm font-bold shrink-0"
-                    />
-                    <div className="min-w-0">
-                      <h3 className="font-serif-koinonia text-[19px] font-semibold text-[#18181B] dark:text-[#F0EBE3] leading-snug truncate">{c.name}</h3>
-                      <p className="text-[11px] text-[#6B6860] dark:text-[#B8B0A5] font-medium mt-px">{c.age} yrs · {c.ageGroup}</p>
+        {/* --- Pass-Ready Credentials --- */}
+        {passReadyChildren.length > 0 && (
+          <div className="mb-1">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-[9px] font-semibold uppercase tracking-[0.16em] text-[#9A7326] dark:text-[#C59B27]">
+                Ready credentials
+              </span>
+              <div className="flex-1 h-px bg-[#EDE6D4] dark:bg-[#302E29]" />
+            </div>
+
+            <div className="space-y-4">
+              {passReadyChildren.map(c => {
+                const isCheckedIn = c.status === 'Checked in' || c.status === 'Inside';
+                return (
+                  <div
+                    key={c.id}
+                    data-component-version={isCheckedIn ? "parent-pass-card-checked-in-v4-wallet" : "parent-pass-ready-card-v4-wallet"}
+                    className="w-full bg-[#FDFCF8] dark:bg-[#21211E] border border-[#E8DFC9] dark:border-[#302E29] rounded-2xl overflow-hidden text-left"
+                  >
+                    {/* A. Identity Header */}
+                    <div className="px-5 pt-4 pb-3.5 flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <FallbackAvatar
+                          src={isRealUploadedPhoto(c.photoUrl) ? c.photoUrl : undefined}
+                          name={c.name}
+                          className="w-[52px] h-[52px] rounded-full border border-[#D9CFB0] dark:border-[#3A3835] text-sm font-bold shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <h3 className="font-serif-koinonia text-[19px] font-semibold text-[#18181B] dark:text-[#F0EBE3] leading-snug truncate">
+                            {c.name}
+                          </h3>
+                          <p className="text-[11px] text-[#8B867D] dark:text-[#7A7570] font-medium mt-px">
+                            {c.age} yrs • {c.ageGroup}
+                          </p>
+                        </div>
+                      </div>
+                      <span className={`shrink-0 self-start mt-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] px-2.5 py-1 rounded border ${
+                        isCheckedIn
+                          ? 'bg-[#F0FAF1] border-[#BDE0C0] text-[#2E6B32] dark:bg-transparent dark:border-[#3A4E3B] dark:text-[#7DBF80]'
+                          : 'bg-[#FAF6EB] border-[#E5D5AE] text-[#8C6D23] dark:bg-transparent dark:border-[#3A3835] dark:text-[#C59B27]'
+                      }`}>
+                        {isCheckedIn ? 'Checked in' : 'Pass ready'}
+                      </span>
+                    </div>
+
+                    {/* Thin credential divider */}
+                    <div className="mx-5 h-px bg-[#EDE6D4] dark:bg-[#2E2C27]" />
+
+                    {/* B. Credential Body: Event left, QR right */}
+                    <div className="px-5 pt-3.5 pb-3.5 flex items-start justify-between gap-4">
+                      <div className="min-w-0 flex-1 pt-0.5">
+                        <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#9A907A] dark:text-[#7A7570] block">
+                          Event
+                        </span>
+                        <span className="text-[14px] font-semibold text-[#18181B] dark:text-[#F0EBE3] leading-snug block mt-0.5 line-clamp-2">
+                          {activeEvent ? (activeEvent.title || 'The General Assembly') : 'The General Assembly'}
+                        </span>
+                        <span className="text-[10px] font-medium text-[#9A7326] dark:text-[#C59B27] tracking-wide block mt-2">
+                          Present at entry
+                        </span>
+                      </div>
+                      {/* QR credential plate */}
+                      <div className="shrink-0 bg-white dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] rounded-[12px] p-2 w-[88px] h-[88px] flex items-center justify-center">
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(c.passReference || '')}`}
+                          alt=""
+                          className="w-full h-full object-cover bg-white rounded-md"
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Divider before footer */}
+                    <div className="mx-5 h-px bg-[#EDE6D4] dark:bg-[#2E2C27]" />
+
+                    {/* C. Footer CTA */}
+                    <div className="px-4 py-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const unlocked = unlockedPassByChildId[c.id];
+                          if (unlocked) {
+                            setSelectedDetailChild({
+                              ...c,
+                              passReference: unlocked.passReference,
+                              passLocked: false,
+                              pass: unlocked.pass || c.pass
+                            });
+                          } else {
+                            setSelectedDetailChild(c);
+                          }
+                        }}
+                        className="w-full h-[44px] flex items-center justify-between px-3 rounded-[10px] bg-transparent hover:bg-[#FAF6EB] dark:hover:bg-[#262520] active:bg-[#F5EFDF] dark:active:bg-[#2A2926] text-[#9A7326] dark:text-[#C59B27] transition-colors cursor-pointer focus:outline-none"
+                      >
+                        <span className="text-[13px] font-semibold tracking-wide">View pass</span>
+                        <ChevronRight className="w-4 h-4 opacity-80" />
+                      </button>
                     </div>
                   </div>
-                  <span className={`shrink-0 text-[9px] font-bold uppercase tracking-[0.12em] px-2 py-0.5 rounded border ${
-                    isCheckedIn
-                      ? 'bg-[#F0FAF1] border-[#BDE0C0] text-[#2E6B32] dark:bg-transparent dark:border-[#3A4E3B] dark:text-[#7DBF80]'
-                      : 'bg-[#FAF6EB] border-[#E5D5AE] text-[#8C6D23] dark:bg-transparent dark:border-[#3A3835] dark:text-[#C59B27]'
-                  }`}>
-                    {isCheckedIn ? 'Checked in' : 'Pass ready'}
-                  </span>
-                </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
-                {/* Body */}
-                <div className="px-5 py-4 flex items-center justify-between gap-4">
-                  {/* Event label */}
-                  <div className="min-w-0 flex-1">
-                    <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#9A907A] dark:text-[#8E8B82] block">Event</span>
-                    <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] leading-snug block mt-0.5 line-clamp-2">
-                      {activeEvent ? (activeEvent.title || 'The General Assembly') : 'The General Assembly'}
+        {/* --- Waiting Children --- */}
+        {waitingChildren.length > 0 && (
+          <div className={passReadyChildren.length > 0 ? 'mt-6' : ''}>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-[9px] font-semibold uppercase tracking-[0.16em] text-[#8B867D] dark:text-[#7A7570]">
+                Awaiting review
+              </span>
+              <div className="flex-1 h-px bg-[#EDE6D4] dark:bg-[#302E29]" />
+            </div>
+
+            <div className="space-y-4">
+              {waitingChildren.map(c => (
+                <div
+                  key={c.id}
+                  data-component-version="parent-pass-waiting-card-v3-wallet"
+                  className="w-full bg-[#FDFCF8] dark:bg-[#21211E] border border-[#EDE6D4] dark:border-[#302E29] rounded-2xl overflow-hidden text-left"
+                >
+                  <div className="px-5 pt-5 pb-4 flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <FallbackAvatar
+                        src={isRealUploadedPhoto(c.photoUrl) ? c.photoUrl : undefined}
+                        name={c.name}
+                        className="w-[52px] h-[52px] rounded-full border border-[#E5D5AE] dark:border-[#3A3835] text-sm font-bold shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <h3 className="font-serif-koinonia text-[19px] font-semibold text-[#18181B] dark:text-[#F0EBE3] leading-snug truncate">
+                          {c.name}
+                        </h3>
+                        <p className="text-[11px] text-[#8B867D] dark:text-[#7A7570] font-medium mt-px">
+                          {c.age} yrs • {c.ageGroup}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="shrink-0 self-start mt-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] px-2.5 py-1 rounded border bg-amber-50 border-amber-200 text-amber-700 dark:bg-transparent dark:border-[#3A3835] dark:text-[#C59B27]">
+                      {c.status === 'Selected' ? 'Waiting' : 'Under review'}
                     </span>
                   </div>
-                  {/* Compact QR */}
-                  <div className="shrink-0 bg-white dark:bg-[#262520] p-1.5 border border-[#D9CFB0] dark:border-[#3A3835] rounded-lg w-[72px] h-[72px] flex items-center justify-center">
-                    <img
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(c.passReference || '')}`}
-                      alt=""
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
+
+                  <div className="mx-5 h-px bg-[#EDE6D4] dark:bg-[#2E2C27]" />
+
+                  <div className="px-5 py-4">
+                    <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#9A907A] dark:text-[#7A7570] block">
+                      Event
+                    </span>
+                    <span className="text-[14px] font-semibold text-[#18181B] dark:text-[#F0EBE3] block mt-0.5">
+                      {activeEvent ? (activeEvent.title || 'The General Assembly') : 'The General Assembly'}
+                    </span>
+                    <p className="text-[11px] text-[#8B867D] dark:text-[#7A7570] mt-2 leading-relaxed">
+                      Pass will appear here once your child is selected.
+                    </p>
+                  </div>
+
+                  <div className="mx-5 h-px bg-[#EDE6D4] dark:bg-[#2E2C27]" />
+
+                  <div className="px-5 py-3.5">
+                    <button
+                      type="button"
+                      onClick={() => onNavigate(`/parent/children/${c.id}/status` as AppRoute)}
+                      className="w-full h-[44px] flex items-center justify-between px-4 rounded-[12px] bg-[#FDFCF8] dark:bg-[#262520] hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] border border-[#E5D5AE] dark:border-[#3A3835] text-[#18181B] dark:text-[#F0EBE3] transition-colors cursor-pointer focus:outline-none"
+                    >
+                      <span className="text-[13px] font-semibold">View status</span>
+                      <ChevronRight className="w-4 h-4 opacity-50" />
+                    </button>
                   </div>
                 </div>
-
-                {/* Footer action */}
-                <div className="px-5 pb-5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const unlocked = unlockedPassByChildId[c.id];
-                      if (unlocked) {
-                        setSelectedDetailChild({
-                          ...c,
-                          passReference: unlocked.passReference,
-                          passLocked: false,
-                          pass: unlocked.pass || c.pass
-                        });
-                      } else {
-                        setSelectedDetailChild(c);
-                      }
-                    }}
-                    className="w-full py-2.5 px-4 rounded-lg bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-sm tracking-wide transition-colors cursor-pointer focus:outline-none text-center"
-                  >
-                    Open pass
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-
-          {/* Under-Review / Waiting Children Cards */}
-          {waitingChildren.map(c => (
-            <div 
-              key={c.id} 
-              data-component-version="parent-pass-waiting-card-v2-stitch"
-              className="bg-white dark:bg-[#21211E] rounded-3xl p-4 border border-[#EAE8E1] dark:border-[#302E29] shadow-2xs space-y-4 text-left"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center space-x-3">
-                  <FallbackAvatar
-                    src={isRealUploadedPhoto(c.photoUrl) ? c.photoUrl : undefined}
-                    name={c.name}
-                    className="w-12 h-12 rounded-xl border border-[#D9D6CE] dark:border-[#3A3835] text-sm font-bold shadow-2xs"
-                  />
-                  <div className="min-w-0">
-                    <h4 className="text-sm font-bold text-[#18181B] dark:text-[#F0EBE3] truncate">{c.name}</h4>
-                    <p className="text-[11px] text-[#8E8B82] dark:text-[#B8B0A5] font-semibold mt-0.5">{c.age} years • {c.ageGroup}</p>
-                  </div>
-                </div>
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-50 dark:bg-[#262520] border border-amber-200 dark:border-[#3A3835] text-amber-700 dark:text-[#C59B27] text-[9px] font-bold uppercase tracking-wider">
-                  {c.status === 'Selected' ? 'Waiting' : 'Under review'}
-                </span>
-              </div>
-
-              <div className="bg-[#FAF6EB]/40 dark:bg-[#262520] p-3 rounded-xl border border-[#E5D5AE]/20 dark:border-[#3A3835] text-xs text-[#5C5A54] dark:text-[#B8B0A5] leading-relaxed">
-                Pass will appear here if selected.
-              </div>
-
-              <button
-                type="button"
-                onClick={() => onNavigate(`/parent/children/${c.id}/status` as AppRoute)}
-                className="w-full py-2.5 px-4 rounded-xl bg-white dark:bg-[#262520] hover:bg-[#FAF9F6] dark:hover:bg-[#2A2926] border border-[#18181B] dark:border-[#3A3835] text-[#18181B] dark:text-[#F0EBE3] font-semibold text-xs sm:text-sm transition-all cursor-pointer focus:outline-none text-center"
-              >
-                View status
-              </button>
+              ))}
             </div>
-          ))}
+          </div>
+        )}
 
-          {/* Draft / Incomplete Children Cards */}
-          {draftChildren.map(c => (
-            <div 
-              key={c.id} 
-              data-component-version="parent-pass-draft-card-v2-stitch"
-              className="bg-white dark:bg-[#21211E] rounded-3xl p-4 border border-[#EAE8E1] dark:border-[#302E29] shadow-2xs space-y-4 text-left"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center space-x-3">
-                  <FallbackAvatar
-                    src={undefined}
-                    name={c.name}
-                    className="w-12 h-12 rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] text-sm font-bold"
-                  />
-                  <div className="min-w-0">
-                    <h4 className="text-sm font-bold text-[#18181B] dark:text-[#F0EBE3] truncate">{c.name}</h4>
-                    <p className="text-[11px] text-[#8E8B82] dark:text-[#B8B0A5] font-semibold mt-0.5">{c.age} years • {c.ageGroup}</p>
+        {/* --- Draft / Incomplete Children --- */}
+        {draftChildren.length > 0 && (
+          <div className={(passReadyChildren.length > 0 || waitingChildren.length > 0) ? 'mt-6' : ''}>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-[9px] font-semibold uppercase tracking-[0.16em] text-[#8B867D] dark:text-[#7A7570]">
+                Incomplete
+              </span>
+              <div className="flex-1 h-px bg-[#EDE6D4] dark:bg-[#302E29]" />
+            </div>
+
+            <div className="space-y-4">
+              {draftChildren.map(c => (
+                <div
+                  key={c.id}
+                  data-component-version="parent-pass-draft-card-v3-wallet"
+                  className="w-full bg-[#FDFCF8] dark:bg-[#21211E] border border-[#E8E3D9] dark:border-[#2A2825] rounded-2xl overflow-hidden text-left"
+                >
+                  <div className="px-5 pt-5 pb-4 flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <FallbackAvatar
+                        src={undefined}
+                        name={c.name}
+                        className="w-[52px] h-[52px] rounded-full border border-[#EDE6D4] dark:border-[#3A3835] text-sm font-bold shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <h3 className="font-serif-koinonia text-[19px] font-semibold text-[#4F4B44] dark:text-[#B8B0A5] leading-snug truncate">
+                          {c.name}
+                        </h3>
+                        <p className="text-[11px] text-[#8B867D] dark:text-[#7A7570] font-medium mt-px">
+                          {c.age} yrs • {c.ageGroup}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="shrink-0 self-start mt-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] px-2.5 py-1 rounded border bg-transparent border-[#DDD7C8] text-[#8B867D] dark:bg-transparent dark:border-[#3A3835] dark:text-[#7A7570]">
+                      Draft
+                    </span>
+                  </div>
+
+                  <div className="mx-5 h-px bg-[#EDE6D4] dark:bg-[#2E2C27]" />
+
+                  <div className="px-5 py-4">
+                    <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#8B867D] dark:text-[#7A7570] block">
+                      Event
+                    </span>
+                    <span className="text-[14px] font-semibold text-[#4F4B44] dark:text-[#B8B0A5] block mt-0.5">
+                      {activeEvent ? (activeEvent.title || 'The General Assembly') : 'The General Assembly'}
+                    </span>
+                    <p className="text-[11px] text-[#8B867D] dark:text-[#7A7570] mt-2 leading-relaxed">
+                      Details have not been submitted yet.
+                    </p>
+                  </div>
+
+                  {/* Divider before footer */}
+                  <div className="mx-5 h-px bg-[#EDE6D4] dark:bg-[#2E2C27]" />
+
+                  <div className="px-4 py-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onResumeChildDraft) {
+                          onResumeChildDraft(c);
+                        } else {
+                          onNavigate('/parent/children/new');
+                        }
+                      }}
+                      className="w-full h-[44px] flex items-center justify-between px-3 rounded-[10px] bg-transparent hover:bg-[#FAF6EB] dark:hover:bg-[#262520] active:bg-[#F5EFDF] dark:active:bg-[#2A2926] text-[#9A7326] dark:text-[#C59B27] transition-colors cursor-pointer focus:outline-none"
+                    >
+                      <span className="text-[13px] font-semibold">Continue details</span>
+                      <ChevronRight className="w-4 h-4 opacity-80" />
+                    </button>
                   </div>
                 </div>
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-gray-100 dark:bg-[#262520] border border-gray-200 dark:border-[#3A3835] text-gray-600 dark:text-[#B8B0A5] text-[9px] font-bold uppercase tracking-wider">
-                  Draft
-                </span>
-              </div>
-
-              <div className="bg-gray-50 dark:bg-[#262520] p-3 rounded-xl border border-gray-100 dark:border-[#3A3835] text-xs text-gray-500 dark:text-[#B8B0A5] leading-relaxed">
-                Details have not been sent yet.
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  if (onResumeChildDraft) {
-                    onResumeChildDraft(c);
-                  } else {
-                    onNavigate('/parent/children/new');
-                  }
-                }}
-                className="w-full py-2.5 px-4 rounded-xl bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#2A2926] border border-gray-300 dark:border-[#3A3835] text-[#3F3F46] dark:text-[#F0EBE3] font-semibold text-xs sm:text-sm transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27]/40 text-center"
-              >
-                Continue details
-              </button>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+        )}
 
-        {/* Bottom Info Note Card */}
-        <div 
-          data-component-version="parent-passes-info-note-v2-stitch"
-          className="bg-[#FCF9F2] dark:bg-[#21211E] p-4 rounded-2xl border border-[#E8DFCA] dark:border-[#302E29] text-xs text-[#5C5A54] dark:text-[#B8B0A5] flex items-start space-x-3 shadow-2xs"
-        >
-          <Info className="w-4 h-4 text-[#9A7326] dark:text-[#C59B27] shrink-0 mt-0.5 stroke-[2]" />
-          <p className="leading-relaxed text-left">
-            Keep each pass ready on event day. The team will check the child photo and pickup details.
-          </p>
-        </div>
+        {/* --- Bottom operational note --- */}
+        {childrenList.length > 0 && (
+          <div className="mt-6 flex items-start gap-2.5">
+            <Info className="w-3.5 h-3.5 text-[#9A7326] dark:text-[#C59B27] shrink-0 mt-px stroke-[2]" />
+            <p className="text-[11px] text-[#8B867D] dark:text-[#7A7570] leading-relaxed">
+              Keep each pass ready on event day. The team will check the child photo and pickup details.
+            </p>
+          </div>
+        )}
       </div>
     );
   };
