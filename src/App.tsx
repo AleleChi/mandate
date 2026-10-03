@@ -1,0 +1,1700 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useEffect, Suspense } from 'react';
+import { AppRoute, ChildItem, ParentProfile } from './types';
+import { initialChildren, initialParentProfile } from './data/mockData';
+import { api, extractApiError } from './services/api';
+import { useNotification } from './context/NotificationContext';
+import { LandingPage } from './views/LandingPage';
+import { CreateAccountView } from './views/CreateAccountView';
+import { CheckEmailView } from './views/CheckEmailView';
+import { VerifyEmailView } from './views/VerifyEmailView';
+import { SignInView } from './views/SignInView';
+import { ForgotPasswordView } from './views/ForgotPasswordView';
+import { NewPasswordView } from './views/NewPasswordView';
+import { ProfileSetupView } from './views/ProfileSetupView';
+import { ParentHomeView } from './views/ParentHomeView';
+const VolunteerSignInView = React.lazy(() => import('./views/VolunteerSignInView').then(m => ({ default: m.VolunteerSignInView })));
+const VolunteerCreateAccountView = React.lazy(() => import('./views/VolunteerCreateAccountView').then(m => ({ default: m.VolunteerCreateAccountView })));
+const VolunteerVerifyEmailView = React.lazy(() => import('./views/VolunteerVerifyEmailView').then(m => ({ default: m.VolunteerVerifyEmailView })));
+const VolunteerForgotPasswordView = React.lazy(() => import('./views/VolunteerForgotPasswordView').then(m => ({ default: m.VolunteerForgotPasswordView })));
+const VolunteerResetPasswordView = React.lazy(() => import('./views/VolunteerResetPasswordView').then(m => ({ default: m.VolunteerResetPasswordView })));
+const VolunteerPendingReviewView = React.lazy(() => import('./views/VolunteerPendingReviewView').then(m => ({ default: m.VolunteerPendingReviewView })));
+const VolunteerEventDashboardView = React.lazy(() => import('./views/VolunteerEventDashboardView').then(m => ({ default: m.VolunteerEventDashboardView })));
+const VolunteerRequestView = React.lazy(() => import('./views/VolunteerRequestView').then(m => ({ default: m.VolunteerRequestView })));
+const LocationScanView = React.lazy(() => import('./views/LocationScanView').then(m => ({ default: m.LocationScanView })));
+import { AddChildStep1View } from './views/AddChildStep1View';
+import { AddChildStep2View } from './views/AddChildStep2View';
+import { AddChildStep3View } from './views/AddChildStep3View';
+import { AddChildStep4View } from './views/AddChildStep4View';
+import { AddChildStep5View } from './views/AddChildStep5View';
+import { ReviewSentConfirmationView } from './views/ReviewSentConfirmationView';
+import { ChildStatusView } from './views/ChildStatusView';
+import { DevNavigator } from './components/common/DevNavigator';
+import { AddChildDraft } from './types';
+import { Button } from './components/common/Button';
+import { AppPreloader } from './components/common/AppPreloader';
+import { KoinoniaInlineLoader } from './components/common/KoinoniaInlineLoader';
+import { AppLoadingScreen } from './components/common/AppLoadingScreen';
+import { ModuleLoadingState } from './components/common/ModuleLoadingState';
+import { safeStorage } from './utils/storage';
+import { isValidRoute, getInitialRoute } from './utils/router';
+import { isValidUploadedPhoto } from './utils/validation';
+
+const AdminSignInView = React.lazy(() => import('./views/admin/AdminSignInView').then(m => ({ default: m.AdminSignInView })));
+const AdminForgotPasswordView = React.lazy(() => import('./views/admin/AdminForgotPasswordView').then(m => ({ default: m.AdminForgotPasswordView })));
+const AdminResetPasswordView = React.lazy(() => import('./views/admin/AdminResetPasswordView').then(m => ({ default: m.AdminResetPasswordView })));
+const AdminOverviewView = React.lazy(() => import('./views/admin/AdminOverviewView').then(m => ({ default: m.AdminOverviewView })));
+const AdminAcceptInviteView = React.lazy(() => import('./views/admin/AdminAcceptInviteView').then(m => ({ default: m.AdminAcceptInviteView })));
+const TeamAlertsView = React.lazy(() => import('./views/admin/TeamAlertsView').then(m => ({ default: m.TeamAlertsView })));
+import { Seo } from './components/common/Seo';
+import { LegalPagesView } from './views/LegalPagesView';
+import { PrivacyPolicyView } from './views/PrivacyPolicyView';
+import { TermsOfServiceView } from './views/TermsOfServiceView';
+import { ChildSafetyView } from './views/ChildSafetyView';
+import { ContactView } from './views/ContactView';
+
+// Training & Simulation Mode Views
+const PersistentTrainingBanner = React.lazy(() => import('./views/training/PersistentTrainingBanner').then(m => ({ default: m.PersistentTrainingBanner })));
+const TrainingScenarioLibrary = React.lazy(() => import('./views/training/TrainingScenarioLibrary').then(m => ({ default: m.TrainingScenarioLibrary })));
+const TrainingScenarioBuilder = React.lazy(() => import('./views/training/TrainingScenarioBuilder').then(m => ({ default: m.TrainingScenarioBuilder })));
+const TrainingSessionSetup = React.lazy(() => import('./views/training/TrainingSessionSetup').then(m => ({ default: m.TrainingSessionSetup })));
+const TrainingHome = React.lazy(() => import('./views/training/TrainingHome').then(m => ({ default: m.TrainingHome })));
+const TrainingFacilitatorConsole = React.lazy(() => import('./views/training/TrainingFacilitatorConsole').then(m => ({ default: m.TrainingFacilitatorConsole })));
+const TrainingObserverMode = React.lazy(() => import('./views/training/TrainingObserverMode').then(m => ({ default: m.TrainingObserverMode })));
+const TrainingDebrief = React.lazy(() => import('./views/training/TrainingDebrief').then(m => ({ default: m.TrainingDebrief })));
+
+const getSeoPropsForRoute = (route: string) => {
+  const cleanRoute = route.split('?')[0];
+
+  // Note: '/' is handled directly inside LandingPage.tsx for deep landing page metadata
+  if (cleanRoute === '/') {
+    return null;
+  }
+
+  // Safe defaults
+  const defaults = {
+    robots: 'noindex, nofollow',
+  };
+
+  if (cleanRoute === '/privacy') {
+    return {
+      title: 'Privacy Notice | Koinonia Children and Teens',
+      description: "Privacy Notice for The Koinonia General Assembly Children & Teens services and events.",
+      canonical: 'https://koinonia12.netlify.app/#/privacy',
+      robots: 'index, follow',
+      ogTitle: 'Privacy Notice | Koinonia Children and Teens',
+      ogDescription: "How we access, collect, store, and process personal information for Children's Session.",
+    };
+  }
+  if (cleanRoute === '/terms') {
+    return {
+      title: 'Terms of Service | Koinonia Children and Teens',
+      description: "Terms of Service governing registration, attendance, and child safety for The Koinonia General Assembly.",
+      canonical: 'https://koinonia12.netlify.app/#/terms',
+      robots: 'index, follow',
+      ogTitle: 'Terms of Service | Koinonia Children and Teens',
+      ogDescription: "Operational protocols for child registration, exclusive pickup release, and care safety.",
+    };
+  }
+  if (cleanRoute === '/child-safety') {
+    return {
+      title: 'Child Safety | Koinonia Children and Teens',
+      description: "How check-in, care information, supervision ratios, and pickup verification are handled during Koinonia events.",
+      canonical: 'https://koinonia12.netlify.app/#/child-safety',
+      robots: 'index, follow',
+      ogTitle: 'Child Safety | Koinonia Children and Teens',
+      ogDescription: "Clear operational guidance on how children are registered, protected, supervised, and safely released.",
+    };
+  }
+  if (cleanRoute === '/contact') {
+    return {
+      title: 'Contact Us | Koinonia Children and Teens',
+      description: "Contact information and support for The Koinonia General Assembly Children & Teens event portal.",
+      canonical: 'https://koinonia12.netlify.app/#/contact',
+      robots: 'index, follow',
+      ogTitle: 'Contact Us | Koinonia Children and Teens',
+      ogDescription: "Reach out directly via email, telephone, WhatsApp, or the on-site Protocol Desk.",
+    };
+  }
+
+  // Auth & Private Route Titles
+  if (cleanRoute === '/parent/sign-in') {
+    return {
+      title: 'Parent Sign In | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute === '/parent/create-account') {
+    return {
+      title: 'Create Parent Account | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute === '/parent/check-email') {
+    return {
+      title: 'Verify Your Inbox | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute === '/parent/verify-email') {
+    return {
+      title: 'Email Verification | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute === '/parent/forgot-password') {
+    return {
+      title: 'Reset Parent Password | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute === '/parent/new-password') {
+    return {
+      title: 'Choose New Password | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute.startsWith('/parent')) {
+    return {
+      title: 'Parent Access | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+
+  // Volunteer Routes
+  if (cleanRoute === '/volunteer/sign-in') {
+    return {
+      title: 'Volunteer Sign In | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute === '/volunteer/create-account') {
+    return {
+      title: 'Volunteer Account Creation | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute === '/volunteer/forgot-password') {
+    return {
+      title: 'Reset Volunteer Password | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute === '/volunteer/reset-password') {
+    return {
+      title: 'Choose New Volunteer Password | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute.startsWith('/volunteer')) {
+    return {
+      title: 'Volunteer Operations | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+
+  // Admin Routes
+  if (cleanRoute === '/admin/sign-in') {
+    return {
+      title: 'Admin Sign In | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute === '/admin/forgot-password') {
+    return {
+      title: 'Reset Administrator Password | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute === '/admin/reset-password') {
+    return {
+      title: 'Choose New Administrator Password | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+  if (cleanRoute.startsWith('/admin')) {
+    return {
+      title: 'Admin Emergency Response | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
+
+  // Fallback for other unrecognized paths
+  return {
+    title: 'Koinonia Children and Teens',
+    ...defaults,
+  };
+};
+
+function normalizeParentProfile(p: any): ParentProfile {
+  if (!p) return initialParentProfile;
+  return {
+    fullName: p.fullName || p.full_name || '',
+    email: p.email || '',
+    phone: p.phone || p.phone_number || '',
+    phoneNumber: p.phone || p.phone_number || '',
+    whatsapp: p.whatsapp || p.whatsapp_number || p.phone_number || p.phone || '',
+    whatsappNumber: p.whatsapp || p.whatsapp_number || p.phone_number || p.phone || '',
+    homeAddress: p.homeAddress || p.home_address || '',
+    country: p.country || '',
+    countryIso: p.countryIso || p.country_iso || '',
+    country_iso: p.countryIso || p.country_iso || '',
+    whatsappCountryIso: p.whatsappCountryIso || p.whatsapp_country_iso || '',
+    whatsapp_country_iso: p.whatsappCountryIso || p.whatsapp_country_iso || '',
+    stateRegion: p.stateRegion || p.state_region || '',
+    city: p.city || '',
+    preferredContact: p.preferredContact || p.preferred_contact || 'WhatsApp',
+    isWorker: p.isWorker !== undefined ? Boolean(p.isWorker) : Boolean(p.is_koinonia_worker),
+    department: p.department || '',
+    photoFileId: p.photoFileId || p.photo_file_id || '',
+    photoUrl: p.photoUrl || p.photo_url || '',
+    profileCompletedAt: p.profileCompletedAt || p.profile_completed_at || null,
+    whatsappConsentStatus: p.whatsappConsentStatus || p.whatsapp_consent_status || 'unknown',
+    whatsappConsentAt: p.whatsappConsentAt || p.whatsapp_consent_at || null,
+    whatsappOptOutAt: p.whatsappOptOutAt || p.whatsapp_opt_out_at || null,
+    whatsappConsentSource: p.whatsappConsentSource || p.whatsapp_consent_source || null
+  };
+}
+
+export default function App() {
+  const { showSuccess, showError, showWarning } = useNotification();
+  const [currentRoute, setCurrentRoute] = useState<AppRoute>(getInitialRoute);
+  const [parentEmail, setParentEmail] = useState<string>('');
+  const [parentProfile, setParentProfile] = useState<ParentProfile>(initialParentProfile);
+  const [volunteerProfile, setVolunteerProfile] = useState<any>(null);
+  const [childrenList, setChildrenList] = useState<ChildItem[]>(initialChildren);
+  const [activeEvent, setActiveEvent] = useState<any>(null);
+  const [isMobileLandingView, setIsMobileLandingView] = useState<boolean>(false);
+  const [addChildDraft, setAddChildDraft] = useState<AddChildDraft | null>(null);
+  const [lastSubmittedChild, setLastSubmittedChild] = useState<ChildItem | null>(null);
+  const [isOffline, setIsOffline] = useState<boolean>(typeof navigator !== 'undefined' ? !navigator.onLine : false);
+  const [showPreloader, setShowPreloader] = useState<boolean>(true);
+
+  // Training & Simulation Mode SPA State
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string>('');
+  const [activeTrainingSessionId, setActiveTrainingSessionId] = useState<string>('');
+  const [trainingRole, setTrainingRole] = useState<string>('');
+
+  // Sync route with URL hash/pathname for clean HTML5 URLs, back/forward support, and legacy hash migration
+  useEffect(() => {
+    const handleLocationChange = () => {
+      if (typeof window === 'undefined') return;
+      const pathname = window.location.pathname || '';
+      let hash = (window.location.hash || '').replace(/^#+/, '');
+      if (hash && !hash.startsWith('/')) hash = '/' + hash;
+
+      // Case 1: Pathname provides a valid route (e.g. /parent/home, /admin/wristbands)
+      if (pathname && pathname !== '/' && isValidRoute(pathname)) {
+        // Strip duplicate or lingering hash (e.g. /parent/home#/parent/home or /parent/home#parent/home)
+        if (hash) {
+          const [hashRoute] = hash.split('?');
+          if (hashRoute === pathname || isValidRoute(hashRoute) || window.location.hash.startsWith('#' + pathname)) {
+            window.history.replaceState(null, '', pathname + (window.location.search || ''));
+          }
+        }
+        const [cleanPath] = pathname.split('?');
+        setCurrentRoute(cleanPath as AppRoute);
+        return;
+      }
+
+      // Case 2: Pathname is root '/', but an incoming/legacy hash route is present (e.g. /#/parent/home)
+      if (hash) {
+        const [hashRoute] = hash.split('?');
+        if (isValidRoute(hashRoute)) {
+          // Promote legacy hash route to clean HTML5 URL without creating extra history entry
+          const search = hash.includes('?') ? '?' + hash.split('?')[1] : (window.location.search || '');
+          window.history.replaceState(null, '', hashRoute + search);
+          setCurrentRoute(hashRoute as AppRoute);
+          return;
+        }
+      }
+
+      // Case 3: Root route '/'
+      if (pathname === '/' || !pathname) {
+        if (window.location.hash === '#' || window.location.hash === '#/') {
+          window.history.replaceState(null, '', '/' + (window.location.search || ''));
+        }
+        setCurrentRoute('/');
+      }
+    };
+
+    handleLocationChange();
+    window.addEventListener('popstate', handleLocationChange);
+    window.addEventListener('hashchange', handleLocationChange);
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('hashchange', handleLocationChange);
+    };
+  }, []);
+
+  const isProfileComplete = (p: ParentProfile | null | undefined): boolean => {
+    if (!p) return false;
+    const name = p.fullName || (p as any).full_name;
+    const phone = p.phone || (p as any).phone_number || (p as any).phone;
+    if (!name || !name.trim()) return false;
+    if (!phone || !phone.trim()) return false;
+
+    // Existing historical parents: if they already have registered children or an existing completed profile timestamp,
+    // do not lock them out of the parent dashboard/passes.
+    if (childrenList.length > 0 || (p as any).profileCompletedAt || (p as any).profile_completed_at) {
+      return true;
+    }
+
+    // For new parent registration/onboarding, a valid profile photo is required to mark profile complete.
+    const photo = p.photoUrl || (p as any).photo_file_id || (p as any).photoFileId;
+    if (!isValidUploadedPhoto(photo)) return false;
+
+    return true;
+  };
+
+  const [user, setUser] = useState<any>(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(true);
+  const [activeExperience, setActiveExperience] = useState<'parent' | 'volunteer' | 'admin' | null>(null);
+  const [isSwitchingExperience, setIsSwitchingExperience] = useState<boolean>(false);
+
+  const checkAuth = async () => {
+    const token = api.getToken();
+    if (!token) {
+      setUser(null);
+      setParentProfile(initialParentProfile);
+      setVolunteerProfile(null);
+      setChildrenList([]);
+      setActiveExperience(null);
+      safeStorage.removeItem('koinonia_active_experience');
+      setIsCheckingAuth(false);
+      return;
+    }
+
+    try {
+      const accessData = await api.auth.getAccess();
+      if (accessData && accessData.user) {
+        setUser(accessData.user);
+
+        if (accessData.access.parent && accessData.access.parent.exists) {
+          try {
+            const homeData = await api.parent.getHome();
+            if (homeData) {
+              if (homeData.parentProfile) {
+                setParentProfile(normalizeParentProfile(homeData.parentProfile));
+                setParentEmail(homeData.parentProfile.email || '');
+              }
+              if (homeData.activeEvent) {
+                setActiveEvent(homeData.activeEvent);
+              }
+              if (Array.isArray(homeData.childrenList)) {
+                setChildrenList(homeData.childrenList);
+                const activeId = safeStorage.getItem('koinonia_active_draft_id');
+                if (activeId) {
+                  const matched = homeData.childrenList.find((c) => c.id === activeId);
+                  if (matched && matched.draftData) {
+                    setAddChildDraft(matched.draftData);
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            console.error('Failed to load initial home data:', e);
+          }
+        }
+
+        let loadedVolProfile: any = null;
+        if (accessData.access.volunteer && accessData.access.volunteer.exists) {
+          try {
+            const volMe = await api.volunteer.getMe() as any;
+            if (volMe) {
+              loadedVolProfile = volMe.profile || volMe.volunteerProfile;
+              setVolunteerProfile(loadedVolProfile);
+            }
+          } catch (e) {
+            console.error('Failed to load initial volunteer profile:', e);
+          }
+        } else {
+          setVolunteerProfile(null);
+        }
+
+        // Determine active experience state
+        const storedExp = safeStorage.getItem('koinonia_active_experience');
+        const isVolApproved = loadedVolProfile && (loadedVolProfile.status === 'active' || loadedVolProfile.status === 'approved');
+        const isStaffOrAdmin = ['staff', 'admin', 'super_admin'].includes(accessData.user.role);
+        const hasVolAccess = isVolApproved || isStaffOrAdmin;
+        const hasParentAccess = accessData.access.parent && accessData.access.parent.exists;
+
+        const currentPath = typeof window !== 'undefined' ? (window.location.pathname + window.location.hash) : '';
+        const isVolunteerPath = currentPath.includes('/volunteer');
+        const isParentPath = currentPath.includes('/parent');
+
+        // The portal the user explicitly entered must remain authoritative
+        if (isParentPath && (hasParentAccess || accessData.user.role === 'parent')) {
+          setActiveExperience('parent');
+          safeStorage.setItem('koinonia_active_experience', 'parent');
+        } else if (isVolunteerPath && hasVolAccess) {
+          setActiveExperience('volunteer');
+          safeStorage.setItem('koinonia_active_experience', 'volunteer');
+        } else if (storedExp === 'volunteer' && hasVolAccess) {
+          setActiveExperience('volunteer');
+        } else if (storedExp === 'parent' && (hasParentAccess || accessData.user.role === 'parent')) {
+          setActiveExperience('parent');
+        } else if (hasParentAccess || accessData.user.role === 'parent') {
+          setActiveExperience('parent');
+        } else if (hasVolAccess) {
+          setActiveExperience('volunteer');
+        } else {
+          setActiveExperience(accessData.user.role === 'admin' || accessData.user.role === 'super_admin' ? 'admin' : 'parent');
+        }
+      } else {
+        api.clearToken();
+        setUser(null);
+        setParentProfile(initialParentProfile);
+        setVolunteerProfile(null);
+        setChildrenList([]);
+        setActiveExperience(null);
+        safeStorage.removeItem('koinonia_active_experience');
+      }
+    } catch (err: any) {
+      console.error('Initial checkAuth failed:', err);
+      // ONLY clear authentication/session on genuine 401 UNAUTHORIZED authentication failures
+      // A 403 or network error must NEVER clear token or log the user out!
+      if (err?.code === 'UNAUTHORIZED' || err?.status === 401) {
+        api.clearToken();
+        setUser(null);
+        setParentProfile(initialParentProfile);
+        setVolunteerProfile(null);
+        setChildrenList([]);
+        setActiveExperience(null);
+        safeStorage.removeItem('koinonia_active_experience');
+      }
+    } finally {
+      setIsCheckingAuth(false);
+    }
+  };
+
+  const handleSwitchExperience = async (targetExperience: 'parent' | 'volunteer'): Promise<boolean> => {
+    if (isSwitchingExperience) return false;
+    setIsSwitchingExperience(true);
+    try {
+      const res = await api.auth.switchExperience(targetExperience);
+      if (res && res.success) {
+        setActiveExperience(targetExperience);
+        safeStorage.setItem('koinonia_active_experience', targetExperience);
+        await checkAuth();
+        if (targetExperience === 'volunteer') {
+          navigate('/volunteer/event');
+        } else {
+          navigate('/parent/home');
+        }
+        return true;
+      } else {
+        showError('Action Failed', 'We could not switch views. Please try again.');
+        return false;
+      }
+    } catch (err) {
+      showError('Action Failed', 'We could not switch views. Please try again.');
+      return false;
+    } finally {
+      setIsSwitchingExperience(false);
+    }
+  };
+
+  const fetchBackendData = async () => {
+    if (api.getToken()) {
+      try {
+        const homeData = await api.parent.getHome();
+        if (homeData && homeData.parentProfile) {
+          setParentProfile(normalizeParentProfile(homeData.parentProfile));
+          setParentEmail(homeData.parentProfile.email || '');
+          if (homeData.activeEvent) {
+            setActiveEvent(homeData.activeEvent);
+          }
+          if (Array.isArray(homeData.childrenList)) {
+            setChildrenList(homeData.childrenList);
+            const activeId = safeStorage.getItem('koinonia_active_draft_id');
+            if (activeId) {
+              const matched = homeData.childrenList.find((c) => c.id === activeId);
+              if (matched && matched.draftData) {
+                setAddChildDraft(matched.draftData);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load home data:', err);
+      }
+    }
+  };
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  useEffect(() => {
+    fetchBackendData();
+  }, [currentRoute, user]);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOffline(false);
+      showSuccess('Back online.', 'Updating your information...');
+      fetchBackendData();
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+      const role = user?.role || 'parent';
+      if (role === 'admin') {
+        showWarning('You are offline.', 'Please reconnect before making changes.');
+      } else if (role === 'staff' || role === 'volunteer') {
+        showWarning('You are offline.', 'Scanning may be limited until connection returns.');
+      } else {
+        showWarning('You are offline.', 'Some updates will appear when your connection returns.');
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [user]);
+
+  const navigate = (route: AppRoute | string) => {
+    const [routePath] = route.split('?');
+    setCurrentRoute(routePath as AppRoute);
+    if (typeof window !== 'undefined' && window.history?.pushState) {
+      const cleanRoute = route.startsWith('/') ? route : `/${route}`;
+      window.history.pushState(null, '', cleanRoute);
+    } else if (typeof window !== 'undefined') {
+      window.location.href = route;
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleAddChild = (newChild: ChildItem) => {
+    setChildrenList((prev) => [newChild, ...prev]);
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await api.auth.signOut();
+    } catch (e) {
+      console.error('Sign out error:', e);
+    }
+    setUser(null);
+    setParentProfile(initialParentProfile);
+    setVolunteerProfile(null);
+    setChildrenList([]);
+    setAddChildDraft(null);
+    setActiveExperience(null);
+    safeStorage.removeItem('koinonia_active_draft_id');
+    safeStorage.removeItem('koinonia_active_experience');
+    api.request('/api/auth/sign-out', { method: 'POST' }).catch(() => {});
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        Object.keys(sessionStorage).forEach((key) => {
+          if (key.startsWith('koinonia_pass_unlocked_')) {
+            sessionStorage.removeItem(key);
+          }
+        });
+      }
+    } catch {}
+    navigate('/');
+    showSuccess('Signed out', 'You have been successfully signed out.');
+  };
+
+  const handleSaveDraft = async (draft: AddChildDraft, isFinishLater?: boolean): Promise<boolean> => {
+    setAddChildDraft(draft);
+    if (draft.id) {
+      safeStorage.setItem('koinonia_active_draft_id', draft.id);
+    }
+    if (api.getToken()) {
+      try {
+        const savedChild = await api.parent.saveChildDraft(draft, draft.id);
+        if (savedChild && savedChild.id) {
+          draft.id = savedChild.id;
+          safeStorage.setItem('koinonia_active_draft_id', savedChild.id);
+          if (savedChild.draftData) setAddChildDraft(savedChild.draftData);
+          setChildrenList((prev) => {
+            const existingIdx = prev.findIndex((c) => c.id === savedChild.id);
+            if (existingIdx !== -1) {
+              const copy = [...prev];
+              copy[existingIdx] = savedChild;
+              return copy;
+            }
+            return [savedChild, ...prev];
+          });
+          if (isFinishLater) {
+            showSuccess('Progress saved', 'You can continue later from Home.');
+          } else {
+            showSuccess('Progress saved');
+          }
+          return true;
+        }
+        return false;
+      } catch (e: any) {
+        console.error('Failed to save draft to backend:', e);
+        if (isFinishLater) {
+          showError('Something went wrong', e?.message || 'We could not save your progress.');
+        }
+        return false;
+      }
+    } else if (isFinishLater) {
+      const name = (draft.childDetails?.fullName || draft.fullName || '').trim();
+      if (name && name !== '') {
+        const ageVal = draft.childDetails?.calculatedAge !== undefined ? draft.childDetails.calculatedAge : draft.age;
+        const ageGroupVal = draft.childDetails?.ageGroup || draft.ageGroup || 'Not specified';
+        const photoVal = draft.childDetails?.photo || draft.photoUrl || '';
+
+        const draftChild: ChildItem = {
+          id: draft.id || `child-${Date.now()}`,
+          name: name,
+          age: ageVal !== null && ageVal !== undefined ? ageVal : 0,
+          ageGroup: ageGroupVal,
+          status: 'Incomplete',
+          statusNote: 'Continue entering child details',
+          photoUrl: photoVal,
+          draftData: {
+            ...draft,
+            review: {
+              ...draft.review,
+              status: 'Incomplete'
+            }
+          }
+        };
+        setChildrenList((prev) => {
+          const existingIdx = prev.findIndex((c) => c.id === draftChild.id);
+          if (existingIdx !== -1) {
+            const copy = [...prev];
+            copy[existingIdx] = draftChild;
+            return copy;
+          }
+          return [draftChild, ...prev];
+        });
+        showSuccess('Progress saved', 'You can continue later from Home.');
+        return true;
+      }
+      return false;
+    }
+    return true;
+  };
+
+  const handleSubmitReview = async (draft: AddChildDraft): Promise<boolean> => {
+    let childId = draft.id || safeStorage.getItem('koinonia_active_draft_id') || undefined;
+
+    if (api.getToken()) {
+      try {
+        if (!childId) {
+          const savedChild = await api.parent.saveChildDraft(draft);
+          if (savedChild && savedChild.id) {
+            childId = savedChild.id;
+            draft.id = savedChild.id;
+            safeStorage.setItem('koinonia_active_draft_id', savedChild.id);
+          } else {
+            throw new Error('Could not establish child registration record.');
+          }
+        }
+
+        const response = await api.parent.submitChildReview(childId, draft);
+        safeStorage.removeItem('koinonia_active_draft_id');
+
+        await fetchBackendData();
+
+        const reviewedChild = {
+          ...response,
+          status: 'Under review',
+          id: response.id || response.childId || childId
+        };
+        setLastSubmittedChild(reviewedChild);
+        setAddChildDraft(null);
+        showSuccess('Details sent for review', 'You can follow the child’s status from Home.');
+        return true;
+      } catch (e: any) {
+        console.error('Submit review error:', e);
+        throw e;
+      }
+    }
+
+    const name = (draft.childDetails?.fullName || draft.fullName || 'Untitled Child').trim();
+    const ageVal = draft.childDetails?.calculatedAge !== undefined ? draft.childDetails.calculatedAge : draft.age;
+    const ageGroupVal = draft.childDetails?.ageGroup || draft.ageGroup || 'Not specified';
+    const photoVal = draft.childDetails?.photo || draft.photoUrl || '';
+    safeStorage.removeItem('koinonia_active_draft_id');
+
+    const reviewedChild: ChildItem = {
+      id: childId || `child-${Date.now()}`,
+      name: name,
+      age: ageVal !== null && ageVal !== undefined ? ageVal : 0,
+      ageGroup: ageGroupVal,
+      status: 'Under review',
+      statusNote: 'Details sent for review',
+      photoUrl: photoVal,
+      submittedAt: draft.review?.submittedAt || new Date().toISOString(),
+      draftData: {
+        ...draft,
+        review: {
+          detailsConfirmed: true,
+          submittedAt: draft.review?.submittedAt || new Date().toISOString(),
+          status: 'Under review'
+        }
+      }
+    };
+    setLastSubmittedChild(reviewedChild);
+    setChildrenList((prev) => {
+      const existingIdx = prev.findIndex((c) => c.id === reviewedChild.id);
+      if (existingIdx !== -1) {
+        const copy = [...prev];
+        copy[existingIdx] = reviewedChild;
+        return copy;
+      }
+      return [reviewedChild, ...prev];
+    });
+    setAddChildDraft(null);
+    showSuccess('Details sent for review', 'You can follow the child’s status from Home.');
+    return true;
+  };
+
+  const handleEditChild = (child: ChildItem) => {
+    if (child.id) {
+      safeStorage.setItem('koinonia_active_draft_id', child.id);
+    }
+    if (child.draftData) {
+      setAddChildDraft(child.draftData);
+    } else {
+      setAddChildDraft({
+        id: child.id,
+        fullName: child.name,
+        photoUrl: child.photoUrl,
+        age: child.age,
+        ageGroup: child.ageGroup,
+        gender: '',
+        dob: '',
+        relationship: 'Parent'
+      });
+    }
+    navigate(`/parent/children/${child.id}/edit`);
+  };
+
+  const handleStartNewChild = () => {
+    const parentPhoto = parentProfile?.photoUrl || (parentProfile as any)?.photo_file_id || (parentProfile as any)?.photoFileId;
+    if (!isValidUploadedPhoto(parentPhoto)) {
+      showError('Profile photo required', 'Please add a profile photo to continue.');
+      navigate('/parent/profile/edit');
+      return;
+    }
+    safeStorage.removeItem('koinonia_active_draft_id');
+    setAddChildDraft(null);
+    navigate('/parent/children/new');
+  };
+
+  const handleResumeChildDraft = (child: ChildItem) => {
+    if (child.id) {
+      safeStorage.setItem('koinonia_active_draft_id', child.id);
+    }
+    if (child.draftData) {
+      setAddChildDraft(child.draftData);
+    } else {
+      setAddChildDraft({
+        id: child.id,
+        photoUrl: child.photoUrl || '',
+        fullName: child.name,
+        gender: '',
+        dob: '',
+        age: child.age,
+        ageGroup: child.ageGroup || '',
+        relationship: 'Parent',
+        childDetails: {
+          photo: child.photoUrl || '',
+          fullName: child.name,
+          gender: '',
+          dateOfBirth: '',
+          calculatedAge: child.age,
+          ageGroup: child.ageGroup || '',
+          relationshipToChild: 'Parent'
+        }
+      });
+    }
+    navigate('/parent/children/new');
+  };
+
+  const handleDeleteChild = async (childId: string): Promise<{ success: boolean; message?: string; error?: string }> => {
+    try {
+      const response = await api.parent.deleteChild(childId);
+      if (response && response.success) {
+        showSuccess(response.message || 'Action completed successfully');
+        await fetchBackendData();
+        return { success: true, message: response.message };
+      } else {
+        const errorMsg = response?.error || 'Failed to remove child details.';
+        showError(errorMsg);
+        return { success: false, error: errorMsg };
+      }
+    } catch (err: any) {
+      const apiErr = extractApiError(err);
+      showError(apiErr.message);
+      return { success: false, error: apiErr.message };
+    }
+  };
+
+  const RedirectToSignIn = ({ next }: { next: string }) => {
+    useEffect(() => {
+      const nextParam = next && next !== '/' ? `?next=${encodeURIComponent(next)}` : '';
+      navigate(`/parent/sign-in${nextParam}`);
+    }, [next]);
+
+    return (
+      <AppLoadingScreen title="Redirecting to sign in..." />
+    );
+  };
+
+  const RedirectToRoute = ({ route }: { route: string }) => {
+    useEffect(() => {
+      navigate(route);
+    }, [route]);
+
+    return (
+      <AppLoadingScreen title="Redirecting..." />
+    );
+  };
+
+  const ProtectedRoute = ({
+    requiredRole = 'parent',
+    requiresCompletedProfile = true,
+    children
+  }: {
+    requiredRole?: string;
+    requiresCompletedProfile?: boolean;
+    children: React.ReactNode;
+  }) => {
+    if (isCheckingAuth) {
+      return (
+        <AppLoadingScreen title="Checking access..." />
+      );
+    }
+
+    if (!user) {
+      return <RedirectToSignIn next={currentRoute} />;
+    }
+
+    if (requiredRole && user.role !== requiredRole) {
+      const hasValidParentProfile = parentProfile && (parentProfile.fullName?.trim() || parentProfile.phone?.trim());
+      const isParentAllowed = requiredRole === 'parent' && (
+        user.role === 'parent' ||
+        hasValidParentProfile ||
+        ['admin', 'super_admin'].includes(user.role)
+      );
+
+      if (!isParentAllowed) {
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] p-4">
+            <div className="bg-white rounded-3xl p-8 border border-[#EAE8E1] shadow-sm max-w-md w-full text-center space-y-6">
+              <h3 className="text-xl font-serif-koinonia font-bold text-[#18181B]">Parent Access Required</h3>
+              <p className="text-sm text-[#6B7280]">
+                You do not have active parent access. Please sign in with a parent account or register your profile.
+              </p>
+              <Button onClick={handleSignOut} variant="primary" fullWidth>
+                Sign Out
+              </Button>
+            </div>
+          </div>
+        );
+      }
+    }
+
+    const emailVerified = user.email_verified === 1 || user.email_verified === true || user.email_verified === '1';
+    if (!emailVerified) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl p-8 border border-[#EAE8E1] shadow-sm max-w-md w-full text-center space-y-6">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#B89047]/10 text-[#B89047]">
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 19v-8.93a2 2 0 01.89-1.664l8-5.333a2 2 0 012.22 0l8 5.333A2 2 0 0121 10.07V19M3 19a2 2 0 002 2h14a2 2 0 002-2M3 19l6.75-4.5M21 19l-6.75-4.5M3 10l6.75 4.5M21 10l-6.75 4.5" />
+              </svg>
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-serif-koinonia font-bold text-[#18181B]">Verify your email</h3>
+              <p className="text-sm text-[#6B7280]">
+                Please verify your email address to continue. We've sent a verification link to <span className="font-medium text-[#18181B]">{user.email}</span>.
+              </p>
+            </div>
+            <div className="space-y-3">
+              <Button
+                variant="primary"
+                fullWidth
+                onClick={async () => {
+                  try {
+                    await api.auth.resendVerification(user.email);
+                    showSuccess('Verification email sent', 'Please check your inbox.');
+                  } catch (e: any) {
+                    showError('Failed to resend', e.message || 'Please try again.');
+                  }
+                }}
+              >
+                Resend verification email
+              </Button>
+              <button
+                onClick={handleSignOut}
+                className="text-xs text-gray-500 hover:text-gray-700 font-medium cursor-pointer"
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (requiresCompletedProfile && !isProfileComplete(parentProfile)) {
+      return <RedirectToRoute route="/parent/profile-setup" />;
+    }
+
+    return <>{children}</>;
+  };
+
+  const VolunteerProtectedRoute = ({
+    children
+  }: {
+    children: React.ReactNode;
+  }) => {
+    if (isCheckingAuth) {
+      return (
+        <AppLoadingScreen title="Checking access..." />
+      );
+    }
+
+    if (!user) {
+      return <RedirectToRoute route="/volunteer/sign-in" />;
+    }
+
+    const allowedRoles = ['volunteer', 'staff', 'admin', 'super_admin'];
+    const isVolunteerApproved = volunteerProfile && (volunteerProfile.status === 'active' || volunteerProfile.status === 'approved');
+
+    if (!allowedRoles.includes(user.role) && !isVolunteerApproved) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] p-4">
+          <div className="bg-white rounded-3xl p-8 border border-[#EAE8E1] shadow-sm max-w-md w-full text-center space-y-6">
+            <h3 className="text-xl font-serif-koinonia font-bold text-[#18181B]">Volunteer Access Required</h3>
+            <p className="text-sm text-[#6B7280]">
+              You do not have active volunteer access. Please sign in with a volunteer account or contact your team leader.
+            </p>
+            <Button onClick={handleSignOut} variant="primary" fullWidth>
+              Sign Out
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
+    const emailVerified = user.email_verified === 1 || user.email_verified === true || user.email_verified === '1';
+    if (!emailVerified) {
+      return <RedirectToRoute route="/volunteer/verify-email" />;
+    }
+
+    const isStaffOrAdmin = ['staff', 'admin', 'super_admin'].includes(user.role);
+    if (isStaffOrAdmin) {
+      return <>{children}</>;
+    }
+
+    // If volunteer profile is missing but user role is volunteer, wait for it or show loading state
+    if (!volunteerProfile) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] font-sans p-6">
+          <KoinoniaInlineLoader
+            variant="logo"
+            size="lg"
+            label="Loading volunteer profile..."
+            centered
+          />
+        </div>
+      );
+    }
+
+    const status = volunteerProfile.status;
+    const isApprovedOrActive = status === 'active' || status === 'approved';
+
+    if (isApprovedOrActive) {
+      const cleanRoute = currentRoute.split('?')[0];
+      if (cleanRoute === '/volunteer/pending-review') {
+        return <RedirectToRoute route="/volunteer/event" />;
+      }
+      return <>{children}</>;
+    }
+
+    // Direct other statuses (pending_review, request_update, rejected) to pending-review screen
+    const cleanRoute = currentRoute.split('?')[0];
+    if (cleanRoute !== '/volunteer/pending-review' && cleanRoute !== '/volunteer/verify-email') {
+      return <RedirectToRoute route="/volunteer/pending-review" />;
+    }
+
+    return <>{children}</>;
+  };
+
+  const AdminProtectedRoute = ({
+    children
+  }: {
+    children: React.ReactNode;
+  }) => {
+    if (isCheckingAuth) {
+      return (
+        <AppLoadingScreen title="Checking administrator access..." />
+      );
+    }
+
+    if (!user) {
+      return <RedirectToRoute route="/admin/sign-in" />;
+    }
+
+    const allowedRoles = ['admin', 'super_admin', 'team'];
+    if (!allowedRoles.includes(user.role)) {
+      return <RedirectToRoute route="/parent/home" />;
+    }
+
+    return <>{children}</>;
+  };
+
+  const handleSignInSuccess = (userData: any, profileData: any) => {
+    setUser(userData);
+    setActiveExperience('parent');
+    safeStorage.setItem('koinonia_active_experience', 'parent');
+    if (profileData) {
+      setParentProfile(normalizeParentProfile(profileData));
+      setParentEmail(profileData.email || '');
+    }
+    fetchBackendData();
+  };
+
+  const renderCurrentRoute = () => {
+    const cleanRoute = currentRoute.split('?')[0];
+
+    if (cleanRoute === '/privacy') {
+      return <PrivacyPolicyView onNavigate={navigate} />;
+    }
+    if (cleanRoute === '/terms') {
+      return <TermsOfServiceView onNavigate={navigate} />;
+    }
+    if (cleanRoute === '/child-safety') {
+      return <ChildSafetyView onNavigate={navigate} />;
+    }
+    if (cleanRoute === '/contact') {
+      return <ContactView onNavigate={navigate} />;
+    }
+
+    const pRoute = user ? (isProfileComplete(parentProfile) ? '/parent/home' : '/parent/profile-setup') : '/parent/create-account';
+    
+    let vRoute = '/volunteer/sign-in';
+    if (user) {
+      const hasVolunteerRole = ['volunteer', 'staff', 'admin', 'super_admin'].includes(user.role);
+      if (hasVolunteerRole || volunteerProfile) {
+        if (volunteerProfile && volunteerProfile.status === 'pending_review') {
+          vRoute = '/volunteer/pending-review';
+        } else {
+          vRoute = '/volunteer/event';
+        }
+      } else {
+        vRoute = '/parent/volunteer-request';
+      }
+    }
+
+    if (
+      cleanRoute === '/parent/status' ||
+      cleanRoute.startsWith('/parent/status/') ||
+      (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/status'))
+    ) {
+      const parts = cleanRoute.split('/');
+      let childIdParam: string | undefined = undefined;
+      if (cleanRoute.startsWith('/parent/status/')) {
+        childIdParam = parts.length >= 4 && parts[3] ? parts[3] : undefined;
+      } else if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/status')) {
+        childIdParam = parts.length >= 4 && parts[3] !== 'review-sent' && parts[3] !== 'new' ? parts[3] : undefined;
+      }
+      return (
+        <ProtectedRoute requiresCompletedProfile={true}>
+          <ChildStatusView
+            childId={childIdParam}
+            childrenList={childrenList}
+            parentProfile={parentProfile}
+            onNavigate={navigate}
+            onEditChild={handleEditChild}
+            onDeleteChild={handleDeleteChild}
+          />
+        </ProtectedRoute>
+      );
+    }
+
+    if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/edit')) {
+      return (
+        <ProtectedRoute requiresCompletedProfile={true}>
+          <AddChildStep5View
+            onNavigate={navigate}
+            draft={addChildDraft}
+            parentProfile={parentProfile}
+            onSubmitReview={handleSubmitReview}
+            onSaveDraft={handleSaveDraft}
+          />
+        </ProtectedRoute>
+      );
+    }
+
+    if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/pass')) {
+      const parts = cleanRoute.split('/');
+      const childIdParam = parts[3];
+      return (
+        <ProtectedRoute requiresCompletedProfile={true}>
+          <ParentHomeView
+            onNavigate={navigate}
+            parentProfile={parentProfile}
+            childrenList={childrenList}
+            onAddChild={handleAddChild}
+            onStartNewChild={handleStartNewChild}
+            onResumeChildDraft={handleResumeChildDraft}
+            onSignOut={handleSignOut}
+            onDeleteChild={handleDeleteChild}
+            initialTab="Passes"
+            selectedChildId={childIdParam}
+            volunteerProfile={volunteerProfile}
+            activeEvent={activeEvent}
+            onUpdateProfile={(updated) => setParentProfile(normalizeParentProfile(updated))}
+          />
+        </ProtectedRoute>
+      );
+    }
+
+    if (cleanRoute === '/admin/team-alerts') {
+      return (
+        <AdminProtectedRoute>
+          <TeamAlertsView
+            onNavigate={navigate}
+            onSignOut={handleSignOut}
+            adminUser={user}
+            volunteerProfile={volunteerProfile}
+          />
+        </AdminProtectedRoute>
+      );
+    }
+
+    if (cleanRoute.startsWith('/admin/training')) {
+      const parts = cleanRoute.split('/');
+      let viewComponent: React.ReactNode = null;
+      
+      if (cleanRoute === '/admin/training/scenarios') {
+        viewComponent = (
+          <TrainingScenarioLibrary 
+            onNavigate={navigate} 
+            onStartSessionSetup={(id) => {
+              setSelectedScenarioId(id);
+              navigate('/admin/training/setup');
+            }} 
+          />
+        );
+      } else if (cleanRoute === '/admin/training/scenarios/new') {
+        viewComponent = <TrainingScenarioBuilder onNavigate={navigate} />;
+      } else if (cleanRoute === '/admin/training/setup') {
+        viewComponent = (
+          <TrainingSessionSetup 
+            scenarioId={selectedScenarioId} 
+            onNavigate={navigate} 
+            onSessionCreated={(sid) => {
+              setActiveTrainingSessionId(sid);
+              navigate('/admin/training/active');
+            }} 
+          />
+        );
+      } else if (cleanRoute === '/admin/training/active') {
+        viewComponent = (
+          <TrainingHome 
+            sessionId={activeTrainingSessionId} 
+            onNavigate={navigate} 
+            onExit={() => {
+              setActiveTrainingSessionId('');
+              navigate('/admin/training/scenarios');
+            }} 
+            userId={user?.id} 
+          />
+        );
+      } else if (cleanRoute.includes('/facilitator')) {
+        const sid = parts[4];
+        viewComponent = <TrainingFacilitatorConsole sessionId={sid} onNavigate={navigate} userId={user?.id} />;
+      } else if (cleanRoute.includes('/observer')) {
+        const sid = parts[4];
+        viewComponent = <TrainingObserverMode sessionId={sid} onNavigate={navigate} userId={user?.id} />;
+      } else if (cleanRoute.includes('/debrief')) {
+        const sid = parts[4];
+        viewComponent = <TrainingDebrief sessionId={sid} onNavigate={navigate} userId={user?.id} />;
+      }
+
+      return (
+        <AdminProtectedRoute>
+          <div className="min-h-screen bg-[#FAF9F6] dark:bg-[#19191A] flex flex-col">
+            <PersistentTrainingBanner 
+              roleName={trainingRole || 'Check-in team'} 
+              onExit={() => {
+                setActiveTrainingSessionId('');
+                setTrainingRole('');
+                navigate('/admin/overview');
+              }} 
+            />
+            <div className="flex-1">
+              {viewComponent}
+            </div>
+          </div>
+        </AdminProtectedRoute>
+      );
+    }
+
+    if (cleanRoute.startsWith('/admin')) {
+      const isAdminSignRoute = cleanRoute === '/admin/sign-in' || cleanRoute === '/admin/forgot-password' || cleanRoute === '/admin/reset-password' || cleanRoute === '/admin/accept-invite';
+      if (!isAdminSignRoute) {
+        return (
+          <AdminProtectedRoute>
+            <AdminOverviewView
+              onNavigate={navigate}
+              onSignOut={handleSignOut}
+              adminUser={user}
+              currentRoute={currentRoute}
+              initialTab={
+                cleanRoute === '/admin/settings'
+                  ? 'settings'
+                  : cleanRoute === '/admin/applications' || cleanRoute.startsWith('/admin/applications/')
+                    ? 'applications'
+                    : cleanRoute === '/admin/review' || cleanRoute.startsWith('/admin/review/')
+                      ? 'review'
+                      : cleanRoute === '/admin/children' || cleanRoute.startsWith('/admin/children/')
+                        ? 'children'
+                        : cleanRoute === '/admin/attendance' || cleanRoute.startsWith('/admin/attendance/')
+                          ? 'attendance'
+                          : cleanRoute === '/admin/reports' || cleanRoute.startsWith('/admin/reports/')
+                            ? 'reports'
+                            : cleanRoute === '/admin/messages'
+                              ? 'messages'
+                              : cleanRoute === '/admin/volunteers'
+                                ? 'volunteers'
+                                : cleanRoute === '/admin/parents' || cleanRoute.startsWith('/admin/parents/')
+                                  ? 'parents'
+                                  : cleanRoute === '/admin/events'
+                                    ? 'events'
+                                    : cleanRoute === '/admin/duty-devices'
+                                      ? 'duty_devices'
+                                      : cleanRoute === '/admin/incidents'
+                                        ? 'incidents'
+                                        : cleanRoute === '/admin/escalations'
+                                          ? 'escalations'
+                                          : cleanRoute === '/admin/operations'
+                                            ? 'operations'
+                                            : cleanRoute === '/admin/wristbands/inventory'
+                                              ? 'wristbands_inventory'
+                                              : cleanRoute === '/admin/wristbands' || cleanRoute.startsWith('/admin/wristbands')
+                                                ? 'wristbands'
+                                                : 'overview'
+              }
+            />
+          </AdminProtectedRoute>
+        );
+      }
+    }
+
+    if (cleanRoute.startsWith('/duty/location/') || cleanRoute.startsWith('/duty/scan/') || cleanRoute.startsWith('/event-duty/location-access/')) {
+      const scanToken = cleanRoute.split('/').pop()?.split('?')[0] || '';
+      return (
+        <LocationScanView
+          token={scanToken}
+          user={user}
+          onNavigate={navigate}
+        />
+      );
+    }
+
+    if (cleanRoute === '/privacy') {
+      return <PrivacyPolicyView onNavigate={navigate} />;
+    }
+    if (cleanRoute === '/terms') {
+      return <TermsOfServiceView onNavigate={navigate} />;
+    }
+    if (cleanRoute === '/child-safety') {
+      return <ChildSafetyView onNavigate={navigate} />;
+    }
+    if (cleanRoute === '/contact') {
+      return <ContactView onNavigate={navigate} />;
+    }
+
+    switch (cleanRoute) {
+      case '/':
+        return (
+          <LandingPage
+            onNavigate={navigate}
+            isMobileLandingView={isMobileLandingView}
+            onToggleMobileView={(mobile) => setIsMobileLandingView(mobile)}
+            parentCtaRoute={pRoute}
+            volunteerCtaRoute={vRoute}
+          />
+        );
+      case '/parent/create-account':
+        return (
+          <CreateAccountView
+            onNavigate={navigate}
+            onSetParentEmail={(email) => setParentEmail(email)}
+            onUpdateProfile={(updated) => setParentProfile(updated)}
+            onSignInSuccess={handleSignInSuccess}
+          />
+        );
+      case '/parent/check-email':
+        return (
+          <CheckEmailView
+            onNavigate={navigate}
+            parentEmail={parentEmail}
+          />
+        );
+      case '/parent/verify-email':
+        return (
+          <VerifyEmailView
+            onNavigate={navigate}
+          />
+        );
+      case '/parent/sign-in':
+        return (
+          <SignInView
+            onNavigate={navigate}
+            onSetParentEmail={(email) => setParentEmail(email)}
+            onSignInSuccess={handleSignInSuccess}
+          />
+        );
+      case '/parent/forgot-password':
+        return <ForgotPasswordView onNavigate={navigate} />;
+      case '/parent/new-password':
+        return <NewPasswordView onNavigate={navigate} />;
+      case '/parent/profile-setup':
+        return (
+          <ProtectedRoute requiresCompletedProfile={false}>
+            <ProfileSetupView
+              key="onboarding"
+              mode="onboarding"
+              onNavigate={navigate}
+              initialProfile={parentProfile}
+              onUpdateProfile={(updated) => setParentProfile(updated)}
+            />
+          </ProtectedRoute>
+        );
+      case '/parent/profile/edit':
+        return (
+          <ProtectedRoute requiresCompletedProfile={false}>
+            <ProfileSetupView
+              key="edit"
+              mode="edit"
+              onNavigate={navigate}
+              initialProfile={parentProfile}
+              onUpdateProfile={(updated) => setParentProfile(updated)}
+            />
+          </ProtectedRoute>
+        );
+      case '/parent/home':
+        return (
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <ParentHomeView
+              onNavigate={navigate}
+              parentProfile={parentProfile}
+              childrenList={childrenList}
+              onAddChild={handleAddChild}
+              onStartNewChild={handleStartNewChild}
+              onResumeChildDraft={handleResumeChildDraft}
+              onSignOut={handleSignOut}
+              onDeleteChild={handleDeleteChild}
+              initialTab="Home"
+              volunteerProfile={volunteerProfile}
+              activeEvent={activeEvent}
+              onSwitchExperience={handleSwitchExperience}
+              isSwitchingExperience={isSwitchingExperience}
+              onUpdateProfile={(updated) => setParentProfile(normalizeParentProfile(updated))}
+            />
+          </ProtectedRoute>
+        );
+      case '/parent/profile':
+        return (
+          <ProtectedRoute requiresCompletedProfile={false}>
+            <ParentHomeView
+              onNavigate={navigate}
+              parentProfile={parentProfile}
+              childrenList={childrenList}
+              onAddChild={handleAddChild}
+              onStartNewChild={handleStartNewChild}
+              onResumeChildDraft={handleResumeChildDraft}
+              onSignOut={handleSignOut}
+              onDeleteChild={handleDeleteChild}
+              initialTab="Profile"
+              volunteerProfile={volunteerProfile}
+              activeEvent={activeEvent}
+              onSwitchExperience={handleSwitchExperience}
+              isSwitchingExperience={isSwitchingExperience}
+              onUpdateProfile={(updated) => setParentProfile(normalizeParentProfile(updated))}
+            />
+          </ProtectedRoute>
+        );
+      case '/parent/children':
+        return (
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <ParentHomeView
+              onNavigate={navigate}
+              parentProfile={parentProfile}
+              childrenList={childrenList}
+              onAddChild={handleAddChild}
+              onStartNewChild={handleStartNewChild}
+              onResumeChildDraft={handleResumeChildDraft}
+              onSignOut={handleSignOut}
+              onDeleteChild={handleDeleteChild}
+              initialTab="Children"
+              volunteerProfile={volunteerProfile}
+              activeEvent={activeEvent}
+              onSwitchExperience={handleSwitchExperience}
+              isSwitchingExperience={isSwitchingExperience}
+              onUpdateProfile={(updated) => setParentProfile(normalizeParentProfile(updated))}
+            />
+          </ProtectedRoute>
+        );
+      case '/parent/children/new':
+        return (
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <AddChildStep1View
+              onNavigate={navigate}
+              initialDraft={addChildDraft}
+              onSaveDraft={handleSaveDraft}
+            />
+          </ProtectedRoute>
+        );
+      case '/parent/children/new/care-details':
+        return (
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <AddChildStep2View
+              onNavigate={navigate}
+              draft={addChildDraft}
+              onSaveDraft={handleSaveDraft}
+            />
+          </ProtectedRoute>
+        );
+      case '/parent/children/new/health-and-support':
+      case '/parent/children/new/health-and-care':
+        return (
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <AddChildStep3View
+              onNavigate={navigate}
+              draft={addChildDraft}
+              onSaveDraft={handleSaveDraft}
+            />
+          </ProtectedRoute>
+        );
+      case '/parent/children/new/pickup-person':
+        return (
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <AddChildStep4View
+              onNavigate={navigate}
+              draft={addChildDraft}
+              parentProfile={parentProfile}
+              onSaveDraft={handleSaveDraft}
+            />
+          </ProtectedRoute>
+        );
+      case '/parent/children/new/review':
+        return (
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <AddChildStep5View
+              onNavigate={navigate}
+              draft={addChildDraft}
+              parentProfile={parentProfile}
+              onSubmitReview={handleSubmitReview}
+              onSaveDraft={handleSaveDraft}
+            />
+          </ProtectedRoute>
+        );
+      case '/parent/children/review-sent':
+        return (
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <ReviewSentConfirmationView
+              onNavigate={navigate}
+              submittedChild={lastSubmittedChild || childrenList.find(c => c.status === 'Under review') || null}
+              onStartNewChild={handleStartNewChild}
+            />
+          </ProtectedRoute>
+        );
+      case '/parent/passes':
+        return (
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <ParentHomeView
+              onNavigate={navigate}
+              parentProfile={parentProfile}
+              childrenList={childrenList}
+              onAddChild={handleAddChild}
+              onStartNewChild={handleStartNewChild}
+              onResumeChildDraft={handleResumeChildDraft}
+              onSignOut={handleSignOut}
+              onDeleteChild={handleDeleteChild}
+              initialTab="Passes"
+              volunteerProfile={volunteerProfile}
+              activeEvent={activeEvent}
+              onSwitchExperience={handleSwitchExperience}
+              isSwitchingExperience={isSwitchingExperience}
+              onUpdateProfile={(updated) => setParentProfile(normalizeParentProfile(updated))}
+            />
+          </ProtectedRoute>
+        );
+      case '/parent/volunteer-request':
+        return (
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <VolunteerRequestView
+              onNavigate={navigate}
+              parentProfile={parentProfile}
+              onRefreshAccess={checkAuth}
+            />
+          </ProtectedRoute>
+        );
+      case '/volunteer/forgot-password':
+        return <VolunteerForgotPasswordView onNavigate={navigate} />;
+      case '/volunteer/reset-password':
+        return <VolunteerResetPasswordView onNavigate={navigate} />;
+      case '/volunteer/sign-in':
+        return (
+          <VolunteerSignInView
+            onNavigate={navigate}
+            onSignInSuccess={async (u, p) => {
+              setUser(u);
+              setActiveExperience('volunteer');
+              safeStorage.setItem('koinonia_active_experience', 'volunteer');
+              if (p) {
+                setVolunteerProfile(p);
+              }
+              await checkAuth();
+            }}
+          />
+        );
+      case '/volunteer/create-account':
+        return (
+          <VolunteerCreateAccountView
+            onNavigate={navigate}
+            onSignInSuccess={async (u, p) => {
+              setUser(u);
+              setActiveExperience('volunteer');
+              safeStorage.setItem('koinonia_active_experience', 'volunteer');
+              if (p) {
+                setVolunteerProfile(p);
+              }
+              await checkAuth();
+            }}
+          />
+        );
+      case '/admin/accept-invite':
+        return <AdminAcceptInviteView onNavigate={navigate} />;
+      case '/admin/sign-in':
+        if (user && (user.role === 'admin' || user.role === 'super_admin' || user.role === 'team')) {
+          return <RedirectToRoute route="/admin/overview" />;
+        }
+        return (
+          <AdminSignInView
+            onNavigate={navigate}
+            onSignInSuccess={async (u) => {
+              setUser(u);
+              await checkAuth();
+            }}
+          />
+        );
+      case '/admin/forgot-password':
+        return <AdminForgotPasswordView onNavigate={navigate} />;
+      case '/admin/reset-password':
+        return <AdminResetPasswordView onNavigate={navigate} />;
+      case '/volunteer/verify-email':
+        return (
+          <VolunteerVerifyEmailView
+            onNavigate={navigate}
+          />
+        );
+      case '/volunteer/pending-review':
+        return (
+          <VolunteerProtectedRoute>
+            <VolunteerPendingReviewView
+              onNavigate={navigate}
+              volunteerProfile={volunteerProfile}
+              onSignOut={handleSignOut}
+              hasParentProfile={!!parentProfile && !!parentProfile.email}
+              onRefreshAccess={checkAuth}
+            />
+          </VolunteerProtectedRoute>
+        );
+      case '/volunteer/dashboard':
+      case '/volunteer/event':
+      case '/volunteer/scan':
+      case '/volunteer/children':
+      case '/volunteer/reports':
+      case '/volunteer/profile':
+      case '/volunteer/pickup':
+      case '/volunteer/team-alerts':
+      case '/volunteer/readiness':
+      case '/volunteer/wristbands':
+        return (
+          <VolunteerProtectedRoute>
+            <VolunteerEventDashboardView
+              onNavigate={navigate}
+              volunteerProfile={volunteerProfile}
+              onSignOut={handleSignOut}
+              isOffline={isOffline}
+              hasParentProfile={!!parentProfile && !!parentProfile.email}
+              currentRoute={currentRoute}
+              onSwitchExperience={handleSwitchExperience}
+              isSwitchingExperience={isSwitchingExperience}
+            />
+          </VolunteerProtectedRoute>
+        );
+      default:
+        return (
+          <LandingPage
+            onNavigate={navigate}
+            isMobileLandingView={isMobileLandingView}
+            onToggleMobileView={(mobile) => setIsMobileLandingView(mobile)}
+            parentCtaRoute={pRoute}
+            volunteerCtaRoute={vRoute}
+          />
+        );
+    }
+  };
+
+  const seoProps = getSeoPropsForRoute(currentRoute);
+
+  return (
+    <div className="min-h-screen bg-[#FAF9F6] dark:bg-[#19191A] text-[#18181B] dark:text-[#F0EBE3] selection:bg-[#C59B27]/30 selection:text-[#18181B]">
+      {seoProps && <Seo {...seoProps} />}
+      {isOffline && (
+        <div className="bg-amber-600 text-white text-xs font-semibold py-2.5 px-4 text-center sticky top-0 z-[100] flex items-center justify-center gap-2 shadow-md">
+          <svg className="w-4 h-4 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m2.829 2.829L21 21M15.536 8.464a5 5 0 010 7.072m0 0l-2.829-2.829m-4.243 2.829a4.978 4.978 0 01-1.414-3.536 4.978 4.978 0 011.414-3.536m0 0l2.828 2.829M12 12a1 1 0 112 0 1 1 0 01-2 0z" />
+          </svg>
+          <span>
+            {user?.role === 'admin' 
+              ? 'You are offline. Please reconnect before making changes.'
+              : user?.role === 'staff' || user?.role === 'volunteer'
+                ? 'You are offline. Scanning may be limited until connection returns.'
+                : 'You are offline. Some updates will appear when your connection returns.'}
+          </span>
+        </div>
+      )}
+      <Suspense fallback={<AppLoadingScreen title="Loading module..." />}>
+        {renderCurrentRoute()}
+      </Suspense>
+
+      {showPreloader && currentRoute !== '/' && !['/privacy', '/terms', '/child-safety', '/contact'].includes(currentRoute.split('?')[0]) && (
+        <AppPreloader 
+          isAppReady={!isCheckingAuth} 
+          onComplete={() => setShowPreloader(false)} 
+        />
+      )}
+
+      {/* Screen Navigator strictly restricted: suppressed on ALL Parent & Volunteer experiences */}
+      {import.meta.env.DEV && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
+       currentRoute.startsWith('/admin') &&
+       !currentRoute.split('?')[0].startsWith('/admin/wristbands') && (
+        <DevNavigator
+          currentRoute={currentRoute}
+          onNavigate={navigate}
+          isMobileLandingView={isMobileLandingView}
+          onToggleLandingView={(mobile) => setIsMobileLandingView(mobile)}
+        />
+      )}
+    </div>
+  );
+}
+

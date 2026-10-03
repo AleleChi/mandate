@@ -1,0 +1,2318 @@
+/// <reference types="vite/client" />
+
+import { safeStorage } from '../utils/storage';
+import { buildApiUrl, getApiBaseUrl } from '../utils/urlHelper';
+
+const TOKEN_KEY = 'koinonia_token';
+
+const FORBIDDEN_WORDS = [
+  'validation',
+  'database',
+  'server',
+  'api',
+  'token',
+  'workflow',
+  'portal',
+  'system',
+  'authentication',
+  'registration',
+  'sql',
+  'postgres',
+  'sqlite',
+  'stack',
+  'exception'
+];
+
+export class ParentApiError extends Error {
+  description: string;
+  code?: string;
+  data?: any;
+  status?: number;
+  constructor(message: string, description: string = 'Please try again.', code?: string, data?: any, status?: number) {
+    super(message);
+    this.name = 'ParentApiError';
+    this.description = description;
+    this.code = code;
+    this.data = data;
+    this.status = status;
+  }
+}
+
+export function extractApiError(err: any): { message: string; description: string; code?: string; status?: number } {
+  console.error('[extractApiError - Caught Source Error]:', err);
+  if (err instanceof ParentApiError) {
+    return { message: err.message, description: err.description, code: err.code, status: err.status };
+  }
+  const raw = (typeof err === 'string' ? err : err?.message || '').trim();
+  if (!raw || raw.includes('Failed to fetch') || raw.includes('NetworkError') || raw.includes('Load failed') || raw.includes('Connection problem')) {
+    return { message: 'Connection problem', description: 'Please check your internet and try again.' };
+  }
+  const lower = raw.toLowerCase();
+  const containsForbidden = FORBIDDEN_WORDS.some(w => lower.includes(w));
+  if (containsForbidden || raw.includes('Request failed (5') || raw.includes('Request failed (4')) {
+    return { message: 'Something went wrong', description: 'Please try again.', code: err?.code };
+  }
+  return { message: raw, description: 'Please try again.', code: err?.code };
+}
+
+export const api = {
+  getToken: () => safeStorage.getItem(TOKEN_KEY),
+  setToken: (token: string) => safeStorage.setItem(TOKEN_KEY, token),
+  clearToken: () => safeStorage.removeItem(TOKEN_KEY),
+
+  async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const token = safeStorage.getItem(TOKEN_KEY);
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string> || {})
+    };
+    if (options.body instanceof FormData) {
+      delete headers['Content-Type'];
+    }
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const url = buildApiUrl(endpoint);
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        credentials: options.credentials || 'same-origin',
+        ...options,
+        headers
+      });
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        throw err;
+      }
+      // Retry once after 350ms for transient dev server restarts / network drops
+      try {
+        await new Promise((r) => setTimeout(r, 350));
+        res = await fetch(url, {
+          ...options,
+          headers
+        });
+      } catch (retryErr: any) {
+        if (retryErr?.name === 'AbortError') {
+          throw retryErr;
+        }
+        throw new ParentApiError('Connection problem', 'Please check your internet and try again.');
+      }
+    }
+
+    // Handle temporary 502/503/504 server restarts gracefully with a quick retry
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      try {
+        await new Promise((r) => setTimeout(r, 500));
+        res = await fetch(url, {
+          ...options,
+          headers
+        });
+      } catch (_) {
+        // Proceed with response handling below
+      }
+    }
+
+    // Safely parse JSON or handle HTML fallback responses
+    let data: any = {};
+    const contentType = res.headers.get('Content-Type') || '';
+    if (contentType.includes('application/json')) {
+      data = await res.json().catch(() => ({}));
+    } else {
+      const text = await res.text().catch(() => '');
+      if (text.trim().startsWith('<')) {
+        if (!res.ok) {
+          if (res.status === 401) throw new ParentApiError('Unauthorized', 'Please log in to continue.', 'UNAUTHORIZED', undefined, 401);
+          if (res.status === 403) throw new ParentApiError('Access denied', 'You do not have permission to access this resource.', 'FORBIDDEN', undefined, 403);
+          if (res.status === 404) throw new ParentApiError('Not found', 'The requested resource was not found.', 'NOT_FOUND', undefined, 404);
+          throw new ParentApiError('Server error', `The server returned an invalid response (status ${res.status}).`, 'SERVER_ERROR', undefined, res.status);
+        }
+        throw new ParentApiError('Connection problem', 'The server returned an invalid response. Please try again.');
+      }
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { error: text || `Request failed (${res.status})` };
+      }
+    }
+
+    if (!res.ok) {
+      if (res.status === 401) {
+        throw new ParentApiError('Your session has expired. Please sign in again.', 'Please sign in again to continue.', 'UNAUTHORIZED', data, 401);
+      }
+      if (res.status === 403) {
+        const forbiddenMsg = data?.error || data?.message || 'You do not have permission to perform this action.';
+        throw new ParentApiError(forbiddenMsg, 'You do not have permission to perform this action.', 'FORBIDDEN', data, 403);
+      }
+
+      let rawError = data.error || data.message || `Request failed (${res.status})`;
+      if (typeof rawError === 'string' && rawError.trim().toLowerCase() === 'authenticate') {
+        rawError = 'Twilio authentication failed (Error 20003). Verify TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in server configuration.';
+      }
+      const errorCode = data.code;
+      console.error('[api.request Error Details]:', { url, status: res.status, rawError, errorCode, data });
+      const lower = rawError.toLowerCase();
+      const containsForbidden = FORBIDDEN_WORDS.some(w => lower.includes(w));
+      if (containsForbidden || res.status >= 500) {
+        throw new ParentApiError('Something went wrong', 'Please try again.', errorCode, data, res.status);
+      }
+      throw new ParentApiError(rawError, 'Please try again.', errorCode, data, res.status);
+    }
+    return data as T;
+  },
+
+  async getPublicAppMedia() {
+    return api.request<{
+      success: boolean;
+      media: {
+        parentDashboardHero: { url: string | null; thumbnailUrl: string | null };
+        volunteerDashboardHero: { url: string | null; thumbnailUrl: string | null };
+        defaultEventHero: { url: string | null; thumbnailUrl: string | null };
+      };
+    }>('/api/public/app-media');
+  },
+
+  auth: {
+    async createAccount(payload: any) {
+      const res = await api.request<any>('/api/auth/create-account', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      if (res.token) api.setToken(res.token);
+      return res;
+    },
+    async signIn(payload: any) {
+      const res = await api.request<any>('/api/auth/sign-in', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      if (res.token) api.setToken(res.token);
+      return res;
+    },
+    async signOut() {
+      api.clearToken();
+      return api.request('/api/auth/sign-out', { method: 'POST' }).catch(() => ({}));
+    },
+    async getMe() {
+      return api.request<{ user: any; profile: any }>('/api/auth/me');
+    },
+    async getAccess() {
+      return api.request<any>('/api/me/access');
+    },
+    async switchExperience(targetExperience: 'parent' | 'volunteer') {
+      return api.request<{ success: boolean; activeExperience?: string; targetRoute?: string; error?: string }>('/api/auth/switch-experience', {
+        method: 'POST',
+        body: JSON.stringify({ targetExperience })
+      });
+    },
+    async forgotPassword(email: string) {
+      return api.request<any>('/api/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email })
+      });
+    },
+    async resetPassword(token: string, password: string) {
+      return api.request<any>('/api/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ token, password })
+      });
+    },
+    async verifyEmail(token: string) {
+      return api.request<any>('/api/auth/verify-email', {
+        method: 'POST',
+        body: JSON.stringify({ token })
+      });
+    },
+    async getRegistrationStatus(eventId?: string) {
+      const qs = eventId ? `?eventId=${encodeURIComponent(eventId)}` : '';
+      return api.request<{
+        success: boolean;
+        hasEvent: boolean;
+        eventName: string;
+        eventId: string | null;
+        parent: {
+          isOpen: boolean;
+          state: 'open' | 'not_open_yet' | 'closed' | 'disabled';
+          opensAt: string | null;
+          closesAt: string | null;
+          opensAtFormatted: string | null;
+          closesAtFormatted: string | null;
+        };
+        volunteer: {
+          isOpen: boolean;
+          state: 'open' | 'not_open_yet' | 'closed';
+          opensAt: string | null;
+          closesAt: string | null;
+          opensAtFormatted: string | null;
+          closesAtFormatted: string | null;
+        };
+      }>(`/api/auth/registration-status${qs}`);
+    },
+    async resendVerification(email: string) {
+      return api.request<any>('/api/auth/resend-verification', {
+        method: 'POST',
+        body: JSON.stringify({ email })
+      });
+    },
+    passkeys: {
+      async getList() {
+        return api.request<any>('/api/auth/passkeys');
+      },
+      async revoke(passkeyId: string) {
+        return api.request<any>(`/api/auth/passkeys/${passkeyId}`, {
+          method: 'DELETE'
+        });
+      },
+      async registerOptions(rpId?: string) {
+        const targetRpId = rpId || (typeof window !== 'undefined' ? window.location.hostname : undefined);
+        return api.request<any>('/api/auth/passkeys/register/options', {
+          method: 'POST',
+          body: JSON.stringify({ rpId: targetRpId })
+        });
+      },
+      async registerVerify(credential: any, deviceName: string) {
+        return api.request<any>('/api/auth/passkeys/register/verify', {
+          method: 'POST',
+          body: JSON.stringify({ credential, deviceName })
+        });
+      },
+      async loginOptions(email?: string, rpId?: string) {
+        const targetRpId = rpId || (typeof window !== 'undefined' ? window.location.hostname : undefined);
+        return api.request<any>('/api/auth/passkeys/login/options', {
+          method: 'POST',
+          body: JSON.stringify({ email: email ? email.trim().toLowerCase() : undefined, rpId: targetRpId })
+        });
+      },
+      async loginVerify(credential: any, challengeKey: string) {
+        const res = await api.request<any>('/api/auth/passkeys/login/verify', {
+          method: 'POST',
+          body: JSON.stringify({ credential, challengeKey })
+        });
+        if (res.token) api.setToken(res.token);
+        return res;
+      },
+      async verifyAction(credential: any, actionName: string, childId?: string) {
+        return api.request<any>('/api/auth/passkeys/verify-action', {
+          method: 'POST',
+          body: JSON.stringify({ credential, actionName, childId })
+        });
+      }
+    }
+  },
+
+  parent: {
+    async getProfile() {
+      return api.request<any>('/api/parent/profile');
+    },
+    async updateProfile(profile: any) {
+      return api.request<any>('/api/parent/profile', {
+        method: 'PUT',
+        body: JSON.stringify(profile)
+      });
+    },
+    async updateWhatsAppConsent(payload: { action: 'opt_in' | 'opt_out'; whatsappNumber?: string }) {
+      return api.request<{ success: boolean; message: string; profile: any }>('/api/parent/whatsapp/consent', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getHome() {
+      const headers: Record<string, string> = {};
+      if (typeof window !== 'undefined' && localStorage.getItem('koinonia_pass_biometric_unlock') === 'true') {
+        headers['x-biometric-protected'] = 'true';
+      }
+      return api.request<any>('/api/parent/home', { headers });
+    },
+    async getPasses() {
+      return api.request<any>('/api/parent/passes');
+    },
+    async getPass(passId: string) {
+      return api.request<any>(`/api/parent/passes/${passId}`);
+    },
+    async getChildren() {
+      const headers: Record<string, string> = {};
+      if (typeof window !== 'undefined' && localStorage.getItem('koinonia_pass_biometric_unlock') === 'true') {
+        headers['x-biometric-protected'] = 'true';
+      }
+      return api.request<any[]>('/api/parent/children', { headers });
+    },
+    async saveChildDraft(draft: any, childId?: string) {
+      const endpoint = childId ? `/api/parent/children/${childId}/draft` : '/api/parent/children/draft';
+      return api.request<any>(endpoint, {
+        method: childId ? 'PUT' : 'POST',
+        body: JSON.stringify(draft)
+      });
+    },
+    async submitChildReview(childId: string, finalDraft?: any) {
+      return api.request<any>(`/api/parent/children/${childId}/submit`, {
+        method: 'POST',
+        body: JSON.stringify(finalDraft || {})
+      });
+    },
+    async getChildStatus(childId: string) {
+      return api.request<any>(`/api/parent/children/${childId}/status`);
+    },
+    async getChildPass(childId: string, passToken?: string) {
+      const headers: Record<string, string> = {};
+      const isBio = typeof window !== 'undefined' && localStorage.getItem('koinonia_pass_biometric_unlock') === 'true';
+      if (isBio) {
+        headers['x-biometric-protected'] = 'true';
+        if (passToken) {
+          headers['x-pass-token'] = passToken;
+        }
+      }
+      return api.request<any>(`/api/parent/children/${childId}/pass`, { headers });
+    },
+    async deleteChild(childId: string) {
+      return api.request<any>(`/api/parent/children/${childId}`, {
+        method: 'DELETE'
+      });
+    },
+    async getNotifications(unreadOnly = false, role?: string, page?: number, limit?: number) {
+      let url = `/api/notifications?unread=${unreadOnly}`;
+      if (role) {
+        url += `&role=${role}`;
+      }
+      if (page) {
+        url += `&page=${page}`;
+      }
+      if (limit) {
+        url += `&limit=${limit}`;
+      }
+      const res = await api.request<any>(url);
+      if (res && Array.isArray(res.notifications)) return res.notifications;
+      if (Array.isArray(res)) return res;
+      return [];
+    },
+    async getNotificationsPaginated(unreadOnly = false, role?: string, page = 1, limit = 25) {
+      let url = `/api/notifications?unread=${unreadOnly}&page=${page}&limit=${limit}`;
+      if (role) url += `&role=${role}`;
+      return api.request<{ notifications: any[]; total: number; page: number; limit: number; hasMore: boolean }>(url);
+    },
+    async markAllNotificationsAsRead() {
+      return api.request<any>('/api/notifications/read-all', {
+        method: 'POST'
+      });
+    },
+    async markNotificationAsRead(id: string) {
+      return api.request<any>(`/api/notifications/${id}/read`, {
+        method: 'POST'
+      });
+    },
+    async savePushSubscription(subscription: any) {
+      return api.request<any>('/api/notifications/push/subscribe', {
+        method: 'POST',
+        body: JSON.stringify(subscription)
+      });
+    },
+    async unsubscribePushSubscription(endpoint: string) {
+      return api.request<any>('/api/notifications/push/unsubscribe', {
+        method: 'POST',
+        body: JSON.stringify({ endpoint })
+      });
+    },
+    async getPushStatus(endpoint?: string) {
+      const queryStr = endpoint ? `?endpoint=${encodeURIComponent(endpoint)}` : '';
+      return api.request<{ subscribed?: boolean; isSubscribed?: boolean; subscriptionCount?: number }>(`/api/notifications/push/status${queryStr}`);
+    },
+    async sendTestPush() {
+      return api.request<{ success: boolean; sentCount: number; message: string }>('/api/notifications/push/test', {
+        method: 'POST'
+      });
+    },
+    async getVapidPublicKey() {
+      return api.request<{ publicKey: string }>('/api/notifications/push/vapid-key');
+    },
+    async getNotificationPreferences() {
+      return api.request<{ soundEnabled: boolean; pushEnabled: boolean; emailEnabled: boolean }>('/api/notifications/preferences');
+    },
+    async updateNotificationPreferences(payload: { soundEnabled?: boolean; pushEnabled?: boolean; emailEnabled?: boolean }) {
+      return api.request<{ soundEnabled: boolean; pushEnabled: boolean; emailEnabled: boolean }>('/api/notifications/preferences', {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      });
+    }
+  },
+
+  volunteer: {
+    async createAccount(payload: any) {
+      const res = await api.request<any>('/api/volunteer/create-account', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      if (res.token) api.setToken(res.token);
+      return res;
+    },
+    async createAccountWithPhoto(formData: FormData) {
+      const res = await api.request<any>('/api/volunteer/create-account', {
+        method: 'POST',
+        body: formData
+      });
+      if (res.token) api.setToken(res.token);
+      return res;
+    },
+    async signIn(payload: any) {
+      const res = await api.request<any>('/api/volunteer/sign-in', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      if (res.token) api.setToken(res.token);
+      return res;
+    },
+    async getMe() {
+      return api.request<{ user: any; profile: any }>('/api/volunteer/me');
+    },
+    async getProfile() {
+      return api.request<any>('/api/volunteer/me');
+    },
+    async getStatus() {
+      return api.request<{ success: boolean; user: any; profile: any; volunteerProfile: any; nextRoute?: string }>('/api/volunteer/me/status');
+    },
+    async requestAccess(payload: any) {
+      return api.request<any>('/api/volunteer/request', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getEventHome() {
+      return api.request<{ event: any; stats: { expected: number; checkedIn: number; pickedUp: number; attention: number }; attentionItems: any[]; dutyLocation?: any }>('/api/volunteer/event-home');
+    },
+    async updateProfile(profile: any) {
+      if (profile instanceof FormData) {
+        return api.request<any>('/api/volunteer/me/profile', {
+          method: 'PATCH',
+          body: profile
+        });
+      }
+      return api.request<any>('/api/volunteer/me/profile', {
+        method: 'PATCH',
+        body: JSON.stringify(profile)
+      });
+    },
+    async updateWhatsAppConsent(payload: { action: 'opt_in' | 'opt_out'; whatsappNumber?: string }) {
+      return api.request<{ success: boolean; message: string; consentStatus: string; isDualRole?: boolean; profile?: any }>('/api/volunteer/whatsapp/consent', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async resendVerification(email: string) {
+      return api.request<any>('/api/volunteer/resend-verification', {
+        method: 'POST',
+        body: JSON.stringify({ email })
+      });
+    },
+    async requestPasswordReset(email: string) {
+      return api.request<any>('/api/volunteer/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email })
+      });
+    },
+    async resetPassword(token: string, password: string) {
+      return api.request<any>('/api/volunteer/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ token, password })
+      });
+    },
+    async searchChildren(q: string) {
+      return api.request<any[]>(`/api/volunteer/children/search?q=${encodeURIComponent(q)}`);
+    },
+    async lookupPass(payload: { passReference?: string; childId?: string; childEventEntryId?: string }) {
+      return api.request<any>('/api/volunteer/pass/lookup', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async resolveIdentifier(payload: { eventId?: string; identifier: string; identifierType?: 'pass' | 'wristband_code' | 'nfc_uid' }) {
+      return api.request<{
+        success: boolean;
+        identifierType: 'pass' | 'wristband_code' | 'nfc_uid';
+        childEventEntryId: string;
+        eventId: string;
+        sourceReference: string;
+        wristbandId?: string;
+        wristbandCode?: string;
+        childStatus?: string;
+      }>('/api/volunteer/children/resolve-identifier', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async checkIn(payload: { passReference?: string; childId?: string; childEventEntryId?: string }) {
+      return api.request<any>('/api/volunteer/check-in', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async checkOut(payload: { passReference?: string; childId?: string; childEventEntryId?: string }) {
+      return api.request<any>('/api/volunteer/check-out', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getCheckInHistory() {
+      return api.request<any[]>('/api/volunteer/check-in-history');
+    },
+    async lookupPickup(payload: { passCode: string; source?: string }) {
+      return api.request<any>('/api/volunteer/pickup/lookup', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async markPickup(payload: { childId?: string; passCode?: string; pickupPersonId?: string; source?: string }) {
+      return api.request<any>('/api/volunteer/pickup/mark', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async markChildPickedUp(payload: { childId?: string; passCode?: string; pickupPersonId?: string; source?: string }) {
+      return api.request<any>('/api/volunteer/pickup/mark', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getPickupHome() {
+      return api.request<any>('/api/volunteer/pickup-home');
+    },
+    async getChildren(params: { q?: string; search?: string; status?: string; limit?: number; page?: number; ageGroup?: string; location?: string }) {
+      const queryParams = new URLSearchParams();
+      if (params.q) queryParams.append('q', params.q);
+      if (params.search) queryParams.append('search', params.search);
+      if (params.status) queryParams.append('status', params.status);
+      if (params.limit) queryParams.append('limit', params.limit.toString());
+      if (params.page) queryParams.append('page', params.page.toString());
+      if (params.ageGroup) queryParams.append('ageGroup', params.ageGroup);
+      if (params.location) queryParams.append('location', params.location);
+      return api.request<{
+        items: any[];
+        pagination: {
+          page: number;
+          limit: number;
+          total: number;
+          totalPages: number;
+          hasNext: boolean;
+          hasPrevious: boolean;
+        };
+      }>(`/api/volunteer/children?${queryParams.toString()}`);
+    },
+    async getChildProfile(childId: string) {
+      return api.request<any>(`/api/volunteer/children/${childId}`);
+    },
+    async preparePickup(childId: string) {
+      return api.request<any>('/api/volunteer/pickup/prepare-child', {
+        method: 'POST',
+        body: JSON.stringify({ childId })
+      });
+    },
+    async getReports() {
+      return api.request<any>('/api/volunteer/reports');
+    },
+    async submitFinalReport(notes: string) {
+      return api.request<any>('/api/volunteer/reports/submit', {
+        method: 'POST',
+        body: JSON.stringify({ notes })
+      });
+    },
+    async getAttentionItems() {
+      return api.request<any[]>('/api/volunteer/attention-items');
+    },
+    async getAttentionItem(itemId: string) {
+      return api.request<any>(`/api/volunteer/attention-items/${itemId}`);
+    },
+    async reviewAttentionItem(itemId: string, payload: { note: string }) {
+      return api.request<any>(`/api/volunteer/attention-items/${itemId}/review`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async resolveAttentionItem(itemId: string, payload: { note: string }) {
+      return api.request<any>(`/api/volunteer/attention-items/${itemId}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async verifyAttentionItem(itemId: string, payload: { note: string }) {
+      return api.request<any>(`/api/volunteer/attention-items/${itemId}/verify`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async escalateAttentionItem(itemId: string, payload: { note: string }) {
+      return api.request<any>(`/api/volunteer/attention-items/${itemId}/escalate`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getSafetyAlerts() {
+      return api.request<{ success: boolean; alerts: any[] }>('/api/volunteer/safety-alerts');
+    },
+    async raiseSafetyAlert(payload: { childId?: string; childEventEntryId?: string; category: string; severity: string; locationLabel?: string; message: string; locationId?: string | null; locationDetail?: string; locationSource?: string; structuredDetails?: any }) {
+      return api.request<any>('/api/volunteer/safety-alerts', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getTeamSafetyAlerts() {
+      return api.request<any[]>('/api/volunteer/team-safety-alerts');
+    },
+    async acknowledgeSafetyAlert(id: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/volunteer/safety-alerts/${id}/acknowledge`, {
+        method: 'POST'
+      });
+    },
+    async resolveSafetyAlert(id: string, note?: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/volunteer/safety-alerts/${id}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify({ note })
+      });
+    },
+    async escalateSafetyAlert(id: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/volunteer/safety-alerts/${id}/escalate`, {
+        method: 'POST'
+      });
+    }
+  },
+
+  media: {
+    async upload(fileDataUrl: string, fileName?: string, fileType?: string) {
+      return api.request<{ id: string; provider: string; publicId: string; secureUrl: string; resourceType: string; fileType: string; url: string }>('/api/media/upload', {
+        method: 'POST',
+        body: JSON.stringify({ fileDataUrl, fileName, purpose: fileType || 'parent_profile_photo', fileType: fileType || 'parent_profile_photo' })
+      });
+    },
+    async uploadFile(file: File | Blob, purpose: string = 'parent_profile_photo', slotKey?: string) {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('purpose', purpose);
+      if (slotKey) {
+        formData.append('slotKey', slotKey);
+      }
+      return api.request<{ id: string; provider: string; publicId: string; secureUrl: string; resourceType: string; fileType: string; url: string }>('/api/media/upload', {
+        method: 'POST',
+        body: formData
+      });
+    },
+    async publicUploadFile(file: File | Blob, purpose: string = 'volunteer_profile_photo') {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('purpose', purpose);
+      return api.request<{ id: string; provider: string; publicId: string; secureUrl: string; resourceType: string; fileType: string; url: string }>('/api/media/public-upload', {
+        method: 'POST',
+        body: formData
+      });
+    }
+  },
+
+  landing: {
+    async getPublicPage() {
+      return api.request<{
+        success: boolean;
+        settings: Record<string, string>;
+        currentEvent?: any;
+      }>('/api/admin/public-landing-page');
+    }
+  },
+
+  adminUpdates: {
+    async getUpdates(filters: {
+      limit?: number;
+      page?: number;
+      status?: string;
+      type?: string;
+      senderRole?: string;
+      priority?: string;
+      search?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      eventId?: string;
+    }) {
+      const params = new URLSearchParams();
+      if (filters.limit) params.append('limit', String(filters.limit));
+      if (filters.page) params.append('page', String(filters.page));
+      if (filters.status) params.append('status', filters.status);
+      if (filters.type) params.append('type', filters.type);
+      if (filters.senderRole) params.append('senderRole', filters.senderRole);
+      if (filters.priority) params.append('priority', filters.priority);
+      if (filters.search) params.append('search', filters.search);
+      if (filters.dateFrom) params.append('dateFrom', filters.dateFrom);
+      if (filters.dateTo) params.append('dateTo', filters.dateTo);
+      if (filters.eventId) params.append('eventId', filters.eventId);
+
+      return api.request<{ updates: any[]; pagination: any }>(
+        `/api/notifications/admin/updates?${params.toString()}`
+      );
+    },
+    async markAsRead(id: string) {
+      return api.request<any>(`/api/notifications/admin/updates/${id}/read`, { method: 'POST' });
+    },
+    async markAsUnread(id: string) {
+      return api.request<any>(`/api/notifications/admin/updates/${id}/unread`, { method: 'POST' });
+    },
+    async markAllAsRead() {
+      return api.request<any>('/api/notifications/admin/updates/read-all', { method: 'POST' });
+    },
+    async archiveUpdate(id: string) {
+      return api.request<any>(`/api/notifications/admin/updates/${id}/archive`, { method: 'POST' });
+    },
+    async unarchiveUpdate(id: string) {
+      return api.request<any>(`/api/notifications/admin/updates/${id}/unarchive`, { method: 'POST' });
+    },
+    async getSummary(eventId?: string) {
+      const qs = eventId ? `?eventId=${encodeURIComponent(eventId)}` : '';
+      return api.request<{ success: boolean; summary: any }>(`/api/notifications/admin/updates/summary${qs}`);
+    },
+    async lookupWristband(payload: { eventId: string; nfcUid: string }) {
+      return api.request<{
+        success: boolean;
+        wristband: {
+          id: string;
+          eventId: string;
+          wristbandCode: string;
+          nfcUid: string;
+          status: 'available' | 'active' | 'lost' | 'damaged' | 'decommissioned';
+          isAssigned: boolean;
+          assignedChildEventEntryId: string | null;
+          assignedAt: string | null;
+        };
+      }>('/api/volunteer/wristbands/lookup', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bindWristband(payload: {
+      eventId: string;
+      childEventEntryId: string;
+      nfcUid?: string;
+      wristbandId?: string;
+      idempotencyKey?: string;
+    }) {
+      return api.request<{
+        success: boolean;
+        wristband: any;
+        assignment: any;
+      }>('/api/volunteer/wristbands/bind', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    }
+  },
+
+  wristbands: {
+    async lookup(payload: { eventId: string; nfcUid?: string; identifier?: string; wristbandCode?: string }, role: 'admin' | 'volunteer' = 'volunteer') {
+      const endpoint = role === 'admin' ? '/api/admin/wristbands/lookup' : '/api/volunteer/wristbands/lookup';
+      return api.request<{
+        success: boolean;
+        wristband: {
+          id: string;
+          eventId: string;
+          wristbandCode: string;
+          nfcUid: string | null;
+          status: 'available' | 'active' | 'lost' | 'damaged' | 'decommissioned' | 'prepared';
+          isAssigned: boolean;
+          assignedChildEventEntryId: string | null;
+          assignedAt: string | null;
+        };
+      }>(endpoint, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bind(payload: {
+      eventId: string;
+      childEventEntryId: string;
+      nfcUid?: string;
+      wristbandId?: string;
+      wristbandCode?: string;
+      idempotencyKey?: string;
+    }, role: 'admin' | 'volunteer' = 'volunteer') {
+      const endpoint = role === 'admin' ? '/api/admin/wristbands/bind' : '/api/volunteer/wristbands/bind';
+      return api.request<{
+        success: boolean;
+        wristband: any;
+        assignment: any;
+      }>(endpoint, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    }
+  },
+
+  admin: {
+    async signIn(payload: any) {
+      const res = await api.request<any>('/api/admin/sign-in', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      if (res.token) api.setToken(res.token);
+      return res;
+    },
+    async requestPasswordReset(email: string) {
+      return api.request<any>('/api/admin/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email })
+      });
+    },
+    async resetPassword(payload: any) {
+      return api.request<any>('/api/admin/reset-password', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getMe() {
+      return api.request<{ user: any; profile: any }>('/api/admin/me');
+    },
+    async lookupWristband(payload: { eventId: string; nfcUid: string }) {
+      return api.request<{
+        success: boolean;
+        wristband: {
+          id: string;
+          eventId: string;
+          wristbandCode: string;
+          nfcUid: string;
+          status: 'available' | 'active' | 'lost' | 'damaged' | 'decommissioned';
+          isAssigned: boolean;
+          assignedChildEventEntryId: string | null;
+          assignedAt: string | null;
+        };
+      }>('/api/admin/wristbands/lookup', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bindWristband(payload: {
+      eventId: string;
+      childEventEntryId: string;
+      nfcUid?: string;
+      wristbandId?: string;
+      idempotencyKey?: string;
+    }) {
+      return api.request<{
+        success: boolean;
+        wristband: any;
+        assignment: any;
+      }>('/api/admin/wristbands/bind', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async provisionWristband(eventId: string, payload: { nfcUid: string; wristbandCode?: string }) {
+      return api.request<{
+        success: boolean;
+        message: string;
+        wristband: any;
+      }>(`/api/admin/events/${eventId}/wristbands`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getWristbandInventory(eventId: string, params?: {
+      q?: string;
+      status?: string;
+      page?: number;
+      limit?: number;
+      rangeStart?: string;
+      rangeEnd?: string;
+    }) {
+      const queryParams = new URLSearchParams();
+      if (params?.q) queryParams.append('q', params.q);
+      if (params?.status) queryParams.append('status', params.status);
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
+      if (params?.rangeStart) queryParams.append('rangeStart', params.rangeStart);
+      if (params?.rangeEnd) queryParams.append('rangeEnd', params.rangeEnd);
+      const qs = queryParams.toString();
+      return api.request<{
+        success: boolean;
+        summary: {
+          total: number;
+          prepared: number;
+          available: number;
+          active: number;
+          lost: number;
+          damaged: number;
+          decommissioned: number;
+        };
+        wristbands: any[];
+        pagination: {
+          page: number;
+          limit: number;
+          totalCount: number;
+          totalPages: number;
+        };
+      }>(`/api/admin/events/${eventId}/wristbands/inventory${qs ? `?${qs}` : ''}`);
+    },
+    async prepareWristband(eventId: string, nfcUid: string) {
+      return api.request<{
+        success: boolean;
+        message: string;
+        wristband: any;
+        wristbandCode: string;
+        nfcUid: string;
+        status: 'prepared';
+        eventId: string;
+      }>(`/api/admin/events/${eventId}/wristbands/prepare`, {
+        method: 'POST',
+        body: JSON.stringify({ eventId, nfcUid })
+      });
+    },
+    async generateWristbandCodes(eventId: string, quantity: number) {
+      return api.request<{
+        success: boolean;
+        totalGenerated: number;
+        rangeStart: string;
+        rangeEnd: string;
+        wristbandCodes: string[];
+        eventId: string;
+        eventName: string;
+        message: string;
+      }>(`/api/admin/events/${eventId}/wristbands/generate-codes`, {
+        method: 'POST',
+        body: JSON.stringify({ eventId, quantity })
+      });
+    },
+    async markWristbandsReady(eventId: string, payload: { ids?: string[]; rangeStart?: string; rangeEnd?: string }) {
+      return api.request<{
+        success: boolean;
+        updatedCount: number;
+        message: string;
+      }>(`/api/admin/events/${eventId}/wristbands/mark-ready`, {
+        method: 'POST',
+        body: JSON.stringify({ eventId, ...payload })
+      });
+    },
+    async verifyPhysicalWristband(payload: { eventId: string; wristbandCode: string; nfcUid: string }) {
+      return api.request<{
+        success: boolean;
+        wristband: any;
+        status: 'available';
+        verified: boolean;
+        message: string;
+      }>('/api/admin/wristbands/verify', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async previewBulkImportWristbands(eventId: string, payload: {
+      rows?: Array<{ nfcUid: string; wristbandCode?: string }>;
+      csvText?: string;
+    }) {
+      return api.request<{
+        success: boolean;
+        preview: {
+          summary: {
+            totalRows: number;
+            validCount: number;
+            malformedCount: number;
+            duplicateInFileCount: number;
+            alreadyExistingCount: number;
+          };
+          rows: Array<{
+            rowNumber: number;
+            rawNfcUid: string;
+            normalizedNfcUid: string | null;
+            wristbandCode: string | null;
+            status: 'valid' | 'malformed' | 'duplicate_in_file' | 'already_exists';
+            errorReason?: string;
+          }>;
+        };
+      }>(`/api/admin/events/${eventId}/wristbands/bulk-import/preview`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async executeBulkImportWristbands(eventId: string, payload: {
+      rows?: Array<{ nfcUid: string; wristbandCode?: string }>;
+      csvText?: string;
+      skipErrors?: boolean;
+    }) {
+      return api.request<{
+        success: boolean;
+        result: {
+          success: boolean;
+          importedCount: number;
+          skippedCount: number;
+          wristbands: any[];
+          errors: Array<{ rowNumber: number; rawNfcUid: string; reason: string }>;
+        };
+      }>(`/api/admin/events/${eventId}/wristbands/bulk-import/execute`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getWristbandsPrintBatch(eventId: string, params?: {
+      ids?: string[];
+      rangeStart?: string;
+      rangeEnd?: string;
+      status?: string;
+      isReprint?: boolean;
+    }) {
+      const queryParams = new URLSearchParams();
+      if (params?.ids && params.ids.length > 0) queryParams.append('ids', params.ids.join(','));
+      if (params?.rangeStart) queryParams.append('rangeStart', params.rangeStart);
+      if (params?.rangeEnd) queryParams.append('rangeEnd', params.rangeEnd);
+      if (params?.status) queryParams.append('status', params.status);
+      if (params?.isReprint) queryParams.append('isReprint', 'true');
+      const qs = queryParams.toString();
+      return api.request<{
+        success: boolean;
+        items: Array<{
+          id: string;
+          wristbandCode: string;
+          qrValue: string;
+          eventName: string;
+          status: string;
+          sequenceIndex?: number;
+          totalInBatch?: number;
+        }>;
+        totalCount: number;
+        firstCode?: string | null;
+        lastCode?: string | null;
+        eventName?: string;
+      }>(`/api/admin/events/${eventId}/wristbands/print-batch${qs ? `?${qs}` : ''}`);
+    },
+    async verifyWristbandTag(eventId: string, nfcUid: string) {
+      return api.request<{
+        success: boolean;
+        wristband?: {
+          id: string;
+          wristbandCode: string;
+          status: string;
+          nfcUid: string;
+          createdAt: string;
+        };
+        error?: string;
+      }>(`/api/admin/events/${eventId}/wristbands/verify-pack`, {
+        method: 'POST',
+        body: JSON.stringify({ nfcUid })
+      });
+    },
+    async getOverview(options?: RequestInit) {
+      return api.request<any>('/api/admin/overview', options);
+    },
+    async getChildren(params?: { q?: string; filter?: string; page?: number; limit?: number }) {
+      const queryParams = new URLSearchParams();
+      if (params?.q) queryParams.append('q', params.q);
+      if (params?.filter) queryParams.append('filter', params.filter);
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
+      const queryString = queryParams.toString();
+      return api.request<{
+        success: boolean;
+        stats: any;
+        children: any[];
+        pagination?: {
+          total: number;
+          page: number;
+          limit: number;
+          pages: number;
+        };
+      }>(`/api/admin/children${queryString ? `?${queryString}` : ''}`);
+    },
+    async getAttendance(params?: { q?: string; status?: string }) {
+      const queryParams = new URLSearchParams();
+      if (params?.q) queryParams.append('q', params.q);
+      if (params?.status) queryParams.append('status', params.status);
+      queryParams.append('_t', Date.now().toString());
+      const queryString = queryParams.toString();
+      return api.request<{
+        success: boolean;
+        stats: {
+          expected: number;
+          checkedIn: number;
+          inside: number;
+          pickedUp: number;
+          notArrived: number;
+          needsAttention: number;
+        };
+        rows: any[];
+        ageGroups: any[];
+        recentScans: any[];
+        teamActivity: any[];
+        total: number;
+      }>(`/api/admin/attendance${queryString ? `?${queryString}` : ''}`);
+    },
+    async getApplications(params?: { q?: string; status?: string; page?: number; limit?: number }) {
+      const queryParams = new URLSearchParams();
+      if (params?.q) queryParams.append('q', params.q);
+      if (params?.status) queryParams.append('status', params.status);
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
+      const queryString = queryParams.toString();
+      return api.request<{
+        success: boolean;
+        applications: any[];
+        stats?: any;
+        pagination?: {
+          total: number;
+          page: number;
+          limit: number;
+          pages: number;
+        };
+      }>(`/api/admin/applications${queryString ? `?${queryString}` : ''}`);
+    },
+    async getApplicationDetails(id: string) {
+      return api.request<{ success: boolean; application: any }>(`/api/admin/applications/${id}`);
+    },
+    async updateApplicationDetails(id: string, payload: any) {
+      return api.request<any>(`/api/admin/applications/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+    },
+    async removeChild(id: string, reason: string) {
+      return api.request<any>(`/api/admin/applications/${id}/remove`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+    },
+    async restoreChild(id: string, reason?: string) {
+      return api.request<any>(`/api/admin/applications/${id}/restore`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+    },
+    async bulkRemoveChildren(applicationIds: string[], reason: string) {
+      return api.request<any>('/api/admin/applications/bulk-remove', {
+        method: 'POST',
+        body: JSON.stringify({ applicationIds, reason })
+      });
+    },
+    async bulkRestoreChildren(applicationIds: string[], reason?: string) {
+      return api.request<any>('/api/admin/applications/bulk-restore', {
+        method: 'POST',
+        body: JSON.stringify({ applicationIds, reason })
+      });
+    },
+    async bulkPurgeChildren(applicationIds: string[], reason: string, confirmText: string) {
+      return api.request<any>('/api/admin/applications/bulk-purge', {
+        method: 'POST',
+        body: JSON.stringify({ applicationIds, reason, confirmText })
+      });
+    },
+    async resetEventProgress(id: string, mode: 'review' | 'attendance') {
+      return api.request<any>(`/api/admin/applications/${id}/reset-progress`, {
+        method: 'POST',
+        body: JSON.stringify({ mode })
+      });
+    },
+    async resetAndRemoveChild(id: string, reason?: string) {
+      return api.request<any>(`/api/admin/applications/${id}/reset-and-remove`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+    },
+    async bulkResetEventProgress(payload: { applicationIds: string[]; mode: 'review' | 'attendance' }) {
+      return api.request<any>('/api/admin/applications/bulk-reset-progress', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bulkResetAndRemove(payload: { applicationIds: string[]; reason?: string }) {
+      return api.request<any>('/api/admin/applications/bulk-reset-and-remove', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bulkRevokePasses(applicationIds: string[], reason: string) {
+      return api.request<any>('/api/admin/applications/bulk-revoke-pass', {
+        method: 'POST',
+        body: JSON.stringify({ applicationIds, reason })
+      });
+    },
+    async prepareForPermanentDelete(id: string) {
+      return api.request<any>(`/api/admin/applications/${id}/prepare-delete`, {
+        method: 'POST'
+      });
+    },
+    async permanentlyDeleteChild(id: string, reason?: string, confirmation?: string) {
+      return api.request<any>(`/api/admin/applications/${id}/permanent-delete`, {
+        method: 'POST',
+        body: JSON.stringify({ reason, confirmation: confirmation || 'DELETE' })
+      });
+    },
+    async reviewApplication(id: string, payload: { status: string; noteToTeam?: string; sendNotification?: boolean }) {
+      return api.request<any>(`/api/admin/applications/${id}/review`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async reopenApplicationReview(id: string, reason?: string) {
+      return api.request<any>(`/api/admin/applications/${id}/reopen-review`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+    },
+    async bulkReviewApplications(payload: { applicationIds: string[]; decision: string; note?: string }) {
+      return api.request<any>('/api/admin/applications/bulk-review', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async updateApplicationStatus(id: string, status: string, noteToTeam?: string) {
+      return api.request<any>(`/api/admin/applications/${id}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status, noteToTeam })
+      });
+    },
+    async generateChildPass(childId: string) {
+      return api.request<any>(`/api/admin/children/${childId}/pass/generate`, {
+        method: 'POST'
+      });
+    },
+    async getChildPass(childId: string) {
+      return api.request<any>(`/api/admin/children/${childId}/pass`);
+    },
+    async revokeChildPass(childId: string, reason: string) {
+      return api.request<any>(`/api/admin/children/${childId}/pass/revoke`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+    },
+    async changePassword(payload: any) {
+      return api.request<any>('/api/admin/change-password', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async listAdmins() {
+      return api.request<{ success: boolean; admins: any[] }>('/api/admin/admins');
+    },
+    async inviteAdmin(payload: any) {
+      return api.request<any>('/api/admin/invites', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async verifyInvite(token: string) {
+      return api.request<any>(`/api/admin/verify-invite?token=${encodeURIComponent(token)}`);
+    },
+    async resendInvite(payload: { userId?: string; email?: string }) {
+      return api.request<any>('/api/admin/invites/resend', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async acceptInvite(payload: any) {
+      return api.request<any>('/api/admin/accept-invite', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async checkDuplicate(payload: any) {
+      return api.request<any>('/api/admin/check-duplicate', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async addParent(payload: any) {
+      return api.request<any>('/api/admin/parents', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async addChild(payload: any) {
+      return api.request<any>('/api/admin/children', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async addVolunteer(payload: any) {
+      return api.request<any>('/api/admin/volunteers', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getReports(params?: { reportType?: string }) {
+      const queryParams = new URLSearchParams();
+      if (params?.reportType) queryParams.append('reportType', params.reportType);
+      const queryString = queryParams.toString();
+      return api.request<any>(`/api/admin/reports${queryString ? `?${queryString}` : ''}`);
+    },
+    async saveReportNotes(payload: { eventId: string; reportType: string; notes: string }) {
+      return api.request<any>('/api/admin/reports/notes', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getMessages(eventId?: string) {
+      const qs = eventId ? `?eventId=${encodeURIComponent(eventId)}` : '';
+      return api.request<{
+        success: boolean;
+        stats: {
+          messagesSent: number;
+          whatsappSent: number;
+          emailSent: number;
+          failed: number;
+          pending: number;
+        };
+        recipientGroups: Array<{ key: string; label: string; count: number }>;
+        channelEligibility?: {
+          inApp: number;
+          push: number;
+          email: number;
+          whatsappNumbers: number;
+          whatsappOptedIn: number;
+        };
+        eventParents?: Array<{
+          id: string;
+          name: string;
+          phone: string;
+          whatsappNumber?: string;
+          whatsappConsentStatus: string;
+          email: string;
+          userId: string;
+          pushCount: number;
+          children: Array<{ id: string; name: string }>;
+          childCount: number;
+        }>;
+        eventVolunteers?: Array<{
+          id: string;
+          name: string;
+          phone: string;
+          whatsappNumber?: string;
+          preferredTeam?: string;
+          department?: string;
+          status: string;
+          email: string;
+          userId: string;
+          pushCount: number;
+          parentProfileId?: string;
+          parentConsentStatus?: string;
+        }>;
+        messageTypes: Array<{ key: string; label: string }>;
+        volunteerMessageTypes?: Array<{ key: string; label: string }>;
+        recentActivity: any[];
+        latestDraft: any;
+        emailEnabled?: boolean;
+        whatsappEnabled?: boolean;
+        providerStatus?: {
+          emailEnabled: boolean;
+          whatsappEnabled: boolean;
+          whatsappStatus?: 'Ready' | 'Setup pending';
+          emailProvider: string | null;
+          whatsappProvider: string | null;
+          senderName: string | null;
+          fromEmail: string | null;
+          replyToEmail: string | null;
+        };
+      }>(`/api/admin/messages${qs}`);
+    },
+    async previewMessage(payload: {
+      recipientGroup: string;
+      messageType: string;
+      channel: string;
+      subject?: string;
+      body: string;
+      selectedParentIds?: string[];
+      selectedChildId?: string;
+      selectedVolunteerIds?: string[];
+    }) {
+      return api.request<{
+        success: boolean;
+        preview: {
+          subject: string;
+          body: string;
+          representativeParentName?: string;
+          representativeVolunteerName?: string;
+        };
+      }>('/api/admin/messages/preview', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async saveMessageDraft(payload: {
+      recipientGroup: string;
+      messageType: string;
+      channel?: string;
+      channels?: string[];
+      subject?: string;
+      body: string;
+    }) {
+      return api.request<{ success: boolean; message: string }>('/api/admin/messages/drafts', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async sendMessage(payload: {
+      recipientGroup: string;
+      messageType: string;
+      channel?: string;
+      channels?: string[];
+      subject?: string;
+      body: string;
+      confirmed: boolean;
+      eventId?: string;
+      selectedParentIds?: string[];
+      selectedChildIds?: string[];
+      selectedVolunteerIds?: string[];
+    }) {
+      return api.request<{
+        success: boolean;
+        campaignId?: string;
+        recipientsCount?: number;
+        whatsappQueued?: number;
+        whatsappSkipped?: number;
+        queued?: {
+          whatsapp: number;
+          email: number;
+          push: number;
+          inApp: number;
+        };
+        sent?: {
+          inApp: number;
+          push: number;
+          email: number;
+          whatsapp: number;
+        };
+        skipped?: {
+          whatsappNotEligible: number;
+        };
+        summary: {
+          requested: number;
+          sent?: number;
+          pending?: number;
+          failed?: number;
+          recipients?: number;
+          inAppCreated?: boolean;
+          pushSent?: number;
+          pushFailed?: number;
+          emailSent?: number;
+          whatsappSent?: number;
+          whatsappQueued?: number;
+          whatsappSkipped?: number;
+        };
+        message: string;
+      }>('/api/admin/messages/send', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getCampaignStatus(campaignId: string) {
+      return api.request<{
+        success: boolean;
+        campaignId: string;
+        subject?: string;
+        channels?: string[];
+        recipientsCount?: number;
+        status: 'queued' | 'sent' | 'delivered' | 'read' | 'failed' | 'partially_sent' | 'partial';
+        queued: number;
+        sent: number;
+        delivered: number;
+        read: number;
+        failed: number;
+        channelStatuses?: Array<{
+          channel: string;
+          label: string;
+          status: string;
+        }>;
+        errorMessage?: string | null;
+        lastUpdated?: string;
+      }>(`/api/admin/messages/campaign-status/${campaignId}`);
+    },
+    async getMessagesSettings() {
+      return api.request<{
+        success: boolean;
+        senderName: string;
+        fromEmail: string | null;
+        replyToEmail: string | null;
+        emailEnabled: boolean;
+        whatsappEnabled: boolean;
+        emailProvider: string | null;
+        whatsappProvider: string | null;
+      }>('/api/admin/messages/settings');
+    },
+    async updateMessagesSettings(payload: { senderName: string; replyToEmail: string }) {
+      return api.request<{ success: boolean; message: string }>('/api/admin/messages/settings', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async testWhatsApp(payload: { to: string; message?: string }) {
+      return api.request<{
+        success: boolean;
+        message: string;
+        provider: string;
+        messageSid: string;
+        status: string;
+        logId?: string;
+      }>('/api/admin/notifications/test-whatsapp', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getTestWhatsAppStatus(params: { logId?: string; messageSid?: string }) {
+      const query = new URLSearchParams();
+      if (params.logId) query.append('logId', params.logId);
+      if (params.messageSid) query.append('messageSid', params.messageSid);
+      return api.request<{
+        success: boolean;
+        log: {
+          id: string;
+          status: 'queued' | 'sent' | 'delivered' | 'read' | 'failed';
+          provider: string;
+          providerMessageId?: string;
+          recipientPhone: string;
+          sentAt?: string;
+          deliveredAt?: string;
+          readAt?: string;
+          failedAt?: string;
+          errorCode?: string;
+          errorMessage?: string;
+        };
+      }>(`/api/admin/notifications/test-whatsapp-status?${query.toString()}`);
+    },
+    async getGeneralSettings() {
+      return api.request<{
+        success: boolean;
+        settings: {
+          parentRegistrationEnabled: number;
+          parentLoginEnabled: number;
+          requiredChildPhoto: number;
+          requiredParentPhoto: number;
+          requiredMedicalNotes: number;
+          requiredPickupPerson: number;
+        };
+      }>('/api/admin/general-settings');
+    },
+    async updateGeneralSettings(payload: {
+      parentRegistrationEnabled: boolean;
+      parentLoginEnabled: boolean;
+      requiredChildPhoto: boolean;
+      requiredParentPhoto: boolean;
+      requiredMedicalNotes: boolean;
+      requiredPickupPerson: boolean;
+    }) {
+      return api.request<{ success: boolean; message: string }>('/api/admin/general-settings', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getLandingSettings() {
+      return api.request<{ success: boolean; settings: Record<string, string> }>('/api/admin/landing-settings');
+    },
+    async updateLandingSettings(settings: Record<string, string>) {
+      return api.request<{ success: boolean; message: string }>('/api/admin/landing-settings', {
+        method: 'POST',
+        body: JSON.stringify({ settings })
+      });
+    },
+    async getSettingsMedia() {
+      return api.request<{
+        success: boolean;
+        media: {
+          parent_dashboard_hero: string;
+          volunteer_dashboard_hero: string;
+          default_event_hero: string;
+          site_favicon?: string;
+        };
+      }>('/api/admin/settings/media');
+    },
+    async uploadSettingsMedia(slot: string, file: File) {
+      const formData = new FormData();
+      formData.append('slot', slot);
+      formData.append('file', file);
+      return api.request<{
+        success: boolean;
+        media: {
+          slot: string;
+          url: string;
+        };
+      }>('/api/admin/settings/media', {
+        method: 'POST',
+        body: formData
+      });
+    },
+    async resetSettingsMedia(slot: string) {
+      return api.request<{ success: boolean; message: string }>('/api/admin/settings/media/reset', {
+        method: 'POST',
+        body: JSON.stringify({ slot })
+      });
+    },
+    async updateTeamMemberRole(payload: { userId: string; role: string }) {
+      return api.request<{ success: boolean; message: string }>('/api/admin/team/edit-role', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async updateTeamMemberStatus(payload: { userId: string; status: string }) {
+      return api.request<{ success: boolean; message: string }>('/api/admin/team/edit-status', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async removeTeamMemberAccess(payload: { userId: string }) {
+      return api.request<{ success: boolean; message: string }>('/api/admin/team/remove-access', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async deleteTeamMember(userId: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/team-members/${userId}`, {
+        method: 'DELETE'
+      });
+    },
+    async getVolunteers(params?: { q?: string; status?: string; team?: string; page?: number; limit?: number }) {
+      const queryParams = new URLSearchParams();
+      if (params?.q) queryParams.append('q', params.q);
+      if (params?.status) queryParams.append('status', params.status);
+      if (params?.team) queryParams.append('team', params.team);
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
+      const queryString = queryParams.toString();
+      return api.request<{ 
+        success: boolean; 
+        volunteers: any[]; 
+        stats?: {
+          totalVolunteers: number;
+          pendingReview: number;
+          approvedVolunteers: number;
+          declinedVolunteers?: number;
+          assignedTeams: number;
+          removedVolunteers: number;
+          [key: string]: any;
+        };
+        pagination?: {
+          total: number;
+          page: number;
+          limit: number;
+          pages: number;
+        };
+      }>(`/api/admin/volunteers${queryString ? `?${queryString}` : ''}`);
+    },
+    async getVolunteerDetails(id: string) {
+      return api.request<{ success: boolean; volunteer: any }>(`/api/admin/volunteers/${id}`);
+    },
+    async reviewVolunteer(id: string, payload: { status: 'approved' | 'rejected'; team?: string; note?: string }) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/volunteers/${id}/review`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async removeVolunteer(id: string, reason?: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/volunteers/${id}/remove`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+    },
+    async restoreVolunteer(id: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/volunteers/${id}/restore`, {
+        method: 'POST'
+      });
+    },
+    async updateVolunteerAssignment(id: string, assignedTeam: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/volunteers/${id}/assignment`, {
+        method: 'PATCH',
+        body: JSON.stringify({ assignedTeam })
+      });
+    },
+    async resendVolunteerApprovalEmail(id: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/volunteers/${id}/resend-approval-email`, {
+        method: 'POST'
+      });
+    },
+    async bulkReviewVolunteers(payload: { volunteerIds: string[]; status: 'approved' | 'rejected'; team?: string; note?: string }) {
+      return api.request<{ success: boolean; count: number; failures: any[]; message: string }>('/api/admin/volunteers/bulk-review', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bulkAssignVolunteerTeam(payload: { volunteerIds: string[]; assignedTeam: string }) {
+      return api.request<{ success: boolean; count: number; failures: any[]; message: string }>('/api/admin/volunteers/bulk-assign-team', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bulkRemoveVolunteers(payload: { volunteerIds: string[]; reason?: string }) {
+      return api.request<{ success: boolean; count: number; failures: any[]; message: string }>('/api/admin/volunteers/bulk-remove', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bulkRestoreVolunteers(payload: { volunteerIds: string[] }) {
+      return api.request<{ success: boolean; count: number; failures: any[]; message: string }>('/api/admin/volunteers/bulk-restore', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bulkPermanentlyDeleteVolunteers(payload: { volunteerIds: string[]; confirmText: string; reason?: string }) {
+      return api.request<{ success: boolean; count: number; failures: any[]; message: string }>('/api/admin/volunteers/bulk-permanent-delete', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async permanentlyDeleteVolunteer(id: string, payload: { reason: string; confirmation: string }) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/volunteers/${id}/permanent-delete`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getParents(params?: { q?: string; status?: string }) {
+      const queryParams = new URLSearchParams();
+      if (params?.q) queryParams.append('q', params.q);
+      if (params?.status) queryParams.append('status', params.status);
+      const queryString = queryParams.toString();
+      return api.request<{ success: boolean; parents: any[] }>(`/api/admin/parents${queryString ? `?${queryString}` : ''}`);
+    },
+    async getParentDetails(id: string) {
+      return api.request<{ success: boolean; parent: any; linkedChildren: any[]; eventSummary: any; attention: any; adminNotes: any[] }>(`/api/admin/parents/${id}`);
+    },
+    async removeParent(id: string, reason?: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/parents/${id}/remove`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+    },
+    async restoreParent(id: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/parents/${id}/restore`, {
+        method: 'POST'
+      });
+    },
+    async bulkRemoveParents(payload: { parentIds: string[]; reason?: string }) {
+      return api.request<{ success: boolean; count: number; failures: any[]; message: string }>('/api/admin/parents/bulk-remove', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bulkRestoreParents(payload: { parentIds: string[] }) {
+      return api.request<{ success: boolean; count: number; failures: any[]; message: string }>('/api/admin/parents/bulk-restore', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async bulkPermanentlyDeleteParents(payload: { parentIds: string[]; confirmText: string; reason?: string }) {
+      return api.request<{ success: boolean; count: number; failures: any[]; message: string }>('/api/admin/parents/bulk-permanent-delete', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async saveParentNote(id: string, note: string) {
+      return api.request<{ success: boolean; message: string; note: any }>(`/api/admin/parents/${id}/notes`, {
+        method: 'POST',
+        body: JSON.stringify({ note })
+      });
+    },
+    async updateParentProfile(id: string, payload: any) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/parents/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+    },
+    async permanentlyDeleteParent(id: string, payload: { reason: string; confirmation: string }) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/parents/${id}/permanent-delete`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getVolunteerParentStats() {
+      return api.request<{ success: boolean; stats: any }>('/api/admin/reports/volunteer-parent-stats');
+    },
+    async getFooterSettings() {
+      return api.request<{ success: boolean; settings: { copyrightYear: number; copyrightText: string } }>('/api/admin/footer-settings');
+    },
+    async updateFooterSettings(payload: { copyrightYear: number; copyrightText: string }) {
+      return api.request<{ success: boolean; message: string }>('/api/admin/footer-settings', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getEvents(params?: { status?: string }) {
+      const queryParams = new URLSearchParams();
+      if (params?.status) queryParams.append('status', params.status);
+      const queryString = queryParams.toString();
+      return api.request<{ success: boolean; events: any[] }>(`/api/admin/events${queryString ? `?${queryString}` : ''}`);
+    },
+    async getEvent(eventId: string) {
+      return api.request<{ success: boolean; event: any; ageGroups: any[] }>(`/api/admin/events/${eventId}`);
+    },
+    async createEvent(payload: any) {
+      return api.request<{ success: boolean; eventId: string; message?: string }>('/api/admin/events', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async updateEvent(eventId: string, payload: any) {
+      return api.request<{ success: boolean; message?: string }>(`/api/admin/events/${eventId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      });
+    },
+    async publishEvent(eventId: string) {
+      return api.request<{ success: boolean; message?: string }>(`/api/admin/events/${eventId}/publish`, {
+        method: 'POST'
+      });
+    },
+    async archiveEvent(eventId: string) {
+      return api.request<{ success: boolean; message?: string }>(`/api/admin/events/${eventId}/archive`, {
+        method: 'POST'
+      });
+    },
+    async setCurrentEvent(eventId: string) {
+      return api.request<{ success: boolean; message?: string }>(`/api/admin/events/${eventId}/set-current`, {
+        method: 'POST'
+      });
+    },
+    async getOperationsAssistantReadiness(eventId?: string) {
+      const q = eventId ? `?eventId=${encodeURIComponent(eventId)}` : '';
+      return api.request<{ success: boolean; report: any }>(`/api/admin/operations-assistant/readiness${q}`);
+    },
+    async queryOperationsAssistant(question: string, eventId?: string) {
+      return api.request<{ success: boolean; result?: any; error?: string }>('/api/admin/operations-assistant/query', {
+        method: 'POST',
+        body: JSON.stringify({ question, eventId })
+      });
+    },
+    async confirmOperationsAssistantAction(confirmationToken: string, eventId?: string) {
+      return api.request<{ success: boolean; result?: any; error?: string }>('/api/admin/operations-assistant/confirm-action', {
+        method: 'POST',
+        body: JSON.stringify({ confirmationToken, eventId })
+      });
+    },
+    async cancelOperationsAssistantAction(confirmationToken: string) {
+      return api.request<{ success: boolean; message?: string; error?: string }>('/api/admin/operations-assistant/cancel-action', {
+        method: 'POST',
+        body: JSON.stringify({ confirmationToken })
+      });
+    },
+    async getEventAutomations(evaluate?: boolean) {
+      const q = evaluate ? '?evaluate=true' : '';
+      return api.request<{
+        success: boolean;
+        eventId: string | null;
+        eventTitle?: string;
+        active: any[];
+        resolved: any[];
+        health: any;
+      }>(`/api/admin/automations${q}`);
+    },
+    async evaluateEventAutomations(eventId?: string) {
+      return api.request<{ success: boolean; result?: any; error?: string }>('/api/admin/automations/evaluate', {
+        method: 'POST',
+        body: JSON.stringify({ eventId })
+      });
+    },
+    async acknowledgeEventAutomation(id: string, cooldownMinutes: number = 60) {
+      return api.request<{ success: boolean; message?: string; error?: string }>(`/api/admin/automations/${encodeURIComponent(id)}/acknowledge`, {
+        method: 'POST',
+        body: JSON.stringify({ cooldownMinutes })
+      });
+    },
+    async dismissEventAutomation(id: string, cooldownMinutes: number = 120) {
+      return api.request<{ success: boolean; message?: string; error?: string }>(`/api/admin/automations/${encodeURIComponent(id)}/dismiss`, {
+        method: 'POST',
+        body: JSON.stringify({ cooldownMinutes })
+      });
+    },
+    async getEventAutomationSettings() {
+      return api.request<{
+        success: boolean;
+        eventId?: string | null;
+        rules: any[];
+        health?: any;
+        lastCheckedAt?: string | null;
+      }>('/api/admin/automations/settings');
+    },
+    async updateEventAutomationSetting(ruleId: string, isEnabled: boolean) {
+      return api.request<{ success: boolean; message?: string; error?: string }>('/api/admin/automations/settings', {
+        method: 'PATCH',
+        body: JSON.stringify({ ruleId, isEnabled })
+      });
+    },
+    async prepareAutomationConfirmedAction(actionKey: string, automationId?: string, params?: any) {
+      return api.request<{ success: boolean; result?: any; error?: string }>('/api/admin/automations/prepare-action', {
+        method: 'POST',
+        body: JSON.stringify({ actionKey, automationId, params })
+      });
+    },
+
+    async getSafetyAlerts() {
+      const res = await api.request<any>('/api/admin/safety-alerts');
+      if (Array.isArray(res)) return res;
+      if (res && Array.isArray(res.alerts)) return res.alerts;
+      return [];
+    },
+    async getSafetyAlertDetail(id: string, role?: string) {
+      const url = role ? `/api/admin/safety-alerts/${id}?role=${encodeURIComponent(role)}` : `/api/admin/safety-alerts/${id}`;
+      return api.request<{
+        success: boolean;
+        alert: any;
+        raisedBy: any;
+        child: any;
+        parent: any;
+        pickup: any;
+        careSummary: any;
+      }>(url);
+    },
+    async acknowledgeSafetyAlert(id: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/safety-alerts/${id}/acknowledge`, {
+        method: 'POST'
+      });
+    },
+    async resolveSafetyAlert(id: string, note?: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/safety-alerts/${id}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify({ note })
+      });
+    },
+    async escalateSafetyAlert(id: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/safety-alerts/${id}/escalate`, {
+        method: 'POST'
+      });
+    },
+    async silenceSafetyAlert(id: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/safety-alerts/${id}/silence`, {
+        method: 'POST'
+      });
+    },
+    async testDeviceAlert() {
+      return api.request<{ success: boolean; message: string; alert: any }>('/api/admin/alert-delivery/test-device', {
+        method: 'POST'
+      });
+    },
+    async bulkResolveSafetyAlerts(alertIds: string[], note: string, outcome?: string) {
+      return api.request<{
+        success: boolean;
+        message: string;
+        resolvedCount: number;
+        skippedCount: number;
+        failedCount: number;
+        results: any[];
+      }>(`/api/admin/safety-alerts/bulk-resolve`, {
+        method: 'POST',
+        body: JSON.stringify({ alertIds, resolutionNote: note, outcome })
+      });
+    },
+    async bulkAcknowledgeSafetyAlerts(alertIds: string[]) {
+      return api.request<{
+        success: boolean;
+        message: string;
+        acknowledgedCount: number;
+        skippedCount: number;
+        failedCount: number;
+        results: any[];
+      }>(`/api/admin/safety-alerts/bulk-acknowledge`, {
+        method: 'POST',
+        body: JSON.stringify({ alertIds })
+      });
+    },
+    async bulkAssignSafetyAlerts(alertIds: string[], targetUserId: string, reason?: string) {
+      return api.request<{
+        success: boolean;
+        message: string;
+        assignedCount: number;
+        results: any[];
+      }>(`/api/admin/safety-alerts/bulk-assign`, {
+        method: 'POST',
+        body: JSON.stringify({ alertIds, targetUserId, reason })
+      });
+    }
+  },
+
+  safetyAlerts: {
+    // Proof: data-component-version="alert-response-frontend-api-v1"
+    async getAlertResponse(alertId: string) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/response`);
+    },
+    async acknowledgeAndRespond(alertId: string, payload: { expectedVersion?: number; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/acknowledge-and-respond`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async joinAlertResponse(alertId: string, payload: { expectedVersion?: number; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/assist`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async leaveAlertResponse(alertId: string, payload: { expectedVersion?: number; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/assist`, {
+        method: 'DELETE',
+        body: JSON.stringify(payload)
+      });
+    },
+    async markAlertInProgress(alertId: string, payload: { expectedVersion?: number; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/in-progress`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async addAlertResponseUpdate(alertId: string, payload: { updateType: string; note?: string; visibility?: string; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/updates`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async requestAlertAssistance(alertId: string, payload: { userId?: string; responsibilityKey?: string; teamKey?: string; note?: string; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/request-assistance`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async requestAlertHandover(alertId: string, payload: { targetUserId: string; reason: string; note?: string; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/handover`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async respondToAlertHandover(alertId: string, handoverId: string, payload: { decision: 'accept' | 'decline'; note?: string; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/handover/${handoverId}/respond`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async adminReassignAlertResponse(alertId: string, payload: { targetUserId: string; reason: string; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/reassign`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async resolveAlertResponse(alertId: string, payload: { outcome: string; resolutionNote: string; followUpRequired?: boolean; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async reopenAlertResponse(alertId: string, payload: { reason: string; idempotencyKey?: string }) {
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/reopen`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+    async getAlertResponseTimeline(alertId: string, pagination: { page?: number; limit?: number }) {
+      const q = new URLSearchParams();
+      if (pagination.page) q.append('page', String(pagination.page));
+      if (pagination.limit) q.append('limit', String(pagination.limit));
+      return api.request<any>(`/api/volunteer/safety-alerts/${alertId}/history?${q.toString()}`);
+    },
+    async getVolunteerHelpRequests(filters?: any) {
+      const q = new URLSearchParams(filters);
+      return api.request<{ success: boolean; alerts: any[] }>(`/api/volunteer/safety-alerts?${q.toString()}`);
+    },
+    async getVolunteerHelpRequestProgress(alertId: string) {
+      return api.request<any>(`/api/volunteer/safety-alerts/help-requests/${alertId}/progress`);
+    },
+    async getAdminActiveResponses(filters?: any) {
+      const q = new URLSearchParams(filters);
+      return api.request<any[]>(`/api/admin/safety-alerts?${q.toString()}`);
+    },
+    async searchEligibleResponders(role: string, query: string = '') {
+      const path = role === 'admin' ? '/api/admin/volunteers' : '/api/volunteer/admin/volunteers';
+      const q = new URLSearchParams({ q: query, status: 'approved', limit: '50' });
+      try {
+        const res = await api.request<any>(`${path}?${q.toString()}`);
+        return res.volunteers || [];
+      } catch (err) {
+        console.error('[searchEligibleResponders Error]:', err);
+        return [];
+      }
+    }
+  },
+  incidents: {
+    async create(payload: any) {
+        return api.request<any>('/api/incidents', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+      async get(id: string) {
+        return api.request<any>(`/api/incidents/${id}`);
+      },
+      async getByAlert(alertId: string) {
+        return api.request<any>(`/api/incidents/alert/${alertId}`);
+      },
+      async updateDraft(id: string, payload: any) {
+        return api.request<any>(`/api/incidents/${id}/draft`, {
+          method: 'PUT',
+          body: JSON.stringify(payload)
+        });
+      },
+      async submit(id: string, payload: any) {
+        return api.request<any>(`/api/incidents/${id}/submit`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+      async submitChangeRequest(id: string, payload: any) {
+        return api.request<any>(`/api/incidents/${id}/change-request`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+      async resolveChangeRequests(id: string, payload: any) {
+        return api.request<any>(`/api/incidents/${id}/resolve-change-requests`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+      async addFollowUpAction(id: string, payload: any) {
+        return api.request<any>(`/api/incidents/${id}/follow-up`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+      async completeFollowUpAction(id: string, actionId: string, payload: any) {
+        return api.request<any>(`/api/incidents/${id}/follow-up/${actionId}/complete`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+      async updateClosureChecklist(id: string, payload: any) {
+        return api.request<any>(`/api/incidents/${id}/closure-checklist`, {
+          method: 'PUT',
+          body: JSON.stringify(payload)
+        });
+      },
+      async close(id: string, payload: any) {
+        return api.request<any>(`/api/incidents/${id}/close`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+      async reopen(id: string, payload: any) {
+        return api.request<any>(`/api/incidents/${id}/reopen`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+      async void(id: string, payload: any) {
+        return api.request<any>(`/api/incidents/${id}/void`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+      async list(params?: { status?: string; category?: string; page?: number; limit?: number }) {
+        const queryParams = new URLSearchParams();
+        if (params?.status) queryParams.append('status', params.status);
+        if (params?.category) queryParams.append('category', params.category);
+        if (params?.page) queryParams.append('page', params.page.toString());
+        if (params?.limit) queryParams.append('limit', params.limit.toString());
+        const queryString = queryParams.toString();
+        return api.request<any>(`/api/incidents${queryString ? `?${queryString}` : ''}`);
+      },
+      async history(id: string) {
+        return api.request<any>(`/api/incidents/${id}/history`);
+      },
+      async stats() {
+        return api.request<any>('/api/incidents/stats/summary');
+      }
+    },
+    escalation: {
+      async getPolicies(eventId?: string) {
+        return api.request<any>(`/api/admin/escalation/policies?eventId=${eventId || 'event-ga-2026'}`);
+      },
+      async getPolicy(id: string) {
+        return api.request<any>(`/api/admin/escalation/policies/${id}`);
+      },
+      async createPolicy(policy: any) {
+        return api.request<any>('/api/admin/escalation/policies', {
+          method: 'POST',
+          body: JSON.stringify(policy)
+        });
+      },
+      async updatePolicy(id: string, policy: any) {
+        return api.request<any>(`/api/admin/escalation/policies/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify(policy)
+        });
+      },
+      async deletePolicy(id: string) {
+        return api.request<any>(`/api/admin/escalation/policies/${id}`, {
+          method: 'DELETE'
+        });
+      },
+      async getHistory(eventId?: string) {
+        return api.request<any>(`/api/admin/escalation/history?eventId=${eventId || 'event-ga-2026'}`);
+      },
+      async getCycles(eventId?: string) {
+        return api.request<any>(`/api/admin/escalation/cycles?eventId=${eventId || 'event-ga-2026'}`);
+      },
+      async notifyBackup(cycleId: string) {
+        return api.request<any>(`/api/admin/escalation/cycles/${cycleId}/notify-backup`, {
+          method: 'POST'
+        });
+      },
+      async cancelCycle(cycleId: string) {
+        return api.request<any>(`/api/admin/escalation/cycles/${cycleId}/cancel`, {
+          method: 'POST'
+        });
+      },
+      async restartCycle(cycleId: string) {
+        return api.request<any>(`/api/admin/escalation/cycles/${cycleId}/restart`, {
+          method: 'POST'
+        });
+      }
+    },
+    operations: {
+      async getOverview(eventId: string, profile?: string, options?: RequestInit) {
+        const queryParams = new URLSearchParams();
+        if (profile) queryParams.append('profile', profile);
+        const queryStr = queryParams.toString();
+        return api.request<any>(`/api/admin/events/${eventId}/operations/overview${queryStr ? `?${queryStr}` : ''}`, options);
+      },
+      async getActivity(eventId: string, params?: { type?: string; page?: number; limit?: number }, options?: RequestInit) {
+        const queryParams = new URLSearchParams();
+        if (params?.type) queryParams.append('type', params.type);
+        if (params?.page) queryParams.append('page', params.page.toString());
+        if (params?.limit) queryParams.append('limit', params.limit.toString());
+        const queryStr = queryParams.toString();
+        return api.request<any>(`/api/admin/events/${eventId}/operations/activity${queryStr ? `?${queryStr}` : ''}`, options);
+      }
+    },
+    gallery: {
+      async getPublicItems() {
+        return api.request<{ success: boolean; items: PublicGalleryItem[] }>('/api/public/gallery');
+      },
+      async getAdminItems() {
+        return api.request<{ success: boolean; items: AdminGalleryItem[] }>('/api/admin/gallery');
+      },
+      async createItem(formDataOrPayload: FormData | { media_file_id: string; alt_text: string; caption?: string; is_active?: boolean | number; sort_order?: number }) {
+        if (formDataOrPayload instanceof FormData) {
+          return api.request<{ success: boolean; message: string; item: AdminGalleryItem }>('/api/admin/gallery', {
+            method: 'POST',
+            body: formDataOrPayload
+          });
+        }
+        return api.request<{ success: boolean; message: string; item: AdminGalleryItem }>('/api/admin/gallery', {
+          method: 'POST',
+          body: JSON.stringify(formDataOrPayload)
+        });
+      },
+      async updateItem(id: string, payload: Partial<{ alt_text: string; caption: string | null; is_active: boolean | number; sort_order: number }>) {
+        return api.request<{ success: boolean; message: string; item: AdminGalleryItem }>(`/api/admin/gallery/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload)
+        });
+      },
+      async reorderItems(orderedIds: string[]) {
+        return api.request<{ success: boolean; message: string }>('/api/admin/gallery/reorder', {
+          method: 'POST',
+          body: JSON.stringify({ orderedIds })
+        });
+      },
+      async deleteItem(id: string) {
+        return api.request<{ success: boolean; message: string }>(`/api/admin/gallery/${id}`, {
+          method: 'DELETE'
+        });
+      }
+    }
+};
+
+export interface PublicGalleryItem {
+  id: string;
+  image_url: string;
+  alt_text: string;
+  caption: string | null;
+  sort_order: number;
+}
+
+export interface AdminGalleryItem extends PublicGalleryItem {
+  media_file_id: string;
+  is_active: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  width?: number | null;
+  height?: number | null;
+  file_size?: number | null;
+  mime_type?: string | null;
+}

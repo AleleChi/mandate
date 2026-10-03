@@ -1,0 +1,265 @@
+import React from 'react';
+import { ShieldCheck, Users, LogOut, Phone, MessageSquare, Briefcase, CheckSquare } from 'lucide-react';
+import { AppRoute } from '../types';
+import { Button } from '../components/common/Button';
+import { AuthScreenShell } from '../components/common/AuthScreenShell';
+import { ThemeSwitcher } from '../components/common/ThemeSwitcher';
+import { api } from '../services/api';
+
+interface VolunteerPendingReviewViewProps {
+  onNavigate: (route: AppRoute) => void;
+  volunteerProfile: any;
+  onSignOut: () => void;
+  hasParentProfile?: boolean;
+  onRefreshAccess?: () => Promise<void>;
+}
+
+export const VolunteerPendingReviewView: React.FC<VolunteerPendingReviewViewProps> = ({
+  onNavigate,
+  volunteerProfile,
+  onSignOut,
+  hasParentProfile,
+  onRefreshAccess
+}) => {
+  const [checking, setChecking] = React.useState(false);
+  const [statusMessage, setStatusMessage] = React.useState<string | null>(null);
+  const [statusError, setStatusError] = React.useState<string | null>(null);
+
+  const fullName = volunteerProfile?.full_name || 'Volunteer';
+  const preferredTeam = volunteerProfile?.preferred_team || 'General Assistance';
+  const phone = volunteerProfile?.phone || '';
+  const whatsapp = volunteerProfile?.whatsapp || '';
+  const isWorker = volunteerProfile?.is_koinonia_worker;
+  const department = volunteerProfile?.department || '';
+  const experience = volunteerProfile?.serving_experience || '';
+  const photoFileId = volunteerProfile?.photo_file_id;
+
+  const checkStatus = async (isMount = false) => {
+    setChecking(true);
+    setStatusError(null);
+    setStatusMessage(isMount ? 'Checking your volunteer status...' : 'Refreshing your approval status...');
+    try {
+      const res = await api.volunteer.getStatus();
+      if (res.success) {
+        const nextRoute = res.nextRoute;
+        const profile = res.profile || res.volunteerProfile;
+        const currentStatus = profile?.status || 'none';
+
+        if (nextRoute === '/volunteer/event' || currentStatus === 'approved' || currentStatus === 'active') {
+          setStatusMessage('Access approved! Syncing credentials...');
+          if (onRefreshAccess) {
+            await onRefreshAccess();
+          }
+          onNavigate('/volunteer/event');
+          return;
+        } else if (nextRoute === '/volunteer/verify-email') {
+          onNavigate('/volunteer/verify-email');
+          return;
+        } else if (currentStatus === 'request_update') {
+          setStatusError('Your profile requires updates. Please check with an administrator.');
+          setStatusMessage(null);
+        } else if (currentStatus === 'not_approved' || currentStatus === 'rejected') {
+          setStatusError('Your application was not approved.');
+          setStatusMessage(null);
+        } else {
+          // Still pending
+          if (!isMount) {
+            setStatusMessage('Your application is still under review. Thank you for your patience!');
+          } else {
+            setStatusMessage(null);
+          }
+        }
+      } else {
+        setStatusError('Could not verify status. Please try again.');
+        setStatusMessage(null);
+      }
+    } catch (err: any) {
+      console.error('Error checking status:', err);
+      if (err.message?.includes('401') || err.description?.includes('401') || err.code === 'UNAUTHORIZED' || err.status === 401) {
+        onSignOut();
+      } else {
+        setStatusError('Could not verify status. Please try again.');
+        setStatusMessage(null);
+      }
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  React.useEffect(() => {
+    checkStatus(true);
+  }, []);
+
+  return (
+    <AuthScreenShell
+      dataViewVersion="volunteer-pending-review-soft-surface-v1"
+      maxWidth="lg"
+      headerRight={
+        <div className="flex items-center gap-2">
+          <ThemeSwitcher surface="volunteer" />
+          <button
+            onClick={onSignOut}
+            className="p-2 text-stone-400 dark:text-[#B8B0A5] hover:text-red-600 dark:hover:text-red-400 rounded-full hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center cursor-pointer transition-colors focus:outline-none"
+            title="Sign Out"
+          >
+            <LogOut className="h-5 w-5" />
+          </button>
+        </div>
+      }
+    >
+      <div className="text-center space-y-6">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#FAF6EC] dark:bg-[#21211E] text-[#C59B27] border border-[#E5D5AE]/30 dark:border-[#302E29]">
+          <ShieldCheck className="h-8 w-8 stroke-[1.5]" />
+        </div>
+
+        <div className="space-y-1.5">
+          <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">Profile Under Review</h1>
+          <p className="text-xs font-sans font-bold text-[#C59B27] tracking-wider uppercase">
+            APPROVED ACCESS REQUIRED
+          </p>
+        </div>
+
+        <p className="text-xs text-[#52525B] dark:text-[#B8B0A5] leading-relaxed max-w-md mx-auto">
+          Thank you for applying to serve Koinonia Children and Teens on the <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">{preferredTeam}</span> team.
+          An administrator is currently reviewing and activating your volunteer credentials before you can access event-day tools.
+        </p>
+
+        {/* Submitted Details Review Panel */}
+        <div className="border border-[#EBE3D3] dark:border-[#302E29] rounded-2xl p-5 bg-[#FAF9F6] dark:bg-[#1D1D1A] text-left space-y-4">
+          <div className="flex items-center justify-between border-b border-[#EBE3D3] dark:border-[#302E29] pb-2.5">
+            <h2 className="text-xs font-bold text-[#18181B] dark:text-[#F0EBE3] tracking-wider uppercase">Your Submitted Details</h2>
+            <span className="text-[10px] font-mono text-[#C59B27] font-bold uppercase bg-[#FAF6EC] dark:bg-[#262520] px-2 py-0.5 rounded-lg border border-[#EBE3D3] dark:border-[#3A3835]">
+              Pending review
+            </span>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-4 items-center sm:items-start">
+            {photoFileId ? (
+              <img
+                src={`/api/media/files/${photoFileId}`}
+                alt="Profile Headshot"
+                referrerPolicy="no-referrer"
+                className="w-16 h-16 rounded-2xl object-cover border-2 border-[#C59B27]/30 shadow-xs"
+              />
+            ) : (
+              <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-[#262520] flex items-center justify-center text-gray-400 dark:text-[#7A7570] border border-dashed border-gray-300 dark:border-[#3A3835]">
+                <Users className="w-6 h-6 stroke-[1.5]" />
+              </div>
+            )}
+
+            <div className="flex-1 w-full space-y-2.5 text-xs text-[#52525B] dark:text-[#B8B0A5]">
+              <div className="grid grid-cols-3 gap-2">
+                <span className="font-medium text-gray-400 dark:text-[#7A7570]">Full Name:</span>
+                <span className="col-span-2 font-bold text-[#18181B] dark:text-[#F0EBE3]">{fullName}</span>
+              </div>
+              {phone && (
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="font-medium text-gray-400 dark:text-[#7A7570] flex items-center gap-1">
+                    <Phone className="w-3.5 h-3.5 text-gray-300 dark:text-[#7A7570] shrink-0" /> Phone:
+                  </span>
+                  <span className="col-span-2 font-semibold text-gray-700 dark:text-[#F0EBE3]">{phone}</span>
+                </div>
+              )}
+              {whatsapp && (
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="font-medium text-gray-400 dark:text-[#7A7570] flex items-center gap-1">
+                    <MessageSquare className="w-3.5 h-3.5 text-gray-300 dark:text-[#7A7570] shrink-0" /> WhatsApp:
+                  </span>
+                  <span className="col-span-2 font-semibold text-gray-700 dark:text-[#F0EBE3]">{whatsapp}</span>
+                </div>
+              )}
+              <div className="grid grid-cols-3 gap-2">
+                <span className="font-medium text-gray-400 dark:text-[#7A7570] flex items-center gap-1">
+                  <Briefcase className="w-3.5 h-3.5 text-gray-300 dark:text-[#7A7570] shrink-0" /> Koinonia Worker:
+                </span>
+                <span className="col-span-2 font-semibold text-gray-700 dark:text-[#F0EBE3]">
+                  {isWorker ? `Yes (${department || 'General'})` : 'No'}
+                </span>
+              </div>
+              {experience && (
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="font-medium text-gray-400 dark:text-[#7A7570] flex items-center gap-1">
+                    <CheckSquare className="w-3.5 h-3.5 text-gray-300 dark:text-[#7A7570] shrink-0" /> Experience:
+                  </span>
+                  <span className="col-span-2 text-gray-600 dark:text-[#B8B0A5] italic line-clamp-2">{experience}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Stitches Onboarding Status Timeline */}
+        <div className="border border-[#EBE3D3] dark:border-[#302E29] rounded-2xl p-5 bg-[#FAF9F6]/50 dark:bg-[#1D1D1A]/50 space-y-4 text-left">
+          <h2 className="text-xs font-bold text-[#18181B] dark:text-[#F0EBE3] tracking-wide uppercase">Your Onboarding Status</h2>
+          <div className="space-y-4">
+            <div className="flex items-start space-x-3.5">
+              <div className="mt-0.5 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center text-white text-[10px] font-bold shadow-sm">✓</div>
+              <div>
+                <h3 className="text-xs font-bold text-gray-800 dark:text-[#F0EBE3]">Account Registered</h3>
+                <p className="text-[10px] text-gray-400 dark:text-[#7A7570] leading-normal">Basic details, password, and secure photo collected.</p>
+              </div>
+            </div>
+            
+            <div className="flex items-start space-x-3.5">
+              <div className="mt-0.5 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center text-white text-[10px] font-bold shadow-sm">✓</div>
+              <div>
+                <h3 className="text-xs font-bold text-gray-800 dark:text-[#F0EBE3]">Email Verified</h3>
+                <p className="text-[10px] text-gray-400 dark:text-[#7A7570] leading-normal">Secure ownership of your inbox has been confirmed.</p>
+              </div>
+            </div>
+
+            <div className="flex items-start space-x-3.5">
+              <div className="mt-1 w-5 h-5 rounded-full border-2 border-[#C59B27] border-t-transparent animate-spin shrink-0"></div>
+              <div>
+                <h3 className="text-xs font-bold text-gray-800 dark:text-[#F0EBE3]">Admin Approval</h3>
+                <p className="text-[10px] text-gray-500 dark:text-[#B8B0A5] font-medium leading-normal">
+                  Administrator is checking background eligibility and team assignment.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {statusMessage && (
+          <div className="p-3 text-xs bg-amber-50 dark:bg-[#21211E] text-[#C59B27] border border-amber-100 dark:border-[#302E29] rounded-xl text-center font-medium animate-pulse">
+            {statusMessage}
+          </div>
+        )}
+
+        {statusError && (
+          <div className="p-3 text-xs bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-900/40 rounded-xl text-center font-medium">
+            {statusError}
+          </div>
+        )}
+
+        <div className="space-y-3 pt-2">
+          <Button
+            variant="secondary"
+            fullWidth
+            onClick={() => checkStatus(false)}
+            disabled={checking}
+          >
+            {checking ? 'Checking Status...' : 'Check My Approval Status'}
+          </Button>
+
+          {hasParentProfile && (
+            <Button
+              variant="primary"
+              fullWidth
+              onClick={() => onNavigate('/parent/home')}
+            >
+              Go back to Parent Home
+            </Button>
+          )}
+
+          <button
+            onClick={onSignOut}
+            className="text-xs font-semibold text-gray-400 dark:text-[#7A7570] hover:text-red-600 dark:hover:text-red-400 block mx-auto cursor-pointer focus:outline-none transition-colors"
+          >
+            Sign out of my account
+          </button>
+        </div>
+      </div>
+    </AuthScreenShell>
+  );
+};

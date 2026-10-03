@@ -1,0 +1,8693 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  LogOut, QrCode, Search, BarChart3, User, RefreshCw, AlertTriangle, 
+  ShieldCheck, Check, Home, Camera, CameraOff, X, Phone, MessageCircle, 
+  ArrowRight, Sparkles, UserCheck, UserX, Clock, ChevronLeft, Calendar, Heart, Info, Keyboard,
+  Settings, ChevronRight, Users, LogIn, History, MapPin, Bell, ShieldAlert, Smartphone, ChevronDown, Shield, CheckCircle2,
+  HelpCircle, Tag, Plus
+} from 'lucide-react';
+import { WristbandAssignmentDesk } from '../components/wristbands/WristbandAssignmentDesk';
+import { AppRoute } from '../types';
+import { api, extractApiError } from '../services/api';
+import { buildApiUrl } from '../utils/urlHelper';
+import { useNotification } from '../context/NotificationContext';
+import { Button } from '../components/common/Button';
+import { BrowserQRCodeReader } from '@zxing/browser';
+import { VolunteerProfileView } from './volunteer/VolunteerProfileView';
+import { DeviceReadinessView } from '../components/volunteer/DeviceReadinessView';
+import { SafeImage } from '../components/common/SafeImage';
+import { resolveMediaUrl } from '../utils/mediaUrl';
+import { BrandLogo } from '../components/common/BrandLogo';
+import volunteerHeroImg from '../assets/images/volunteer_hero_1783622081200.jpg';
+import { playSound, resumeAudioContext } from '../utils/sound';
+import { subscribeUserToPush, unsubscribeUserFromPush, getPushNotificationStatus } from '../utils/pushSubscription';
+import { DeviceSecurityModal } from '../components/common/DeviceSecurityModal';
+import { EventLocationSelector } from '../components/volunteer/EventLocationSelector';
+import { ChildEmergencySummary } from '../components/ChildEmergencySummary';
+import { ThemeSwitcher } from '../components/common/ThemeSwitcher';
+import { offlineService, OutboxAction } from '../services/offlineService';
+import { ModuleLoadingState } from '../components/common/ModuleLoadingState';
+import { KoinoniaInlineLoader } from '../components/common/KoinoniaInlineLoader';
+import { CardSkeleton, ListSkeleton } from '../components/common/KoinoniaSkeletons';
+import { KoinoniaEmptyState } from '../components/common/KoinoniaEmptyState';
+import { MobileNotificationCentre } from '../components/common/MobileNotificationCentre';
+import { PwaInstallBanner } from '../components/common/PwaInstallBanner';
+import { KoinoniaErrorState } from '../components/common/KoinoniaErrorState';
+import { VolunteerWhatsAppPreferences } from '../components/volunteer/VolunteerWhatsAppPreferences';
+
+const formatEventDateRange = (startsAt?: string, endsAt?: string): string => {
+  if (!startsAt && !endsAt) return '18–22 November 2026';
+  const parseAndFormat = (dStr?: string) => {
+    if (!dStr) return null;
+    const d = new Date(dStr);
+    if (isNaN(d.getTime())) return null;
+    const day = d.getDate();
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    const month = months[d.getMonth()];
+    const year = d.getFullYear();
+    return { day, month, year };
+  };
+
+  const startObj = parseAndFormat(startsAt);
+  const endObj = parseAndFormat(endsAt);
+
+  if (!startObj && !endObj) return '18–22 November 2026';
+  if (startObj && !endObj) return `${startObj.day} ${startObj.month} ${startObj.year}`;
+  if (!startObj && endObj) return `${endObj.day} ${endObj.month} ${endObj.year}`;
+
+  if (startObj && endObj) {
+    if (startObj.year !== endObj.year) {
+      return `${startObj.day} ${startObj.month} ${startObj.year} – ${endObj.day} ${endObj.month} ${endObj.year}`;
+    }
+    if (startObj.month !== endObj.month) {
+      return `${startObj.day} ${startObj.month} – ${endObj.day} ${endObj.month} ${startObj.year}`;
+    }
+    if (startObj.day !== endObj.day) {
+      return `${startObj.day}–${endObj.day} ${startObj.month} ${startObj.year}`;
+    }
+    return `${startObj.day} ${startObj.month} ${startObj.year}`;
+  }
+
+  return '18–22 November 2026';
+};
+
+const formatChildNameAndRef = (rawName?: string) => {
+  if (!rawName) return { name: 'Child', ref: '' };
+  const match = rawName.match(/^(.*?)\s*(\d{4,})$/);
+  if (match) {
+    return {
+      name: match[1].trim() || 'Child',
+      ref: match[2].slice(-4)
+    };
+  }
+  return { name: rawName, ref: '' };
+};
+
+const cleanAgeGroup = (group?: string | null) => {
+  if (!group) return '';
+  let cleaned = group.replace(/\s*\([^)]*review[^)]*\)/gi, '').trim();
+  cleaned = cleaned.replace(/\s*\([^)]*\)/g, '').trim();
+  if (cleaned.toLowerCase() === 'under 4') return 'Under 4s';
+  if (cleaned.toLowerCase() === '4-7' || cleaned.toLowerCase() === '4 - 7') return '4–7s';
+  if (cleaned.toLowerCase() === '8-12' || cleaned.toLowerCase() === '8 - 12') return '8–12s';
+  return cleaned;
+};
+
+const formatChildAge = (age?: number | null) => {
+  if (age === undefined || age === null) return 'Age not verified';
+  if (age === 0) return 'Under 1 year';
+  if (age === 1) return '1 year';
+  return `${age} years`;
+};
+
+const formatAlertTimestamp = (dateString?: string | null): string => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return '';
+  const diffMs = Date.now() - date.getTime();
+  if (diffMs < 0) return 'Just now';
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 45) return 'Just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} hr ago`;
+  const diffDays = Math.floor(diffHr / 24);
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  
+  const day = date.getDate();
+  const month = date.toLocaleDateString('en-US', { month: 'short' });
+  const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  return `${day} ${month}, ${time}`;
+};
+
+const formatAlertCategory = (category?: string | null): string => {
+  if (!category) return 'Care concern';
+  const cat = category.toLowerCase();
+  if (cat === 'safeguarding' || cat === 'security_concern') return 'Safeguarding';
+  if (cat === 'child_care') return 'Child care';
+  if (cat === 'medical_support') return 'Medical support';
+  if (cat === 'pass_issue') return 'Pass issue';
+  if (cat === 'pickup_issue') return 'Pickup issue';
+  if (cat === 'location_support') return 'Location support';
+  return category
+    .split('_')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+};
+
+const formatAlertPriority = (severity?: string | null): { label: string | null; colorClass: string } => {
+  const sev = (severity || '').toLowerCase();
+  if (sev === 'urgent') {
+    return { label: 'Urgent', colorClass: 'text-rose-700 dark:text-rose-400 font-semibold' };
+  }
+  if (sev === 'warning' || sev === 'important') {
+    return { label: 'High priority', colorClass: 'text-amber-800 dark:text-[#C59B27] font-medium' };
+  }
+  if (sev === 'routine' || sev === 'normal' || sev === 'low') {
+    return { label: null, colorClass: 'text-zinc-500 dark:text-[#7A7570]' };
+  }
+  return { label: null, colorClass: 'text-zinc-500 dark:text-[#7A7570]' };
+};
+
+const formatAlertStatus = (
+  alert: any,
+  volunteerUserId?: string,
+  volunteerName?: string
+): { label: string; colorClass: string } => {
+  if (alert.status === 'resolved') {
+    return { label: 'Resolved', colorClass: 'text-zinc-500 dark:text-[#7A7570]' };
+  }
+  if (alert.status === 'acknowledged') {
+    const vId = volunteerUserId || '';
+    const vName = (volunteerName || '').toLowerCase().trim();
+    const ackByName = (alert.acknowledged_by_name || '').toLowerCase().trim();
+    const isMine = (vId && (alert.acknowledged_by === vId || alert.acknowledged_by_user_id === vId)) ||
+      (vName && ackByName && vName === ackByName);
+    return {
+      label: isMine ? "You're handling this" : 'Being handled',
+      colorClass: 'text-amber-800 dark:text-[#C59B27]'
+    };
+  }
+  return { label: 'Open', colorClass: 'text-zinc-600 dark:text-[#B8B0A5]' };
+};
+
+const resolveChildPhotoUrl = (photoRef?: string | null): string => {
+  if (!photoRef || !photoRef.trim()) return '';
+  const trimmed = photoRef.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/') || trimmed.startsWith('blob:')) {
+    return resolveMediaUrl(trimmed);
+  }
+  if (!trimmed.includes('/')) {
+    return resolveMediaUrl(`/api/media/files/${trimmed}`);
+  }
+  return resolveMediaUrl(trimmed);
+};
+
+const VolunteerDetailedAlertProgress: React.FC<{ alertId: string }> = ({ alertId }) => {
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<any[]>([]);
+  const [expanded, setExpanded] = useState(false);
+
+  const fetchProgress = async () => {
+    if (expanded) {
+      setExpanded(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await api.safetyAlerts.getVolunteerHelpRequestProgress(alertId);
+      if (res && res.success) {
+        setProgress(res.progress || []);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+      setExpanded(true);
+    }
+  };
+
+  return (
+    <div className="pt-2" id={`progress-det-${alertId}`}>
+      <button
+        onClick={fetchProgress}
+        className={`w-full text-left text-xs font-sans font-medium flex items-center justify-between bg-transparent border-none cursor-pointer p-0 transition-colors ${
+          expanded ? 'text-stone-900 dark:text-[#F0EBE3]' : 'text-stone-600 dark:text-[#B8B0A5] hover:text-stone-800 dark:hover:text-[#F0EBE3]'
+        }`}
+      >
+        <span>Response history</span>
+        {loading ? (
+          <RefreshCw className="w-3.5 h-3.5 animate-spin text-stone-400 dark:text-[#7A7570]" />
+        ) : (
+          <ChevronDown className={`w-3.5 h-3.5 transform transition-transform text-stone-400 dark:text-[#7A7570] ${expanded ? 'rotate-180' : ''}`} />
+        )}
+      </button>
+
+      {expanded && (
+        <div className="mt-2.5 space-y-2 bg-stone-50 dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] rounded-lg p-3 font-sans">
+          {progress.length > 0 ? (
+            progress.map((p, idx) => (
+              <div key={idx} className="flex space-x-2.5 text-xs" id={`milestone-${idx}`}>
+                <div className="flex flex-col items-center shrink-0">
+                  <div className="w-1.5 h-1.5 rounded-full bg-stone-400 dark:bg-[#7A7570] mt-1" />
+                  {idx !== progress.length - 1 && <div className="w-px bg-stone-200 dark:bg-[#302E29] flex-1 my-0.5" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-medium text-stone-800 dark:text-[#F0EBE3] break-words">{p.updateType || p.type}</p>
+                    <span className="text-[10px] text-stone-400 dark:text-[#7A7570] shrink-0 font-sans">
+                      {new Date(p.createdAt || p.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  {p.note && <p className="text-[11px] text-stone-600 dark:text-[#B8B0A5] italic break-words mt-0.5">"{p.note}"</p>}
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="text-xs text-stone-400 dark:text-[#7A7570] italic">No structured milestones logged yet.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+let cachedCustomHeroUrl: string | null = null;
+let cachedDefaultEventHeroUrl: string | null = null;
+
+interface VolunteerEventDashboardViewProps {
+  onNavigate: (route: AppRoute) => void;
+  volunteerProfile: any;
+  onSignOut: () => void;
+  isOffline?: boolean;
+  hasParentProfile?: boolean;
+  currentRoute?: string;
+  onSwitchExperience?: (target: 'parent' | 'volunteer') => Promise<boolean>;
+  isSwitchingExperience?: boolean;
+}
+
+export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewProps> = ({
+  onNavigate,
+  volunteerProfile,
+  onSignOut,
+  isOffline = false,
+  hasParentProfile = false,
+  currentRoute = '/volunteer/event',
+  onSwitchExperience,
+  isSwitchingExperience = false
+}) => {
+  const { showSuccess, showWarning, showError } = useNotification();
+
+  // Real-time volunteer notification states
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
+  const [showReadinessModal, setShowReadinessModal] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('koinonia_sound_enabled');
+      return stored !== 'false';
+    }
+    return true;
+  });
+  const [pushEnabled, setPushEnabled] = useState(false);
+
+  // Fetch initial preferences for volunteer
+  const fetchPreferences = async () => {
+    try {
+      const res = await api.request<{ soundEnabled: boolean; pushEnabled: boolean }>('/api/notifications/preferences');
+      if (res) {
+        setSoundEnabled(res.soundEnabled);
+        setPushEnabled(res.pushEnabled);
+        localStorage.setItem('koinonia_sound_enabled', String(res.soundEnabled));
+      }
+    } catch (_) {}
+  };
+
+  const formatTimeAgo = (isoString: string) => {
+    try {
+      return formatAlertTimestamp(isoString) || 'Recent';
+    } catch (_) {
+      return 'Recent';
+    }
+  };
+
+  const fetchVolunteerNotifications = async (playFeedback = false) => {
+    try {
+      const list = await api.parent.getNotifications(false, 'volunteer');
+      const unreadList = list.filter((n: any) => !n.isRead);
+      setNotifications(list);
+      setUnreadNotifCount((prev) => {
+        if (unreadList.length > prev && prev > 0 && soundEnabled) {
+          playSound('notification');
+        } else if (playFeedback) {
+          playSound('success');
+        }
+        return unreadList.length;
+      });
+    } catch (err: any) {
+      console.warn('[VolunteerDashboard] Volunteer notifications fetch issue:', err?.message || err);
+    }
+  };
+
+  useEffect(() => {
+    fetchPreferences();
+
+    // Check for alertId and action in URL parameters (e.g. from background push notification clicks)
+    const searchStr = window.location.search || (window.location.hash.includes('?') ? window.location.hash.substring(window.location.hash.indexOf('?')) : '');
+    if (searchStr) {
+      try {
+        const params = new URLSearchParams(searchStr);
+        const urlAlertId = params.get('alertId');
+        const action = params.get('action');
+        if (urlAlertId) {
+          setActiveEmergencySummaryAlertId(urlAlertId);
+          if (action === 'acknowledge') {
+            api.safetyAlerts.acknowledgeAndRespond(urlAlertId, {}).catch(err => {
+              console.warn('[VolunteerDashboard] Background notification auto-ack error:', err);
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to parse URL params:', e);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchVolunteerNotifications();
+    const interval = setInterval(() => {
+      fetchVolunteerNotifications();
+    }, 25000); // Poll every 25s
+    return () => clearInterval(interval);
+  }, [soundEnabled]);
+
+  const toggleSound = async () => {
+    const nextVal = !soundEnabled;
+    setSoundEnabled(nextVal);
+    localStorage.setItem('koinonia_sound_enabled', String(nextVal));
+    try {
+      await api.request('/api/notifications/preferences', {
+        method: 'PATCH',
+        body: JSON.stringify({ soundEnabled: nextVal })
+      });
+      showSuccess(nextVal ? 'Sound Alerts On' : 'Sound Alerts Off', nextVal ? 'Notification sounds enabled.' : 'Notification sounds disabled.');
+      if (nextVal) {
+        playSound('success');
+      }
+    } catch (_) {}
+  };
+
+  const togglePush = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      showError('Unsupported Device', 'Push notifications are not supported on this browser or device.');
+      return;
+    }
+
+    const nextVal = !pushEnabled;
+    try {
+      if (nextVal) {
+        if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+          showError('Notifications Blocked', 'Notifications are blocked in your browser settings. Please allow notifications in browser settings.');
+          onNavigate('/volunteer/readiness');
+          return;
+        }
+
+        const res = await subscribeUserToPush();
+        if (res.success) {
+          setPushEnabled(true);
+          showSuccess('Subscribed', 'You will now receive instant push alerts.');
+          playSound('success');
+
+          await api.request('/api/notifications/preferences', {
+            method: 'PATCH',
+            body: JSON.stringify({ pushEnabled: true })
+          });
+        } else {
+          showError('Subscription Failed', res.error || 'Failed to enable push notifications.');
+        }
+      } else {
+        await unsubscribeUserFromPush();
+        setPushEnabled(false);
+        showSuccess('Unsubscribed', 'Push alerts disabled.');
+        playSound('success');
+
+        await api.request('/api/notifications/preferences', {
+          method: 'PATCH',
+          body: JSON.stringify({ pushEnabled: false })
+        });
+      }
+    } catch (err: any) {
+      console.error('Push toggle error:', err);
+      showError('Subscription Failed', 'Could not sync push configuration with the service worker.');
+    }
+  };
+
+  const [customHeroUrl, setCustomHeroUrl] = useState<string | null>(cachedCustomHeroUrl);
+  const [defaultEventHeroUrl, setDefaultEventHeroUrl] = useState<string | null>(cachedDefaultEventHeroUrl);
+
+  useEffect(() => {
+    const fetchCustomHero = async () => {
+      try {
+        const res = await api.getPublicAppMedia();
+        if (res.success) {
+          if (res.media?.volunteerDashboardHero?.url) {
+            cachedCustomHeroUrl = res.media.volunteerDashboardHero.url;
+            setCustomHeroUrl(res.media.volunteerDashboardHero.url);
+          }
+          if (res.media?.defaultEventHero?.url) {
+            cachedDefaultEventHeroUrl = res.media.defaultEventHero.url;
+            setDefaultEventHeroUrl(res.media.defaultEventHero.url);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load custom volunteer hero:', err);
+      }
+    };
+    fetchCustomHero();
+  }, []);
+  
+  // Dashboard states
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [stats, setStats] = useState({
+    expected: 0,
+    checkedIn: 0,
+    pickedUp: 0,
+    attention: 0
+  });
+  const [eventDetails, setEventDetails] = useState<any>({
+    title: 'The General Assembly',
+    date: '18th to 22nd November 2026'
+  });
+  const [attentionItems, setAttentionItems] = useState<any[]>([]);
+  const [outbox, setOutbox] = useState<OutboxAction[]>([]);
+  const [isSyncingOutbox, setIsSyncingOutbox] = useState(false);
+  const [isDownloadingManifest, setIsDownloadingManifest] = useState(false);
+
+  // Scan screen states
+  const [scanMode, setScanMode] = useState<'check_in' | 'check_out'>('check_in');
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+  const [manualCode, setManualCode] = useState('');
+  const [showManualInput, setShowManualInput] = useState(false);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [isCheckingIn, setIsCheckingIn] = useState(false);
+  const [isReleasing, setIsReleasing] = useState(false);
+  const [isMarkingPickup, setIsMarkingPickup] = useState(false);
+  const [lastVerifiedChild, setLastVerifiedChild] = useState<any | null>(null);
+  const [lookedUpChild, setLookedUpChild] = useState<any | null>(null);
+  const [wristbandInitialChild, setWristbandInitialChild] = useState<any | null>(null);
+  const [unassignedWristbandInfo, setUnassignedWristbandInfo] = useState<{ rawInput: string; message: string } | null>(null);
+  const scannerInputRef = useRef<HTMLInputElement>(null);
+
+  // Compact Check-In Wristband Assignment states
+  const [isAssigningWristband, setIsAssigningWristband] = useState(false);
+  const [wristbandScanInput, setWristbandScanInput] = useState('');
+  const [isResolvingWristband, setIsResolvingWristband] = useState(false);
+  const [wristbandAssignmentError, setWristbandAssignmentError] = useState<string | null>(null);
+  const [stagedWristband, setStagedWristband] = useState<any | null>(null);
+  const [isBindingWristband, setIsBindingWristband] = useState(false);
+  const [justAssignedWristbandCode, setJustAssignedWristbandCode] = useState<string | null>(null);
+  const wristbandInlineInputRef = useRef<HTMLInputElement>(null);
+
+  const [recentScans, setRecentScans] = useState<any[]>([]);
+
+  // Check-in success states
+  const [checkedInSuccessChild, setCheckedInSuccessChild] = useState<any | null>(null);
+  const [checkedInSuccessEntry, setCheckedInSuccessEntry] = useState<any | null>(null);
+
+  // Pickup tool states
+  const [pickupCode, setPickupCode] = useState('');
+  const [pickupLoading, setPickupLoading] = useState(false);
+  const [pickupChild, setPickupChild] = useState<any | null>(null);
+  const [pickupVerified, setPickupVerified] = useState(false);
+  const [pickupSuccessResult, setPickupSuccessResult] = useState<any | null>(null);
+  const [pickupStats, setPickupStats] = useState({ inside: 0, pickedUp: 0, attention: 0 });
+  const [pickupLastChild, setPickupLastChild] = useState<any | null>(null);
+  const [showPickupManualInput, setShowPickupManualInput] = useState(false);
+  const [cameraUnavailable, setCameraUnavailable] = useState(false);
+  const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
+
+  // Device Security verification states
+  const [deviceVerifyActionOpen, setDeviceVerifyActionOpen] = useState(false);
+  const [pendingConfirmReleaseChild, setPendingConfirmReleaseChild] = useState<any | null>(null);
+
+  // Children search states
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selectedChildForRelease, setSelectedChildForRelease] = useState<any | null>(null);
+
+  // Child Profile & Directory States
+  const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
+  const [childDetailOrigin, setChildDetailOrigin] = useState<'scan' | 'children' | null>(null);
+  const [childProfileData, setChildProfileData] = useState<any | null>(null);
+  const [childProfileLoading, setChildProfileLoading] = useState(false);
+  const [childProfileError, setChildProfileError] = useState<string | null>(null);
+  const [activeDirectoryFilter, setActiveDirectoryFilter] = useState<string>('all');
+  const [directoryChildren, setDirectoryChildren] = useState<any[]>([]);
+  const [directoryError, setDirectoryError] = useState<boolean>(false);
+  const [directoryPage, setDirectoryPage] = useState<number>(1);
+  const [directoryPagination, setDirectoryPagination] = useState<{
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNext: boolean;
+    hasPrevious: boolean;
+  }>({
+    page: 1,
+    limit: 25,
+    total: 0,
+    totalPages: 1,
+    hasNext: false,
+    hasPrevious: false
+  });
+
+  // Safety alert states
+  const [isSafetyModalOpen, setIsSafetyModalOpen] = useState(false);
+  const [activeEmergencySummaryAlertId, setActiveEmergencySummaryAlertId] = useState<string | null>(null);
+  const [safetySeverity, setSafetySeverity] = useState('normal');
+  const [safetyCategory, setSafetyCategory] = useState('child_care');
+  const [safetyMessage, setSafetyMessage] = useState('');
+  const [safetyLocationLabel, setSafetyLocationLabel] = useState('');
+  const [safetyLocationId, setSafetyLocationId] = useState<string | null>(null);
+  const [safetyLocationDetail, setSafetyLocationDetail] = useState('');
+  const [safetyLocationSource, setSafetyLocationSource] = useState<'selected' | 'scanned' | 'manually_entered'>('selected');
+  const [safetyChildContext, setSafetyChildContext] = useState<{ id: string; fullName: string; ageGroup?: string; status?: string; photoUrl?: string } | null>(null);
+  const [isSubmittingSafetyAlert, setIsSubmittingSafetyAlert] = useState(false);
+  const [mySafetyAlerts, setMySafetyAlerts] = useState<any[]>([]);
+  const [showMyAlertsView, setShowMyAlertsView] = useState(false);
+  const [isQuickActionsOpen, setIsQuickActionsOpen] = useState(false);
+  const quickActionsRef = useRef<HTMLDivElement>(null);
+
+  // Floating quick actions dismiss handlers (Escape key and click-outside)
+  useEffect(() => {
+    if (!isQuickActionsOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsQuickActionsOpen(false);
+      }
+    };
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (quickActionsRef.current && !quickActionsRef.current.contains(e.target as Node)) {
+        setIsQuickActionsOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isQuickActionsOpen]);
+
+  useEffect(() => {
+    setIsQuickActionsOpen(false);
+  }, [currentRoute]);
+  const [safetyLinkOption, setSafetyLinkOption] = useState<'general' | 'link' | 'unidentified'>('general');
+  const [safetySearchQuery, setSafetySearchQuery] = useState('');
+  const [safetySearchResults, setSafetySearchResults] = useState<any[]>([]);
+  const [safetySearching, setSafetySearching] = useState(false);
+  const [safetyIdempotencyKey, setSafetyIdempotencyKey] = useState('');
+  const [hasAcceptedUrgentWarning, setHasAcceptedUrgentWarning] = useState(false);
+  const [safetyValidationErrors, setSafetyValidationErrors] = useState<string[]>([]);
+
+  // Category-specific safety states
+  const [safetyCcSpecificNeeds, setSafetyCcSpecificNeeds] = useState('');
+  const [safetyCcSeveritySubtype, setSafetyCcSeveritySubtype] = useState('Mild');
+  const [safetyPiReportedPickupName, setSafetyPiReportedPickupName] = useState('');
+  const [safetyPiRelationship, setSafetyPiRelationship] = useState('');
+  const [safetyPiContactPhone, setSafetyPiContactPhone] = useState('');
+  const [safetyPaPassCode, setSafetyPaPassCode] = useState('');
+  const [safetyPaErrorType, setSafetyPaErrorType] = useState('No match in roster');
+  const [safetyMsMedicalSymptom, setSafetyMsMedicalSymptom] = useState('Fever');
+  const [safetyMsRequiresMedic, setSafetyMsRequiresMedic] = useState(false);
+  const [safetyScLastSeenTime, setSafetyScLastSeenTime] = useState('Just now');
+  const [safetyScClothingDescription, setSafetyScClothingDescription] = useState('');
+  const [safetyScPhysicalAppearance, setSafetyScPhysicalAppearance] = useState('');
+  const [safetyLsAssistanceReason, setSafetyLsAssistanceReason] = useState('Teacher break relief');
+  const [safetyLsVolunteerCountNeeded, setSafetyLsVolunteerCountNeeded] = useState(1);
+  const [safetyOtCustomCareType, setSafetyOtCustomCareType] = useState('');
+
+  // Unidentified child states
+  const [safetyUcName, setSafetyUcName] = useState('');
+  const [safetyUcAgeGroup, setSafetyUcAgeGroup] = useState('Unknown');
+  const [safetyUcGender, setSafetyUcGender] = useState('Unknown');
+  const [safetyUcDescription, setSafetyUcDescription] = useState('');
+
+  // Save safety form changes to localStorage on any input
+  useEffect(() => {
+    if (!isSafetyModalOpen) return;
+    const draft = {
+      severity: safetySeverity,
+      category: safetyCategory,
+      message: safetyMessage,
+      locationLabel: safetyLocationLabel,
+      locationId: safetyLocationId,
+      locationDetail: safetyLocationDetail,
+      locationSource: safetyLocationSource,
+      linkOption: safetyLinkOption,
+      childContext: safetyChildContext,
+      ccSpecificNeeds: safetyCcSpecificNeeds,
+      ccSeveritySubtype: safetyCcSeveritySubtype,
+      piReportedPickupName: safetyPiReportedPickupName,
+      piRelationship: safetyPiRelationship,
+      piContactPhone: safetyPiContactPhone,
+      paPassCode: safetyPaPassCode,
+      paErrorType: safetyPaErrorType,
+      msMedicalSymptom: safetyMsMedicalSymptom,
+      msRequiresMedic: safetyMsRequiresMedic,
+      scLastSeenTime: safetyScLastSeenTime,
+      scClothingDescription: safetyScClothingDescription,
+      scPhysicalAppearance: safetyScPhysicalAppearance,
+      lsAssistanceReason: safetyLsAssistanceReason,
+      lsVolunteerCountNeeded: safetyLsVolunteerCountNeeded,
+      otCustomCareType: safetyOtCustomCareType,
+      ucName: safetyUcName,
+      ucAgeGroup: safetyUcAgeGroup,
+      ucGender: safetyUcGender,
+      ucDescription: safetyUcDescription
+    };
+    try {
+      localStorage.setItem('koinonia_safety_draft', JSON.stringify(draft));
+    } catch (e) {}
+  }, [
+    isSafetyModalOpen, safetySeverity, safetyCategory, safetyMessage, safetyLocationLabel, safetyLocationId,
+    safetyLocationDetail, safetyLocationSource, safetyLinkOption,
+    safetyChildContext, safetyCcSpecificNeeds, safetyCcSeveritySubtype, safetyPiReportedPickupName,
+    safetyPiRelationship, safetyPiContactPhone, safetyPaPassCode, safetyPaErrorType, safetyMsMedicalSymptom,
+    safetyMsRequiresMedic, safetyScLastSeenTime, safetyScClothingDescription, safetyScPhysicalAppearance,
+    safetyLsAssistanceReason, safetyLsVolunteerCountNeeded, safetyOtCustomCareType, safetyUcName,
+    safetyUcAgeGroup, safetyUcGender, safetyUcDescription
+  ]);
+
+  // Phase 6 duty presence states
+  const [currentDutyLocation, setCurrentDutyLocation] = useState<any>(null);
+  const [showLocationSelectModal, setShowLocationSelectModal] = useState<boolean>(false);
+  const [showLocationQRModal, setShowLocationQRModal] = useState<boolean>(false);
+  const [showSetLocationSheet, setShowSetLocationSheet] = useState<boolean>(false);
+  const [showEventDetailsModal, setShowEventDetailsModal] = useState<boolean>(false);
+  const [showOfflineHubDetails, setShowOfflineHubDetails] = useState<boolean>(false);
+  const [availableLocations, setAvailableLocations] = useState<any[]>([]);
+  const [selectedLocationPresenceId, setSelectedLocationPresenceId] = useState<string>('');
+  const [presenceActionLoading, setPresenceActionLoading] = useState<boolean>(false);
+  const [isLocationScannerActive, setIsLocationScannerActive] = useState<boolean>(false);
+  const [locationScannerError, setLocationScannerError] = useState<string | null>(null);
+  const [scannedLocationData, setScannedLocationData] = useState<any | null>(null);
+  const [scannedTokenStr, setScannedTokenStr] = useState<string | null>(null);
+  const [showDutyLocationDetailsModal, setShowDutyLocationDetailsModal] = useState<boolean>(false);
+
+  const fetchCurrentDutyLocation = async () => {
+    try {
+      const data = await api.request<any>('/api/duty/current-location');
+      if (data && data.success && (data.presence || data.location)) {
+        setCurrentDutyLocation(data.presence || data.location);
+      } else {
+        setCurrentDutyLocation(null);
+      }
+    } catch (err) {
+      console.error('Error fetching current duty location:', err);
+    }
+  };
+
+  const handleConfirmArrival = async () => {
+    if (!currentDutyLocation?.locationId && !currentDutyLocation?.id) return;
+    setPresenceActionLoading(true);
+    try {
+      const locId = currentDutyLocation.locationId || currentDutyLocation.id;
+      const data = await api.request<any>('/api/duty/current-location', {
+        method: 'POST',
+        body: JSON.stringify({ locationId: locId, source: 'manual' })
+      });
+      if (data && data.success) {
+        showSuccess("Checked in for duty", `Confirmed at ${data.presence?.name || currentDutyLocation.name}`);
+        setCurrentDutyLocation(data.presence || {
+          ...currentDutyLocation,
+          isPresent: true,
+          presentSince: new Date().toISOString()
+        });
+      } else {
+        showError("Check-in error", data?.error || "Could not confirm presence.");
+      }
+    } catch (err: any) {
+      showError("Check-in error", err?.message || "Failed to confirm duty presence.");
+    } finally {
+      setPresenceActionLoading(false);
+    }
+  };
+
+  const fetchAvailableLocations = async () => {
+    try {
+      const data = await api.request<any>('/api/duty/locations');
+      if (data && data.success) {
+        setAvailableLocations(data.items || []);
+      }
+    } catch (err) {
+      console.error('Error fetching locations:', err);
+    }
+  };
+
+  const startLocationQRScanning = async () => {
+    setIsLocationScannerActive(true);
+    setLocationScannerError(null);
+    try {
+      if (!codeReaderRef.current) {
+        codeReaderRef.current = new BrowserQRCodeReader();
+      }
+      const devices = await BrowserQRCodeReader.listVideoInputDevices();
+      if (devices.length > 0) {
+        let defaultDeviceId = devices[0].deviceId;
+        const backCam = devices.find(device => 
+          device.label.toLowerCase().includes('back') || 
+          device.label.toLowerCase().includes('rear') || 
+          device.label.toLowerCase().includes('environment')
+        );
+        if (backCam) {
+          defaultDeviceId = backCam.deviceId;
+        }
+        
+        setTimeout(async () => {
+          const videoElement = document.getElementById('location-scan-video') as HTMLVideoElement;
+          if (videoElement && codeReaderRef.current) {
+            const controls = await codeReaderRef.current.decodeFromVideoDevice(
+              defaultDeviceId,
+              videoElement,
+              async (result, error) => {
+                if (result) {
+                  const token = result.getText().trim();
+                  controls.stop();
+                  await handleVerifyLocationQR(token);
+                }
+              }
+            );
+            controlsRef.current = controls;
+          }
+        }, 300);
+
+      } else {
+        setLocationScannerError('No camera devices detected.');
+      }
+    } catch (err) {
+      console.error('QR scanner error:', err);
+      setLocationScannerError('Failed to access camera.');
+    }
+  };
+
+  const stopLocationQRScanning = () => {
+    setIsLocationScannerActive(false);
+    if (controlsRef.current) {
+      try {
+        controlsRef.current.stop();
+      } catch (e) {}
+      controlsRef.current = null;
+    }
+  };
+
+  const handleVerifyLocationQR = async (token: string) => {
+    setPresenceActionLoading(true);
+    setLocationScannerError(null);
+    try {
+      let data: any;
+      try {
+        data = await api.request<any>('/api/duty/location-code/verify', {
+          method: 'POST',
+          body: JSON.stringify({ code: token })
+        });
+      } catch (firstErr) {
+        data = await api.request<any>('/api/duty/location-access/verify', {
+          method: 'POST',
+          body: JSON.stringify({ token: token })
+        });
+      }
+      if (data && data.success) {
+        stopLocationQRScanning();
+        setScannedLocationData(data);
+        setScannedTokenStr(data.token || token);
+      } else {
+        const errorMsg = data?.message || data?.error || 'Invalid or disabled QR location code.';
+        showError('Verification Failed', errorMsg);
+        setLocationScannerError(errorMsg);
+      }
+    } catch (err: any) {
+      console.error('Error verifying location QR:', err);
+      const errorMsg = err?.message || 'Invalid or disabled QR location code.';
+      showError('Verification Failed', errorMsg);
+      setLocationScannerError(errorMsg);
+    } finally {
+      setPresenceActionLoading(false);
+    }
+  };
+
+  const handleConfirmArrivalFromQR = async () => {
+    if (!scannedTokenStr && !scannedLocationData?.location?.id) return;
+    setPresenceActionLoading(true);
+    try {
+      const data = await api.request<any>('/api/duty/current-location', {
+        method: 'POST',
+        body: JSON.stringify({
+          scannedToken: scannedTokenStr,
+          locationId: scannedLocationData?.location?.id,
+          source: 'scanned'
+        })
+      });
+      if (data && data.success && data.presence) {
+        showSuccess('Arrival Confirmed', `Duty location set to: ${data.presence.name}`);
+        setCurrentDutyLocation(data.presence);
+        setScannedLocationData(null);
+        setScannedTokenStr(null);
+        setShowLocationQRModal(false);
+      } else {
+        showError('Action Failed', data?.error || 'Could not register presence.');
+      }
+    } catch (err: any) {
+      console.error('Error confirming arrival:', err);
+      showError('Error', 'Failed to register duty location arrival.');
+    } finally {
+      setPresenceActionLoading(false);
+    }
+  };
+
+  const handleSelectManualLocation = async (locId: string) => {
+    if (!locId) return;
+    setPresenceActionLoading(true);
+    try {
+      const data = await api.request<any>('/api/duty/current-location', {
+        method: 'POST',
+        body: JSON.stringify({ locationId: locId, source: 'selected' })
+      });
+      if (data && data.success && (data.presence || data.location)) {
+        const loc = data.presence || data.location;
+        showSuccess('Location Selected', `Duty location set to: ${loc.name}`);
+        setCurrentDutyLocation(loc);
+        setShowLocationSelectModal(false);
+      } else {
+        showError('Action Failed', data?.error || 'Could not change location.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      showError('Error', 'Failed to register duty location.');
+    } finally {
+      setPresenceActionLoading(false);
+    }
+  };
+
+  const handleLeaveLocation = async () => {
+    if (!confirm('Are you sure you want to leave your current location?')) return;
+    setPresenceActionLoading(true);
+    try {
+      const data = await api.request<any>('/api/duty/current-location', {
+        method: 'DELETE'
+      });
+      if (data && data.success) {
+        showSuccess('Duty Location Cleared', 'You are no longer registered at any active location.');
+        setCurrentDutyLocation(null);
+      }
+    } catch (err) {
+      console.error(err);
+      showError('Error', 'Failed to leave location.');
+    } finally {
+      setPresenceActionLoading(false);
+    }
+  };
+
+  // Team Safety Alert states
+  const [teamAlerts, setTeamAlerts] = useState<any[]>([]);
+  const [loadingTeamAlerts, setLoadingTeamAlerts] = useState(false);
+  const [teamAlertsTab, setTeamAlertsTab] = useState<'team' | 'all' | 'resolved'>('team');
+  const [resolvingTeamAlert, setResolvingTeamAlert] = useState<any | null>(null);
+  const [teamResolutionNote, setTeamResolutionNote] = useState('');
+  const [teamActionInProgress, setTeamActionInProgress] = useState<string | null>(null);
+
+  const fetchTeamSafetyAlerts = async (isQuiet = false) => {
+    if (!isQuiet) setLoadingTeamAlerts(true);
+    try {
+      const res = await api.volunteer.getTeamSafetyAlerts();
+      if (Array.isArray(res)) {
+        setTeamAlerts(res);
+      }
+    } catch (err: any) {
+      console.warn('[VolunteerDashboard] Team safety alerts fetch issue:', err?.message || err);
+    } finally {
+      setLoadingTeamAlerts(false);
+    }
+  };
+
+  const handleAcknowledgeTeamAlert = async (id: string) => {
+    resumeAudioContext();
+    setTeamActionInProgress(id);
+    try {
+      const res = await api.volunteer.acknowledgeSafetyAlert(id);
+      if (res.success) {
+        showSuccess('Alert Claimed', 'You have acknowledged and claimed responsibility for this request.');
+        fetchTeamSafetyAlerts(true);
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Action Failed', parsed.message || 'Could not acknowledge this safety alert.');
+    } finally {
+      setTeamActionInProgress(null);
+    }
+  };
+
+  const handleEscalateTeamAlert = async (id: string) => {
+    resumeAudioContext();
+    setTeamActionInProgress(`escalate-${id}`);
+    try {
+      const res = await api.volunteer.escalateSafetyAlert(id);
+      if (res.success) {
+        showSuccess('Alert Escalated', 'Safety Alert has been escalated to Urgent priority.');
+        fetchTeamSafetyAlerts(true);
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Escalation Failed', parsed.message || 'Could not escalate this safety alert.');
+    } finally {
+      setTeamActionInProgress(null);
+    }
+  };
+
+  const handleResolveTeamAlertSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resolvingTeamAlert) return;
+    if (!teamResolutionNote.trim()) {
+      showError('Details Required', 'Please enter a brief note on how this situation was settled.');
+      return;
+    }
+
+    setTeamActionInProgress(`resolve-${resolvingTeamAlert.id}`);
+    try {
+      const res = await api.volunteer.resolveSafetyAlert(resolvingTeamAlert.id, teamResolutionNote.trim());
+      if (res.success) {
+        showSuccess('Request Settled', 'The care and safety request has been marked as resolved.');
+        setResolvingTeamAlert(null);
+        setTeamResolutionNote('');
+        fetchTeamSafetyAlerts(true);
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Resolution Failed', parsed.message || 'Could not resolve this safety alert.');
+    } finally {
+      setTeamActionInProgress(null);
+    }
+  };
+
+  const fetchSafetyAlerts = async () => {
+    try {
+      const res = await api.volunteer.getSafetyAlerts();
+      if (res && res.success) {
+        setMySafetyAlerts(res.alerts || []);
+      }
+    } catch (err: any) {
+      console.warn('[VolunteerDashboard] Volunteer safety alerts fetch issue:', err?.message || err);
+    }
+  };
+
+  const handleOpenSafetyAlertModal = (childContext?: { id: string; fullName: string; ageGroup?: string; status?: string; photoUrl?: string }) => {
+    if (childContext) {
+      setSafetyChildContext({
+        id: childContext.id,
+        fullName: childContext.fullName,
+        ageGroup: childContext.ageGroup,
+        status: childContext.status,
+        photoUrl: childContext.photoUrl
+      });
+      setSafetyLinkOption('link');
+    } else if (lookedUpChild) {
+      setSafetyChildContext({
+        id: lookedUpChild.id,
+        fullName: lookedUpChild.fullName,
+        ageGroup: lookedUpChild.ageGroup || lookedUpChild.className,
+        status: lookedUpChild.entryStatus || lookedUpChild.status,
+        photoUrl: lookedUpChild.photoUrl
+      });
+      setSafetyLinkOption('link');
+    } else if (pickupChild) {
+      setSafetyChildContext({
+        id: pickupChild.id,
+        fullName: pickupChild.fullName,
+        ageGroup: pickupChild.ageGroup || pickupChild.className,
+        status: pickupChild.entryStatus || pickupChild.status,
+        photoUrl: pickupChild.photoUrl
+      });
+      setSafetyLinkOption('link');
+    } else {
+      setSafetyChildContext(null);
+      setSafetyLinkOption('general');
+    }
+    
+    // Default values
+    setSafetySeverity('normal');
+    setSafetyCategory('child_care');
+    setSafetyMessage('');
+    setSafetyLocationLabel('');
+    setSafetyLocationId(null);
+    setSafetyLocationDetail('');
+    setSafetyLocationSource('selected');
+    setSafetySearchQuery('');
+    setSafetySearchResults([]);
+    setSafetySearching(false);
+    
+    // Reset category-specific states
+    setSafetyCcSpecificNeeds('');
+    setSafetyCcSeveritySubtype('Mild');
+    setSafetyPiReportedPickupName('');
+    setSafetyPiRelationship('');
+    setSafetyPiContactPhone('');
+    setSafetyPaPassCode('');
+    setSafetyPaErrorType('No match in roster');
+    setSafetyMsMedicalSymptom('Fever');
+    setSafetyMsRequiresMedic(false);
+    setSafetyScLastSeenTime('Just now');
+    setSafetyScClothingDescription('');
+    setSafetyScPhysicalAppearance('');
+    setSafetyLsAssistanceReason('Teacher break relief');
+    setSafetyLsVolunteerCountNeeded(1);
+    setSafetyOtCustomCareType('');
+    setSafetyUcName('');
+    setSafetyUcAgeGroup('Unknown');
+    setSafetyUcGender('Unknown');
+    setSafetyUcDescription('');
+
+    // Check for draft autosave and restore it
+    try {
+      const draftJson = localStorage.getItem('koinonia_safety_draft');
+      if (draftJson) {
+        const draft = JSON.parse(draftJson);
+        if (draft.severity) setSafetySeverity(draft.severity);
+        if (draft.category) setSafetyCategory(draft.category);
+        if (draft.message) setSafetyMessage(draft.message);
+        if (draft.locationLabel) setSafetyLocationLabel(draft.locationLabel);
+        if (draft.locationId) setSafetyLocationId(draft.locationId);
+        if (draft.locationDetail) setSafetyLocationDetail(draft.locationDetail);
+        if (draft.locationSource) setSafetyLocationSource(draft.locationSource);
+        if (draft.linkOption) setSafetyLinkOption(draft.linkOption);
+        if (draft.childContext) setSafetyChildContext(draft.childContext);
+        if (draft.ccSpecificNeeds) setSafetyCcSpecificNeeds(draft.ccSpecificNeeds);
+        if (draft.ccSeveritySubtype) setSafetyCcSeveritySubtype(draft.ccSeveritySubtype);
+        if (draft.piReportedPickupName) setSafetyPiReportedPickupName(draft.piReportedPickupName);
+        if (draft.piRelationship) setSafetyPiRelationship(draft.piRelationship);
+        if (draft.piContactPhone) setSafetyPiContactPhone(draft.piContactPhone);
+        if (draft.paPassCode) setSafetyPaPassCode(draft.paPassCode);
+        if (draft.paErrorType) setSafetyPaErrorType(draft.paErrorType);
+        if (draft.msMedicalSymptom) setSafetyMsMedicalSymptom(draft.msMedicalSymptom);
+        if (draft.msRequiresMedic !== undefined) setSafetyMsRequiresMedic(draft.msRequiresMedic);
+        if (draft.scLastSeenTime) setSafetyScLastSeenTime(draft.scLastSeenTime);
+        if (draft.scClothingDescription) setSafetyScClothingDescription(draft.scClothingDescription);
+        if (draft.scPhysicalAppearance) setSafetyScPhysicalAppearance(draft.scPhysicalAppearance);
+        if (draft.lsAssistanceReason) setSafetyLsAssistanceReason(draft.lsAssistanceReason);
+        if (draft.lsVolunteerCountNeeded !== undefined) setSafetyLsVolunteerCountNeeded(draft.lsVolunteerCountNeeded);
+        if (draft.otCustomCareType) setSafetyOtCustomCareType(draft.otCustomCareType);
+        if (draft.ucName) setSafetyUcName(draft.ucName);
+        if (draft.ucAgeGroup) setSafetyUcAgeGroup(draft.ucAgeGroup);
+        if (draft.ucGender) setSafetyUcGender(draft.ucGender);
+        if (draft.ucDescription) setSafetyUcDescription(draft.ucDescription);
+      }
+    } catch (e) {
+      console.error('Failed to restore draft:', e);
+    }
+    
+    // Phase 6: Generate client-side idempotencyKey on modal mount
+    setSafetyIdempotencyKey('key-' + Math.random().toString(36).substring(2, 15) + '-' + Date.now());
+    setHasAcceptedUrgentWarning(false);
+    setSafetyValidationErrors([]);
+    setIsSafetyModalOpen(true);
+  };
+
+  const handleSafetyChildSearch = async (query: string) => {
+    setSafetySearchQuery(query);
+    if (!query.trim()) {
+      setSafetySearchResults([]);
+      return;
+    }
+    setSafetySearching(true);
+    try {
+      const results = await api.volunteer.searchChildren(query.trim());
+      setSafetySearchResults(results || []);
+    } catch (err) {
+      console.error('Safety alert child search failed:', err);
+    } finally {
+      setSafetySearching(false);
+    }
+  };
+
+  const handleRaiseSafetyAlert = async (e?: React.FormEvent) => {
+    if (e) {
+      e.preventDefault();
+    }
+
+    const errors: string[] = [];
+    
+    if (!safetySeverity) {
+      errors.push("Select an urgency level.");
+    }
+    if (!safetyCategory) {
+      errors.push("Select an alert type / category.");
+    }
+
+    const isUrgent = safetySeverity === 'urgent';
+
+    // Rapid Urgent path: Bypasses message requirement or fills a default
+    let finalMessage = safetyMessage.trim();
+    if (isUrgent && !finalMessage) {
+      finalMessage = `IMMEDIATE SUPPORT REQUESTED: ${safetyCategory.toUpperCase().replace('_', ' ')}`;
+    }
+
+    if (!isUrgent && !finalMessage) {
+      errors.push("Describe what happened.");
+    }
+    
+    // Check if category requires location for Important / Urgent
+    const categoryRequiresLocation = safetyCategory === 'location_support' || safetyCategory === 'security_concern';
+    const hasLocation = safetyLocationId || safetyLocationLabel.trim();
+    if ((safetySeverity === 'important' || safetySeverity === 'urgent') && categoryRequiresLocation && !hasLocation) {
+      errors.push("Add the request location.");
+    }
+    
+    if (safetyLinkOption === 'link' && !safetyChildContext) {
+      errors.push("Select a child to link, or switch to 'General safety note'.");
+    }
+
+    // Category-specific validation (bypassed if urgent)
+    if (!isUrgent) {
+      if (safetyCategory === 'child_care' && !safetyCcSpecificNeeds.trim()) {
+        errors.push("Please select or describe the specific care need.");
+      }
+      if (safetyCategory === 'pickup_issue') {
+        if (!safetyPiReportedPickupName.trim()) {
+          errors.push("Please enter the reported pickup person's name.");
+        }
+        if (!safetyPiRelationship.trim()) {
+          errors.push("Please enter the relationship to the child.");
+        }
+      }
+      if (safetyCategory === 'pass_issue' && !safetyPaErrorType.trim()) {
+        errors.push("Please select the error type.");
+      }
+      if (safetyCategory === 'medical_support' && !safetyMsMedicalSymptom.trim()) {
+        errors.push("Please select or describe the medical symptom.");
+      }
+      if (safetyCategory === 'security_concern') {
+        if (!safetyScLastSeenTime.trim()) {
+          errors.push("Please select or enter when the child was last seen.");
+        }
+        if (!safetyScClothingDescription.trim()) {
+          errors.push("Please describe the child's clothing.");
+        }
+      }
+      if (safetyCategory === 'location_support' && !safetyLsAssistanceReason.trim()) {
+        errors.push("Please describe the reason assistance is needed.");
+      }
+      if (safetyCategory === 'other' && !safetyOtCustomCareType.trim()) {
+        errors.push("Please specify the custom care request details.");
+      }
+    }
+    
+    if (errors.length > 0) {
+      setSafetyValidationErrors(errors);
+      setTimeout(() => {
+        const summary = document.getElementById('safety-validation-summary');
+        if (summary) {
+          summary.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 50);
+      return;
+    }
+    
+    setSafetyValidationErrors([]);
+
+    // Construct structured details
+    const structuredDetails: Record<string, any> = {};
+    if (safetyCategory === 'child_care') {
+      structuredDetails.specific_needs = safetyCcSpecificNeeds;
+      structuredDetails.severity_subtype = safetyCcSeveritySubtype;
+    } else if (safetyCategory === 'pickup_issue') {
+      structuredDetails.reported_pickup_name = safetyPiReportedPickupName;
+      structuredDetails.relationship = safetyPiRelationship;
+      structuredDetails.contact_phone = safetyPiContactPhone;
+    } else if (safetyCategory === 'pass_issue') {
+      structuredDetails.pass_code = safetyPaPassCode;
+      structuredDetails.error_type = safetyPaErrorType;
+    } else if (safetyCategory === 'medical_support') {
+      structuredDetails.medical_symptom = safetyMsMedicalSymptom;
+      structuredDetails.requires_medic = safetyMsRequiresMedic;
+    } else if (safetyCategory === 'security_concern') {
+      structuredDetails.last_seen_time = safetyScLastSeenTime;
+      structuredDetails.clothing_description = safetyScClothingDescription;
+      structuredDetails.physical_appearance = safetyScPhysicalAppearance;
+    } else if (safetyCategory === 'location_support') {
+      structuredDetails.assistance_reason = safetyLsAssistanceReason;
+      structuredDetails.volunteer_count_needed = safetyLsVolunteerCountNeeded;
+    } else if (safetyCategory === 'other') {
+      structuredDetails.custom_care_type = safetyOtCustomCareType;
+    }
+
+    if (safetyLinkOption === 'unidentified') {
+      structuredDetails.unidentified_child = {
+        name: safetyUcName || 'Lost Unidentified Child',
+        ageGroup: safetyUcAgeGroup,
+        gender: safetyUcGender,
+        description: safetyUcDescription
+      };
+    }
+    
+    setIsSubmittingSafetyAlert(true);
+    try {
+      const res = await api.volunteer.raiseSafetyAlert({
+        childId: safetyLinkOption === 'link' ? (safetyChildContext?.id || null) : null,
+        category: safetyCategory,
+        severity: safetySeverity,
+        locationLabel: safetyLocationLabel,
+        locationId: safetyLocationId,
+        locationDetail: safetyLocationDetail,
+        locationSource: safetyLocationSource,
+        message: finalMessage,
+        idempotencyKey: safetyIdempotencyKey,
+        structuredDetails
+      } as any);
+      
+      if (res && res.success) {
+        showSuccess('Alert Sent', res.message || 'Help request has been submitted to admins.');
+        setIsSafetyModalOpen(false);
+        setSafetyIdempotencyKey(''); // Clear on successful submit
+        try { localStorage.removeItem('koinonia_safety_draft'); } catch (e) {}
+        fetchSafetyAlerts();
+        try { playSound('notification_gentle'); } catch (e) {}
+      } else {
+        showError('Request Failed', 'Failed to send alert. Please try again.');
+      }
+    } catch (err: any) {
+      const apiErr = extractApiError(err);
+      showError('Error', apiErr.message || 'Error raising alert.');
+    } finally {
+      setIsSubmittingSafetyAlert(false);
+    }
+  };
+
+  // Scanner refs
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const codeReaderRef = useRef<BrowserQRCodeReader | null>(null);
+  const controlsRef = useRef<any>(null);
+  const isLookupInFlight = useRef<boolean>(false);
+  const lastScannedCode = useRef<string>('');
+  const isLookupInFlightRef = useRef(false);
+  const hasSuccessfulScanRef = useRef(false);
+  const lastScannedCodeRef = useRef<string | null>(null);
+  const lastScanAtRef = useRef<number>(0);
+
+  // Reports states
+  const [reportsData, setReportsData] = useState<any | null>(null);
+  const [reportsLoading, setReportsLoading] = useState(false);
+  const [submittingReport, setSubmittingReport] = useState(false);
+  const [reportNotes, setReportNotes] = useState('');
+  const [showAttentionModal, setShowAttentionModal] = useState(false);
+
+  // Interactive Resolution Modal States
+  const [selectedAttentionItem, setSelectedAttentionItem] = useState<any | null>(null);
+  const [showAttentionDetailModal, setShowAttentionDetailModal] = useState<boolean>(false);
+  const [attentionNote, setAttentionNote] = useState<string>('');
+  const [resolvingAttention, setResolvingAttention] = useState<boolean>(false);
+  const [attentionError, setAttentionError] = useState<string | null>(null);
+
+  const rawCleanRoute = currentRoute.split('?')[0];
+  const cleanRoute = rawCleanRoute === '/volunteer/summary'
+    ? '/volunteer/reports'
+    : rawCleanRoute === '/volunteer/safety'
+    ? '/volunteer/team-alerts'
+    : rawCleanRoute;
+  const canAssignWristbands = React.useMemo(() => {
+    if (!volunteerProfile) return false;
+    if (volunteerProfile.role === 'admin' || volunteerProfile.role === 'super_admin') return true;
+    if (volunteerProfile.status === 'approved') {
+      if (currentDutyLocation) {
+        const key = (currentDutyLocation.responsibility_key || '').toLowerCase();
+        const team = (currentDutyLocation.team_key || '').toLowerCase();
+        return (
+          key.includes('check') ||
+          key.includes('gate') ||
+          key.includes('arrival') ||
+          key.includes('registration') ||
+          team.includes('check_in') ||
+          team.includes('gate')
+        );
+      }
+      return true;
+    }
+    return false;
+  }, [volunteerProfile, currentDutyLocation]);
+
+  // Fetch standard dashboard data
+  const fetchDashboardData = async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const res = await api.volunteer.getEventHome();
+      if (res) {
+        if (res.stats) setStats(res.stats);
+        if (res.event) setEventDetails(res.event);
+        if (res.attentionItems) setAttentionItems(res.attentionItems);
+        if (res.dutyLocation) setCurrentDutyLocation(res.dutyLocation);
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch volunteer dashboard stats:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  // Fetch scan/checkout history
+  const fetchHistory = async () => {
+    try {
+      const history = await api.volunteer.getCheckInHistory();
+      if (history) {
+        setRecentScans(history);
+      }
+    } catch (err) {
+      console.error('Failed to fetch scan history:', err);
+    }
+  };
+
+  // Fetch pickup home data
+  const fetchPickupData = async (silent = false) => {
+    if (!silent) setPickupLoading(true);
+    try {
+      const res = await api.volunteer.getPickupHome();
+      if (res && res.success) {
+        setPickupStats(res.stats || { inside: 0, pickedUp: 0, attention: 0 });
+        if (res.lastChild) {
+          setPickupLastChild(res.lastChild);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch pickup data:', err);
+    } finally {
+      setPickupLoading(false);
+    }
+  };
+
+  // Fetch reports data
+  const fetchReportsData = async (silent = false) => {
+    if (!silent) setReportsLoading(true);
+    try {
+      const res = await api.volunteer.getReports();
+      if (res && res.success) {
+        setReportsData(res);
+        if (res.stats) setStats(res.stats);
+        if (res.finalReport && res.finalReport.notes) {
+          setReportNotes(res.finalReport.notes);
+        } else {
+          setReportNotes('');
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch reports:', err);
+    } finally {
+      setReportsLoading(false);
+    }
+  };
+
+  const handleSubmitReport = async () => {
+    if (!reportNotes.trim()) {
+      showWarning('Required', 'Please enter some notes for the final event report.');
+      return;
+    }
+    setSubmittingReport(true);
+    try {
+      const res = await api.volunteer.submitFinalReport(reportNotes);
+      if (res && res.success) {
+        showSuccess('Submitted', 'The final event report has been successfully submitted and logged.');
+        fetchReportsData(true); // reload report data silently
+      } else {
+        showError('Submission Failed', 'Could not submit report at this moment.');
+      }
+    } catch (err: any) {
+      const apiErr = extractApiError(err);
+      showError('Submission Error', apiErr.message || 'Error submitting report.');
+    } finally {
+      setSubmittingReport(false);
+    }
+  };
+
+  const formatTime = (isoString?: string) => {
+    if (!isoString) return '';
+    try {
+      const d = new Date(isoString);
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return '';
+    }
+  };
+
+  const calculateAge = (dobString?: string) => {
+    if (!dobString) return '';
+    try {
+      const dob = new Date(dobString);
+      const today = new Date();
+      let age = today.getFullYear() - dob.getFullYear();
+      const m = today.getMonth() - dob.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+        age--;
+      }
+      return age >= 0 ? (age === 0 ? 'Under 1 year old' : `${age} ${age === 1 ? 'year' : 'years'} old`) : '';
+    } catch {
+      return '';
+    }
+  };
+
+  const formatDate = (isoString?: string) => {
+    if (!isoString) return '';
+    try {
+      const d = new Date(isoString);
+      return d.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return '';
+    }
+  };
+
+  const mapAgeGroupDisplayName = (name: string) => {
+    const norm = (name || '').toLowerCase().trim();
+    if (norm.includes('creche') || norm.includes('1-3') || norm.includes('toddler')) return 'Ages 1-3';
+    if (norm.includes('preschool') || norm.includes('4-6') || norm.includes('4-8')) return 'Ages 4-6';
+    if (norm.includes('7-9')) return 'Ages 7-9';
+    if (norm.includes('teens') || norm.includes('10-12') || norm.includes('teen')) return 'Ages 10-12';
+    return name;
+  };
+
+  // Run on mount or route transition
+  useEffect(() => {
+    fetchCurrentDutyLocation();
+    if (cleanRoute === '/volunteer/pickup') {
+      fetchPickupData();
+    } else if (cleanRoute === '/volunteer/reports') {
+      fetchReportsData();
+    } else {
+      fetchDashboardData();
+      fetchHistory();
+    }
+  }, [cleanRoute]);
+
+  // Outbox initialization, multi-tab coordination, and automatic sync processing
+  useEffect(() => {
+    let devId = localStorage.getItem('koinonia_device_id');
+    if (!devId) {
+      devId = 'dev-' + Math.random().toString(36).substring(2, 11);
+      localStorage.setItem('koinonia_device_id', devId);
+    }
+
+    const loadAndRefresh = async () => {
+      try {
+        const list = await offlineService.getOutbox();
+        setOutbox(list);
+      } catch (err) {
+        console.warn('Failed to load local offline outbox:', err);
+      }
+    };
+
+    loadAndRefresh();
+
+    const handleOutboxUpdate = () => {
+      loadAndRefresh();
+    };
+
+    window.addEventListener('koinonia_outbox_updated', handleOutboxUpdate);
+
+    // Setup periodic sync
+    const syncInterval = setInterval(async () => {
+      if (!offlineService.isOffline() && devId) {
+        try {
+          const res = await offlineService.syncOutbox(devId);
+          if (res.successCount > 0 || res.conflictCount > 0) {
+            showSuccess('Offline Scans Synced', `Successfully processed ${res.successCount} queued check-ins online.`);
+            fetchDashboardData(true);
+            fetchHistory();
+          }
+        } catch (e) {
+          console.warn('Periodic auto-sync failed:', e);
+        }
+      }
+    }, 15000);
+
+    return () => {
+      window.removeEventListener('koinonia_outbox_updated', handleOutboxUpdate);
+      clearInterval(syncInterval);
+    };
+  }, []);
+
+  // Handle auto-clearing selected child when navigating away from children route
+  useEffect(() => {
+    if (cleanRoute !== '/volunteer/children') {
+      setSelectedChildId(null);
+      setChildDetailOrigin(null);
+    }
+  }, [cleanRoute]);
+
+  // High-throughput autofocus for volunteer check-in scanner input
+  useEffect(() => {
+    if (cleanRoute === '/volunteer/scan' && !lookedUpChild && !checkedInSuccessChild) {
+      const timer = setTimeout(() => {
+        scannerInputRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [cleanRoute, lookedUpChild, checkedInSuccessChild]);
+
+  // Poll safety alerts raised by this volunteer
+  useEffect(() => {
+    fetchSafetyAlerts();
+    const interval = setInterval(() => {
+      fetchSafetyAlerts();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Poll team-level safety alerts when active
+  useEffect(() => {
+    if (cleanRoute === '/volunteer/team-alerts') {
+      fetchTeamSafetyAlerts();
+      const interval = setInterval(() => {
+        fetchTeamSafetyAlerts(true);
+      }, 8000);
+      return () => clearInterval(interval);
+    }
+  }, [cleanRoute]);
+
+  // Fetch directory children list based on search query, status filter, and pagination
+  const fetchChildrenDirectory = async (pageToFetch = directoryPage, filterToUse = activeDirectoryFilter, searchToUse = searchQuery) => {
+    setSearching(true);
+    setDirectoryError(false);
+    try {
+      const res = await api.volunteer.getChildren({
+        q: searchToUse.trim(),
+        status: filterToUse,
+        page: pageToFetch,
+        limit: 25
+      });
+      if (res && res.items) {
+        setDirectoryChildren(res.items);
+        if (res.pagination) {
+          setDirectoryPagination(res.pagination);
+          setDirectoryPage(res.pagination.page);
+        }
+      } else if (Array.isArray(res)) {
+        setDirectoryChildren(res);
+        setDirectoryPagination({
+          page: 1,
+          limit: res.length,
+          total: res.length,
+          totalPages: 1,
+          hasNext: false,
+          hasPrevious: false
+        });
+      } else {
+        setDirectoryChildren([]);
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch children directory:', err);
+      setDirectoryError(true);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  // Trigger search on route change or filter change, resetting to page 1
+  useEffect(() => {
+    if (cleanRoute === '/volunteer/children' || cleanRoute === '/volunteer/reports') {
+      setDirectoryPage(1);
+      fetchChildrenDirectory(1, activeDirectoryFilter, searchQuery);
+    }
+  }, [cleanRoute, activeDirectoryFilter]);
+
+  // Debounce search query changes specifically on the children view
+  useEffect(() => {
+    if (cleanRoute !== '/volunteer/children') return;
+    const timer = setTimeout(() => {
+      setDirectoryPage(1);
+      fetchChildrenDirectory(1, activeDirectoryFilter, searchQuery);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Load detailed child profile
+  useEffect(() => {
+    const fetchChildProfile = async () => {
+      if (!selectedChildId) {
+        setChildProfileData(null);
+        setChildProfileError(null);
+        return;
+      }
+      setChildProfileLoading(true);
+      setChildProfileError(null);
+      try {
+        const res = await api.volunteer.getChildProfile(selectedChildId);
+        if (res && res.success && res.child) {
+          setChildProfileData(res);
+        } else {
+          setChildProfileError('This child is no longer available.');
+        }
+      } catch (err: any) {
+        setChildProfileError('This child is no longer available.');
+      } finally {
+        setChildProfileLoading(false);
+      }
+    };
+    fetchChildProfile();
+  }, [selectedChildId]);
+
+  // Prepare and initiate pickup check-out flow
+  const handlePreparePickup = async (childId: string) => {
+    setPickupLoading(true);
+    try {
+      const res = await api.volunteer.preparePickup(childId);
+      if (res && res.success && res.child) {
+        setPickupChild(res.child);
+        onNavigate('/volunteer/pickup');
+        showSuccess('Pickup Prepared', `Successfully verified authorized pickup person for ${res.child.fullName}.`);
+      } else {
+        showError('Pickup Action Denied', 'Unable to prepare child for pickup.');
+      }
+    } catch (err: any) {
+      const apiErr = extractApiError(err);
+      showError('Pickup Failed', apiErr.message || 'Error preparing child for pickup.');
+    } finally {
+      setPickupLoading(false);
+    }
+  };
+
+  // Handle ZXing Camera Activation & Scanner Stream
+  useEffect(() => {
+    if ((cleanRoute === '/volunteer/scan' || cleanRoute === '/volunteer/pickup') && cameraActive) {
+      startScanning();
+    } else {
+      stopScanning();
+    }
+
+    return () => {
+      stopScanning();
+    };
+  }, [cleanRoute, cameraActive, selectedCameraId]);
+
+  const handleFlipCamera = () => {
+    if (cameras.length > 1) {
+      const currentIndex = cameras.findIndex(c => c.deviceId === selectedCameraId);
+      const nextIndex = (currentIndex + 1) % cameras.length;
+      setSelectedCameraId(cameras[nextIndex].deviceId);
+    }
+  };
+
+  const startScanning = async () => {
+    try {
+      setCameraUnavailable(false);
+      setCameraPermissionDenied(false);
+
+      // Attempt to prompt for permission explicitly if mediaDevices API is available
+      if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: { ideal: 'environment' } } 
+          });
+          // Stop stream tracks immediately as this is just to acquire permissions
+          stream.getTracks().forEach(track => track.stop());
+        } catch (permErr: any) {
+          console.warn('Explicit getUserMedia permission request was denied or failed:', permErr);
+          const isNotAllowed = permErr instanceof DOMException && permErr.name === 'NotAllowedError';
+          const isPermissionDenied = String(permErr).toLowerCase().includes('permission') || String(permErr).toLowerCase().includes('notallowed');
+          if (isNotAllowed || isPermissionDenied) {
+            setCameraPermissionDenied(true);
+            setCameraUnavailable(true);
+            setCameraActive(false);
+            return;
+          }
+        }
+      }
+
+      if (!codeReaderRef.current) {
+        codeReaderRef.current = new BrowserQRCodeReader();
+      }
+
+      // List video inputs
+      const devices = await BrowserQRCodeReader.listVideoInputDevices();
+      setCameras(devices);
+
+      if (devices.length > 0) {
+        let defaultDeviceId = devices[0].deviceId;
+        if (!selectedCameraId) {
+          const backCam = devices.find(device => 
+            device.label.toLowerCase().includes('back') || 
+            device.label.toLowerCase().includes('rear') || 
+            device.label.toLowerCase().includes('environment')
+          );
+          if (backCam) {
+            defaultDeviceId = backCam.deviceId;
+          }
+        }
+        const deviceId = selectedCameraId || defaultDeviceId;
+        if (!selectedCameraId) {
+          setSelectedCameraId(deviceId);
+        }
+
+        if (videoRef.current) {
+          // Clean any prior controls
+          if (controlsRef.current) {
+            try {
+              controlsRef.current.stop();
+            } catch (e) {}
+          }
+
+          const controls = await codeReaderRef.current.decodeFromVideoDevice(
+            deviceId,
+            videoRef.current,
+            (result, error) => {
+              if (result) {
+                const text = result.getText();
+                handlePassScanned(text);
+              }
+            }
+          );
+          controlsRef.current = controls;
+          setCameraUnavailable(false);
+        }
+      } else {
+        console.warn('No cameras detected on this device.');
+        setCameraActive(false);
+        setCameraUnavailable(true);
+      }
+    } catch (err: any) {
+      console.error('ZXing QR reader initialization error:', err);
+      setCameraActive(false);
+      setCameraUnavailable(true);
+      const errMsg = String(err).toLowerCase();
+      if (errMsg.includes('permission') || errMsg.includes('notallowed') || (err instanceof DOMException && err.name === 'NotAllowedError')) {
+        setCameraPermissionDenied(true);
+      }
+    }
+  };
+
+  const stopScanning = () => {
+    if (controlsRef.current) {
+      try {
+        controlsRef.current.stop();
+      } catch (err) {
+        console.error('Error stopping ZXing controls:', err);
+      }
+      controlsRef.current = null;
+    }
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      if (stream && typeof stream.getTracks === 'function') {
+        stream.getTracks().forEach(track => {
+          try {
+            track.stop();
+          } catch (e) {}
+        });
+      }
+      videoRef.current.srcObject = null;
+    }
+  };
+
+  // Process QR Scans or Manual Input
+  const handleResetScannerState = () => {
+    setLookedUpChild(null);
+    setCheckedInSuccessChild(null);
+    setCheckedInSuccessEntry(null);
+    setSelectedChildId(null);
+    setChildDetailOrigin(null);
+    setChildProfileData(null);
+    setChildProfileError(null);
+    setIsCheckingIn(false);
+    setScanLoading(false);
+    setUnassignedWristbandInfo(null);
+
+    // Reset compact wristband assignment state
+    setIsAssigningWristband(false);
+    setWristbandScanInput('');
+    setIsResolvingWristband(false);
+    setWristbandAssignmentError(null);
+    setStagedWristband(null);
+    setIsBindingWristband(false);
+    setJustAssignedWristbandCode(null);
+    
+    // Reset all lookup and deduplication refs
+    isLookupInFlightRef.current = false;
+    hasSuccessfulScanRef.current = false;
+    lastScannedCodeRef.current = null;
+    lastScanAtRef.current = 0;
+    
+    // Legacy refs
+    isLookupInFlight.current = false;
+    lastScannedCode.current = '';
+    
+    // Reset inputs
+    setManualCode('');
+    
+    // Restart camera
+    setCameraActive(true);
+
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    setTimeout(() => {
+      scannerInputRef.current?.focus();
+    }, 50);
+  };
+
+  const handlePassScanned = async (text: string) => {
+    const trimmedText = text.trim();
+    if (!trimmedText) return;
+
+    const now = Date.now();
+    
+    // Cooldown logic: if same code repeats within 3 seconds, ignore it
+    if (lastScannedCodeRef.current === trimmedText && (now - lastScanAtRef.current) < 3000) {
+      console.debug('[scan] duplicate ignored within cooldown');
+      return;
+    }
+
+    if (isLookupInFlightRef.current) {
+      console.debug('[scan] lookup is already in flight');
+      return;
+    }
+
+    if (hasSuccessfulScanRef.current) {
+      console.debug('[scan] scan already successful');
+      return;
+    }
+
+    isLookupInFlightRef.current = true;
+    lastScannedCodeRef.current = trimmedText;
+    lastScanAtRef.current = now;
+    
+    // Legacy refs
+    isLookupInFlight.current = true;
+    lastScannedCode.current = trimmedText;
+
+    setScanLoading(true);
+    setUnassignedWristbandInfo(null);
+    
+    // Stop scanning immediately on scan to prevent multi-scans
+    stopScanning();
+    setCameraActive(false);
+
+    try {
+      if (cleanRoute === '/volunteer/pickup') {
+        if (offlineService.isOffline()) {
+          showError('Offline Restriction', 'Secure parent pickup and face-to-photo verification requires a live network connection for security.');
+          isLookupInFlightRef.current = false;
+          lastScannedCodeRef.current = null;
+          isLookupInFlight.current = false;
+          lastScannedCode.current = '';
+          setCameraActive(true);
+          setScanLoading(false);
+          return;
+        }
+
+        let passCode = trimmedText;
+        if (trimmedText.includes('/pass/')) {
+          passCode = trimmedText.split('/pass/')[1]?.split('?')[0] || trimmedText;
+        } else if (trimmedText.includes('code=')) {
+          passCode = trimmedText.split('code=')[1]?.split('&')[0] || trimmedText;
+        } else if (trimmedText.startsWith('KCT:')) {
+          passCode = trimmedText.substring(4);
+        }
+        passCode = passCode.trim().toUpperCase();
+        
+        const res = await api.volunteer.lookupPickup({ passCode });
+        if (res && res.success && res.child) {
+          const childWithPickup = {
+            ...res.child,
+            pickup: res.child.authorizedPickup && res.child.authorizedPickup.length > 0 ? res.child.authorizedPickup[0] : null
+          };
+          setPickupChild(childWithPickup);
+          setCameraActive(false);
+          hasSuccessfulScanRef.current = true;
+          if (navigator.vibrate) {
+            navigator.vibrate([100]);
+          }
+        } else {
+          showError('Not Found', 'No active checked-in child found for this pass.');
+          isLookupInFlightRef.current = false;
+          lastScannedCodeRef.current = null;
+          isLookupInFlight.current = false;
+          lastScannedCode.current = '';
+          setCameraActive(true);
+        }
+      } else {
+        // Unified Volunteer Check-In Identification Flow (Phase 3C)
+        let cleanIdentifier = trimmedText;
+        if (trimmedText.includes('/pass/')) {
+          cleanIdentifier = trimmedText.split('/pass/')[1]?.split('?')[0] || trimmedText;
+        } else if (trimmedText.includes('code=')) {
+          cleanIdentifier = trimmedText.split('code=')[1]?.split('&')[0] || trimmedText;
+        } else if (trimmedText.startsWith('KCT:')) {
+          cleanIdentifier = trimmedText.substring(4);
+        }
+        cleanIdentifier = cleanIdentifier.trim();
+
+        if (offlineService.isOffline()) {
+          const pass = await offlineService.lookupLocalPass(cleanIdentifier.toUpperCase());
+          if (pass) {
+            const mockChild = {
+              id: pass.child.id,
+              entryId: pass.childEventEntryId,
+              childEventEntryId: pass.childEventEntryId,
+              fullName: pass.child.fullName,
+              age: pass.child.calculatedAge,
+              gender: pass.child.gender,
+              classGroup: pass.child.ageGroup,
+              photoUrl: pass.child.photoUrl,
+              medicalNote: pass.child.medicalNotes,
+              allergies: pass.child.hasMedicalNotes ? 'Yes' : 'No',
+              extraSupport: pass.child.needsExtraSupport ? 'Yes' : 'No',
+              supportNotes: pass.child.supportNotes,
+              passReference: pass.passReference,
+              parentName: pass.parent.fullName,
+              parentPhone: pass.parent.phone,
+              authorizedPickup: pass.pickup,
+              entryStatus: pass.entryStatus,
+              isOfflineResult: true,
+              identificationSource: 'Pass'
+            };
+            setLookedUpChild(mockChild);
+            hasSuccessfulScanRef.current = true;
+            if (navigator.vibrate) {
+              navigator.vibrate([100]);
+            }
+            setManualCode('');
+          } else {
+            showError('Not Found (Offline)', 'This pass reference was not found in the preloaded offline roster. Please reconnect to verify.');
+            isLookupInFlightRef.current = false;
+            lastScannedCodeRef.current = null;
+            isLookupInFlight.current = false;
+            lastScannedCode.current = '';
+            setCameraActive(true);
+            setTimeout(() => scannerInputRef.current?.focus(), 50);
+          }
+          setScanLoading(false);
+          return;
+        }
+
+        // Online resolution: use Phase 3B unified child identifier resolver
+        const targetEventId = eventDetails?.id;
+        const resolveRes = await api.volunteer.resolveIdentifier({
+          identifier: cleanIdentifier,
+          eventId: targetEventId
+        });
+
+        if (resolveRes && resolveRes.success && resolveRes.childEventEntryId) {
+          // Resolve succeeded -> load full child data using existing lookupPass endpoint
+          const lookupRes = await api.volunteer.lookupPass({
+            childEventEntryId: resolveRes.childEventEntryId
+          });
+
+          if (lookupRes && lookupRes.success && lookupRes.child) {
+            const childData = {
+              ...lookupRes.child,
+              identificationSource: resolveRes.identifierType === 'pass' ? 'Pass' : 'Wristband',
+              resolvedIdentifierType: resolveRes.identifierType,
+              resolvedWristbandCode: resolveRes.wristbandCode
+            };
+            setLookedUpChild(childData);
+            hasSuccessfulScanRef.current = true;
+
+            // Haptic feedback if available
+            if (navigator.vibrate) {
+              navigator.vibrate([100]);
+            }
+
+            // Reset manual code input
+            setManualCode('');
+          } else {
+            showError('Not Found', 'No child was found for this pass or wristband.');
+            isLookupInFlightRef.current = false;
+            lastScannedCodeRef.current = null;
+            isLookupInFlight.current = false;
+            lastScannedCode.current = '';
+            setCameraActive(true);
+            setTimeout(() => scannerInputRef.current?.focus(), 50);
+          }
+        } else {
+          showError('Not Found', 'No child was found for this pass or wristband.');
+          isLookupInFlightRef.current = false;
+          lastScannedCodeRef.current = null;
+          isLookupInFlight.current = false;
+          lastScannedCode.current = '';
+          setCameraActive(true);
+          setTimeout(() => scannerInputRef.current?.focus(), 50);
+        }
+      }
+    } catch (err: any) {
+      // Map resolver errors to human messages (Section 8)
+      const errCode = err?.code || err?.data?.code || '';
+      console.warn('[Unified Identifier Scan Error]:', { errCode, err });
+
+      let title = 'Identifier Error';
+      let message = 'No child was found for this pass or wristband.';
+
+      if (errCode === 'WRISTBAND_UNASSIGNED') {
+        title = 'Wristband Unassigned';
+        message = 'This wristband has not been assigned yet.';
+        setUnassignedWristbandInfo({
+          rawInput: trimmedText,
+          message: 'This wristband has not been assigned yet.'
+        });
+      } else if (errCode === 'WRISTBAND_LOST') {
+        title = 'Wristband Lost';
+        message = 'This wristband was reported lost and cannot be used.';
+      } else if (errCode === 'WRISTBAND_DAMAGED') {
+        title = 'Wristband Damaged';
+        message = 'This wristband is marked as damaged.';
+      } else if (errCode === 'WRISTBAND_DECOMMISSIONED') {
+        title = 'Wristband Decommissioned';
+        message = 'This wristband is no longer in use.';
+      } else if (errCode === 'WRONG_EVENT') {
+        title = 'Not Valid';
+        message = 'This pass or wristband is not valid for the current event.';
+      } else if (errCode === 'PASS_REVOKED') {
+        title = 'Pass Inactive';
+        message = 'This pass has been revoked or is inactive.';
+      } else {
+        message = 'No child was found for this pass or wristband.';
+      }
+
+      showError(title, message);
+      isLookupInFlightRef.current = false;
+      lastScannedCodeRef.current = null;
+      isLookupInFlight.current = false;
+      lastScannedCode.current = '';
+      setCameraActive(true);
+      setTimeout(() => scannerInputRef.current?.focus(), 50);
+    } finally {
+      setScanLoading(false);
+    }
+  };
+
+  const handleManualVerifySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (scanLoading || isLookupInFlightRef.current || hasSuccessfulScanRef.current) {
+      console.debug('[manual-lookup] already in flight or success');
+      return;
+    }
+    if (!manualCode.trim()) {
+      showWarning('Input required', 'Scan a child pass or wristband, or enter a reference.');
+      return;
+    }
+    await handlePassScanned(manualCode.trim());
+  };
+
+  // Execute Search for Children
+  const handleSearchSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!searchQuery.trim()) {
+      showWarning('Query required', 'Please type a child or parent name.');
+      return;
+    }
+
+    setSearching(true);
+
+    if (offlineService.isOffline()) {
+      try {
+        const list = await offlineService.getLocalManifest();
+        const results = list.filter(p => 
+          p.child.fullName.toLowerCase().includes(searchQuery.toLowerCase().trim()) || 
+          p.parent.fullName.toLowerCase().includes(searchQuery.toLowerCase().trim())
+        ).map(p => ({
+          childId: p.child.id,
+          entryId: p.childEventEntryId,
+          childEventEntryId: p.childEventEntryId,
+          childName: p.child.fullName,
+          parentName: p.parent.fullName,
+          status: p.entryStatus,
+          ageGroup: p.child.ageGroup,
+          medicalNotes: p.child.medicalNotes,
+          hasMedicalNotes: p.child.hasMedicalNotes,
+          needsExtraSupport: p.child.needsExtraSupport,
+          supportNotes: p.child.supportNotes,
+          passReference: p.passReference
+        }));
+        setSearchResults(results);
+        if (results.length === 0) {
+          showWarning('No match found (Offline)', 'Could not find children matching that name in local offline manifest.');
+        }
+      } catch (err) {
+        showError('Search Failed', 'Could not query offline storage.');
+      } finally {
+        setSearching(false);
+      }
+      return;
+    }
+
+    try {
+      const results = await api.volunteer.searchChildren(searchQuery.trim());
+      setSearchResults(results || []);
+      if (results && results.length === 0) {
+        showWarning('No match found', 'We could not find any registered child or parent with that name.');
+      }
+    } catch (err: any) {
+      const apiErr = extractApiError(err);
+      showError('Search Failed', apiErr.message);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  // Check in directly from children search view (with lookup and transition)
+  const handleCheckInDirectly = async (child: any) => {
+    setScanLoading(true);
+
+    if (offlineService.isOffline()) {
+      try {
+        const pass = await offlineService.lookupLocalPass(child.entryId || child.childEventEntryId || child.childId);
+        if (pass) {
+          const mockChild = {
+            id: pass.child.id,
+            entryId: pass.childEventEntryId,
+            childEventEntryId: pass.childEventEntryId,
+            fullName: pass.child.fullName,
+            age: pass.child.calculatedAge,
+            gender: pass.child.gender,
+            classGroup: pass.child.ageGroup,
+            photoUrl: pass.child.photoUrl,
+            medicalNote: pass.child.medicalNotes,
+            allergies: pass.child.hasMedicalNotes ? 'Yes' : 'No',
+            extraSupport: pass.child.needsExtraSupport ? 'Yes' : 'No',
+            supportNotes: pass.child.supportNotes,
+            passReference: pass.passReference,
+            parentName: pass.parent.fullName,
+            parentPhone: pass.parent.phone,
+            authorizedPickup: pass.pickup,
+            entryStatus: pass.entryStatus,
+            isOfflineResult: true
+          };
+          setLookedUpChild(mockChild);
+          setScanMode('check_in');
+          onNavigate('/volunteer/scan');
+          showSuccess('Child Found (Offline)', `Retrieved preloaded details for ${pass.child.fullName}. Please confirm check-in.`);
+        } else {
+          showError('Not Found (Offline)', 'This child is not present in the preloaded offline roster.');
+        }
+      } catch (e) {
+        showError('Lookup Failed', 'Could not access offline storage.');
+      } finally {
+        setScanLoading(false);
+      }
+      return;
+    }
+
+    try {
+      const res = await api.volunteer.lookupPass({ childId: child.childId });
+      if (res.success && res.child) {
+        setLookedUpChild(res.child);
+        setScanMode('check_in');
+        onNavigate('/volunteer/scan');
+        showSuccess('Child Found', `Retrieved details for ${res.child.fullName}. Please confirm check-in.`);
+      }
+    } catch (err: any) {
+      const apiErr = extractApiError(err);
+      showError('Check-In Lookup Failed', apiErr.message);
+    } finally {
+      setScanLoading(false);
+    }
+  };
+
+  // Trigger release lookup for direct checkout from children list
+  const handleCheckOutDirectly = async (child: any) => {
+    setScanLoading(true);
+    try {
+      const res = await api.volunteer.lookupPass({ childId: child.childId });
+      if (res.success && res.child) {
+        setLookedUpChild(res.child);
+        setScanMode('check_out');
+        onNavigate('/volunteer/scan');
+        showSuccess('Child Found', `Retrieved details for ${res.child.fullName}. Please match photo card.`);
+      }
+    } catch (err: any) {
+      const apiErr = extractApiError(err);
+      showError('Checkout Lookup Failed', apiErr.message);
+    } finally {
+      setScanLoading(false);
+    }
+  };
+
+  // Navigate to child-detail record from scanned lookup without checking in
+  const handleViewScannedChildRecord = (child: any) => {
+    if (!child) return;
+    const cid = child.id || child.childId || child.entryId || child.childEventEntryId;
+    if (!cid) return;
+    setSelectedChildId(cid);
+    setChildDetailOrigin('scan');
+    if (child.fullName || child.childName) {
+      setChildProfileData({
+        success: true,
+        child: {
+          id: child.id || cid,
+          entryId: child.entryId || cid,
+          fullName: child.fullName || child.childName,
+          firstName: (child.fullName || child.childName || '').split(' ')[0],
+          age: child.calculatedAge || child.age || 0,
+          ageGroup: child.ageGroup || child.classGroup,
+          needsAgeReview: !!child.needsAgeReview,
+          gender: child.gender,
+          classGroup: child.classGroup || child.ageGroup,
+          dutyLocation: child.dutyLocation || child.schoolClass || null,
+          photoUrl: child.photoUrl,
+          status: child.entryStatus === 'checked_in' || child.entryStatus === 'inside' ? 'inside' : 'not_arrived',
+          checkedInAt: child.checkedInAt || child.checked_in_at || null,
+          checkedInBy: child.checkedInBy || null,
+          pickedUpAt: child.pickedUpAt || null,
+          pickedUpBy: null,
+          medicalNote: child.medicalNotes || child.medicalNote || null,
+          allergies: child.allergies || null,
+          extraSupport: child.supportNotes || child.extraSupport || null
+        },
+        parent: child.parent || {
+          id: child.parentId || '',
+          fullName: child.parentName || '',
+          relationship: child.parentRelationship || 'Parent / Guardian',
+          phone: child.parentPhone || '',
+          whatsapp: child.parentWhatsapp || '',
+          photoUrl: child.parentPhotoUrl || ''
+        },
+        pickupPeople: child.pickup ? [child.pickup] : [],
+        event: {
+          name: eventDetails?.title || 'The General Assembly'
+        }
+      });
+      setChildProfileError(null);
+    }
+    onNavigate('/volunteer/children');
+  };
+
+  // Helper to translate wristband lookup & binding error codes to controlled human messages
+  const translateWristbandAssignmentError = (err: any): string => {
+    const code = err?.code || '';
+    const message = err?.message || err?.error || '';
+
+    switch (code) {
+      case 'WRISTBAND_NOT_FOUND':
+        return 'Wristband not found for this event.';
+      case 'WRISTBAND_NOT_VERIFIED':
+        return 'This wristband has not completed physical verification.';
+      case 'WRISTBAND_ALREADY_ASSIGNED':
+        return 'This wristband is already assigned.';
+      case 'CHILD_ALREADY_HAS_WRISTBAND':
+        return 'This child already has an active wristband.';
+      case 'EVENT_MISMATCH':
+        return 'Wristband not found for this event.';
+      case 'INVALID_NFC_UID':
+        return 'Invalid NFC UID or wristband code.';
+      case 'FORBIDDEN':
+        return 'You do not have permission to assign wristbands.';
+      case 'IDEMPOTENCY_CONFLICT':
+        return 'A conflicting operation was recently submitted. Please try again.';
+      default:
+        return message || 'Wristband not found for this event.';
+    }
+  };
+
+  // Lookup existing available wristband from current event inventory
+  const handleInlineWristbandLookup = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const rawInput = wristbandScanInput.trim();
+    if (!rawInput) return;
+
+    const eventId = eventDetails?.id || (lookedUpChild as any)?.eventId;
+    if (!eventId) {
+      setWristbandAssignmentError('Event context unavailable. Please refresh.');
+      return;
+    }
+
+    setWristbandAssignmentError(null);
+    setIsResolvingWristband(true);
+
+    try {
+      const res = await api.wristbands.lookup(
+        { eventId, identifier: rawInput },
+        'volunteer'
+      );
+
+      if (res?.success && res.wristband) {
+        const wb = res.wristband;
+        if (wb.status === 'available') {
+          setStagedWristband(wb);
+          setWristbandAssignmentError(null);
+        } else if (wb.status === 'prepared') {
+          setWristbandAssignmentError('This wristband has not completed physical verification.');
+          setStagedWristband(null);
+        } else if (wb.status === 'active') {
+          setWristbandAssignmentError('This wristband is already assigned.');
+          setStagedWristband(null);
+        } else if (wb.status === 'lost') {
+          setWristbandAssignmentError('This wristband is marked as lost and cannot be assigned.');
+          setStagedWristband(null);
+        } else if (wb.status === 'damaged') {
+          setWristbandAssignmentError('This wristband is marked as damaged and cannot be assigned.');
+          setStagedWristband(null);
+        } else if (wb.status === 'decommissioned') {
+          setWristbandAssignmentError('This wristband has been decommissioned and cannot be assigned.');
+          setStagedWristband(null);
+        } else {
+          setWristbandAssignmentError(`Wristband is not available (status: ${wb.status}).`);
+          setStagedWristband(null);
+        }
+      } else {
+        setWristbandAssignmentError('Wristband not found for this event.');
+        setStagedWristband(null);
+      }
+    } catch (err: any) {
+      setWristbandAssignmentError(translateWristbandAssignmentError(err));
+      setStagedWristband(null);
+    } finally {
+      setIsResolvingWristband(false);
+    }
+  };
+
+  // Confirm wristband binding to child entry
+  const handleConfirmInlineWristbandBinding = async () => {
+    if (!lookedUpChild || !stagedWristband || isBindingWristband) return;
+
+    const eventId = eventDetails?.id || (lookedUpChild as any)?.eventId;
+    const childEventEntryId = lookedUpChild.entryId || lookedUpChild.childEventEntryId || lookedUpChild.id;
+
+    if (!eventId || !childEventEntryId) {
+      setWristbandAssignmentError('Missing event or child entry context.');
+      return;
+    }
+
+    setIsBindingWristband(true);
+    setWristbandAssignmentError(null);
+
+    const idempotencyKey = `idem-checkin-wb-${childEventEntryId}-${stagedWristband.id}`;
+
+    try {
+      const res = await api.wristbands.bind(
+        {
+          eventId,
+          childEventEntryId,
+          wristbandId: stagedWristband.id,
+          wristbandCode: stagedWristband.wristbandCode,
+          idempotencyKey
+        },
+        'volunteer'
+      );
+
+      if (res && res.success) {
+        const assignedCode = stagedWristband.wristbandCode;
+        setJustAssignedWristbandCode(assignedCode);
+        setLookedUpChild((prev: any) => prev ? {
+          ...prev,
+          activeWristband: {
+            id: stagedWristband.id,
+            wristbandCode: assignedCode,
+            status: 'active',
+            assignedAt: new Date().toISOString()
+          }
+        } : null);
+        setStagedWristband(null);
+        setIsAssigningWristband(false);
+        setWristbandScanInput('');
+        showSuccess('Wristband assigned', `${assignedCode} successfully assigned to ${lookedUpChild.fullName}.`);
+      } else {
+        setWristbandAssignmentError('Failed to complete wristband assignment.');
+      }
+    } catch (err: any) {
+      setWristbandAssignmentError(translateWristbandAssignmentError(err));
+    } finally {
+      setIsBindingWristband(false);
+    }
+  };
+
+  // Confirm and perform Check-in
+  const handleConfirmCheckIn = async (child: any) => {
+    if (isCheckingIn) return;
+    setIsCheckingIn(true);
+    setScanLoading(true);
+
+    if (offlineService.isOffline()) {
+      try {
+        const entryId = child.entryId || child.childEventEntryId || child.id;
+        const result = await offlineService.queueCheckIn(
+          entryId,
+          child.fullName || child.childName,
+          child.passReference || '',
+          'Entrance A'
+        );
+
+        if (result.status === 'duplicate') {
+          showWarning('Already Queued', `${child.fullName} is already queued for offline check-in.`);
+        } else {
+          showSuccess('Saved Offline', `Successfully queued check-in for ${child.fullName} offline. This will sync once connected.`);
+        }
+
+        setCheckedInSuccessChild({
+          id: child.id,
+          fullName: child.fullName || child.childName,
+          firstName: (child.fullName || child.childName || '').split(' ')[0],
+          classGroup: child.classGroup || child.ageGroup || 'General',
+          entryStatus: 'checked_in',
+          medicalNote: child.medicalNote || child.medicalNotes || '',
+          allergies: child.allergies || (child.hasMedicalNotes ? 'Yes' : 'No'),
+          extraSupport: child.extraSupport || (child.needsExtraSupport ? 'Yes' : 'No'),
+          authorizedPickup: child.authorizedPickup || (child.pickup ? [child.pickup] : [])
+        });
+
+        setCheckedInSuccessEntry({
+          checkedInAt: new Date().toISOString(),
+          checkedInBy: { fullName: volunteerProfile?.full_name || 'Volunteer' },
+          point: 'Main entrance (Offline Queue)'
+        });
+
+        setLookedUpChild(null);
+
+        if (navigator.vibrate) {
+          navigator.vibrate([100, 50, 100]);
+        }
+      } catch (err: any) {
+        showError('Offline Queue Failed', 'Failed to save action to offline storage.');
+      } finally {
+        setScanLoading(false);
+        setIsCheckingIn(false);
+      }
+      return;
+    }
+
+    try {
+      const payload: any = {};
+      if (child.id) payload.childId = child.id;
+      if (child.passReference) payload.passReference = child.passReference.trim();
+      if (child.entryId || child.id) payload.childEventEntryId = child.entryId || child.id;
+
+      const res = await api.volunteer.checkIn(payload);
+      if (res.success) {
+        showSuccess('Check-In Successful', `${child.fullName || (res.child && res.child.fullName)} is now checked in.`);
+        
+        setCheckedInSuccessChild(res.child || {
+          id: child.id,
+          fullName: child.fullName || child.childName,
+          firstName: (child.fullName || child.childName || '').split(' ')[0],
+          classGroup: child.ageGroup || 'General',
+          entryStatus: 'checked_in',
+          medicalNote: child.medicalNotes || '',
+          allergies: child.hasMedicalNotes ? 'Yes' : 'No',
+          extraSupport: child.needsExtraSupport ? 'Yes' : 'No',
+          authorizedPickup: child.pickup ? [child.pickup] : []
+        });
+
+        setCheckedInSuccessEntry(res.entry || {
+          checkedInAt: res.child?.checkedInAt || new Date().toISOString(),
+          checkedInBy: res.entry?.checkedInBy || { fullName: volunteerProfile?.full_name || 'Volunteer' },
+          point: 'Entrance A'
+        });
+
+        if (res.stats) {
+          setStats({
+            expected: res.stats.expected,
+            checkedIn: res.stats.checkedIn,
+            pickedUp: stats.pickedUp,
+            attention: stats.attention
+          });
+        }
+
+        setLookedUpChild(null);
+        
+        // Haptic feedback if available
+        if (navigator.vibrate) {
+          navigator.vibrate([100, 50, 100]);
+        }
+
+        // Refresh everything
+        fetchDashboardData(true);
+        fetchHistory();
+      }
+    } catch (err: any) {
+      const apiErr = extractApiError(err);
+      console.error('[volunteer check-in failed]', err);
+      showError('Check-In Failed', apiErr.message || 'We could not complete check-in. Please try again.');
+    } finally {
+      setScanLoading(false);
+      setIsCheckingIn(false);
+    }
+  };
+
+  const handleDownloadManifest = async () => {
+    if (isDownloadingManifest) return;
+    setIsDownloadingManifest(true);
+    try {
+      const deviceId = localStorage.getItem('koinonia_device_id') || 'unknown';
+      const count = await offlineService.downloadManifest(deviceId);
+      showSuccess('Preload Complete', `Successfully preloaded and verified ${count} registered event passes to local secure storage.`);
+    } catch (err: any) {
+      console.error('[manifest preload failed]', err);
+      showError('Preload Failed', 'Could not download the offline event roster. Please check your connection and try again.');
+    } finally {
+      setIsDownloadingManifest(false);
+    }
+  };
+
+  const handleManualSyncOutbox = async () => {
+    if (isSyncingOutbox) return;
+    setIsSyncingOutbox(true);
+    try {
+      const deviceId = localStorage.getItem('koinonia_device_id') || 'unknown';
+      const res = await offlineService.syncOutbox(deviceId);
+      if (res.successCount > 0 || res.conflictCount > 0) {
+        showSuccess('Outbox Synced', `Successfully resolved and synced ${res.successCount} queued offline actions.`);
+        fetchDashboardData(true);
+        fetchHistory();
+      } else if (res.errors.length > 0) {
+        showError('Sync Failed', res.errors[0]);
+      } else {
+        showWarning('Sync Idle', 'No pending offline actions were found in queue.');
+      }
+    } catch (err: any) {
+      showError('Sync Error', 'An unexpected error occurred during synchronization.');
+    } finally {
+      setIsSyncingOutbox(false);
+    }
+  };
+
+  const handleCancelQueuedAction = async (idempotencyKey: string) => {
+    try {
+      await offlineService.cancelAction(idempotencyKey);
+      showSuccess('Action Cancelled', 'Queued offline scan has been successfully discarded.');
+    } catch (e) {
+      showError('Cancellation Failed', 'Failed to remove action from offline outbox.');
+    }
+  };
+
+  // Confirm and perform release of child
+  const handleConfirmRelease = async (child: any, bypassVerify = false) => {
+    if (offlineService.isOffline()) {
+      showError('Offline Restriction', 'Secure parent pickup and face-to-photo verification requires a live network connection for security.');
+      return;
+    }
+    if (!bypassVerify && localStorage.getItem('koinonia_passkey_registered') === 'true') {
+      setPendingConfirmReleaseChild(child);
+      setDeviceVerifyActionOpen(true);
+      return;
+    }
+    if (isReleasing) return;
+    setIsReleasing(true);
+    setScanLoading(true);
+    try {
+      const res = await api.volunteer.checkOut({ childEventEntryId: child.entryId || child.id || child.childEventEntryId });
+      if (res.success) {
+        showSuccess('Child Released', `${child.fullName || child.childName} successfully checked out.`);
+        setLookedUpChild(null);
+        setLastVerifiedChild(null);
+        
+        // Haptic feedback if available
+        if (navigator.vibrate) {
+          navigator.vibrate([100, 50, 100]);
+        }
+
+        // Refresh everything
+        fetchDashboardData(true);
+        handleSearchSubmit();
+        fetchHistory();
+      }
+    } catch (err: any) {
+      const apiErr = extractApiError(err);
+      showError('Release Failed', apiErr.message);
+    } finally {
+      setScanLoading(false);
+      setIsReleasing(false);
+    }
+  };
+
+  // Submit manual code or handle scanner results for pickup
+  const handlePickupLookup = async (code: string) => {
+    if (offlineService.isOffline()) {
+      showError('Offline Restriction', 'Secure parent pickup and face-to-photo verification requires a live network connection for security.');
+      return;
+    }
+    if (!code || !code.trim()) return;
+    setPickupLoading(true);
+    try {
+      const res = await api.volunteer.lookupPickup({ passCode: code.trim().toUpperCase() });
+      if (res && res.success && res.child) {
+        const childWithPickup = {
+          ...res.child,
+          pickup: res.child.authorizedPickup && res.child.authorizedPickup.length > 0 ? res.child.authorizedPickup[0] : null
+        };
+        setPickupChild(childWithPickup);
+        setCameraActive(false);
+        showSuccess('Child Found', `Retrieved details for ${res.child.fullName}. Please verify pickup person.`);
+      } else {
+        showError('Not Found', 'No active checked-in child found for this pass code.');
+      }
+    } catch (err: any) {
+      const apiErr = extractApiError(err);
+      showError('Lookup Failed', apiErr.message || 'Pass code verification failed. Ensure child is checked in.');
+    } finally {
+      setPickupLoading(false);
+    }
+  };
+
+  const handleConfirmPickupRelease = async (child: any, pickupPersonId?: string) => {
+    if (offlineService.isOffline()) {
+      showError('Offline Restriction', 'Secure parent pickup and face-to-photo verification requires a live network connection for security.');
+      return;
+    }
+    if (isMarkingPickup) return;
+    setIsMarkingPickup(true);
+    setPickupLoading(true);
+    try {
+      const pPersonId = pickupPersonId || (child.authorizedPickup && child.authorizedPickup[0]?.id) || (child.pickup?.id);
+      const res = await api.volunteer.markChildPickedUp({
+        childId: child.id || child.childId,
+        pickupPersonId: pPersonId
+      });
+      if (res && res.success) {
+        setPickupSuccessResult(res);
+        showSuccess('Pickup Confirmed', `${res.child?.fullName || child.fullName} has been successfully released.`);
+        
+        // Refresh pickup home data
+        fetchPickupData(true);
+        // Clear active child lookup
+        setPickupChild(null);
+        setPickupCode('');
+        
+        if (navigator.vibrate) {
+          navigator.vibrate([100, 50, 100]);
+        }
+      }
+    } catch (err: any) {
+      const apiErr = extractApiError(err);
+      showError('Release Failed', apiErr.message || 'Failed to record child release.');
+    } finally {
+      setPickupLoading(false);
+      setIsMarkingPickup(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchDashboardData(true);
+    await fetchHistory();
+    showSuccess('Refreshed successfully', 'Latest updates and reports loaded.');
+  };
+
+  const handleResolveAction = (item: any) => {
+    setSelectedAttentionItem(item);
+    setAttentionNote('');
+    setAttentionError(null);
+    setShowAttentionDetailModal(true);
+  };
+
+  const handleResolveItem = async (actionType: 'resolve' | 'review' | 'verify' | 'escalate') => {
+    if (!selectedAttentionItem) return;
+    if (!attentionNote || !attentionNote.trim()) {
+      const emptyError = 'Please enter a note to perform this action.';
+      setAttentionError(emptyError);
+      showError('Note Required', emptyError);
+      return;
+    }
+
+    setResolvingAttention(true);
+    setAttentionError(null);
+    try {
+      let res;
+      if (actionType === 'resolve') {
+        res = await api.volunteer.resolveAttentionItem(selectedAttentionItem.id, { note: attentionNote.trim() });
+      } else if (actionType === 'review') {
+        res = await api.volunteer.reviewAttentionItem(selectedAttentionItem.id, { note: attentionNote.trim() });
+      } else if (actionType === 'verify') {
+        res = await api.volunteer.verifyAttentionItem(selectedAttentionItem.id, { note: attentionNote.trim() });
+      } else {
+        res = await api.volunteer.escalateAttentionItem(selectedAttentionItem.id, { note: attentionNote.trim() });
+      }
+
+      if (res?.success) {
+        showSuccess(
+          actionType === 'escalate' ? 'Item Escalated' : actionType === 'verify' ? 'Item Verified' : 'Item Resolved',
+          actionType === 'escalate' ? 'Successfully escalated the issue to administration.' : 'This item has been successfully updated.'
+        );
+        setShowAttentionDetailModal(false);
+        setSelectedAttentionItem(null);
+        setAttentionNote('');
+        setAttentionError(null);
+        // Refresh dashboard data and counts immediately!
+        await fetchDashboardData(true);
+      } else {
+        const rawErr = res?.error || '';
+        let errorMsg = 'We could not update this item. Please try again.';
+        if (rawErr.toLowerCase().includes('permission') || rawErr.toLowerCase().includes('unauthorized')) {
+          errorMsg = 'This item needs admin review.';
+        } else if (rawErr.toLowerCase().includes('resolved') || rawErr.toLowerCase().includes('already')) {
+          errorMsg = 'This item has already been resolved.';
+        }
+        setAttentionError(errorMsg);
+        showError('Action Failed', errorMsg);
+      }
+    } catch (err: any) {
+      console.error('Error updating attention item:', err);
+      const rawErr = err.message || '';
+      let errorMsg = 'We could not update this item. Please try again.';
+      if (rawErr.toLowerCase().includes('permission') || rawErr.toLowerCase().includes('unauthorized')) {
+        errorMsg = 'This item needs admin review.';
+      } else if (rawErr.toLowerCase().includes('resolved') || rawErr.toLowerCase().includes('already')) {
+        errorMsg = 'This item has already been resolved.';
+      }
+      setAttentionError(errorMsg);
+      showError('Action Failed', errorMsg);
+    } finally {
+      setResolvingAttention(false);
+    }
+  };
+
+  const fullName = volunteerProfile?.full_name || volunteerProfile?.fullName || volunteerProfile?.user?.fullName || volunteerProfile?.user?.full_name || 'Volunteer';
+  const teamName = volunteerProfile?.preferred_team || 'General Team';
+
+  const isSubpageWithBack =
+    (cleanRoute === '/volunteer/children' && !!selectedChildId) ||
+    (cleanRoute === '/volunteer/scan' && (!!checkedInSuccessChild || !!lookedUpChild)) ||
+    cleanRoute === '/volunteer/pickup' ||
+    cleanRoute === '/volunteer/profile' ||
+    cleanRoute === '/volunteer/wristbands' ||
+    cleanRoute === '/volunteer/readiness';
+
+  return (
+    <div className="min-h-screen bg-[#FAF9F6] dark:bg-[#19191A] font-sans flex flex-col" data-view-version="volunteer-dashboard-v9-handover-mobile-app">
+      <div className="w-full max-w-[500px] mx-auto min-h-screen flex flex-col bg-[#FAF8F5] dark:bg-[#1B1B1C]">
+        {/* Top Header Bar - Calm, Minimal, Premium Mobile Header */}
+        <header
+          className="bg-[#FAF9F6]/95 dark:bg-[#1D1D1A]/95 backdrop-blur-md border-b border-[#EAE8E1] dark:border-[#302E29] sticky top-0 z-30 px-4 sm:px-5 h-14 w-full"
+          data-component-version="volunteer-mobile-app-header-v2-handover"
+        >
+          <div
+            className="w-full max-w-[500px] mx-auto grid grid-cols-[1fr_auto_1fr] items-center h-full"
+            data-component-version="volunteer-dashboard-header-v2-clean"
+          >
+            {/* Left: Brand Logo or Back arrow depending on subpage context */}
+            <div className="justify-self-start flex items-center">
+              {isSubpageWithBack ? (
+                <button
+                  onClick={() => {
+                    if (cleanRoute === '/volunteer/scan') {
+                      if (checkedInSuccessChild || lookedUpChild) {
+                        handleResetScannerState();
+                      } else {
+                        onNavigate('/volunteer/event');
+                      }
+                    } else if (cleanRoute === '/volunteer/pickup') {
+                      if (pickupChild || pickupSuccessResult) {
+                        setPickupChild(null);
+                        setPickupSuccessResult(null);
+                      } else {
+                        onNavigate('/volunteer/event');
+                      }
+                    } else if (cleanRoute === '/volunteer/children') {
+                      if (selectedChildId) {
+                        if (childDetailOrigin === 'scan') {
+                          setSelectedChildId(null);
+                          setChildDetailOrigin(null);
+                          onNavigate('/volunteer/scan');
+                        } else {
+                          setSelectedChildId(null);
+                          setChildDetailOrigin(null);
+                        }
+                      } else {
+                        onNavigate('/volunteer/event');
+                      }
+                    } else {
+                      onNavigate('/volunteer/event');
+                    }
+                  }}
+                  className="p-1.5 -ml-1.5 text-zinc-500 hover:text-zinc-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] transition-colors cursor-pointer rounded-full hover:bg-zinc-100 dark:hover:bg-[#21211E]"
+                  id="btn-volunteer-header-back"
+                  title="Go back"
+                >
+                  <ChevronLeft className="h-6 w-6" />
+                </button>
+              ) : (
+                <BrandLogo
+                  context="compact"
+                  data-component-version="volunteer-brand-logo-v1-configured"
+                  onClick={() => onNavigate('/volunteer/event')}
+                />
+              )}
+            </div>
+
+            {/* Center: KOINONIA Brand */}
+            <div className="justify-self-center text-center">
+              <span className="font-serif-koinonia font-bold text-xs sm:text-sm text-[#18181B] dark:text-[#F0EBE3] tracking-wider uppercase leading-none">
+                KOINONIA
+              </span>
+            </div>
+
+            {/* Right: Notifications & Profile Avatar */}
+            <div className="justify-self-end flex items-center space-x-2">
+              {/* Notification Bell */}
+              <button
+                onClick={() => {
+                  setShowNotifPanel(true);
+                  resumeAudioContext();
+                }}
+                className="p-2 text-zinc-500 hover:text-zinc-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] rounded-full transition-colors relative cursor-pointer hover:bg-zinc-100 dark:hover:bg-[#21211E]"
+                title="Notifications"
+                id="volunteer-notification-bell"
+              >
+                <Bell className="h-5 w-5" />
+                {unreadNotifCount > 0 && (
+                  <span className="absolute top-1 right-1 min-w-[15px] h-[15px] px-1 text-[9px] font-sans font-semibold leading-none text-white bg-[#C59B27] rounded-full flex items-center justify-center">
+                    {unreadNotifCount}
+                  </span>
+                )}
+              </button>
+
+              <ThemeSwitcher surface="volunteer" />
+
+              <button
+                onClick={() => onNavigate('/volunteer/profile')}
+                className="w-8 h-8 rounded-full bg-[#C59B27]/10 flex items-center justify-center text-[#C59B27] font-serif font-bold text-xs overflow-hidden border border-[#D9D6CE] dark:border-[#302E29] shadow-2xs cursor-pointer transition-transform duration-200 hover:scale-105 shrink-0"
+                data-component-version="volunteer-header-avatar-v3-handover-photo"
+                title="Profile"
+              >
+                {(() => {
+                  const avatarPhoto = volunteerProfile?.photoUrl ||
+                                       volunteerProfile?.profile?.photoUrl ||
+                                       volunteerProfile?.profilePhotoUrl ||
+                                       volunteerProfile?.user?.photoUrl;
+                  if (avatarPhoto) {
+                    return (
+                      <SafeImage
+                        src={avatarPhoto}
+                        alt={fullName}
+                        className="w-full h-full object-cover"
+                        fallbackComponent={
+                          <span className="font-serif font-bold text-xs">
+                            {fullName.charAt(0).toUpperCase()}
+                          </span>
+                        }
+                      />
+                    );
+                  }
+                  return fullName.charAt(0).toUpperCase();
+                })()}
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Mobile Notification Centre */}
+        <MobileNotificationCentre
+          isOpen={showNotifPanel}
+          onClose={() => setShowNotifPanel(false)}
+          role="volunteer"
+          onNavigate={onNavigate}
+          onUnreadCountChange={setUnreadNotifCount}
+        />
+
+      {/* Main Container */}
+      <main className={`w-full px-4 sm:px-5 ${
+        cleanRoute === '/volunteer/team-alerts'
+          ? (offlineService.isOffline() || outbox.length > 0 || showOfflineHubDetails ? 'pt-4 space-y-4' : 'hidden')
+          : 'pt-5 pb-24 space-y-4 sm:space-y-5 flex-1'
+      }`}>
+        
+        {/* Device Connectivity Bar / Collapsible Hub */}
+        {offlineService.isOffline() || outbox.length > 0 || showOfflineHubDetails ? (
+          <div 
+            className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 space-y-4 shadow-2xs animate-fade-in"
+            data-component-version="volunteer-offline-hub-card-v3"
+          >
+            <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#F4F3EF] dark:border-[#302E29]">
+              <div className="space-y-0.5">
+                <h3 className="text-xs font-serif font-bold text-[#18181B] dark:text-[#F0EBE3]">
+                  Sync & Data Options
+                </h3>
+                <div className="flex items-center space-x-1.5 pt-0.5">
+                  {offlineService.isOffline() ? (
+                    <span className="inline-flex items-center px-2 py-0.5 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40 rounded-md text-[11px] font-medium">
+                      Operating Offline
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center space-x-1.5 text-xs font-semibold text-[#C59B27] dark:text-[#D4AF37]">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-[#C59B27] dark:text-[#D4AF37] shrink-0" />
+                      <span>Synced</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadManifest}
+                  disabled={isDownloadingManifest || offlineService.isOffline()}
+                  className="px-3 py-1.5 bg-[#FAF9F6] dark:bg-[#21211E] hover:bg-[#F4F3EF] dark:hover:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] text-[#18181B] dark:text-[#F0EBE3] text-xs font-medium rounded-xl flex items-center space-x-1.5 transition-all cursor-pointer shadow-2xs"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isDownloadingManifest ? 'animate-spin text-[#C59B27]' : 'text-zinc-500 dark:text-[#7A7570]'}`} />
+                  <span>{isDownloadingManifest ? 'Caching...' : 'Preload data'}</span>
+                </button>
+
+                <button 
+                  type="button" 
+                  onClick={() => setShowOfflineHubDetails(false)}
+                  className="p-1.5 hover:bg-zinc-100 dark:hover:bg-[#21211E] rounded-lg text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#F0EBE3] transition-colors cursor-pointer"
+                  title="Close sync options"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Sync Queue Outbox Visualization */}
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div className="space-y-0.5">
+                  <h4 className="text-xs font-bold text-[#18181B] dark:text-[#F0EBE3]">
+                    Pending Offline Scans ({outbox.length})
+                  </h4>
+                  <p className="text-xs text-[#71717A] dark:text-[#B8B0A5] leading-relaxed">
+                    {outbox.length === 0 
+                      ? 'All check-ins are saved and fully synchronized.' 
+                      : `${outbox.length} offline check-ins waiting to upload.`}
+                  </p>
+                </div>
+
+                {outbox.length > 0 && (
+                  <Button
+                    onClick={handleManualSyncOutbox}
+                    disabled={isSyncingOutbox || offlineService.isOffline()}
+                    className="px-3.5 py-1.5 bg-[#C59B27] hover:bg-[#A8801C] text-white text-xs font-bold rounded-xl flex items-center space-x-1.5 shadow-xs shrink-0 self-start sm:self-auto"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${isSyncingOutbox ? 'animate-spin' : ''}`} />
+                    <span>{isSyncingOutbox ? 'Syncing...' : 'Sync now'}</span>
+                  </Button>
+                )}
+              </div>
+
+              {outbox.length > 0 && (
+                <div className="bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl divide-y divide-[#EAE8E1] dark:divide-[#302E29] max-h-48 overflow-y-auto">
+                  {outbox.map((item) => (
+                    <div key={item.idempotencyKey} className="p-3 flex items-center justify-between text-xs gap-3">
+                      <div className="space-y-0.5 min-w-0 pr-3">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-bold text-[#18181B] dark:text-[#F0EBE3] truncate">{item.childName}</span>
+                          <span className="px-1.5 py-0.5 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] text-[#71717A] dark:text-[#B8B0A5] rounded text-[10px] font-mono">{item.passReference}</span>
+                        </div>
+                        <div className="text-[11px] text-[#71717A] dark:text-[#7A7570]">
+                          {item.gateLocation} • {new Date(item.actionTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                        {item.error && (
+                          <p className="text-[10px] text-rose-600 font-semibold mt-0.5">Error: {item.error}</p>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => handleCancelQueuedAction(item.idempotencyKey)}
+                        className="p-1 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0 cursor-pointer"
+                        title="Discard queued scan"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (isOffline || outbox.length > 0) ? (
+          <div className="flex items-center justify-between px-3.5 py-2 bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/40 rounded-2xl text-xs">
+            <div className="flex items-center space-x-2 text-amber-900 dark:text-amber-300">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span className="font-semibold text-[11px]">
+                {isOffline ? 'Offline mode' : `${outbox.length} item${outbox.length > 1 ? 's' : ''} queued`}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowOfflineHubDetails(true)}
+              className="px-2.5 py-0.5 bg-white dark:bg-[#21211E] border border-amber-200 dark:border-amber-900/40 text-amber-900 dark:text-amber-300 font-bold text-[11px] rounded-lg transition-all cursor-pointer shadow-2xs"
+            >
+              Sync options
+            </button>
+          </div>
+        ) : null}
+
+        {/* Dynamic Route Content Router */}
+        {cleanRoute === '/volunteer/event' && (
+          /* ==================== 1. EVENT TOOLS / METRICS VIEW ==================== */
+          <div className="space-y-4 sm:space-y-5 animate-fade-in w-full" data-view-version="volunteer-dashboard-v11-refined-mobile">
+            
+            {/* 1. Compact Volunteer Greeting */}
+            <div className="space-y-1 w-full" data-component-version="volunteer-dashboard-compact-greeting">
+              <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
+                {(() => {
+                  const hour = new Date().getHours();
+                  const rawName = volunteerProfile?.full_name || 
+                                  volunteerProfile?.fullName || 
+                                  volunteerProfile?.user?.fullName || 
+                                  volunteerProfile?.user?.full_name || 
+                                  '';
+                  const firstName = rawName.trim() && rawName.toLowerCase() !== 'volunteer' 
+                    ? rawName.trim().split(/\s+/)[0] 
+                    : '';
+                  let greetingPrefix = 'Welcome';
+                  if (hour >= 4 && hour < 12) {
+                    greetingPrefix = 'Good morning';
+                  } else if (hour >= 12 && hour < 17) {
+                    greetingPrefix = 'Good afternoon';
+                  } else if (hour >= 17 || hour < 4) {
+                    greetingPrefix = 'Good evening';
+                  }
+                  return firstName ? `${greetingPrefix}, ${firstName}` : greetingPrefix;
+                })()}
+              </h1>
+              <p className="text-sm text-zinc-500 dark:text-[#B8B0A5] font-normal">
+                Here's what you need for today's event.
+              </p>
+            </div>
+
+            {/* Quiet WhatsApp Opt-in Prompt for volunteers */}
+            <VolunteerWhatsAppPreferences
+              variant="banner"
+              volunteerProfile={volunteerProfile}
+              onConsentUpdated={(newStatus) => {
+                if (volunteerProfile && typeof volunteerProfile === 'object') {
+                  volunteerProfile.whatsappConsentStatus = newStatus;
+                  volunteerProfile.whatsapp_consent_status = newStatus;
+                }
+              }}
+              onOpenEditProfile={() => onNavigate('/volunteer/profile')}
+              showSuccess={showSuccess}
+              showError={showError}
+            />
+
+            {/* 2. Unified Event Cover & Summary Card */}
+            <div className="w-full bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl overflow-hidden shadow-2xs" data-component-version="volunteer-dashboard-unified-event-card">
+              <div className="relative h-36 sm:h-44 w-full bg-[#18181B] overflow-hidden flex flex-col justify-end p-4 sm:p-5">
+                <SafeImage 
+                  src={customHeroUrl}
+                  fallbackSrc={defaultEventHeroUrl || volunteerHeroImg} 
+                  alt="Current Event" 
+                  className="w-full h-full object-cover opacity-85"
+                  containerClassName="absolute inset-0 w-full h-full"
+                  loading="eager"
+                  decoding="async"
+                  fetchPriority="high"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent pointer-events-none" />
+                <div className="relative z-10 space-y-1">
+                  <span className="text-[11px] font-sans font-semibold text-[#D4AF37] uppercase tracking-wider block">
+                    {eventDetails?.section_name ? eventDetails.section_name.replace(' Ministry', '') : 'Children & Teens'}
+                  </span>
+                  <h2 className="text-xl sm:text-2xl font-serif font-bold text-white leading-tight drop-shadow-xs">
+                    {eventDetails?.title || 'The General Assembly'}
+                  </h2>
+                </div>
+              </div>
+
+              <div className="p-4 sm:p-5 space-y-3 bg-white dark:bg-[#1D1D1A]">
+                <div className="space-y-2 text-xs sm:text-sm text-zinc-600 dark:text-[#B8B0A5] font-sans">
+                  <div className="flex items-center space-x-2">
+                    <Calendar className="w-3.5 h-3.5 text-[#C59B27] shrink-0" />
+                    <span>
+                      {formatEventDateRange(eventDetails?.starts_at, eventDetails?.ends_at)}
+                      <span className="mx-2 text-zinc-300 dark:text-[#7A7570]">·</span>
+                      {eventDetails?.daily_start_time && eventDetails?.daily_end_time 
+                        ? `${eventDetails.daily_start_time} – ${eventDetails.daily_end_time}` 
+                        : '9:00 AM – 7:00 PM'}
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <MapPin className="w-3.5 h-3.5 text-[#C59B27] shrink-0" />
+                    <span className="truncate text-zinc-700 dark:text-[#F0EBE3]">
+                      {eventDetails?.location || 'Koinonia Global Auditorium & Children Pavilion, Abuja'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2.5 border-t border-[#F4F3EF] dark:border-[#302E29] text-xs font-sans">
+                  <span className="text-zinc-500 dark:text-[#B8B0A5]">
+                    Serving with <span className="text-zinc-800 dark:text-[#F0EBE3] font-medium">{teamName || 'General Team'}</span>
+                  </span>
+                  <button 
+                    type="button" 
+                    onClick={() => setShowEventDetailsModal(true)} 
+                    className="font-medium text-[#C59B27] hover:text-[#A47E1F] dark:text-[#D4AF37] dark:hover:text-[#E5C158] transition-colors cursor-pointer inline-flex items-center gap-1"
+                  >
+                    <span>View event details</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. Duty Location Card */}
+            <div className="w-full bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-2xs" data-component-version="volunteer-dashboard-duty-location">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xs font-sans font-medium text-stone-500 dark:text-[#B8B0A5]">Duty location</h2>
+                {currentDutyLocation && !currentDutyLocation.isAssignedByAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      fetchAvailableLocations();
+                      setShowLocationSelectModal(true);
+                    }}
+                    className="text-xs text-[#C59B27] hover:text-[#A47E1F] dark:text-[#D4AF37] dark:hover:text-[#E5C158] font-sans font-medium transition-colors cursor-pointer"
+                  >
+                    Change location
+                  </button>
+                )}
+              </div>
+
+              {currentDutyLocation ? (
+                /* Assigned/Confirmed Duty Location State */
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-base sm:text-lg font-serif font-semibold text-stone-900 dark:text-[#F0EBE3] tracking-tight">
+                          {currentDutyLocation.name || currentDutyLocation.locationName}
+                        </div>
+                        {(currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey || currentDutyLocation.team || currentDutyLocation.teamKey) && (
+                          <div className="text-xs text-stone-500 dark:text-[#B8B0A5] font-sans mt-0.5">
+                            {[
+                              cleanAgeGroup(currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey) || currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey,
+                              currentDutyLocation.team || currentDutyLocation.teamKey
+                            ].filter(Boolean).join(' · ')}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowDutyLocationDetailsModal(true)}
+                        className="text-xs text-stone-500 hover:text-stone-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] font-sans font-medium transition-colors cursor-pointer shrink-0 inline-flex items-center gap-1 pt-0.5"
+                      >
+                        <span>View details</span>
+                        <span className="text-stone-400 dark:text-[#7A7570]" aria-hidden="true">→</span>
+                      </button>
+                    </div>
+
+                    {currentDutyLocation.instructions && (
+                      <p className="text-xs text-stone-600 dark:text-[#B8B0A5] font-sans pt-1 leading-relaxed line-clamp-2">
+                        {currentDutyLocation.instructions}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Presence Status & Arrival Confirmation */}
+                  {currentDutyLocation.isPresent ? (
+                    <div className="pt-2.5 border-t border-stone-100 dark:border-[#302E29] flex items-center justify-between">
+                      <div className="text-xs font-sans text-stone-600 dark:text-[#B8B0A5]">
+                        <span className="font-medium text-[#C59B27] dark:text-[#D4AF37]">On duty</span>
+                        {currentDutyLocation.presentSince && (
+                          <span className="text-stone-500 dark:text-[#7A7570]">
+                            {' '}· Since {new Date(currentDutyLocation.presentSince).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="pt-2.5 border-t border-stone-100 dark:border-[#302E29] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                      <p className="text-xs font-sans text-stone-500 dark:text-[#B8B0A5]">
+                        Confirm your arrival to let your team know you're here.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={presenceActionLoading}
+                        onClick={handleConfirmArrival}
+                        className="py-2 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-medium text-xs rounded-xl shadow-xs transition-all cursor-pointer shrink-0 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{presenceActionLoading ? 'Checking in...' : "I'm here"}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Unassigned Location State */
+                <div className="space-y-3">
+                  <p className="text-sm font-sans font-medium text-stone-900 dark:text-[#F0EBE3]">
+                    No location assigned yet.
+                  </p>
+                  <p className="text-xs text-stone-500 dark:text-[#B8B0A5] font-sans leading-relaxed">
+                    Choose where you'll serve
+                  </p>
+
+                  <div className="pt-0.5 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        fetchAvailableLocations();
+                        setShowLocationSelectModal(true);
+                      }}
+                      className="py-2.5 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-medium text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center space-x-2"
+                    >
+                      <MapPin className="w-3.5 h-3.5" />
+                      <span>Choose location</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowLocationQRModal(true);
+                        startLocationQRScanning();
+                      }}
+                      className="py-2.5 px-3 text-stone-600 hover:text-stone-900 hover:bg-stone-100 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] dark:hover:bg-[#21211E] font-sans font-medium text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5"
+                    >
+                      <QrCode className="w-3.5 h-3.5 text-stone-500 dark:text-[#B8B0A5]" />
+                      <span>Scan location QR</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 4. Primary Operational Actions (Reflowed cleanly for 500px shell without cramped labels) */}
+            <div className="w-full space-y-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setCameraActive(true);
+                  setScanMode('check_in');
+                  onNavigate('/volunteer/scan');
+                }}
+                className="w-full py-3 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-medium text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2"
+                id="btn-volunteer-start-checkin"
+              >
+                <QrCode className="w-4 h-4" />
+                <span>Start check-in</span>
+              </button>
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => onNavigate('/volunteer/wristbands')}
+                  className="py-2.5 px-3 bg-white dark:bg-[#21211E] border border-[#E5D5AE] dark:border-[#302E29] hover:bg-[#FAF6EB] dark:hover:bg-[#262520] text-[#9A7326] dark:text-[#D4AF37] font-sans font-medium text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2"
+                  id="btn-volunteer-wristband-desk"
+                >
+                  <Tag className="w-4 h-4 text-[#C59B27]" />
+                  <span>Wristband desk</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('/volunteer/pickup')}
+                  className="py-2.5 px-3 bg-white dark:bg-[#21211E] border border-stone-200/90 dark:border-[#302E29] hover:bg-stone-50 dark:hover:bg-[#262520] text-stone-900 dark:text-[#F0EBE3] font-sans font-medium text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2"
+                  id="btn-volunteer-open-pickup"
+                >
+                  <ShieldCheck className="w-4 h-4 text-[#C59B27]" />
+                  <span>Open pickup</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 5. Child Search Field */}
+            <form 
+              onSubmit={(e) => {
+                e.preventDefault();
+                onNavigate('/volunteer/children');
+              }}
+              className="relative w-full"
+              data-component-version="volunteer-dashboard-search-v5-mobile"
+            >
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                <Search className="h-4 w-4 text-zinc-400 dark:text-[#7A7570]" />
+              </div>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Find child by name or parent phone"
+                className="w-full pl-10 pr-4 py-2.5 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl text-xs sm:text-sm text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:bg-white dark:focus:bg-[#262520] focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] outline-hidden transition-all"
+              />
+            </form>
+
+            {/* 6. Metrics Summary Grid (Cohesive card with subtle dividers, no box fatigue) */}
+            <div className="w-full bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-2xs" data-component-version="volunteer-dashboard-summary-refined">
+              <div className="grid grid-cols-4 gap-2 text-center divide-x divide-zinc-100 dark:divide-[#302E29]">
+                <div className="space-y-1">
+                  <span className="text-[11px] font-medium text-zinc-400 dark:text-[#7A7570] uppercase tracking-wide block">
+                    Expected
+                  </span>
+                  <span className="text-2xl sm:text-3xl font-serif font-medium text-zinc-900 dark:text-[#F0EBE3] block leading-tight">
+                    {stats.expected || 0}
+                  </span>
+                </div>
+
+                <div className="space-y-1 pl-2">
+                  <span className="text-[11px] font-medium text-zinc-400 dark:text-[#7A7570] uppercase tracking-wide block">
+                    Checked in
+                  </span>
+                  <span className="text-2xl sm:text-3xl font-serif font-medium text-[#C59B27] dark:text-[#D4AF37] block leading-tight">
+                    {stats.checkedIn || 0}
+                  </span>
+                </div>
+
+                <div className="space-y-1 pl-2">
+                  <span className="text-[11px] font-medium text-zinc-400 dark:text-[#7A7570] uppercase tracking-wide block">
+                    Picked up
+                  </span>
+                  <span className="text-2xl sm:text-3xl font-serif font-medium text-zinc-700 dark:text-[#B8B0A5] block leading-tight">
+                    {stats.pickedUp || 0}
+                  </span>
+                </div>
+
+                <div className="space-y-1 pl-2">
+                  <span className="text-[11px] font-medium text-zinc-400 dark:text-[#7A7570] uppercase tracking-wide block">
+                    Attention
+                  </span>
+                  <span className="text-2xl sm:text-3xl font-serif font-medium text-zinc-900 dark:text-[#F0EBE3] block leading-tight">
+                    {stats.attention || 0}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 7. Needs Attention Section */}
+            <div className="w-full bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3" data-component-version="volunteer-dashboard-attention-refined">
+              <div className="flex items-center space-x-2 border-b border-zinc-100 dark:border-[#302E29] pb-2.5">
+                <AlertTriangle className="h-4 w-4 text-[#C59B27]" />
+                <h2 className="text-base font-sans font-bold text-zinc-900 dark:text-[#F0EBE3]">Needs Attention</h2>
+              </div>
+
+              {attentionItems.length === 0 && !loading && (
+                <div className="py-3 text-center text-xs text-zinc-400 dark:text-[#7A7570]">
+                  No attention items right now.
+                </div>
+              )}
+
+              {attentionItems.length > 0 && (
+                <div className="divide-y divide-zinc-100 dark:divide-[#302E29]" data-component-version="volunteer-attention-list-v2">
+                  {attentionItems.map((item, index) => {
+                    const childPhoto = item.child_photo_file_id || item.childPhotoFileId;
+                    const cName = item.child_name || item.childName || 'Child';
+                    const cleaned = formatChildNameAndRef(cName);
+                    
+                    const resolvedPhotoUrl = childPhoto ? (
+                      childPhoto.startsWith('http') || childPhoto.startsWith('/') || childPhoto.startsWith('data:') 
+                        ? childPhoto 
+                        : `/api/media/files/${childPhoto}`
+                    ) : '';
+
+                    return (
+                      <div
+                        key={item.id || index}
+                        className="py-3 flex items-center justify-between gap-4 first:pt-0 last:pb-0"
+                        data-component-version="volunteer-attention-list-item-v2"
+                      >
+                        <div className="flex items-center space-x-3 min-w-0 flex-1">
+                          {/* Photo area */}
+                          <div 
+                            className="w-10 h-10 rounded-xl overflow-hidden bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE]/60 dark:border-[#302E29] shrink-0 flex items-center justify-center text-[#C59B27] font-serif font-bold text-xs"
+                            data-component-version="volunteer-attention-child-photo-v2"
+                          >
+                            {resolvedPhotoUrl ? (
+                              <SafeImage
+                                src={resolvedPhotoUrl}
+                                alt={cleaned.name}
+                                className="w-full h-full object-cover"
+                                fallbackComponent={
+                                  <span className="font-serif font-bold text-xs">
+                                    {cleaned.name.charAt(0).toUpperCase()}
+                                  </span>
+                                }
+                              />
+                            ) : (
+                              <span className="font-serif font-bold text-xs">
+                                {cleaned.name.charAt(0).toUpperCase()}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold text-zinc-900 dark:text-[#F0EBE3] leading-tight truncate">
+                              {item.issue_type || item.issueType || 'Unresolved issue'}
+                            </p>
+                            <p className="text-[11px] text-zinc-500 dark:text-[#B8B0A5] mt-0.5 truncate">
+                              {cleaned.name} {cleaned.ref ? `• #${cleaned.ref}` : (item.child_id ? `• #${String(item.child_id).slice(-4)}` : '')}
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => handleResolveAction(item)}
+                          data-component-version="volunteer-attention-action-v2"
+                          className="text-xs font-semibold text-[#C59B27] hover:text-[#A47E1F] dark:text-[#D4AF37] dark:hover:text-[#E5C158] shrink-0 transition-colors cursor-pointer"
+                        >
+                          {item.action_text === 'RESOLVE' || item.actionText === 'RESOLVE' ? 'Resolve' : item.action_text === 'VERIFY' || item.actionText === 'VERIFY' ? 'Verify' : 'Review'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* 8. Recent Activity Section */}
+            <div
+              className="w-full bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3 font-sans"
+              data-component-version="volunteer-dashboard-recent-activity-refined"
+            >
+              <div className="flex items-center space-x-2 border-b border-zinc-100 dark:border-[#302E29] pb-2.5">
+                <History className="h-4 w-4 text-[#C59B27]" />
+                <h2 className="text-base font-sans font-bold text-zinc-900 dark:text-[#F0EBE3]">Recent Activity</h2>
+              </div>
+
+              {recentScans.length === 0 && (
+                <div className="py-3 text-center text-xs text-zinc-400 dark:text-[#7A7570]">
+                  No scan activity recorded yet.
+                </div>
+              )}
+
+              {recentScans.length > 0 && (
+                <div className="divide-y divide-zinc-100 dark:divide-[#302E29]">
+                  {recentScans.slice(0, 3).map((item, index) => (
+                    <div
+                      key={item.id || index}
+                      className="py-2.5 flex items-center justify-between gap-4 first:pt-0 last:pb-0"
+                    >
+                      <div className="flex items-center space-x-3 min-w-0">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] shrink-0 font-semibold ${
+                          item.status === 'checked_in' || item.status === 'inside'
+                            ? 'bg-[#FAF6EB] text-[#C59B27] border border-[#E5D5AE] dark:bg-[#262520] dark:text-[#D4AF37] dark:border-[#3A3835]'
+                            : 'bg-zinc-100 text-zinc-700 border border-zinc-200 dark:bg-[#21211E] dark:text-[#B8B0A5] dark:border-[#302E29]'
+                        }`}>
+                          {item.status === 'checked_in' || item.status === 'inside' ? 'IN' : 'OUT'}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-zinc-900 dark:text-[#F0EBE3] truncate leading-tight">
+                            {item.childName || 'Child'}
+                          </p>
+                          <p className="text-[10px] text-zinc-500 dark:text-[#B8B0A5] mt-0.5">
+                            {item.status === 'checked_in' || item.status === 'inside' ? 'Checked in' : 'Picked up'} • {formatTime(item.timestamp)}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      {item.ageGroup && (
+                        <span className="text-[10px] font-medium text-zinc-500 dark:text-[#B8B0A5] bg-zinc-50 dark:bg-[#262520] border border-zinc-200 dark:border-[#302E29] px-2 py-0.5 rounded-full shrink-0">
+                          {cleanAgeGroup(item.ageGroup)}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {cleanRoute === '/volunteer/scan' && (
+          checkedInSuccessChild ? (
+            /* ==================== 2.6 CHECK-IN SUCCESS SCREEN (Request 3) ==================== */
+            (() => {
+              const firstName = checkedInSuccessChild.firstName || (checkedInSuccessChild.fullName || '').split(' ')[0] || '';
+              const ageNum = checkedInSuccessChild.age;
+              const ageLabel = ageNum !== undefined && ageNum !== null ? (ageNum === 0 ? 'Under 1 year old' : `${ageNum} ${ageNum === 1 ? 'year' : 'years'} old`) : 'Age verified';
+              const ageGroup = checkedInSuccessChild.classGroup || checkedInSuccessChild.ageGroup || '';
+
+              const medicalNote = checkedInSuccessChild.medicalNote || checkedInSuccessChild.medicalNotes || lookedUpChild?.medicalNotes || '';
+              const allergies = checkedInSuccessChild.allergies || lookedUpChild?.allergies || '';
+              const extraSupport = checkedInSuccessChild.extraSupport || checkedInSuccessChild.supportNotes || lookedUpChild?.supportNotes || lookedUpChild?.extraSupport || '';
+
+              const checkInTime = checkedInSuccessEntry?.checkedInAt 
+                ? new Date(checkedInSuccessEntry.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+                : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              const checkedInBy = checkedInSuccessEntry?.checkedInBy?.fullName || volunteerProfile?.full_name || 'Event Worker';
+              const checkInPoint = checkedInSuccessEntry?.point || 'Main entrance';
+
+              const hasCareNotes = medicalNote || (allergies && allergies.toLowerCase() !== 'no') || (extraSupport && extraSupport.toLowerCase() !== 'no');
+
+              return (
+                <div className="max-w-md mx-auto w-full px-4 space-y-6 pt-4 pb-12 animate-fade-in" data-view-version="volunteer-checked-in-success-v7-clean-header">
+                  {/* Event label */}
+                  <div className="text-center font-mono text-[10px] uppercase tracking-[0.2em] text-[#C59B27] font-bold">
+                    {eventDetails?.title?.toUpperCase() || 'THE GENERAL ASSEMBLY CHILDREN AND TEENS'}
+                  </div>
+
+                  {/* Success Title Block */}
+                  <div className="text-center space-y-3">
+                    <div className="flex justify-center">
+                      <div className="w-16 h-16 bg-[#C59B27] text-white rounded-full flex items-center justify-center shadow-md animate-scale-in">
+                        <ShieldCheck className="h-9 w-9 stroke-[2.5]" />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-mono font-bold text-[#C59B27] uppercase tracking-widest block">Check-in successful</span>
+                      <h2 className="text-3xl font-serif font-black text-gray-900 dark:text-[#F0EBE3] leading-tight">Ready for class!</h2>
+                    </div>
+                  </div>
+
+                  {/* Success badge card */}
+                  <div className="bg-[#ECFDF5] dark:bg-amber-950/20 border border-[#A7F3D0] dark:border-amber-900/40 rounded-3xl p-5 shadow-xs text-center space-y-1" data-component-version="volunteer-checked-in-success-badge-v1-stitch">
+                    <span className="text-sm font-bold text-[#047857] dark:text-[#D4AF37] block">Checked in</span>
+                    <p className="text-xs text-[#065F46] dark:text-[#B8B0A5] font-medium leading-relaxed">
+                      {firstName} has been marked present.
+                    </p>
+                  </div>
+
+                  {/* Child summary card */}
+                  <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-sm space-y-4" data-component-version="volunteer-checked-in-child-summary-v5">
+                    <div className="flex items-center space-x-4">
+                      <div className="w-16 h-16 rounded-2xl overflow-hidden bg-gray-50 dark:bg-[#262520] border border-gray-150 dark:border-[#302E29] shrink-0 shadow-inner flex items-center justify-center">
+                        {checkedInSuccessChild.photoUrl ? (
+                          <img
+                            src={checkedInSuccessChild.photoUrl}
+                            alt={checkedInSuccessChild.fullName}
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <User className="h-8 w-8 text-gray-300 dark:text-[#7A7570] stroke-[1.5]" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-lg font-serif font-bold text-gray-950 dark:text-[#F0EBE3] leading-snug truncate">
+                          {checkedInSuccessChild.fullName || 'Registered Child'}
+                        </h3>
+                        <div className="flex items-center space-x-1.5 mt-1 text-xs text-gray-500 dark:text-[#B8B0A5] font-semibold">
+                          <span data-component-version="volunteer-child-age-display-v2-under-one">{ageLabel}</span>
+                          {ageLabel && ageGroup && <span className="text-gray-300 dark:text-[#302E29]">&bull;</span>}
+                          {ageGroup && (
+                            <span className="bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] text-[#C59B27] px-2 py-0.5 text-[9px] font-bold uppercase rounded-md tracking-wider">
+                              {ageGroup}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-gray-100 dark:border-[#302E29] pt-3.5 space-y-2.5 text-xs" data-component-version="volunteer-checked-in-entry-details-v5">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-400 dark:text-[#7A7570] font-mono font-bold uppercase tracking-wider text-[9px]">ENTRY TIME</span>
+                        <span className="font-semibold text-gray-850 dark:text-[#F0EBE3]">{checkInTime}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-400 dark:text-[#7A7570] font-mono font-bold uppercase tracking-wider text-[9px]">BY</span>
+                        <span className="font-semibold text-gray-800 dark:text-[#F0EBE3]">{checkedInBy}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-400 dark:text-[#7A7570] font-mono font-bold uppercase tracking-wider text-[9px]">POINT</span>
+                        <span className="font-semibold text-gray-800 dark:text-[#F0EBE3]">{checkInPoint}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Care notes card */}
+                  <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-sm space-y-4" data-component-version="volunteer-checked-in-care-notes-v5">
+                    <h4 className="text-[10px] font-mono font-bold text-[#8F7020] dark:text-[#C59B27] uppercase tracking-[0.15em] border-b border-gray-100 dark:border-[#302E29] pb-2">
+                      CARE NOTES
+                    </h4>
+                    {hasCareNotes ? (
+                      <div className="space-y-3.5">
+                        {medicalNote && (
+                          <div className="flex items-start space-x-2.5 text-xs text-gray-700 dark:text-[#F0EBE3]">
+                            <span className="p-1.5 bg-rose-50 dark:bg-red-950/30 rounded-lg text-rose-600 dark:text-rose-400 shrink-0 mt-0.5">
+                              <Heart className="h-3.5 w-3.5 fill-rose-600 dark:fill-rose-400 stroke-rose-600 dark:stroke-rose-400" />
+                            </span>
+                            <div className="min-w-0">
+                              <span className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block">MEDICAL</span>
+                              <p className="font-semibold text-gray-800 dark:text-[#F0EBE3] leading-normal mt-0.5">{medicalNote}</p>
+                            </div>
+                          </div>
+                        )}
+                        {allergies && allergies.toLowerCase() !== 'no' && (
+                          <div className="flex items-start space-x-2.5 text-xs text-gray-700 dark:text-[#F0EBE3]">
+                            <span className="p-1.5 bg-amber-50 dark:bg-amber-950/30 rounded-lg text-amber-600 dark:text-[#C59B27] shrink-0 mt-0.5">
+                              <AlertTriangle className="h-3.5 w-3.5" />
+                            </span>
+                            <div className="min-w-0">
+                              <span className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block">ALLERGIES</span>
+                              <p className="font-semibold text-gray-800 dark:text-[#F0EBE3] leading-normal mt-0.5">{allergies}</p>
+                            </div>
+                          </div>
+                        )}
+                        {extraSupport && extraSupport.toLowerCase() !== 'no' && (
+                          <div className="flex items-start space-x-2.5 text-xs text-gray-700 dark:text-[#F0EBE3]">
+                            <span className="p-1.5 bg-blue-50 dark:bg-blue-950/30 rounded-lg text-blue-600 dark:text-blue-400 shrink-0 mt-0.5">
+                              <Info className="h-3.5 w-3.5" />
+                            </span>
+                            <div className="min-w-0">
+                              <span className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block">EXTRA SUPPORT</span>
+                              <p className="font-semibold text-gray-800 dark:text-[#F0EBE3] leading-normal mt-0.5">{extraSupport}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-500 dark:text-[#7A7570] font-medium italic text-center py-2 bg-gray-50 dark:bg-[#262520] rounded-2xl border border-gray-100 dark:border-[#302E29]">
+                        No care notes added.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Children inside / Waiting metrics card */}
+                  <div className="grid grid-cols-2 gap-4 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-sm" data-component-version="volunteer-checked-in-metrics-v5">
+                    <div className="text-center space-y-1 border-r border-gray-100 dark:border-[#302E29] pr-2">
+                      <span className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block">CHILDREN INSIDE</span>
+                      <span className="text-3xl font-serif font-black text-gray-900 dark:text-[#F0EBE3]">{stats.checkedIn}</span>
+                    </div>
+                    <div className="text-center space-y-1 pl-2">
+                      <span className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block">WAITING</span>
+                      <span className="text-3xl font-serif font-black text-gray-900 dark:text-[#F0EBE3]">{Math.max(0, stats.expected - stats.checkedIn)}</span>
+                    </div>
+                  </div>
+
+                  {/* Actions buttons */}
+                  <div className="space-y-3 pt-2" data-component-version="volunteer-checked-in-actions-v2-stitch">
+                    <button
+                      onClick={handleResetScannerState}
+                      data-component-version="volunteer-checked-in-scan-another-v5"
+                      className="w-full bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#1D1D1A] font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2"
+                    >
+                      <QrCode className="h-4 w-4 stroke-[2.5]" />
+                      <span>SCAN ANOTHER PASS</span>
+                    </button>
+                    
+                    <button
+                      onClick={() => {
+                        setSelectedChildId(checkedInSuccessChild.id);
+                        setChildDetailOrigin('scan');
+                        handleResetScannerState();
+                        onNavigate('/volunteer/children');
+                      }}
+                      data-component-version="volunteer-checked-in-view-child-v5"
+                      className="w-full border border-gray-300 dark:border-[#302E29] hover:border-gray-400 dark:hover:border-[#3A3835] text-gray-850 dark:text-[#F0EBE3] font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] flex items-center justify-center space-x-2"
+                    >
+                      <User className="h-4 w-4 text-gray-600 dark:text-[#B8B0A5] stroke-[2]" />
+                      <span>VIEW CHILD PROFILE</span>
+                    </button>
+
+                    <div className="text-center pt-2">
+                      <button
+                        onClick={() => {
+                          handleResetScannerState();
+                          onNavigate('/volunteer/event');
+                        }}
+                        data-component-version="volunteer-checked-in-back-home-v5"
+                        className="text-xs font-serif font-bold text-[#C59B27] hover:text-[#A47E1F] transition-colors underline underline-offset-4 cursor-pointer uppercase tracking-wider"
+                      >
+                        Back to Event Home
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()
+          ) : lookedUpChild ? (() => {
+            const isAlreadyCheckedIn = lookedUpChild.entryStatus === 'checked_in' || lookedUpChild.entryStatus === 'inside';
+            const medicalNoteText = lookedUpChild.medicalNotes || '';
+            const allergiesText = lookedUpChild.allergies || '';
+            const extraSupportText = lookedUpChild.supportNotes || lookedUpChild.extraSupport || '';
+
+            return (
+              <div className="space-y-3.5 max-w-md mx-auto w-full pb-16 px-4" data-view-version="volunteer-child-found-v8-workstation">
+                {/* 1. CHILD IDENTITY AREA */}
+                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-xs" data-component-version="volunteer-child-found-card-v4">
+                  <div className="flex items-start gap-3.5">
+                    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden bg-gray-100 dark:bg-[#262520] border border-gray-200/80 dark:border-[#3A3835] shrink-0 flex items-center justify-center">
+                      {lookedUpChild.photoUrl ? (
+                        <img
+                          src={lookedUpChild.photoUrl}
+                          alt={lookedUpChild.fullName}
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <User className="h-7 w-7 text-gray-400 dark:text-[#7A7570]" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="text-base sm:text-lg font-sans font-bold text-gray-900 dark:text-[#F0EBE3] leading-snug truncate">
+                          {lookedUpChild.fullName}
+                        </h3>
+                        <span className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-md tracking-wider shrink-0 leading-none ${
+                          isAlreadyCheckedIn
+                            ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40'
+                            : 'bg-stone-50 dark:bg-[#262520] text-stone-700 dark:text-[#B8B0A5] border border-stone-200 dark:border-[#3A3835]'
+                        }`}>
+                          {isAlreadyCheckedIn ? 'Checked in' : 'Ready for check-in'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600 dark:text-[#B8B0A5] font-medium mt-0.5 font-sans" data-component-version="volunteer-child-age-display-v2-under-one">
+                        {calculateAge(lookedUpChild.dateOfBirth) || lookedUpChild.age ? `${calculateAge(lookedUpChild.dateOfBirth) || lookedUpChild.age} · ` : ''}
+                        {lookedUpChild.ageGroup || lookedUpChild.className || 'General Room'}
+                      </p>
+                      {lookedUpChild.passReference && (
+                        <p className="text-[11px] font-mono text-gray-400 dark:text-[#7A7570] mt-0.5">
+                          Pass: {lookedUpChild.passReference}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Care Notes if present */}
+                  {(medicalNoteText || (allergiesText && allergiesText.toLowerCase() !== 'no') || (extraSupportText && extraSupportText.toLowerCase() !== 'no')) && (
+                    <div className="mt-3 pt-3 border-t border-gray-100 dark:border-[#302E29] flex flex-wrap gap-1.5 text-xs font-sans">
+                      {medicalNoteText && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-red-950/20 text-rose-700 dark:text-rose-300 border border-rose-200/50 dark:border-red-900/30 font-medium">
+                          <span className="text-[10px]">⚠️</span> Medical: {medicalNoteText}
+                        </span>
+                      )}
+                      {allergiesText && allergiesText.toLowerCase() !== 'no' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300 border border-amber-200/50 dark:border-amber-900/30 font-medium">
+                          <span className="text-[10px]">⚠️</span> Allergy: {allergiesText}
+                        </span>
+                      )}
+                      {extraSupportText && extraSupportText.toLowerCase() !== 'no' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 border border-blue-200/50 dark:border-blue-900/30 font-medium">
+                          Support: {extraSupportText}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. ENTRY STATUS SECTION */}
+                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-xs space-y-3" data-component-version="volunteer-child-found-entry-status-v3">
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase">
+                      Entry Status
+                    </div>
+                    {isAlreadyCheckedIn ? (
+                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-[#F0EBE3]">
+                        <span className="w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                          <Check className="h-3.5 w-3.5 stroke-[3]" />
+                        </span>
+                        <span>Already checked in</span>
+                        <span className="text-xs font-normal text-gray-500 dark:text-[#7A7570] ml-1">
+                          · Checked in at {formatTime(lookedUpChild.checkedInAt || lookedUpChild.checked_in_at || new Date().toISOString())}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-[#F0EBE3]">
+                        <span className="w-5 h-5 rounded-full bg-amber-100 dark:bg-amber-950/40 text-[#C59B27] flex items-center justify-center shrink-0">
+                          <Clock className="h-3.5 w-3.5 stroke-[2.5]" />
+                        </span>
+                        <span>Ready for check-in</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="space-y-2.5 pt-1">
+                    {isAlreadyCheckedIn ? (
+                      <>
+                        {/* PRIMARY: View child record */}
+                        <button
+                          type="button"
+                          onClick={() => handleViewScannedChildRecord(lookedUpChild)}
+                          disabled={scanLoading || isCheckingIn}
+                          data-component-version="volunteer-child-view-record-action-v7"
+                          className="w-full min-h-[46px] bg-[#18181B] hover:bg-[#27272A] dark:bg-[#C59B27] dark:hover:bg-[#B58E33] text-white dark:text-[#18181B] font-sans font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center space-x-2"
+                        >
+                          <User className="h-4 w-4" />
+                          <span>View child record →</span>
+                        </button>
+
+                        {/* SECONDARY: Next child */}
+                        <button
+                          type="button"
+                          onClick={handleResetScannerState}
+                          data-component-version="volunteer-scan-another-action-v4"
+                          className="w-full min-h-[44px] border border-gray-200 dark:border-[#302E29] hover:border-gray-300 dark:hover:border-[#3A3835] text-gray-800 dark:text-[#F0EBE3] font-sans font-semibold text-xs uppercase tracking-wider rounded-xl transition-all bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] cursor-pointer flex items-center justify-center space-x-2"
+                        >
+                          <QrCode className="h-4 w-4 text-gray-500 dark:text-[#B8B0A5]" />
+                          <span>Next child</span>
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {/* PRIMARY: Mark checked in */}
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmCheckIn(lookedUpChild)}
+                          disabled={scanLoading || isCheckingIn}
+                          data-component-version="volunteer-child-checkin-action-v6"
+                          className="w-full min-h-[46px] bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#18181B] font-sans font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center space-x-2"
+                        >
+                          {isCheckingIn ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                              <span>Checking in...</span>
+                            </>
+                          ) : (
+                            <>
+                              <UserCheck className="h-4 w-4 stroke-[2.5]" />
+                              <span>{justAssignedWristbandCode ? 'Continue check-in' : 'Mark checked in'}</span>
+                            </>
+                          )}
+                        </button>
+
+                        {/* SECONDARY: View child record */}
+                        <button
+                          type="button"
+                          onClick={() => handleViewScannedChildRecord(lookedUpChild)}
+                          disabled={scanLoading || isCheckingIn}
+                          data-component-version="volunteer-child-view-record-secondary-action-v7"
+                          className="w-full min-h-[44px] border border-gray-200 dark:border-[#302E29] hover:border-gray-300 dark:hover:border-[#3A3835] text-gray-800 dark:text-[#F0EBE3] font-sans font-semibold text-xs uppercase tracking-wider rounded-xl transition-all bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] cursor-pointer flex items-center justify-center space-x-2"
+                        >
+                          <User className="h-4 w-4 text-gray-500 dark:text-[#B8B0A5]" />
+                          <span>View child record →</span>
+                        </button>
+
+                        {/* SECONDARY: Next child */}
+                        <button
+                          type="button"
+                          onClick={handleResetScannerState}
+                          data-component-version="volunteer-scan-another-action-v4"
+                          className="w-full min-h-[44px] border border-gray-200 dark:border-[#302E29] hover:border-gray-300 dark:hover:border-[#3A3835] text-gray-700 dark:text-[#B8B0A5] font-sans font-semibold text-xs uppercase tracking-wider rounded-xl transition-all bg-transparent hover:bg-gray-50 dark:hover:bg-[#262520] cursor-pointer flex items-center justify-center space-x-2"
+                        >
+                          <QrCode className="h-4 w-4 text-gray-400 dark:text-[#7A7570]" />
+                          <span>Next child</span>
+                        </button>
+                      </>
+                    )}
+
+                    {/* ESCALATION: Request help */}
+                    <div className="pt-1 border-t border-gray-100 dark:border-[#302E29]">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSafetyAlertModal({
+                          id: lookedUpChild.id,
+                          fullName: lookedUpChild.fullName,
+                          ageGroup: lookedUpChild.ageGroup || lookedUpChild.className,
+                          status: lookedUpChild.entryStatus || lookedUpChild.status,
+                          photoUrl: lookedUpChild.photoUrl
+                        })}
+                        data-component-version="volunteer-alert-auto-linked-child-v1"
+                        className="w-full min-h-[40px] text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 font-sans font-medium text-xs rounded-lg transition-colors cursor-pointer flex items-center justify-center space-x-1.5 hover:bg-rose-50/50 dark:hover:bg-red-950/20"
+                      >
+                        <Bell className="h-3.5 w-3.5" />
+                        <span>Request help for this child</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. WRISTBAND SECTION */}
+                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-xs space-y-3" data-component-version="volunteer-child-found-wristband-v1">
+                  <div className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase">
+                    Wristband
+                  </div>
+
+                  {lookedUpChild.activeWristband ? (
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="font-mono font-bold text-gray-900 dark:text-[#F0EBE3] text-sm block">
+                          {lookedUpChild.activeWristband.wristbandCode}
+                        </span>
+                        <span className="text-[11px] font-sans text-emerald-600 dark:text-emerald-400 font-medium">
+                          Active
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWristbandInitialChild(lookedUpChild);
+                          onNavigate('/volunteer/wristbands');
+                        }}
+                        className="text-xs text-[#C59B27] hover:underline font-semibold cursor-pointer"
+                      >
+                        Replace wristband →
+                      </button>
+                    </div>
+                  ) : isAssigningWristband ? (
+                    stagedWristband ? (
+                      <div className="p-3.5 bg-gray-50 dark:bg-[#262520] border border-gray-200/60 dark:border-[#3A3835] rounded-xl space-y-3">
+                        <div>
+                          <span className="font-mono font-bold text-[#C59B27] text-sm block">
+                            {stagedWristband.wristbandCode}
+                          </span>
+                          <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                            Available
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-700 dark:text-[#F0EBE3] font-medium">
+                          Assign to {lookedUpChild.fullName}
+                        </p>
+
+                        {wristbandAssignmentError && (
+                          <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">
+                            {wristbandAssignmentError}
+                          </p>
+                        )}
+
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={handleConfirmInlineWristbandBinding}
+                            disabled={isBindingWristband}
+                            className="flex-1 min-h-[44px] bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#18181B] font-sans font-bold text-xs uppercase rounded-xl cursor-pointer flex items-center justify-center space-x-1"
+                          >
+                            {isBindingWristband ? (
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            ) : (
+                              <span>Confirm assignment</span>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setStagedWristband(null);
+                              setWristbandScanInput('');
+                              setWristbandAssignmentError(null);
+                              setTimeout(() => wristbandInlineInputRef.current?.focus(), 50);
+                            }}
+                            disabled={isBindingWristband}
+                            className="min-h-[44px] px-4 border border-gray-200 dark:border-[#3A3835] text-gray-600 dark:text-[#B8B0A5] hover:text-gray-900 dark:hover:text-[#F0EBE3] font-sans font-semibold text-xs uppercase rounded-xl cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <form onSubmit={handleInlineWristbandLookup} className="space-y-2.5">
+                        <label className="text-xs font-semibold text-gray-800 dark:text-[#F0EBE3] block">
+                          Scan or enter wristband code
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            ref={wristbandInlineInputRef}
+                            type="text"
+                            value={wristbandScanInput}
+                            onChange={(e) => setWristbandScanInput(e.target.value)}
+                            placeholder="WB-000123..."
+                            autoFocus
+                            disabled={isResolvingWristband}
+                            className="flex-1 min-h-[44px] px-3 text-xs font-mono bg-stone-50/80 dark:bg-[#262520] border border-gray-200 dark:border-[#3A3835] rounded-xl text-gray-900 dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27]"
+                          />
+                          <button
+                            type="submit"
+                            disabled={isResolvingWristband || !wristbandScanInput.trim()}
+                            className="min-h-[44px] px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#18181B] font-sans font-bold text-xs uppercase rounded-xl cursor-pointer disabled:opacity-50"
+                          >
+                            {isResolvingWristband ? (
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            ) : (
+                              'Lookup'
+                            )}
+                          </button>
+                        </div>
+
+                        {wristbandAssignmentError && (
+                          <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">
+                            {wristbandAssignmentError}
+                          </p>
+                        )}
+
+                        <div className="text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsAssigningWristband(false);
+                              setWristbandScanInput('');
+                              setWristbandAssignmentError(null);
+                            }}
+                            className="text-xs text-gray-500 hover:text-gray-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] font-medium cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    )
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500 dark:text-[#B8B0A5]">
+                        No wristband assigned
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAssigningWristband(true);
+                          setStagedWristband(null);
+                          setWristbandScanInput('');
+                          setWristbandAssignmentError(null);
+                          setTimeout(() => wristbandInlineInputRef.current?.focus(), 50);
+                        }}
+                        className="text-xs text-[#C59B27] hover:underline font-bold cursor-pointer"
+                      >
+                        Assign wristband →
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* 4. AUTHORIZED PICKUP */}
+                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-xs space-y-3" data-component-version="volunteer-child-authorized-pickup-v3">
+                  <div className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase">
+                    Authorized Pickup
+                  </div>
+                  {lookedUpChild.pickup ? (
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-100 dark:bg-[#262520] border border-gray-200/80 dark:border-[#302E29] shrink-0 flex items-center justify-center">
+                        {lookedUpChild.pickup.photoUrl ? (
+                          <img
+                            src={lookedUpChild.pickup.photoUrl}
+                            alt={lookedUpChild.pickup.fullName}
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <User className="h-6 w-6 text-gray-400 dark:text-[#7A7570]" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <h5 className="text-sm font-sans font-bold text-gray-900 dark:text-[#F0EBE3] truncate">
+                          {lookedUpChild.pickup.fullName}
+                        </h5>
+                        <p className="text-xs text-gray-500 dark:text-[#B8B0A5] font-medium">
+                          {lookedUpChild.pickup.relationship || 'Authorized Person'}
+                          {lookedUpChild.pickup.phone ? ` · ${lookedUpChild.pickup.phone}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500 dark:text-[#7A7570]">
+                      No pickup person has been added.
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          })() : (
+            /* ==================== 2. SCANNER VIEW (Unified Identification Control) ==================== */
+            <div className="max-w-md mx-auto space-y-4 w-full pb-20 px-4" data-view-version="volunteer-scan-unified-v1">
+              
+              {/* Human-facing Heading & Supporting Copy (Section 2) */}
+              <div className="text-center pt-2 pb-1 space-y-1" data-component-version="volunteer-unified-checkin-header">
+                <h2 className="text-2xl sm:text-3xl font-sans font-bold text-stone-900 dark:text-[#F0EBE3] tracking-tight">
+                  Find child
+                </h2>
+                <p className="text-xs sm:text-sm text-stone-500 dark:text-[#B8B0A5] font-sans">
+                  Scan a child pass or wristband, or enter a reference.
+                </p>
+              </div>
+
+              {/* Primary Unified Identification Input (Keyboard-wedge & Manual) */}
+              <div className="bg-white dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] p-4 rounded-2xl shadow-xs space-y-3" data-component-version="volunteer-unified-scanner-input">
+                <form onSubmit={handleManualVerifySubmit} className="space-y-3">
+                  <div className="relative">
+                    <input
+                      ref={scannerInputRef}
+                      type="text"
+                      autoFocus
+                      value={manualCode}
+                      onChange={(e) => {
+                        setManualCode(e.target.value);
+                        if (unassignedWristbandInfo) setUnassignedWristbandInfo(null);
+                      }}
+                      placeholder="e.g. KOI-2026-..., WB-001245, or tap band"
+                      disabled={scanLoading}
+                      autoComplete="off"
+                      autoCorrect="off"
+                      spellCheck="false"
+                      className="w-full bg-stone-50/80 dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-xl px-4 py-3 text-xs sm:text-sm font-sans font-semibold tracking-wide text-stone-900 dark:text-[#F0EBE3] placeholder:text-stone-400 dark:placeholder:text-[#7A7570] placeholder:font-normal outline-none focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27]/20 focus:bg-white dark:focus:bg-[#262520] transition-all disabled:opacity-60 text-center uppercase"
+                    />
+                    {manualCode && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManualCode('');
+                          scannerInputRef.current?.focus();
+                        }}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-600 dark:hover:text-[#F0EBE3] rounded-full hover:bg-stone-100 dark:hover:bg-[#2A2926] transition-colors"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={scanLoading || !manualCode.trim()}
+                    className="w-full py-3 bg-stone-900 hover:bg-stone-800 dark:bg-[#C59B27] dark:hover:bg-[#B58E33] dark:text-[#1D1D1A] disabled:bg-stone-100 dark:disabled:bg-[#2A2926] disabled:text-stone-400 dark:disabled:text-[#7A7570] text-white font-sans font-semibold text-xs tracking-wider uppercase rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center space-x-2"
+                  >
+                    {scanLoading ? (
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white dark:border-[#1D1D1A]/30 dark:border-t-[#1D1D1A] rounded-full animate-spin"></div>
+                    ) : (
+                      <span>Find child</span>
+                    )}
+                  </button>
+                </form>
+              </div>
+
+              {/* Unassigned Wristband Alert & Action (Section 7) */}
+              {unassignedWristbandInfo && (
+                <div className="bg-[#FAF6EB] dark:bg-amber-950/20 border border-[#E5D5AE] dark:border-amber-900/40 rounded-2xl p-4 space-y-3 animate-fade-in" data-component-version="volunteer-unassigned-wristband-alert">
+                  <div className="flex items-start space-x-3">
+                    <div className="p-2 bg-amber-100/80 dark:bg-amber-900/40 rounded-xl text-[#9A7326] dark:text-[#E5D5AE] shrink-0 mt-0.5">
+                      <Tag className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold text-stone-900 dark:text-[#F0EBE3] font-sans">
+                        This wristband has not been assigned yet.
+                      </p>
+                      <p className="text-[11px] text-stone-500 dark:text-[#B8B0A5] mt-0.5 font-sans">
+                        To use this wristband, it must first be assigned to a child at the Wristband Desk.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setUnassignedWristbandInfo(null)}
+                      className="p-1 text-stone-400 hover:text-stone-600 dark:hover:text-[#F0EBE3] rounded-lg hover:bg-stone-100 dark:hover:bg-[#2A2926] cursor-pointer"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+
+                  {canAssignWristbands && (
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUnassignedWristbandInfo(null);
+                          onNavigate('/volunteer/wristbands');
+                        }}
+                        className="w-full py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-semibold text-xs rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center space-x-1.5"
+                      >
+                        <Tag className="h-3.5 w-3.5" />
+                        <span>Assign wristband</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Camera Scanner Viewport */}
+              {cameraUnavailable ? (
+                <div className="bg-stone-50 dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] rounded-xl p-3.5 text-center space-y-1" data-component-version="volunteer-scan-manual-fallback-v3">
+                  <p className="font-sans font-medium text-xs text-stone-900 dark:text-[#F0EBE3]">Camera unavailable</p>
+                  <p className="font-sans text-xs text-stone-500 dark:text-[#B8B0A5]">
+                    Use the identification input above or search by child name below.
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-white dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] rounded-2xl overflow-hidden relative shadow-xs" data-component-version="volunteer-scan-viewport-v5">
+                  <div className="aspect-[4/3] sm:aspect-[3/4] bg-stone-950 relative flex flex-col items-center justify-center overflow-hidden">
+                    {!cameraActive && (
+                      <div
+                        className="absolute inset-0 bg-cover bg-center filter blur-xs opacity-35 scale-105"
+                        style={{
+                          backgroundImage: `url('https://images.unsplash.com/photo-1516627145497-ae6968895b74?auto=format&fit=crop&q=80&w=600')`
+                        }}
+                      />
+                    )}
+
+                    {cameraActive ? (
+                      <>
+                        <video
+                          ref={videoRef}
+                          className="w-full h-full object-cover"
+                          playsInline
+                          muted
+                        />
+
+                        {/* Overlay frame */}
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <div className="w-48 h-48 sm:w-56 sm:h-56 border border-white/30 rounded-2xl relative flex items-center justify-center">
+                            <div className="absolute -top-1 -left-1 w-5 h-5 border-t-3 border-l-3 border-[#C59B27] rounded-tl-md"></div>
+                            <div className="absolute -top-1 -right-1 w-5 h-5 border-t-3 border-r-3 border-[#C59B27] rounded-tr-md"></div>
+                            <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-3 border-l-3 border-[#C59B27] rounded-bl-md"></div>
+                            <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-3 border-r-3 border-[#C59B27] rounded-br-md"></div>
+
+                            <div className="absolute w-full h-0.5 bg-gradient-to-r from-transparent via-[#C59B27] to-transparent top-0 animate-bounce"></div>
+                          </div>
+                        </div>
+
+                        {/* Camera Controls Overlay */}
+                        <div className="absolute top-3 right-3 flex items-center space-x-2 z-10">
+                          {cameras.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={handleFlipCamera}
+                              className="p-1.5 bg-white/90 text-stone-900 rounded-lg transition-all cursor-pointer flex items-center space-x-1 shadow-xs font-sans font-medium text-[10px]"
+                              title="Flip Camera"
+                            >
+                              <RefreshCw className="h-3 w-3" />
+                              <span>Flip</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setCameraActive(false)}
+                            className="p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors cursor-pointer"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-4 z-10">
+                        <div className="space-y-1">
+                          <p className="text-white font-sans font-semibold text-base">Scan a child pass or wristband to begin.</p>
+                          <p className="text-xs font-sans text-white/70 max-w-[240px] mx-auto leading-relaxed">
+                            Use the scanner input above or activate camera to scan child pass QR code.
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setCameraActive(true)}
+                          className="px-5 py-2.5 bg-white text-stone-900 dark:bg-[#262520] dark:text-[#F0EBE3] dark:hover:bg-[#2A2926] border border-transparent dark:border-[#3A3835] font-sans font-semibold text-xs rounded-full hover:bg-stone-100 transition-colors shadow-sm flex items-center space-x-2 cursor-pointer"
+                        >
+                          <Camera className="h-4 w-4" />
+                          <span>Scan with camera</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Child Search Field */}
+              <div className="space-y-1.5 pt-2">
+                <h3 className="font-sans font-medium text-xs text-stone-500 dark:text-[#B8B0A5]">Find a child by name</h3>
+                <form 
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (searchQuery.trim()) {
+                      onNavigate('/volunteer/children');
+                    }
+                  }}
+                  className="relative w-full"
+                  data-component-version="volunteer-check-in-search-v4"
+                >
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-stone-400 dark:text-[#7A7570]" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search by child name or parent's phone"
+                    className="w-full bg-stone-50/60 dark:bg-[#262520] border border-stone-200/80 dark:border-[#3A3835] rounded-xl pl-9 pr-4 py-2.5 text-xs text-stone-900 dark:text-[#F0EBE3] placeholder-stone-400 dark:placeholder-[#7A7570] outline-none focus:border-stone-400 dark:focus:border-[#C59B27] focus:bg-white dark:focus:bg-[#262520] transition-colors font-sans"
+                  />
+                </form>
+              </div>
+
+              {/* Recently Checked In Section */}
+              {(() => {
+                const lastCheckedInItem = recentScans.find(
+                  (log) => log.status === 'checked_in' || log.status === 'inside'
+                ) || recentScans[0];
+
+                const matchedChild = directoryChildren?.find((c: any) => 
+                  c.id === lastCheckedInItem?.childId || 
+                  c.fullName?.toLowerCase() === lastCheckedInItem?.childName?.toLowerCase()
+                );
+
+                const rawGroup = (matchedChild?.ageGroup || matchedChild?.age_group || lastCheckedInItem?.ageGroup || '');
+                const cleanGroup = rawGroup
+                  .replace(/\s*\([^)]*review[^)]*\)/gi, '')
+                  .replace(/\s*\([^)]*needed[^)]*\)/gi, '')
+                  .trim();
+
+                const ageNum = matchedChild?.age;
+                const ageText = ageNum !== undefined && ageNum !== null 
+                  ? (ageNum === 0 ? 'Under 1 year' : `${ageNum} ${ageNum === 1 ? 'year' : 'years'}`)
+                  : '';
+
+                const subtitleParts = [ageText, cleanGroup].filter(Boolean);
+                const subtitle = subtitleParts.length > 0 ? subtitleParts.join(' · ') : 'Class assigned';
+
+                const hasReviewIssue = /review/i.test(rawGroup) || 
+                  Boolean(matchedChild?.needsReview || matchedChild?.status === 'review_needed' || matchedChild?.requires_special_attention);
+
+                return (
+                  <div className="space-y-1.5" data-component-version="volunteer-check-in-recent-v4">
+                    <h3 className="font-sans font-medium text-xs text-stone-500 dark:text-[#B8B0A5]">Recently checked in</h3>
+                    <div className="bg-white dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] rounded-xl p-3.5">
+                      {lastCheckedInItem ? (
+                        <div className="flex items-start space-x-3">
+                          {/* Child photo / avatar */}
+                          <div className="w-10 h-10 rounded-full bg-stone-100 dark:bg-[#262520] border border-stone-200/80 dark:border-[#302E29] overflow-hidden flex items-center justify-center shrink-0">
+                            {matchedChild?.photoUrl ? (
+                              <img
+                                src={matchedChild.photoUrl}
+                                alt={lastCheckedInItem.childName}
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <span className="font-sans font-medium text-xs text-stone-600 dark:text-[#B8B0A5]">
+                                {lastCheckedInItem.childName?.charAt(0)?.toUpperCase() || 'C'}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <h4 className="font-sans font-semibold text-sm text-stone-900 dark:text-[#F0EBE3] leading-tight truncate">
+                                {lastCheckedInItem.childName}
+                              </h4>
+                              {hasReviewIssue && (
+                                <span className="text-[11px] font-sans font-medium text-amber-800 dark:text-amber-300 bg-amber-50/80 dark:bg-amber-950/40 px-2 py-0.5 rounded-md border border-amber-200/60 dark:border-amber-900/50 shrink-0">
+                                  Age check needed
+                                </span>
+                              )}
+                            </div>
+                            <p className="font-sans text-xs text-stone-500 dark:text-[#B8B0A5] mt-0.5">
+                              {subtitle}
+                            </p>
+                            <p className="font-sans text-xs text-stone-400 dark:text-[#7A7570] mt-0.5 flex items-center gap-1">
+                              <Check className="h-3 w-3 text-stone-400 dark:text-[#7A7570] stroke-[2]" />
+                              <span>Checked in at {formatTime(lastCheckedInItem.timestamp)}</span>
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="font-sans text-xs text-stone-500 dark:text-[#7A7570] py-1 text-center">
+                          No child has been checked in yet.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Attendance Summary */}
+              <div className="space-y-1.5">
+                <h3 className="font-sans font-medium text-xs text-stone-500 dark:text-[#B8B0A5]">Today</h3>
+                <div className="bg-white dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] rounded-xl p-3">
+                  <div className="grid grid-cols-3 divide-x divide-stone-100 dark:divide-[#302E29] text-center">
+                    <div className="px-2 first:pl-0">
+                      <span className="block font-sans text-xs text-stone-500 dark:text-[#7A7570]">Expected</span>
+                      <span className="block font-sans font-semibold text-base text-stone-900 dark:text-[#F0EBE3] mt-0.5">
+                        {stats.expected || 0}
+                      </span>
+                    </div>
+                    <div className="px-2">
+                      <span className="block font-sans text-xs text-stone-500 dark:text-[#7A7570]">Checked in</span>
+                      <span className="block font-sans font-semibold text-base text-stone-900 dark:text-[#F0EBE3] mt-0.5">
+                        {stats.checkedIn || 0}
+                      </span>
+                    </div>
+                    <div className="px-2 last:pr-0">
+                      <span className="block font-sans text-xs text-stone-500 dark:text-[#7A7570]">Waiting</span>
+                      <span className="block font-sans font-semibold text-base text-stone-900 dark:text-[#F0EBE3] mt-0.5">
+                        {Math.max((stats.expected || 0) - (stats.checkedIn || 0), 0)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Calm Offline Notice (only shown when offline) */}
+              {(isOffline || offlineService.isOffline()) && (
+                <div className="bg-stone-50 dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] rounded-xl p-3.5 text-center space-y-1">
+                  <p className="font-sans font-medium text-xs text-stone-900 dark:text-[#F0EBE3]">You're offline</p>
+                  <p className="font-sans text-xs text-stone-500 dark:text-[#B8B0A5]">
+                    Check-ins will be saved and sent when you're connected again.
+                  </p>
+                </div>
+              )}
+
+            </div>
+          )
+        )}
+
+        {cleanRoute === '/volunteer/wristbands' && (
+          <WristbandAssignmentDesk
+            eventId={eventDetails?.id}
+            actorRole="volunteer"
+            volunteerProfile={volunteerProfile}
+            dutyAssignment={currentDutyLocation}
+            initialChild={wristbandInitialChild}
+            onContinueToCheckIn={(child) => {
+              setLookedUpChild(child);
+              setScanMode('check_in');
+              onNavigate('/volunteer/scan');
+            }}
+            onNavigate={onNavigate}
+          />
+        )}
+
+        {cleanRoute === '/volunteer/pickup' && (
+          /* ==================== 2.7 CHILD PICKUP & RELEASE VIEW (Request 4) ==================== */
+          pickupSuccessResult ? (
+            /* ==================== PICKUP SUCCESS SCREEN ==================== */
+            <div className="max-w-md mx-auto w-full px-4 space-y-6 pt-6 pb-12 animate-fade-in" data-view-version="volunteer-pickup-v5-clean-header">
+              
+              {/* Centered success block */}
+              <div className="text-center space-y-4" data-component-version="volunteer-pickup-success-title-v1-stitch">
+                <div className="mx-auto w-14 h-14 bg-amber-500/10 dark:bg-[#C59B27]/15 rounded-2xl flex items-center justify-center text-[#C59B27] border border-[#C59B27]/30">
+                  <Check className="h-6 w-6 stroke-[3]" />
+                </div>
+                <div className="space-y-1">
+                  <h2 className="text-3xl font-serif font-black text-gray-900 dark:text-[#F0EBE3] tracking-tight">Picked up</h2>
+                  <p className="text-xs text-gray-500 dark:text-[#B8B0A5] leading-normal max-w-sm mx-auto">
+                    {pickupSuccessResult.child?.firstName || pickupSuccessResult.child?.fullName?.split(' ')[0] || 'This child'} has been released to the approved pickup person.
+                  </p>
+                </div>
+              </div>
+
+              {/* Child summary card */}
+              <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-4 flex items-center space-x-3.5 shadow-xs" data-component-version="volunteer-pickup-success-child-card-v1-stitch">
+                <div className="w-12 h-12 rounded-2xl overflow-hidden border border-gray-100 dark:border-[#302E29] bg-gray-50 dark:bg-[#262520] flex items-center justify-center shrink-0">
+                  {pickupSuccessResult.child?.photoUrl ? (
+                    <img
+                      src={pickupSuccessResult.child.photoUrl}
+                      alt="Child"
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <User className="h-6 w-6 text-gray-400 dark:text-[#7A7570] stroke-[1.5]" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-sm font-serif font-bold text-gray-950 dark:text-[#F0EBE3] truncate">
+                    {pickupSuccessResult.child?.fullName}
+                  </h3>
+                  <p className="text-[11px] text-gray-500 dark:text-[#B8B0A5] font-semibold mt-0.5">
+                    {(pickupSuccessResult.child?.age !== undefined && pickupSuccessResult.child?.age !== null) ? (pickupSuccessResult.child.age === 0 ? 'Under 1 year old' : `${pickupSuccessResult.child.age} years old`) : 'Verified age'} • {pickupSuccessResult.child?.classGroup || 'Class assigned'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Pickup details card */}
+              <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-pickup-success-details-v1-stitch">
+                <h4 className="text-xs font-serif font-bold text-gray-900 dark:text-[#F0EBE3] tracking-wide">
+                  Pickup details
+                </h4>
+                <div className="space-y-3 text-xs">
+                  <div className="flex justify-between items-center py-1 border-b border-gray-50 dark:border-[#302E29]">
+                    <span className="text-gray-400 dark:text-[#7A7570] font-semibold">Picked up at</span>
+                    <span className="font-mono font-bold text-gray-900 dark:text-[#F0EBE3]">
+                      {pickupSuccessResult.pickup?.pickedUpAt ? new Date(pickupSuccessResult.pickup.pickedUpAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-gray-50 dark:border-[#302E29]">
+                    <span className="text-gray-400 dark:text-[#7A7570] font-semibold">Picked up by</span>
+                    <span className="font-bold text-gray-900 dark:text-[#F0EBE3]">
+                      {pickupSuccessResult.pickup?.pickedUpBy?.fullName || 'Approved Pickup Person'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-gray-50 dark:border-[#302E29]">
+                    <span className="text-gray-400 dark:text-[#7A7570] font-semibold">Relationship</span>
+                    <span className="font-bold text-gray-950 dark:text-[#F0EBE3]">
+                      {pickupSuccessResult.pickup?.pickedUpBy?.relationship || 'Parent'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-gray-50 dark:border-[#302E29]">
+                    <span className="text-gray-400 dark:text-[#7A7570] font-semibold">Confirmed by</span>
+                    <span className="font-bold text-gray-950 dark:text-[#F0EBE3]">
+                      {pickupSuccessResult.pickup?.confirmedBy?.fullName || volunteerProfile?.full_name || 'Event Worker'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-gray-400 dark:text-[#7A7570] font-semibold">Pickup point</span>
+                    <span className="font-bold text-[#C59B27]">
+                      {pickupSuccessResult.pickup?.point || 'Main exit'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Checked before release card */}
+              <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-pickup-success-verification-v1-stitch">
+                <h4 className="text-xs font-serif font-bold text-gray-900 dark:text-[#F0EBE3] tracking-wide">
+                  Checked before release
+                </h4>
+                
+                <div className="grid grid-cols-2 gap-3.5">
+                  {/* Child Photo Box */}
+                  <div className="relative aspect-square w-full rounded-2xl overflow-hidden border border-gray-100 dark:border-[#302E29] bg-gray-50 dark:bg-[#262520] flex flex-col justify-end">
+                    {pickupSuccessResult.child?.photoUrl ? (
+                      <img
+                        src={pickupSuccessResult.child.photoUrl}
+                        alt="Child"
+                        className="absolute inset-0 w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <User className="h-8 w-8 text-gray-300 dark:text-[#7A7570] stroke-[1.5]" />
+                      </div>
+                    )}
+                    <div className="relative z-10 bg-neutral-950/65 text-white text-[9px] font-bold text-center py-1.5 uppercase tracking-wider leading-none">
+                      Child
+                    </div>
+                  </div>
+
+                  {/* Pickup Person Photo Box */}
+                  <div className="relative aspect-square w-full rounded-2xl overflow-hidden border border-gray-100 dark:border-[#302E29] bg-gray-50 dark:bg-[#262520] flex flex-col justify-end">
+                    {pickupSuccessResult.pickup?.pickedUpBy?.photoUrl ? (
+                      <img
+                        src={pickupSuccessResult.pickup.pickedUpBy.photoUrl}
+                        alt="Pickup Person"
+                        className="absolute inset-0 w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <User className="h-8 w-8 text-gray-300 dark:text-[#7A7570] stroke-[1.5]" />
+                      </div>
+                    )}
+                    <div className="relative z-10 bg-neutral-950/65 text-white text-[9px] font-bold text-center py-1.5 uppercase tracking-wider leading-none">
+                      Pickup Person
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2 pt-1 text-xs font-semibold text-gray-900 dark:text-[#F0EBE3]">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-5 h-5 bg-amber-500/10 dark:bg-[#C59B27]/15 rounded-full flex items-center justify-center text-[#C59B27] border border-[#C59B27]/30">
+                      <Check className="h-3 w-3 stroke-[3]" />
+                    </div>
+                    <span className="text-gray-800 dark:text-[#F0EBE3]">Child photo matched</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-5 h-5 bg-amber-500/10 dark:bg-[#C59B27]/15 rounded-full flex items-center justify-center text-[#C59B27] border border-[#C59B27]/30">
+                      <Check className="h-3 w-3 stroke-[3]" />
+                    </div>
+                    <span className="text-gray-800 dark:text-[#F0EBE3]">Pickup person confirmed</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="space-y-3.5 pt-2" data-component-version="volunteer-pickup-success-actions-v1-stitch">
+                <button
+                  onClick={() => {
+                    setPickupSuccessResult(null);
+                    setPickupChild(null);
+                  }}
+                  className="w-full bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#1D1D1A] font-bold tracking-wider py-4 rounded-2xl text-xs uppercase flex items-center justify-center space-x-2 transition-all shadow-sm cursor-pointer"
+                >
+                  <QrCode className="h-4 w-4" />
+                  <span>Scan another pass</span>
+                </button>
+                
+                <button
+                  onClick={() => {
+                    setSearchQuery(pickupSuccessResult.child?.fullName || '');
+                    setPickupSuccessResult(null);
+                    onNavigate('/volunteer/children');
+                  }}
+                  className="w-full bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] hover:bg-gray-50 dark:hover:bg-[#262520] text-gray-800 dark:text-[#F0EBE3] font-bold tracking-wider py-3.5 rounded-2xl text-xs uppercase text-center transition-all cursor-pointer shadow-xs"
+                >
+                  View child record
+                </button>
+
+                <button
+                  onClick={() => {
+                    setPickupSuccessResult(null);
+                    onNavigate('/volunteer/event');
+                  }}
+                  className="w-full text-center text-xs font-serif font-bold text-[#C59B27] hover:text-[#A47E1F] cursor-pointer block py-2 transition-all"
+                >
+                  Back to Event Home
+                </button>
+              </div>
+
+              {/* Stitch Metrics Card */}
+              <div className="grid grid-cols-3 gap-1 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs text-center" data-component-version="volunteer-pickup-success-metrics-v1-stitch">
+                <div className="space-y-1">
+                  <span className="text-xl font-serif font-black text-gray-900 dark:text-[#F0EBE3] block">
+                    {Number(pickupSuccessResult.stats?.inside ?? stats.checkedIn ?? 0)}
+                  </span>
+                  <span className="text-[9px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block">Children inside</span>
+                </div>
+                <div className="space-y-1 border-x border-gray-100 dark:border-[#302E29]">
+                  <span className="text-xl font-serif font-black text-gray-900 dark:text-[#F0EBE3] block">
+                    {Number(pickupSuccessResult.stats?.pickedUp ?? stats.pickedUp ?? 0)}
+                  </span>
+                  <span className="text-[9px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block">Picked up</span>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-xl font-serif font-black text-[#C59B27] block">
+                    {Number(pickupSuccessResult.stats?.attention ?? stats.attention ?? 0)}
+                  </span>
+                  <span className="text-[9px] font-mono font-bold text-[#C59B27] uppercase tracking-wider block">Needs attention</span>
+                </div>
+              </div>
+
+            </div>
+          ) : pickupChild ? (
+            /* ==================== ACTIVE PICKUP CARD / VERIFICATION SCREEN ==================== */
+            <div className="space-y-6 animate-fade-in pb-12" data-view-version="volunteer-pickup-v5-clean-header" data-component-version="pickup-verification">
+              
+              {/* Back / Navigation Bar */}
+              <div className="flex items-center justify-between border-b border-[#EAE8E1] dark:border-[#302E29] pb-4">
+                <div className="flex items-center space-x-3">
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-[#F0EBE3] leading-tight tracking-tight font-serif">Pickup Verification</h2>
+                  <span className="bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-[#D4AF37] border border-amber-200 dark:border-amber-900/50 px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full">
+                    Verification Required
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    setPickupChild(null);
+                    setPickupVerified(false);
+                  }}
+                  className="p-1.5 text-gray-400 dark:text-[#B8B0A5] hover:text-gray-600 dark:hover:text-[#F0EBE3] rounded-full hover:bg-gray-100 dark:hover:bg-[#262520] cursor-pointer transition-colors"
+                  title="Cancel release lookup"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Side-by-Side Comparison Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                {/* Left Side: Child to Release */}
+                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-6 shadow-xs flex flex-col items-center text-center space-y-4">
+                  <span className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase block">
+                    Child to Release
+                  </span>
+                  
+                  {/* Square Image Box with antique gold border corners */}
+                  <div className="relative w-40 h-40 rounded-2xl overflow-hidden border border-gray-100 dark:border-[#302E29] bg-gray-50 dark:bg-[#262520] shadow-inner flex items-center justify-center">
+                    {/* Antique Gold Corner Accents */}
+                    <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[#C59B27] rounded-tl-md"></div>
+                    <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-[#C59B27] rounded-tr-md"></div>
+                    <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-[#C59B27] rounded-bl-md"></div>
+                    <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-[#C59B27] rounded-br-md"></div>
+
+                    {pickupChild.photoUrl ? (
+                      <img
+                        src={pickupChild.photoUrl}
+                        alt={pickupChild.fullName}
+                        className="w-full h-full object-cover p-1.5 rounded-2xl"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <User className="h-16 w-16 text-gray-300 dark:text-[#7A7570] stroke-[1.2]" />
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5 w-full">
+                    <h3 className="text-lg font-bold text-gray-950 dark:text-[#F0EBE3] font-serif leading-snug truncate">
+                      {pickupChild.fullName}
+                    </h3>
+                    
+                    <div className="flex items-center justify-center space-x-1.5 text-xs text-gray-500 dark:text-[#B8B0A5] font-semibold">
+                      <span>{pickupChild.age !== undefined && pickupChild.age !== null ? (pickupChild.age === 0 ? 'Under 1 year old' : `${pickupChild.age} yrs`) : 'Verified age'}</span>
+                      <span className="text-gray-300 dark:text-[#302E29]">&bull;</span>
+                      <span>{pickupChild.gender || 'Child'}</span>
+                      {pickupChild.classGroup && (
+                        <>
+                          <span className="text-gray-300 dark:text-[#302E29]">&bull;</span>
+                          <span className="bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] text-[#C59B27] px-2 py-0.5 text-[9px] font-bold uppercase rounded-md">
+                            {pickupChild.classGroup}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="w-full pt-3 border-t border-gray-50 dark:border-[#302E29] text-left text-xs space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400 dark:text-[#7A7570] font-mono text-[9px] font-bold uppercase">Pass Ref</span>
+                      <span className="font-mono font-bold text-gray-900 dark:text-[#F0EBE3] bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#302E29] px-2 py-0.5 rounded-md">
+                        {pickupChild.passReference || '6E80A7'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400 dark:text-[#7A7570] font-mono text-[9px] font-bold uppercase">Checked In At</span>
+                      <span className="font-semibold text-gray-800 dark:text-[#F0EBE3]">
+                        {pickupChild.checkedInAt ? new Date(pickupChild.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Today'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Side: Approved Pickup Person */}
+                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-6 shadow-xs flex flex-col items-center text-center space-y-4">
+                  <span className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase block">
+                    Approved Pickup Person
+                  </span>
+                  
+                  {/* Square Image Box with antique gold border corners */}
+                  <div className="relative w-40 h-40 rounded-2xl overflow-hidden border border-gray-100 dark:border-[#302E29] bg-gray-50 dark:bg-[#262520] shadow-inner flex items-center justify-center">
+                    {/* Antique Gold Corner Accents */}
+                    <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[#C59B27] rounded-tl-md"></div>
+                    <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-[#C59B27] rounded-tr-md"></div>
+                    <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-[#C59B27] rounded-bl-md"></div>
+                    <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-[#C59B27] rounded-br-md"></div>
+
+                    {pickupChild.pickup?.photoUrl ? (
+                      <img
+                        src={pickupChild.pickup.photoUrl}
+                        alt={pickupChild.pickup.fullName}
+                        className="w-full h-full object-cover p-1.5 rounded-2xl"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <User className="h-16 w-16 text-gray-300 dark:text-[#7A7570] stroke-[1.2]" />
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5 w-full">
+                    <h3 className="text-lg font-bold text-gray-950 dark:text-[#F0EBE3] font-serif leading-snug truncate">
+                      {pickupChild.pickup?.fullName || pickupChild.parentName || 'Authorized Pickup'}
+                    </h3>
+                    
+                    <div className="flex items-center justify-center">
+                      <span className="bg-[#C59B27]/10 dark:bg-[#C59B27]/20 text-[#C59B27] border border-[#C59B27]/20 dark:border-[#C59B27]/40 px-3 py-0.5 text-[10px] font-bold uppercase rounded-full tracking-wider">
+                        {pickupChild.pickup?.relationship || 'Primary Parent'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="w-full pt-3 border-t border-gray-50 dark:border-[#302E29] text-left text-xs space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400 dark:text-[#7A7570] font-mono text-[9px] font-bold uppercase">Phone Number</span>
+                      <span className="font-semibold text-gray-800 dark:text-[#F0EBE3]">
+                        {pickupChild.pickup?.phone || pickupChild.parentPhone || 'N/A'}
+                      </span>
+                    </div>
+                    {(pickupChild.pickup?.phone || pickupChild.parentPhone) && (
+                      <div className="pt-1">
+                        <a
+                          href={`tel:${pickupChild.pickup?.phone || pickupChild.parentPhone}`}
+                          className="w-full py-2 bg-gray-50 dark:bg-[#262520] border border-gray-200 dark:border-[#3A3835] hover:border-[#C59B27] hover:text-[#C59B27] rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 text-gray-700 dark:text-[#F0EBE3] transition-all shadow-xs cursor-pointer"
+                        >
+                          <Phone className="h-3.5 w-3.5 text-gray-400 dark:text-[#7A7570]" />
+                          <span>Call Pickup Person</span>
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Care Notes & Support Section */}
+              <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-6 shadow-xs space-y-4">
+                <h4 className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase border-b border-gray-50 dark:border-[#302E29] pb-2">
+                  Safety & Care Notes
+                </h4>
+                
+                {(() => {
+                  const medicalNotes = pickupChild.medicalNotes || pickupChild.medicalNote || '';
+                  const supportNotes = pickupChild.supportNotes || pickupChild.supportNote || '';
+                  const hasMedicalNotes = !!medicalNotes || pickupChild.hasMedicalNotes || pickupChild.allergies === 'Yes';
+                  const hasExtraSupport = !!supportNotes || pickupChild.needsExtraSupport || pickupChild.extraSupport === 'Yes';
+                  const hasCareNotes = hasMedicalNotes || hasExtraSupport;
+
+                  if (hasCareNotes) {
+                    return (
+                      <div className="space-y-3">
+                        {medicalNotes && (
+                          <div className="bg-rose-50 dark:bg-red-950/25 border border-rose-100 dark:border-red-900/40 rounded-2xl p-4 flex items-start space-x-3 text-xs text-rose-950 dark:text-rose-200">
+                            <AlertTriangle className="h-5 w-5 shrink-0 text-rose-500 dark:text-rose-400 mt-0.5" />
+                            <div className="space-y-1">
+                              <h5 className="font-bold text-rose-800 dark:text-rose-300 font-mono text-[10px] uppercase tracking-wider">Medical Note / Allergies</h5>
+                              <p className="text-[11px] text-rose-700 dark:text-rose-200/90 leading-relaxed font-semibold">
+                                {medicalNotes}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                        {supportNotes && (
+                          <div className="bg-amber-50 dark:bg-amber-950/25 border border-amber-100 dark:border-amber-900/40 rounded-2xl p-4 flex items-start space-x-3 text-xs text-amber-950 dark:text-amber-200">
+                            <Info className="h-5 w-5 shrink-0 text-amber-500 dark:text-[#C59B27] mt-0.5" />
+                            <div className="space-y-1">
+                              <h5 className="font-bold text-amber-800 dark:text-amber-300 font-mono text-[10px] uppercase tracking-wider">Extra Support Needs</h5>
+                              <p className="text-[11px] text-amber-700 dark:text-amber-200/90 leading-relaxed font-semibold">
+                                {supportNotes}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="bg-[#ECFDF5] dark:bg-[#262520] border border-[#A7F3D0] dark:border-[#302E29] rounded-2xl p-4 flex items-start space-x-3 text-xs text-gray-500 dark:text-[#B8B0A5]">
+                      <Check className="h-5 w-5 shrink-0 text-emerald-500 dark:text-[#C59B27] mt-0.5" />
+                      <div className="space-y-0.5">
+                        <h5 className="font-bold text-emerald-800 dark:text-[#F0EBE3] font-mono text-[10px] uppercase tracking-wider">No Care Conditions</h5>
+                        <p className="text-[11px] text-emerald-700 dark:text-[#B8B0A5] leading-relaxed">
+                          No allergies, medical concerns, or extra support guidelines registered for this child.
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Safety Checkpoint / Consent Tickbox */}
+              <div className="bg-amber-50/40 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/40 rounded-3xl p-6 space-y-4">
+                <div className="flex items-start space-x-3">
+                  <div className="p-1 bg-amber-100 dark:bg-[#262520] rounded-lg text-[#C59B27] shrink-0 mt-0.5">
+                    <ShieldCheck className="h-5 w-5" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-bold text-amber-900 dark:text-amber-200 font-serif">Security Checkpoint</h4>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300/80 leading-normal">
+                      Child safety is our utmost priority. You must match the physical person picking up the child against the authorized photo and details above.
+                    </p>
+                  </div>
+                </div>
+
+                <label className="flex items-start space-x-3 p-4 bg-white dark:bg-[#21211E] border border-amber-200 dark:border-[#3A3835] rounded-2xl cursor-pointer hover:bg-amber-50/30 dark:hover:bg-[#262520] transition-all select-none">
+                  <input
+                    type="checkbox"
+                    checked={pickupVerified}
+                    onChange={(e) => setPickupVerified(e.target.checked)}
+                    className="mt-1 h-4.5 w-4.5 rounded-sm border-amber-300 dark:border-[#3A3835] text-[#C59B27] focus:ring-[#C59B27] transition-all cursor-pointer dark:bg-[#262520]"
+                  />
+                  <span className="text-xs font-bold text-gray-800 dark:text-[#F0EBE3] leading-snug">
+                    I confirm that the physical pickup person's identity and face strictly matches the authorized photo and credentials above.
+                  </span>
+                </label>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="space-y-3 pt-3">
+                <button
+                  onClick={() => handleConfirmPickupRelease(pickupChild)}
+                  disabled={pickupLoading || !pickupVerified}
+                  data-component-version="volunteer-pickup-release-action-v3"
+                  className="w-full bg-[#C59B27] hover:bg-[#A47E1F] disabled:bg-gray-200 dark:disabled:bg-[#262520] disabled:text-gray-400 dark:disabled:text-[#7A7570] text-white dark:text-[#1D1D1A] font-bold tracking-widest py-4 rounded-2xl text-xs transition-all shadow-md uppercase flex items-center justify-center space-x-2 cursor-pointer"
+                >
+                  {pickupLoading ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  ) : (
+                    <>
+                      <Check className="h-4 w-4 stroke-[3]" />
+                      <span>Mark Picked Up & Release</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setPickupChild(null);
+                    setPickupVerified(false);
+                  }}
+                  className="w-full border border-gray-200 dark:border-[#302E29] hover:bg-gray-50 dark:hover:bg-[#2A2926] text-gray-700 dark:text-[#F0EBE3] font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white dark:bg-[#21211E] shadow-xs"
+                >
+                  Cancel / Scan Another Pass
+                </button>
+
+                <button
+                  onClick={() => handleOpenSafetyAlertModal({
+                    id: pickupChild.id,
+                    fullName: pickupChild.fullName,
+                    ageGroup: pickupChild.ageGroup || pickupChild.className,
+                    status: pickupChild.entryStatus || pickupChild.status,
+                    photoUrl: pickupChild.photoUrl
+                  })}
+                  data-component-version="volunteer-alert-auto-linked-child-v1"
+                  className="w-full bg-rose-50 dark:bg-red-950/25 border border-rose-200 dark:border-red-900/40 hover:border-rose-300 dark:hover:border-red-800/50 text-rose-700 dark:text-rose-300 hover:text-rose-800 font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer flex items-center justify-center space-x-2"
+                >
+                  <Bell className="h-4 w-4 animate-pulse" />
+                  <span>Request help for this child</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* ==================== PICKUP DASHBOARD / HOME SCREEN ==================== */
+            <div className="max-w-md mx-auto w-full px-4 space-y-6 pt-4 pb-12 animate-fade-in" data-view-version="volunteer-scanner-v2-camera-flip">
+              
+              {/* Event label */}
+              <div className="text-center font-mono text-[10px] uppercase tracking-[0.2em] text-[#C59B27] font-bold">
+                THE GENERAL ASSEMBLY CHILDREN AND TEENS
+              </div>
+
+              {/* Scan Viewfinder (Phase 4) */}
+              <div
+                className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl overflow-hidden shadow-xs relative"
+                data-component-version="volunteer-pickup-scan-card-v1-stitch"
+              >
+                <div className="aspect-[3/4] bg-neutral-950 relative flex flex-col items-center justify-center overflow-hidden">
+                  {/* Blurred warm background when camera is inactive */}
+                  {!cameraActive && (
+                    <div 
+                      className="absolute inset-0 bg-cover bg-center filter blur-xs opacity-45 scale-105"
+                      style={{ 
+                        backgroundImage: `url('https://images.unsplash.com/photo-1516627145497-ae6968895b74?auto=format&fit=crop&q=80&w=600')`
+                      }}
+                    />
+                  )}
+
+                  {cameraActive ? (
+                    <>
+                      <video
+                        ref={videoRef}
+                        className="w-full h-full object-cover"
+                        playsInline
+                        muted
+                      />
+                      
+                      {/* Gold overlay frame */}
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div className="w-56 h-56 border border-white/25 rounded-2xl relative flex items-center justify-center">
+                          {/* Antique Gold corner highlights */}
+                          <div className="absolute -top-1.5 -left-1.5 w-6 h-6 border-t-4 border-l-4 border-[#C59B27] rounded-tl-lg"></div>
+                          <div className="absolute -top-1.5 -right-1.5 w-6 h-6 border-t-4 border-r-4 border-[#C59B27] rounded-tr-lg"></div>
+                          <div className="absolute -bottom-1.5 -left-1.5 w-6 h-6 border-b-4 border-l-4 border-[#C59B27] rounded-bl-lg"></div>
+                          <div className="absolute -bottom-1.5 -right-1.5 w-6 h-6 border-b-4 border-r-4 border-[#C59B27] rounded-br-lg"></div>
+                          
+                          {/* Scanning Sweep line */}
+                          <div className="absolute w-full h-0.5 bg-gradient-to-r from-transparent via-[#C59B27] to-transparent top-0 animate-bounce"></div>
+                        </div>
+                      </div>
+
+                      {/* Camera Controls Overlay */}
+                      <div className="absolute top-3 right-3 flex items-center space-x-2 z-10">
+                        {cameras.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={handleFlipCamera}
+                            data-component-version="volunteer-camera-flip-action-v1"
+                            className="p-1.5 bg-[#C59B27] hover:bg-[#B58E33] text-gray-900 rounded-xl transition-all cursor-pointer flex items-center space-x-1 shadow-sm font-bold text-[10px]"
+                            title="Flip Camera"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            <span>Flip</span>
+                          </button>
+                        )}
+                        {cameras.length > 1 && (
+                          <select
+                            value={selectedCameraId}
+                            onChange={(e) => setSelectedCameraId(e.target.value)}
+                            className="text-[10px] font-bold text-gray-800 dark:text-[#F0EBE3] bg-white dark:bg-[#262520] border border-gray-200 dark:border-[#3A3835] rounded-lg px-2 py-1 outline-none shadow-xs cursor-pointer"
+                          >
+                            {cameras.map((cam) => (
+                              <option key={cam.deviceId} value={cam.deviceId}>
+                                {cam.label || 'Camera'}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <button
+                          onClick={() => setCameraActive(false)}
+                          className="bg-white/85 dark:bg-[#262520]/85 text-gray-800 dark:text-[#F0EBE3] hover:bg-white dark:hover:bg-[#2A2926] rounded-lg p-1.5 text-xs font-bold shadow-xs cursor-pointer border border-transparent dark:border-[#3A3835]"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* Gold corners framing the scan target */}
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div className="w-56 h-56 relative">
+                          <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-[#C59B27] rounded-tl-lg"></div>
+                          <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-[#C59B27] rounded-tr-lg"></div>
+                          <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-[#C59B27] rounded-bl-lg"></div>
+                          <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-[#C59B27] rounded-br-lg"></div>
+                        </div>
+                      </div>
+
+                      {cameraUnavailable ? (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-3 z-10">
+                          <p className="text-white dark:text-[#F0EBE3] font-serif font-bold text-sm">
+                            {cameraPermissionDenied ? 'Camera Access Blocked' : 'Camera Unavailable'}
+                          </p>
+                          <p className="text-[11px] text-white/60 dark:text-[#B8B0A5] max-w-[220px] mx-auto leading-relaxed">
+                            {cameraPermissionDenied 
+                              ? 'Camera permissions are blocked. Please enable permissions in your settings or open this app in a new window to scan passes.'
+                              : 'No cameras detected or available on this device.'}
+                          </p>
+                          <p className="text-[9px] text-amber-400 dark:text-[#C59B27] italic max-w-[200px]">
+                            You can enter the reference pass code manually instead.
+                          </p>
+                        </div>
+                      ) : (
+                        /* Pill button at the center */
+                        <button
+                          onClick={() => {
+                            setScanMode('check_out');
+                            setCameraActive(true);
+                          }}
+                          className="relative z-10 bg-white hover:bg-gray-50 dark:bg-[#262520] dark:hover:bg-[#2A2926] text-gray-950 dark:text-[#F0EBE3] font-serif font-extrabold text-sm px-6 py-3 rounded-full flex items-center space-x-2 shadow-lg transition-all cursor-pointer border border-[#EAE8E1] dark:border-[#3A3835] focus:outline-hidden dark:focus:ring-2 dark:focus:ring-[#C59B27]"
+                        >
+                          <QrCode className="h-4.5 w-4.5 text-[#C59B27]" />
+                          <span>Scan child pass</span>
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Manual Pass Code Button & Slide Section (Phase 5) */}
+              <div className="space-y-3" data-component-version="volunteer-pickup-manual-pass-v1-stitch">
+                <button
+                  onClick={() => setShowPickupManualInput(!showPickupManualInput)}
+                  className="w-full bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] hover:bg-gray-50 dark:hover:bg-[#262520] text-gray-800 dark:text-[#F0EBE3] font-bold py-3.5 rounded-2xl text-xs transition-all uppercase cursor-pointer flex items-center justify-center space-x-2 shadow-xs"
+                >
+                  <Keyboard className="h-4 w-4 text-gray-600 dark:text-[#B8B0A5]" />
+                  <span>Enter pass code manually</span>
+                </button>
+
+                {showPickupManualInput && (
+                  <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4 animate-fade-in">
+                    <div className="space-y-1 text-center">
+                      <h5 className="text-xs font-bold text-gray-900 dark:text-[#F0EBE3]">Enter Pass Code</h5>
+                      <p className="text-[11px] text-gray-400 dark:text-[#7A7570]">
+                        Enter the 6-character pass reference code (e.g. 6E80A7)
+                      </p>
+                    </div>
+
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handlePickupLookup(pickupCode);
+                      }}
+                      className="flex gap-3"
+                    >
+                      <div className="relative flex-1">
+                        <input
+                          type="text"
+                          value={pickupCode}
+                          onChange={(e) => setPickupCode(e.target.value.toUpperCase())}
+                          placeholder="e.g. 6E80A7"
+                          disabled={pickupLoading}
+                          className="w-full bg-gray-50 dark:bg-[#262520] border border-gray-200 dark:border-[#3A3835] rounded-xl px-4 py-3 text-sm font-bold tracking-widest placeholder:tracking-normal outline-none focus:border-[#C59B27] focus:bg-white dark:focus:bg-[#262520] text-gray-900 dark:text-[#F0EBE3] placeholder:text-gray-400 dark:placeholder:text-[#7A7570] transition-all disabled:opacity-60 text-center uppercase"
+                        />
+                        {pickupCode && (
+                          <button
+                            type="button"
+                            onClick={() => setPickupCode('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 dark:text-[#7A7570] hover:text-gray-600 dark:hover:text-[#F0EBE3] rounded-full hover:bg-gray-100 dark:hover:bg-[#2A2926]"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={pickupLoading || !pickupCode}
+                        className="px-5 bg-[#C59B27] hover:bg-[#A47E1F] disabled:bg-gray-200 dark:disabled:bg-[#262520] disabled:text-gray-400 dark:disabled:text-[#7A7570] text-white dark:text-[#1D1D1A] font-bold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center uppercase"
+                      >
+                        {pickupLoading ? (
+                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        ) : (
+                          <span>Verify</span>
+                        )}
+                      </button>
+                    </form>
+                  </div>
+                )}
+              </div>
+
+              {/* OR Divider (Phase 6) */}
+              <div className="flex items-center space-x-3 py-1" data-component-version="volunteer-pickup-divider-v1-stitch">
+                <div className="flex-1 h-[1px] bg-gray-200 dark:bg-[#302E29]"></div>
+                <span className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-widest">OR</span>
+                <div className="flex-1 h-[1px] bg-gray-200 dark:bg-[#302E29]"></div>
+              </div>
+
+              {/* Search Field (Phase 7) */}
+              <div className="relative" data-component-version="volunteer-pickup-search-v1-stitch">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-[#7A7570]" />
+                <input
+                  type="text"
+                  placeholder="Find child by name or parent phone"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      setSearchQuery(e.currentTarget.value);
+                      onNavigate('/volunteer/children');
+                    }
+                  }}
+                  className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-2xl pl-10 pr-4 py-3 text-xs font-semibold text-gray-800 dark:text-[#F0EBE3] placeholder-gray-400 dark:placeholder-[#7A7570] focus:border-[#C59B27] outline-none transition-all shadow-xs"
+                />
+              </div>
+
+              {/* Confirm before release alert (Phase 8) */}
+              <div className="bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40 rounded-3xl p-5 shadow-xs flex items-start space-x-3 text-amber-800 dark:text-[#F0EBE3]" data-component-version="volunteer-pickup-warning-v1-stitch">
+                <AlertTriangle className="h-4.5 w-4.5 text-amber-600 dark:text-[#C59B27] shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <h5 className="text-xs font-bold text-amber-900 dark:text-amber-200">Confirm before release</h5>
+                  <p className="text-[11px] text-amber-700 dark:text-amber-300/80 leading-normal">
+                    Check the child photo and pickup person before marking pickup.
+                  </p>
+                </div>
+              </div>
+
+              {/* Pickup metrics (Phase 9) */}
+              <div className="grid grid-cols-3 gap-1 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs text-center" data-component-version="volunteer-pickup-metrics-v1-stitch">
+                <div className="space-y-1">
+                  <span className="text-xl font-serif font-black text-gray-900 dark:text-[#F0EBE3] block">
+                    {Number(pickupStats.inside || stats.checkedIn || 0)}
+                  </span>
+                  <span className="text-[9px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block">INSIDE</span>
+                </div>
+                <div className="space-y-1 border-x border-gray-100 dark:border-[#302E29]">
+                  <span className="text-xl font-serif font-black text-gray-900 dark:text-[#F0EBE3] block">
+                    {Number(pickupStats.pickedUp || stats.pickedUp || 0)}
+                  </span>
+                  <span className="text-[9px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block">PICKED UP</span>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-xl font-serif font-black text-[#C59B27] block">
+                    {Number(pickupStats.attention || stats.attention || 0)}
+                  </span>
+                  <span className="text-[9px] font-mono font-bold text-[#C59B27] uppercase tracking-wider block">ATTENTION</span>
+                </div>
+              </div>
+
+              {/* Last Picked Up card (Phase 10) */}
+              <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-3.5" data-component-version="volunteer-pickup-last-v1-stitch">
+                <h4 className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-[0.15em]">
+                  LAST PICKED UP
+                </h4>
+                {pickupLastChild ? (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3 min-w-0">
+                      <div className="w-11 h-11 rounded-2xl bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#302E29] flex items-center justify-center shrink-0 overflow-hidden">
+                        {pickupLastChild.photoUrl ? (
+                          <img
+                            src={pickupLastChild.photoUrl}
+                            alt={pickupLastChild.childName}
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <User className="h-5 w-5 text-gray-400 dark:text-[#7A7570] stroke-[1.5]" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <h5 className="text-sm font-serif font-bold text-gray-950 dark:text-[#F0EBE3] truncate">
+                          {pickupLastChild.childName || 'Child'}
+                        </h5>
+                        <p className="text-[10px] text-gray-500 dark:text-[#B8B0A5] font-semibold mt-0.5">
+                          {(pickupLastChild.age !== undefined && pickupLastChild.age !== null) ? (pickupLastChild.age === 0 ? 'Under 1 year old' : `${pickupLastChild.age} yrs`) : (pickupLastChild.schoolClass || 'Class verified')}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <span className="text-[10px] text-gray-400 dark:text-[#7A7570] font-mono font-semibold">
+                        {new Date(pickupLastChild.timestamp || pickupLastChild.releasedAt || new Date()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      <div className="w-5 h-5 bg-amber-500/10 dark:bg-[#C59B27]/15 rounded-full flex items-center justify-center text-[#C59B27] border border-[#C59B27]/30">
+                        <Check className="h-3 w-3 stroke-[3]" />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400 dark:text-[#7A7570] italic text-center py-2 bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1]/60 dark:border-[#302E29] rounded-2xl">
+                    No child has been picked up yet.
+                  </p>
+                )}
+              </div>
+            </div>
+          )
+        )}
+
+        {cleanRoute === '/volunteer/children' && (
+          selectedChildId ? (
+            /* ==================== CHILD PROFILE VIEW ==================== */
+            childProfileLoading ? (
+              <ModuleLoadingState title="Loading child details..." />
+            ) : childProfileError || !childProfileData ? (
+              <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-2xl p-8 text-center max-w-md mx-auto space-y-4 my-6 shadow-xs" data-component-version="volunteer-child-unavailable-state">
+                <User className="h-10 w-10 text-zinc-300 dark:text-[#7A7570] mx-auto" />
+                <div className="space-y-1">
+                  <h3 className="text-sm font-sans font-semibold text-zinc-800 dark:text-[#F0EBE3]">This child is no longer available.</h3>
+                  <p className="text-xs font-sans text-zinc-500 dark:text-[#B8B0A5]">This registration may have been updated or removed.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedChildId(null);
+                    setChildDetailOrigin(null);
+                    setChildProfileError(null);
+                    fetchChildrenDirectory(directoryPage, activeDirectoryFilter, searchQuery);
+                  }}
+                  className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 dark:bg-[#C59B27] dark:hover:bg-[#B58E33] dark:text-[#1D1D1A] text-white text-xs font-sans font-medium rounded-xl transition-all cursor-pointer shadow-xs"
+                >
+                  Return to Children
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3.5 animate-fade-in pb-12 max-w-md mx-auto" data-view-version="volunteer-child-profile-v3-refined">
+                {/* Main Profile Card */}
+                <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-2xl shadow-xs overflow-hidden divide-y divide-zinc-100 dark:divide-[#302E29]">
+                  
+                  {/* Header / Identity Section */}
+                  <div className="p-5 text-center flex flex-col items-center">
+                    <div className="w-20 h-20 rounded-xl overflow-hidden bg-zinc-100 dark:bg-[#262520] border border-zinc-200/80 dark:border-[#3A3835] shrink-0 flex items-center justify-center">
+                      <SafeImage
+                        src={childProfileData.child.photoUrl}
+                        alt={childProfileData.child.fullName || childProfileData.child.name}
+                        className="w-full h-full object-cover"
+                        fallbackComponent={
+                          <span className="font-sans font-bold text-lg text-zinc-500 dark:text-[#B8B0A5]">
+                            {(childProfileData.child.fullName || childProfileData.child.name || 'C').charAt(0).toUpperCase()}
+                          </span>
+                        }
+                      />
+                    </div>
+
+                    <h2 className="text-xl font-sans font-bold text-zinc-900 dark:text-[#F0EBE3] mt-3 tracking-tight">
+                      {childProfileData.child.fullName || childProfileData.child.name}
+                    </h2>
+
+                    <p className="text-xs font-sans text-zinc-600 dark:text-[#B8B0A5] font-medium mt-0.5">
+                      {formatChildAge(childProfileData.child.age)} · {cleanAgeGroup(childProfileData.child.ageGroup || childProfileData.child.classGroup)}
+                    </p>
+
+                    {(childProfileData.child.needsAgeReview || /review/i.test(childProfileData.child.ageGroup || '')) && (
+                      <p className="text-[11px] font-sans text-amber-700 dark:text-[#C59B27] font-medium mt-1">
+                        Age needs confirmation
+                      </p>
+                    )}
+
+                    <div className="mt-2">
+                      {childProfileData.child.status === 'inside' && (
+                        <span className="text-xs font-sans font-semibold text-emerald-700 dark:text-[#B8B0A5]">
+                          Inside
+                        </span>
+                      )}
+                      {childProfileData.child.status === 'not_arrived' && (
+                        <span className="text-xs font-sans font-medium text-zinc-500 dark:text-[#7A7570]">
+                          Not arrived
+                        </span>
+                      )}
+                      {childProfileData.child.status === 'picked_up' && (
+                        <span className="text-xs font-sans font-medium text-zinc-600 dark:text-[#B8B0A5]">
+                          Picked up
+                        </span>
+                      )}
+                      {childProfileData.child.status === 'needs_attention' && (
+                        <span className="text-xs font-sans font-semibold text-amber-700 dark:text-[#C59B27]">
+                          Needs attention
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Primary Action Button */}
+                    <div className="w-full mt-4 pt-1">
+                      {childProfileData.child.status === 'inside' ? (
+                        <button
+                          onClick={() => handlePreparePickup(childProfileData.child.id)}
+                          disabled={pickupLoading}
+                          className="w-full py-2.5 bg-[#A47E1F] hover:bg-[#8e6c17] dark:bg-[#C59B27] dark:hover:bg-[#B58E33] text-white dark:text-[#1D1D1A] text-xs font-sans font-medium rounded-xl transition-all shadow-xs flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
+                        >
+                          <LogOut className="h-4 w-4" />
+                          <span>{pickupLoading ? 'Processing...' : 'Open pickup'}</span>
+                        </button>
+                      ) : childProfileData.child.status === 'not_arrived' ? (
+                        <button
+                          onClick={() => onNavigate('/volunteer/scan')}
+                          className="w-full py-2.5 bg-[#A47E1F] hover:bg-[#8e6c17] dark:bg-[#C59B27] dark:hover:bg-[#B58E33] text-white dark:text-[#1D1D1A] text-xs font-sans font-medium rounded-xl transition-all shadow-xs flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
+                        >
+                          <QrCode className="h-4 w-4" />
+                          <span>Check in</span>
+                        </button>
+                      ) : (
+                        <div className="text-center py-1 text-xs font-sans text-zinc-500 dark:text-[#B8B0A5]">
+                          Child is picked up
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSafetyAlertModal({
+                          id: childProfileData.child.id,
+                          fullName: childProfileData.child.fullName || childProfileData.child.name,
+                          ageGroup: childProfileData.child.ageGroup,
+                          status: childProfileData.child.status,
+                          photoUrl: childProfileData.child.photoUrl
+                        })}
+                        className="w-full mt-2 py-1.5 text-zinc-500 hover:text-zinc-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] text-xs font-sans font-medium transition-colors flex items-center justify-center space-x-1.5 cursor-pointer"
+                      >
+                        <Bell className="h-3.5 w-3.5 text-zinc-400 dark:text-[#7A7570]" />
+                        <span>Ask for help</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 1. Current status section */}
+                  <div className="p-4 space-y-2">
+                    <h3 className="text-xs font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3]">Current status</h3>
+                    <div className="text-xs font-sans text-zinc-600 dark:text-[#B8B0A5] space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-zinc-500 dark:text-[#7A7570]">Attendance</span>
+                        <span className="font-medium text-zinc-900 dark:text-[#F0EBE3]">
+                          {childProfileData.child.status === 'inside'
+                            ? 'Inside'
+                            : childProfileData.child.status === 'picked_up'
+                            ? 'Picked up'
+                            : 'Not arrived'}
+                        </span>
+                      </div>
+                      {childProfileData.child.checkedInAt && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-zinc-500 dark:text-[#7A7570]">Checked in</span>
+                          <span className="font-medium text-zinc-800 dark:text-[#B8B0A5]">
+                            {new Date(childProfileData.child.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {childProfileData.todayActivity?.checkedInBy?.fullName ? ` · by ${childProfileData.todayActivity.checkedInBy.fullName}` : ''}
+                          </span>
+                        </div>
+                      )}
+                      {childProfileData.child.pickedUpAt && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-zinc-500 dark:text-[#7A7570]">Picked up</span>
+                          <span className="font-medium text-zinc-800 dark:text-[#B8B0A5]">
+                            {new Date(childProfileData.child.pickedUpAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {childProfileData.todayActivity?.pickedUpBy?.fullName ? ` · by ${childProfileData.todayActivity.pickedUpBy.fullName}` : ''}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 2. Parent / guardian section */}
+                  <div className="p-4 space-y-2.5">
+                    <h3 className="text-xs font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3]">Parent / guardian</h3>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3 min-w-0">
+                        <div className="w-10 h-10 rounded-lg overflow-hidden bg-zinc-100 dark:bg-[#262520] border border-zinc-200/80 dark:border-[#3A3835] shrink-0 flex items-center justify-center">
+                          <SafeImage
+                            src={childProfileData.parent?.photoUrl}
+                            alt={childProfileData.parent?.fullName}
+                            className="w-full h-full object-cover"
+                            fallbackComponent={
+                              <span className="font-sans font-medium text-xs text-zinc-500 dark:text-[#B8B0A5]">
+                                {(childProfileData.parent?.fullName || 'P').charAt(0).toUpperCase()}
+                              </span>
+                            }
+                          />
+                        </div>
+                        <div className="min-w-0">
+                          <h4 className="text-xs font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3] truncate">
+                            {childProfileData.parent?.fullName || 'Parent'}
+                          </h4>
+                          <p className="text-xs font-sans text-zinc-500 dark:text-[#7A7570] font-mono">
+                            {childProfileData.parent?.phone || 'No phone number'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {childProfileData.parent?.phone && (
+                        <div className="flex items-center space-x-1.5 shrink-0 pl-2">
+                          <a
+                            href={`tel:${childProfileData.parent.phone}`}
+                            className="p-2 bg-zinc-50 hover:bg-zinc-100 dark:bg-[#262520] dark:hover:bg-[#2A2926] border border-zinc-200 dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] rounded-lg transition-colors"
+                            title="Call parent"
+                          >
+                            <Phone className="h-3.5 w-3.5" />
+                          </a>
+                          <a
+                            href={`https://wa.me/${childProfileData.parent.phone.replace(/[^0-9]/g, '')}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-2 bg-emerald-50 hover:bg-emerald-100 dark:bg-[#262520] dark:hover:bg-[#2A2926] border border-emerald-200 dark:border-[#3A3835] text-emerald-700 dark:text-[#C59B27] rounded-lg transition-colors"
+                            title="WhatsApp parent"
+                          >
+                            <MessageCircle className="h-3.5 w-3.5" />
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 3. Approved pickup section */}
+                  <div className="p-4 space-y-2.5">
+                    <h3 className="text-xs font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3]">Approved pickup</h3>
+                    {childProfileData.pickupPeople?.[0] ? (
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3 min-w-0">
+                          <div className="w-10 h-10 rounded-lg overflow-hidden bg-zinc-100 dark:bg-[#262520] border border-zinc-200/80 dark:border-[#3A3835] shrink-0 flex items-center justify-center">
+                            <SafeImage
+                              src={childProfileData.pickupPeople[0].photoUrl}
+                              alt={childProfileData.pickupPeople[0].fullName}
+                              className="w-full h-full object-cover"
+                              fallbackComponent={
+                                <span className="font-sans font-medium text-xs text-zinc-500 dark:text-[#B8B0A5]">
+                                  {(childProfileData.pickupPeople[0].fullName || 'P').charAt(0).toUpperCase()}
+                                </span>
+                              }
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="text-xs font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3] truncate">
+                              {childProfileData.pickupPeople[0].fullName}
+                            </h4>
+                            <p className="text-[11px] font-sans text-emerald-700 dark:text-[#C59B27] font-medium">
+                              ID confirmed · {childProfileData.pickupPeople[0].relationship || 'Authorized'}
+                            </p>
+                            {childProfileData.pickupPeople[0].phone && (
+                              <p className="text-xs font-sans text-zinc-500 dark:text-[#7A7570] font-mono">
+                                {childProfileData.pickupPeople[0].phone}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {childProfileData.pickupPeople[0].phone && (
+                          <div className="flex items-center space-x-1.5 shrink-0 pl-2">
+                            <a
+                              href={`tel:${childProfileData.pickupPeople[0].phone}`}
+                              className="p-2 bg-zinc-50 hover:bg-zinc-100 dark:bg-[#262520] dark:hover:bg-[#2A2926] border border-zinc-200 dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] rounded-lg transition-colors"
+                              title="Call pickup person"
+                            >
+                              <Phone className="h-3.5 w-3.5" />
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs font-sans text-zinc-500 dark:text-[#B8B0A5] py-1">
+                        No separate pickup person has been added. Primary collection is with the parent/guardian.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* 4. Care information section */}
+                  <div className="p-4 space-y-2">
+                    <h3 className="text-xs font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3]">Care information</h3>
+                    {childProfileData.child.medicalNote || childProfileData.child.allergies || childProfileData.child.extraSupport ? (
+                      <div className="space-y-2 text-xs font-sans">
+                        {childProfileData.child.medicalNote && (
+                          <div className="p-3 bg-amber-50/50 dark:bg-[#262520] border border-amber-200/60 dark:border-[#3A3835] rounded-xl space-y-1">
+                            <span className="text-[10px] font-semibold text-amber-800 dark:text-[#C59B27] uppercase tracking-wider block">Medical note</span>
+                            <p className="text-xs text-zinc-800 dark:text-[#F0EBE3] leading-relaxed">{childProfileData.child.medicalNote}</p>
+                          </div>
+                        )}
+                        {childProfileData.child.allergies && (
+                          <div className="p-3 bg-amber-50/50 dark:bg-[#262520] border border-amber-200/60 dark:border-[#3A3835] rounded-xl space-y-1">
+                            <span className="text-[10px] font-semibold text-amber-800 dark:text-[#C59B27] uppercase tracking-wider block">Allergies</span>
+                            <p className="text-xs text-zinc-800 dark:text-[#F0EBE3] leading-relaxed">{childProfileData.child.allergies}</p>
+                          </div>
+                        )}
+                        {childProfileData.child.extraSupport && (
+                          <div className="p-3 bg-zinc-50 dark:bg-[#262520] border border-zinc-200/60 dark:border-[#3A3835] rounded-xl space-y-1">
+                            <span className="text-[10px] font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider block">Support notes</span>
+                            <p className="text-xs text-zinc-800 dark:text-[#F0EBE3] leading-relaxed">{childProfileData.child.extraSupport}</p>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs font-sans text-zinc-500 dark:text-[#7A7570] py-1">
+                        No care notes have been added.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* 5. Duty / room location section */}
+                  <div className="p-4 space-y-1.5">
+                    <h3 className="text-xs font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3]">Duty / room location</h3>
+                    <p className="text-xs font-sans text-zinc-700 dark:text-[#B8B0A5]">
+                      {childProfileData.child.dutyLocation || childProfileData.child.classGroup
+                        ? `${cleanAgeGroup(childProfileData.child.classGroup || childProfileData.child.dutyLocation)} room`
+                        : 'Assigned to General Children section'}
+                    </p>
+                  </div>
+
+                  {/* 6. Recent activity section */}
+                  <div className="p-4 space-y-2">
+                    <h3 className="text-xs font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3]">Recent activity</h3>
+                    <div className="text-xs font-sans text-zinc-600 dark:text-[#B8B0A5] space-y-2">
+                      <div className="flex items-start space-x-2.5">
+                        <div className={`w-2 h-2 rounded-full mt-1 shrink-0 ${childProfileData.todayActivity?.checkedInAt ? 'bg-emerald-500 dark:bg-[#C59B27]' : 'bg-zinc-300 dark:bg-[#3A3835]'}`} />
+                        <div>
+                          <p className={`font-medium ${childProfileData.todayActivity?.checkedInAt ? 'text-zinc-800 dark:text-[#B8B0A5]' : 'text-zinc-800 dark:text-[#7A7570]'}`}>
+                            {childProfileData.todayActivity?.checkedInAt
+                              ? `Checked in at ${new Date(childProfileData.todayActivity.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                              : 'Not checked in yet'}
+                          </p>
+                          {childProfileData.todayActivity?.checkedInBy?.fullName && (
+                            <p className="text-[11px] text-zinc-500 dark:text-[#F0EBE3]">By {childProfileData.todayActivity.checkedInBy.fullName}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-start space-x-2.5">
+                        <div className={`w-2 h-2 rounded-full mt-1 shrink-0 ${childProfileData.todayActivity?.pickedUpAt ? 'bg-zinc-700 dark:bg-[#B8B0A5]' : 'bg-zinc-300 dark:bg-[#3A3835]'}`} />
+                        <div>
+                          <p className={`font-medium ${childProfileData.todayActivity?.pickedUpAt ? 'text-zinc-800 dark:text-[#B8B0A5]' : 'text-zinc-800 dark:text-[#7A7570]'}`}>
+                            {childProfileData.todayActivity?.pickedUpAt
+                              ? `Picked up at ${new Date(childProfileData.todayActivity.pickedUpAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                              : 'Pending pickup'}
+                          </p>
+                          {childProfileData.todayActivity?.pickedUpBy?.fullName && (
+                            <p className="text-[11px] text-zinc-500 dark:text-[#F0EBE3]">Released by {childProfileData.todayActivity.pickedUpBy.fullName}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            )
+          ) : (
+            /* ==================== DIRECTORY VIEW ==================== */
+            <div className="space-y-4 max-w-md mx-auto" data-view-version="volunteer-children-v2-refined">
+              
+              {/* Search Field */}
+              <div className="relative" data-component-version="volunteer-children-search-v2-refined">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 dark:text-[#7A7570]" />
+                <form 
+                  onSubmit={(e) => { 
+                    e.preventDefault(); 
+                    setDirectoryPage(1);
+                    fetchChildrenDirectory(1, activeDirectoryFilter, searchQuery); 
+                  }} 
+                  className="w-full"
+                >
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Find child by name or parent phone..."
+                    className="w-full bg-white dark:bg-[#262520] border border-zinc-200/80 dark:border-[#3A3835] rounded-xl pl-10 pr-9 py-2.5 text-xs font-medium text-zinc-900 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] shadow-xs focus:outline-none focus:ring-2 focus:ring-amber-500/15 dark:focus:ring-[#C59B27]/20 focus:border-amber-600/50 dark:focus:border-[#C59B27] transition-all"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => { 
+                        setSearchQuery(''); 
+                        setDirectoryPage(1);
+                        fetchChildrenDirectory(1, activeDirectoryFilter, ''); 
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#F0EBE3] rounded-md hover:bg-zinc-100 dark:hover:bg-[#2A2926] transition-colors"
+                      title="Clear search"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </form>
+              </div>
+
+              {/* Filter Chips */}
+              <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar py-0.5" data-component-version="volunteer-children-filters-v3-clean">
+                {[
+                  { id: 'all', label: 'All' },
+                  { id: 'inside', label: 'Inside' },
+                  { id: 'not_arrived', label: 'Not arrived' },
+                  { id: 'picked_up', label: 'Picked up' }
+                ].map((chip) => {
+                  const isActive = activeDirectoryFilter === chip.id;
+                  return (
+                    <button
+                      key={chip.id}
+                      onClick={() => setActiveDirectoryFilter(chip.id)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium whitespace-nowrap transition-all duration-150 cursor-pointer ${
+                        isActive
+                          ? 'bg-zinc-900 text-white dark:bg-[#C59B27] dark:text-[#1D1D1A] shadow-xs'
+                          : 'bg-white dark:bg-[#262520] border border-zinc-200/80 dark:border-[#3A3835] text-zinc-600 dark:text-[#B8B0A5] hover:bg-zinc-50 dark:hover:bg-[#2A2926]'
+                      }`}
+                    >
+                      {chip.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Metrics Strip */}
+              <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-xl p-3 shadow-2xs" data-component-version="volunteer-children-metrics-v3-clean">
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  <div className="flex flex-col justify-between">
+                    <span className="text-base font-sans font-bold text-zinc-900 dark:text-[#F0EBE3] leading-none">
+                      {stats.expected || 0}
+                    </span>
+                    <span className="text-[10px] font-sans text-zinc-400 dark:text-[#B8B0A5] font-medium mt-1 uppercase tracking-wider">
+                      Expected
+                    </span>
+                  </div>
+                  <div className="flex flex-col justify-between border-l border-zinc-100 dark:border-[#302E29]">
+                    <span className="text-base font-sans font-bold text-emerald-700 dark:text-[#F0EBE3] leading-none">
+                      {stats.checkedIn || 0}
+                    </span>
+                    <span className="text-[10px] font-sans text-zinc-400 dark:text-[#B8B0A5] font-medium mt-1 uppercase tracking-wider">
+                      Inside
+                    </span>
+                  </div>
+                  <div className="flex flex-col justify-between border-l border-zinc-100 dark:border-[#302E29]">
+                    <span className="text-base font-sans font-bold text-zinc-600 dark:text-[#F0EBE3] leading-none">
+                      {stats.pickedUp || 0}
+                    </span>
+                    <span className="text-[10px] font-sans text-zinc-400 dark:text-[#B8B0A5] font-medium mt-1 uppercase tracking-wider">
+                      Picked Up
+                    </span>
+                  </div>
+                  <div className="flex flex-col justify-between border-l border-zinc-100 dark:border-[#302E29]">
+                    <span className="text-base font-sans font-bold text-amber-700 dark:text-[#C59B27] leading-none">
+                      {stats.attention || 0}
+                    </span>
+                    <span className="text-[10px] font-sans text-zinc-400 dark:text-[#B8B0A5] font-medium mt-1 uppercase tracking-wider">
+                      Attention
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Child Directory List */}
+              <div data-component-version="volunteer-children-directory-v3">
+                {searching ? (
+                  <ListSkeleton items={4} />
+                ) : directoryError ? (
+                  <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-xl p-8 text-center text-rose-600 dark:text-rose-400">
+                    <p className="text-xs font-sans font-medium">We could not load children right now. Please check connection and try again.</p>
+                  </div>
+                ) : directoryChildren.length > 0 ? (
+                  <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-xl divide-y divide-zinc-100 dark:divide-[#302E29] shadow-2xs overflow-hidden">
+                    {directoryChildren.map((child) => {
+                      const isInside = child.entryStatus === 'checked_in' || child.entryStatus === 'inside';
+                      const isPickedUp = child.entryStatus === 'picked_up' || child.entryStatus === 'checked_out';
+                      const isAttention = child.entryStatus === 'under_review';
+                      
+                      let statusLabel = 'Not arrived';
+                      let statusColor = 'text-zinc-400 dark:text-[#7A7570]';
+                      
+                      if (isInside) {
+                        statusLabel = 'Inside';
+                        statusColor = 'text-emerald-700 dark:text-[#B8B0A5]';
+                      } else if (isPickedUp) {
+                        statusLabel = 'Picked up';
+                        statusColor = 'text-zinc-500 dark:text-[#7A7570]';
+                      } else if (isAttention) {
+                        statusLabel = 'Needs attention';
+                        statusColor = 'text-amber-700 dark:text-[#C59B27]';
+                      } else {
+                        statusLabel = 'Not arrived';
+                        statusColor = 'text-zinc-400 dark:text-[#7A7570]';
+                      }
+
+                      const ageText = formatChildAge(child.age);
+                      const cleanedGroup = cleanAgeGroup(child.ageGroup);
+                      const needsAgeReview = child.needsAgeReview || /review/i.test(child.ageGroup || '');
+                      
+                      const childInitials = child.childName
+                        ? child.childName
+                            .split(' ')
+                            .map((p: string) => p[0])
+                            .filter(Boolean)
+                            .slice(0, 2)
+                            .join('')
+                            .toUpperCase()
+                        : 'C';
+
+                      const careNote = child.hasMedicalNotes
+                        ? 'Medical note'
+                        : child.needsExtraSupport
+                        ? 'Care information'
+                        : null;
+
+                      const contact = child.parentPhone || (child.parentName ? `Parent: ${child.parentName}` : null);
+
+                      return (
+                        <div
+                          key={child.childId}
+                          onClick={() => {
+                            setSelectedChildId(child.childId);
+                            setChildDetailOrigin('children');
+                          }}
+                          className="p-3.5 sm:px-4 flex items-center justify-between gap-3 hover:bg-zinc-50/70 dark:hover:bg-[#262520]/70 transition-colors cursor-pointer group"
+                        >
+                          {/* Left Side: Photo & Details */}
+                          <div className="flex items-center space-x-3 min-w-0 flex-1">
+                            <div className="w-11 h-11 rounded-lg overflow-hidden bg-zinc-100 dark:bg-[#262520] border border-zinc-200/70 dark:border-[#3A3835] shrink-0 flex items-center justify-center">
+                              {child.photoUrl ? (
+                                <SafeImage
+                                  src={child.photoUrl}
+                                  alt={child.childName}
+                                  className="w-full h-full object-cover"
+                                  containerClassName="w-full h-full"
+                                  fallbackComponent={
+                                    <span className="font-sans text-xs font-semibold text-zinc-600 dark:text-[#B8B0A5]">
+                                      {childInitials}
+                                    </span>
+                                  }
+                                />
+                              ) : (
+                                <span className="font-sans text-xs font-semibold text-zinc-600 dark:text-[#B8B0A5]">
+                                  {childInitials}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="min-w-0 flex-1 space-y-0.5">
+                              <div className="flex items-center space-x-1.5 flex-wrap">
+                                <span className="font-sans text-sm font-semibold text-zinc-900 dark:text-[#F0EBE3] truncate leading-tight group-hover:text-amber-800 dark:group-hover:text-[#C59B27] transition-colors">
+                                  {child.childName}
+                                </span>
+                                {needsAgeReview && (
+                                  <span className="font-sans text-[11px] font-medium text-amber-700 dark:text-[#C59B27] shrink-0">
+                                    · Age needs confirmation
+                                  </span>
+                                )}
+                              </div>
+
+                              <p className="font-sans text-xs text-zinc-500 dark:text-[#B8B0A5] font-medium leading-tight">
+                                {ageText}{cleanedGroup ? ` · ${cleanedGroup}` : ''}
+                              </p>
+
+                              {contact && (
+                                <p className="font-sans text-xs text-zinc-400 dark:text-[#7A7570] truncate leading-tight">
+                                  {contact}
+                                </p>
+                              )}
+
+                              {careNote && (
+                                <p className="font-sans text-[11px] font-medium text-amber-800/90 dark:text-[#C59B27] pt-0.5 leading-tight">
+                                  {careNote}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Right Side: Plain Status & Arrow */}
+                          <div className="flex items-center space-x-2 shrink-0">
+                            <span className={`font-sans text-xs font-medium ${statusColor}`}>
+                              {statusLabel}
+                            </span>
+                            <ChevronRight className="h-4 w-4 text-zinc-300 dark:text-[#7A7570] group-hover:text-amber-700 dark:group-hover:text-[#C59B27] transition-colors" />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-xl p-8 text-center text-zinc-400 dark:text-[#7A7570] shadow-2xs">
+                    <User className="h-8 w-8 text-zinc-300 dark:text-[#7A7570] mx-auto mb-2" />
+                    <p className="text-xs font-sans font-medium text-zinc-600 dark:text-[#B8B0A5]">No child matches your search.</p>
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery('');
+                          setDirectoryPage(1);
+                          fetchChildrenDirectory(1, activeDirectoryFilter, '');
+                        }}
+                        className="mt-2 text-xs font-sans font-medium text-amber-700 hover:text-amber-800 dark:text-[#C59B27] dark:hover:text-[#E5D5AE] underline cursor-pointer"
+                      >
+                        Clear search
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Pagination controls */}
+              {directoryPagination.totalPages > 1 && (
+                <div className="flex items-center justify-between pt-1 px-1 text-xs font-sans text-zinc-500 dark:text-[#B8B0A5]" data-component-version="volunteer-children-pagination-v2-clean">
+                  <span>
+                    Page {directoryPagination.page} of {directoryPagination.totalPages}
+                    <span className="text-zinc-400 dark:text-[#7A7570] ml-1">({directoryPagination.total} children)</span>
+                  </span>
+                  <div className="flex items-center space-x-1.5">
+                    <button
+                      type="button"
+                      disabled={!directoryPagination.hasPrevious}
+                      onClick={() => {
+                        const prev = directoryPagination.page - 1;
+                        setDirectoryPage(prev);
+                        fetchChildrenDirectory(prev, activeDirectoryFilter, searchQuery);
+                      }}
+                      className="px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-700 dark:text-[#F0EBE3] hover:bg-zinc-50 dark:hover:bg-[#2A2926] disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium text-xs flex items-center space-x-1"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                      <span>Prev</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!directoryPagination.hasNext}
+                      onClick={() => {
+                        const next = directoryPagination.page + 1;
+                        setDirectoryPage(next);
+                        fetchChildrenDirectory(next, activeDirectoryFilter, searchQuery);
+                      }}
+                      className="px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-700 dark:text-[#F0EBE3] hover:bg-zinc-50 dark:hover:bg-[#2A2926] disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium text-xs flex items-center space-x-1"
+                    >
+                      <span>Next</span>
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Helper Note */}
+              <div className="text-center pt-2 pb-6" data-component-version="volunteer-children-helper-v2-refined">
+                <p className="text-xs text-zinc-400 dark:text-[#7A7570] font-normal">
+                  Use search if a parent cannot open the child pass.
+                </p>
+              </div>
+
+            </div>
+          )
+        )}
+
+      </main>
+
+      {/* Dynamic Side-by-Side Verification Overlay (Screenshot A/B logic) */}
+      {lastVerifiedChild && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-[#EAE8E1] flex flex-col">
+            
+            {/* Modal Header */}
+            <div className="p-5 border-b border-[#EAE8E1] flex items-center justify-between bg-gray-50">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900">
+                  {scanMode === 'check_in' ? 'Check-In Verification' : 'Pickup Release Verification'}
+                </h3>
+                <p className="text-[10px] text-gray-500 font-mono font-bold uppercase tracking-wider">
+                  {scanMode === 'check_in' ? 'Gate Admission Granted' : 'Identity Photo Matching'}
+                </p>
+              </div>
+              <button
+                onClick={() => setLastVerifiedChild(null)}
+                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-6">
+              {scanMode === 'check_in' ? (
+                /* CHECK-IN SUCCESS SUMMARY */
+                <div className="flex flex-col items-center text-center space-y-4">
+                  <div className="relative w-24 h-24 rounded-full overflow-hidden border-2 border-emerald-500 shadow-sm bg-gray-100 flex items-center justify-center">
+                    {lastVerifiedChild.photoUrl ? (
+                      <img
+                        src={lastVerifiedChild.photoUrl}
+                        alt={lastVerifiedChild.fullName}
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <User className="h-10 w-10 text-gray-400" />
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-bold text-gray-900">{lastVerifiedChild.fullName}</h4>
+                    <p className="text-xs text-gray-500 font-medium">Age Group: {lastVerifiedChild.ageGroup || 'Creche'}</p>
+                    <p className="text-xs text-[#C59B27] font-semibold mt-1">Parent: {lastVerifiedChild.parentName} ({lastVerifiedChild.parentPhone})</p>
+                  </div>
+                  <div className="w-full bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex items-center space-x-3 text-emerald-800 text-left">
+                    <Check className="h-5 w-5 shrink-0 text-emerald-500" />
+                    <p className="text-[11px] text-emerald-700 leading-relaxed font-semibold">
+                      This child is now successfully checked in. Ensure they are guided to their age group department.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                /* CHECK-OUT SIDE-BY-SIDE VERIFICATION */
+                <div className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Left: Child */}
+                    <div className="space-y-2 text-center bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                      <p className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">CHILD</p>
+                      <div className="w-20 h-20 rounded-full overflow-hidden mx-auto border border-gray-200 bg-white flex items-center justify-center">
+                        {lastVerifiedChild.photoUrl ? (
+                          <img
+                            src={lastVerifiedChild.photoUrl}
+                            alt={lastVerifiedChild.fullName || lastVerifiedChild.childName}
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <User className="h-8 w-8 text-gray-300" />
+                        )}
+                      </div>
+                      <div className="space-y-0.5">
+                        <h4 className="text-xs font-bold text-gray-800 truncate">{lastVerifiedChild.fullName || lastVerifiedChild.childName}</h4>
+                        <p className="text-[10px] text-gray-400">{lastVerifiedChild.ageGroup || 'Creche'}</p>
+                      </div>
+                    </div>
+
+                    {/* Right: Pickup Person */}
+                    <div className="space-y-2 text-center bg-[#C59B27]/5 p-4 rounded-2xl border border-[#C59B27]/10">
+                      <p className="text-[10px] font-mono font-bold text-[#C59B27] uppercase tracking-wider">PICKUP PERSON</p>
+                      <div className="w-20 h-20 rounded-full overflow-hidden mx-auto border border-[#C59B27]/20 bg-white flex items-center justify-center">
+                        {lastVerifiedChild.pickup?.photoUrl ? (
+                          <img
+                            src={lastVerifiedChild.pickup.photoUrl}
+                            alt={lastVerifiedChild.pickup.fullName}
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <User className="h-8 w-8 text-gray-300" />
+                        )}
+                      </div>
+                      <div className="space-y-0.5">
+                        <h4 className="text-xs font-bold text-gray-800 truncate">
+                          {lastVerifiedChild.pickup?.fullName || lastVerifiedChild.parentName || 'Self Pickup'}
+                        </h4>
+                        <p className="text-[10px] text-[#C59B27] font-semibold">
+                          {lastVerifiedChild.pickup?.relationship || 'Parent'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start space-x-3 text-amber-800">
+                    <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <h4 className="text-xs font-bold">Important Security Notice</h4>
+                      <p className="text-[10px] text-amber-700 leading-relaxed">
+                        Verify that the physical person releasing the child strictly matches the photo card on the right. Release child only after matching.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="p-4 border-t border-[#EAE8E1] bg-gray-50 flex space-x-3">
+              {scanMode === 'check_in' ? (
+                <>
+                  <button
+                    onClick={() => setLastVerifiedChild(null)}
+                    className="flex-1 py-2.5 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold text-xs tracking-wide rounded-xl transition-colors cursor-pointer"
+                  >
+                    Close
+                  </button>
+                  <button
+                    onClick={() => {
+                      const cid = lastVerifiedChild.id || lastVerifiedChild.childId;
+                      if (cid) {
+                        setSelectedChildId(cid);
+                        setChildDetailOrigin('scan');
+                      }
+                      setLastVerifiedChild(null);
+                      onNavigate('/volunteer/children');
+                    }}
+                    className="flex-1 py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold text-xs tracking-wide rounded-xl transition-colors cursor-pointer text-center font-bold"
+                  >
+                    View Record
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setLastVerifiedChild(null)}
+                    className="flex-1 py-2.5 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold text-xs tracking-wide rounded-xl transition-colors cursor-pointer"
+                  >
+                    Close
+                  </button>
+                  {scanMode === 'check_out' && (
+                    <button
+                      onClick={() => handleConfirmRelease(lastVerifiedChild)}
+                      disabled={scanLoading}
+                      className="flex-1 py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold text-xs tracking-wide rounded-xl transition-colors cursor-pointer flex items-center justify-center space-x-1.5"
+                    >
+                      {scanLoading ? (
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      ) : (
+                        <>
+                          <Check className="h-4 w-4" />
+                          <span>Confirm Release</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cleanRoute === '/volunteer/reports' && (
+        /* ==================== 4. EVENT SUMMARY VIEW ==================== */
+        <div data-view-version="volunteer-summary-refined-v4" className="w-full px-4 sm:px-5 space-y-5 pt-6 sm:pt-8 pb-24 animate-fade-in flex-1">
+          {/* Main title & Subtitle */}
+          <div className="space-y-0.5">
+            <h1 className="text-2xl font-sans font-bold text-zinc-900 dark:text-[#F0EBE3] tracking-tight">Summary</h1>
+            <p className="text-xs font-sans text-zinc-500 dark:text-[#B8B0A5]">The General Assembly Children and Teens</p>
+          </div>
+
+          {reportsLoading && !reportsData ? (
+            <ModuleLoadingState title="Preparing summary..." className="dark:bg-[#21211E] dark:border-[#302E29]" />
+          ) : (
+            <>
+              {(() => {
+                const medicalPendingCount = reportsData?.needsAttention?.filter((item: any) => item.issueType === 'Medical alert' || item.issueType === 'Medical note pending')?.length || 0;
+                const missingPhotoCount = reportsData?.needsAttention?.filter((item: any) => item.issueType === 'Missing pickup photo')?.length || 0;
+                const manualReviewCount = reportsData?.needsAttention?.filter((item: any) => item.issueType === 'Needs age group review' || item.issueType === 'Manual review required')?.length || 0;
+                const totalAttention = reportsData?.needsAttention?.length || (medicalPendingCount + missingPhotoCount + manualReviewCount);
+
+                return (
+                  <div className="space-y-5">
+                    {/* Today Stats */}
+                    <div className="space-y-2">
+                      <h2 className="font-sans font-semibold text-xs text-zinc-500 dark:text-[#B8B0A5] uppercase tracking-wider">Today</h2>
+                      <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-2xl p-3.5 sm:p-4 shadow-2xs">
+                        <div className="grid grid-cols-4 divide-x divide-zinc-100 dark:divide-[#302E29] text-center">
+                          <div className="px-1 first:pl-0">
+                            <span className="block font-sans text-[10px] sm:text-[11px] text-zinc-500 dark:text-[#B8B0A5] leading-tight">Expected</span>
+                            <span className="block font-sans font-semibold text-base sm:text-lg text-zinc-900 dark:text-[#F0EBE3] mt-1">{stats.expected || 0}</span>
+                          </div>
+                          <div className="px-1">
+                            <span className="block font-sans text-[10px] sm:text-[11px] text-zinc-500 dark:text-[#B8B0A5] leading-tight">Checked in</span>
+                            <span className="block font-sans font-semibold text-base sm:text-lg text-zinc-900 dark:text-[#F0EBE3] mt-1">{stats.checkedIn || 0}</span>
+                          </div>
+                          <div className="px-1">
+                            <span className="block font-sans text-[10px] sm:text-[11px] text-zinc-500 dark:text-[#B8B0A5] leading-tight">Picked up</span>
+                            <span className="block font-sans font-semibold text-base sm:text-lg text-zinc-900 dark:text-[#F0EBE3] mt-1">{stats.pickedUp || 0}</span>
+                          </div>
+                          <div className="px-1 last:pr-0">
+                            <span className="block font-sans text-[10px] sm:text-[11px] text-zinc-500 dark:text-[#B8B0A5] leading-tight">Inside</span>
+                            <span className="block font-sans font-semibold text-base sm:text-lg text-zinc-900 dark:text-[#F0EBE3] mt-1">
+                              {Math.max(0, (stats.checkedIn || 0) - (stats.pickedUp || 0))}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Needs Attention Navigation Item */}
+                    {totalAttention > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowAttentionModal(true)}
+                        className="w-full text-left bg-white dark:bg-[#21211E] border border-amber-200/80 dark:border-[#302E29] rounded-2xl p-4 shadow-2xs hover:bg-amber-50/20 dark:hover:bg-[#262520] active:bg-amber-50/40 dark:active:bg-[#262520] transition-colors cursor-pointer group flex items-center justify-between gap-3"
+                        id="btn-volunteer-summary-attention-row"
+                      >
+                        <div className="space-y-0.5 min-w-0 flex-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-sans font-semibold text-xs text-zinc-900 dark:text-[#F0EBE3]">Needs attention</span>
+                            <span className="font-sans font-semibold text-xs text-amber-800 dark:text-[#C59B27]">{totalAttention}</span>
+                          </div>
+                          <p className="font-sans text-xs text-zinc-500 dark:text-[#B8B0A5] truncate">
+                            {totalAttention === 1 ? '1 child needs their details checked' : `${totalAttention} children need their details checked`}
+                          </p>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-zinc-400 dark:text-[#7A7570] shrink-0 group-hover:text-zinc-600 dark:group-hover:text-[#F0EBE3] transition-colors" />
+                      </button>
+                    ) : (
+                      <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-2xl p-4 shadow-2xs flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <span className="font-sans font-semibold text-xs text-zinc-900 dark:text-[#F0EBE3] block">Needs attention</span>
+                          <p className="font-sans text-xs text-zinc-400 dark:text-[#7A7570]">All child details are up to date</p>
+                        </div>
+                        <span className="font-sans text-xs text-zinc-400 dark:text-[#7A7570]">0</span>
+                      </div>
+                    )}
+
+                    {/* Age Groups Section */}
+                    <div className="space-y-2">
+                      <h2 className="font-sans font-semibold text-xs text-zinc-500 dark:text-[#B8B0A5] uppercase tracking-wider">Age groups</h2>
+                      {(() => {
+                        const ageGroupCards = [
+                          { key: 'ages_1_3', name: 'Ages 1–3', matchKeys: ['creche', '1-3', 'toddler'], boys: 0, girls: 0, inside: 0, expected: 0 },
+                          { key: 'ages_4_6', name: 'Ages 4–6', matchKeys: ['preschool', '4-6', '4-8'], boys: 0, girls: 0, inside: 0, expected: 0 },
+                          { key: 'ages_7_9', name: 'Ages 7–9', matchKeys: ['7-9'], boys: 0, girls: 0, inside: 0, expected: 0 },
+                          { key: 'ages_10_12', name: 'Ages 10–12', matchKeys: ['teens', '10-12', 'teen'], boys: 0, girls: 0, inside: 0, expected: 0 },
+                        ];
+
+                        // 1. Populate from reportsData.ageGroups for inside and expected counts
+                        if (reportsData?.ageGroups) {
+                          reportsData.ageGroups.forEach((group: any) => {
+                            const groupName = (group.ageGroup || '').toLowerCase();
+                            const matchedCard = ageGroupCards.find(card => 
+                              card.matchKeys.some(key => groupName.includes(key))
+                            );
+                            if (matchedCard) {
+                              matchedCard.expected += Number(group.expected || 0);
+                              matchedCard.inside += Math.max(0, Number(group.checkedIn || 0) - Number(group.pickedUp || 0));
+                            }
+                          });
+                        }
+
+                        // 2. Populate from directoryChildren to get precise live boys, girls, inside counts
+                        if (directoryChildren && directoryChildren.length > 0) {
+                          ageGroupCards.forEach(card => {
+                            card.boys = 0;
+                            card.girls = 0;
+                            card.inside = 0;
+                            card.expected = 0;
+                          });
+
+                          directoryChildren.forEach((child: any) => {
+                            const childAgeGroup = (child.ageGroup || child.age_group || '').toLowerCase();
+                            const matchedCard = ageGroupCards.find(card => 
+                              card.matchKeys.some(key => childAgeGroup.includes(key))
+                            );
+                            if (matchedCard) {
+                              matchedCard.expected++;
+                              const isInside = child.status === 'checked_in' || child.status === 'inside' || child.attendanceStatus === 'checked_in' || child.attendanceStatus === 'inside';
+                              const genderStr = (child.gender || '').toLowerCase();
+                              const isBoy = genderStr.startsWith('b') || genderStr === 'male' || genderStr === 'm';
+                              const isGirl = genderStr.startsWith('g') || genderStr === 'female' || genderStr === 'f';
+                              
+                              if (isInside) {
+                                matchedCard.inside++;
+                                if (isBoy) matchedCard.boys++;
+                                if (isGirl) matchedCard.girls++;
+                              }
+                            }
+                          });
+                        }
+
+                        return (
+                          <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-2xl divide-y divide-zinc-100 dark:divide-[#302E29] overflow-hidden shadow-2xs">
+                            {ageGroupCards.map((group) => (
+                              <div key={group.key} className="p-4 space-y-2.5">
+                                <div className="flex items-center justify-between gap-2">
+                                  <h3 className="font-sans font-semibold text-sm text-zinc-900 dark:text-[#F0EBE3] leading-snug">{group.name}</h3>
+                                  {group.expected > 0 && (
+                                    <span className="font-sans text-xs text-zinc-500 dark:text-[#B8B0A5] shrink-0">
+                                      Inside {group.inside} of {group.expected}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {group.expected > 0 && (
+                                  <div className="h-1.5 w-full bg-zinc-100 dark:bg-[#302E29] rounded-full overflow-hidden">
+                                    <div 
+                                      className="h-full bg-zinc-800 dark:bg-[#C59B27] rounded-full transition-all duration-300"
+                                      style={{ width: `${Math.min(100, Math.round((group.inside / Math.max(1, group.expected)) * 100))}%` }}
+                                    />
+                                  </div>
+                                )}
+
+                                <div className="grid grid-cols-3 gap-2 sm:gap-3 text-left pt-0.5">
+                                  <div>
+                                    <span className="block font-sans text-xs text-zinc-500 dark:text-[#B8B0A5]">Boys</span>
+                                    <span className="block font-sans font-semibold text-base text-zinc-900 dark:text-[#F0EBE3] mt-0.5">{group.boys}</span>
+                                  </div>
+                                  <div>
+                                    <span className="block font-sans text-xs text-zinc-500 dark:text-[#B8B0A5]">Girls</span>
+                                    <span className="block font-sans font-semibold text-base text-zinc-900 dark:text-[#F0EBE3] mt-0.5">{group.girls}</span>
+                                  </div>
+                                  <div>
+                                    <span className="block font-sans text-xs text-zinc-500 dark:text-[#B8B0A5]">Inside</span>
+                                    <span className="block font-sans font-semibold text-base text-zinc-900 dark:text-[#F0EBE3] mt-0.5">{group.inside}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Action Buttons Section */}
+                    <div className="flex flex-col space-y-2.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveDirectoryFilter('inside');
+                          onNavigate('/volunteer/children');
+                        }}
+                        className="w-full py-3 bg-zinc-900 hover:bg-zinc-800 dark:bg-[#262520] dark:hover:bg-[#2A2926] text-white dark:text-[#F0EBE3] dark:border dark:border-[#3A3835] font-sans font-medium text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center shadow-2xs"
+                        id="btn-volunteer-summary-view-inside"
+                      >
+                        <span>View children inside</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveDirectoryFilter('all');
+                          onNavigate('/volunteer/children');
+                        }}
+                        className="w-full py-3 bg-white hover:bg-zinc-50 dark:bg-[#262520] dark:hover:bg-[#2A2926] border border-zinc-200/80 dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] font-sans font-medium text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center"
+                        id="btn-volunteer-summary-view-all"
+                      >
+                        <span>View all children</span>
+                      </button>
+                    </div>
+
+                    {/* Footer Note */}
+                    <p className="text-center font-sans text-xs text-zinc-400 dark:text-[#7A7570] pt-1">
+                      Final report will be available after the event.
+                    </p>
+                  </div>
+                );
+              })()}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Attention Details Modal */}
+      {showAttentionModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl max-w-md w-full p-5 space-y-4 max-h-[85vh] overflow-y-auto shadow-xl border border-zinc-200 dark:border-[#302E29]">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-[#302E29]">
+              <div>
+                <h3 className="font-sans font-semibold text-base text-zinc-900 dark:text-[#F0EBE3]">Needs attention</h3>
+                <p className="font-sans text-xs text-zinc-500 dark:text-[#B8B0A5] mt-0.5">
+                  {reportsData?.needsAttention?.length === 1 ? '1 child needs details checked' : `${reportsData?.needsAttention?.length || 0} children need details checked`}
+                </p>
+              </div>
+              <button 
+                onClick={() => setShowAttentionModal(false)}
+                className="p-1.5 text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#F0EBE3] rounded-full hover:bg-zinc-100 dark:hover:bg-[#262520] transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5">
+              {reportsData?.needsAttention && reportsData.needsAttention.length > 0 ? (
+                reportsData.needsAttention.map((item: any, idx: number) => {
+                  const childPhoto = item.child_photo_file_id || item.childPhotoFileId;
+                  const cName = item.childName || item.child_name || 'Child';
+                  const cleaned = formatChildNameAndRef(cName);
+                  
+                  const resolvedPhotoUrl = childPhoto ? (
+                    childPhoto.startsWith('http') || childPhoto.startsWith('/') || childPhoto.startsWith('data:') 
+                      ? childPhoto 
+                      : `/api/media/files/${childPhoto}`
+                  ) : '';
+
+                  const rawIssue = item.issueType || item.issue_type || '';
+                  let friendlyIssue = rawIssue;
+                  if (rawIssue === 'Manual review required' || rawIssue === 'Needs age group review') {
+                    friendlyIssue = 'Age needs confirmation';
+                  } else if (rawIssue === 'Missing pickup photo') {
+                    friendlyIssue = 'Missing pickup photo';
+                  } else if (rawIssue === 'Medical alert' || rawIssue === 'Medical note pending') {
+                    friendlyIssue = 'Medical note pending';
+                  }
+
+                  return (
+                    <div key={item.id || idx} className="p-3.5 bg-zinc-50 dark:bg-[#262520] border border-zinc-200/80 dark:border-[#3A3835] rounded-xl flex items-center justify-between gap-3 text-xs">
+                      <div className="flex items-center space-x-3 min-w-0 flex-1">
+                        <div 
+                          className="w-10 h-10 rounded-lg overflow-hidden bg-zinc-100 dark:bg-[#1D1D1A] border border-zinc-200 dark:border-[#3A3835] shrink-0 flex items-center justify-center text-zinc-600 dark:text-[#B8B0A5] font-sans font-semibold text-xs"
+                          data-component-version="volunteer-attention-child-photo-v3"
+                        >
+                          {resolvedPhotoUrl ? (
+                            <SafeImage
+                              src={resolvedPhotoUrl}
+                              alt={cleaned.name}
+                              className="w-full h-full object-cover"
+                              fallbackComponent={
+                                <span className="font-sans font-semibold text-xs">
+                                  {cleaned.name.charAt(0).toUpperCase()}
+                                </span>
+                              }
+                            />
+                          ) : (
+                            <span className="font-sans font-semibold text-xs">
+                              {cleaned.name.charAt(0).toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="space-y-0.5 min-w-0 flex-1">
+                          <h4 className="font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3] text-xs truncate">{cleaned.name}</h4>
+                          <p className="font-sans text-[11px] text-zinc-500 dark:text-[#B8B0A5] truncate">{friendlyIssue}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setShowAttentionModal(false);
+                          handleResolveAction(item);
+                        }}
+                        className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 dark:bg-[#C59B27] dark:hover:bg-[#B58E33] text-white dark:text-[#1D1D1A] font-sans font-medium text-xs rounded-lg transition-colors cursor-pointer shrink-0"
+                      >
+                        Review
+                      </button>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="py-6 text-center text-zinc-400 dark:text-[#7A7570] font-sans text-xs">
+                  No children currently need attention.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Detailed Interactive Resolution Modal */}
+      {showAttentionDetailModal && selectedAttentionItem && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-4 z-50 animate-fade-in"
+          data-view-version="volunteer-attention-detail-v5-refined"
+        >
+          <div className="bg-white dark:bg-[#1D1D1A] rounded-3xl max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl border border-[#EAE8E1] dark:border-[#302E29]">
+            {/* Header */}
+            <div 
+              className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-[#302E29]"
+              data-component-version="volunteer-attention-detail-header-v5"
+            >
+              <div className="space-y-0.5">
+                <h3 className="text-xl font-sans font-bold text-neutral-900 dark:text-[#F0EBE3] leading-tight">
+                  Review child details
+                </h3>
+                <p className="text-xs font-sans text-neutral-500 dark:text-[#B8B0A5] leading-normal">
+                  Check the information below before continuing.
+                </p>
+              </div>
+              <button 
+                onClick={() => {
+                  setShowAttentionDetailModal(false);
+                  setSelectedAttentionItem(null);
+                  setAttentionError(null);
+                }}
+                className="p-1.5 text-neutral-400 dark:text-[#7A7570] hover:text-neutral-600 dark:hover:text-[#F0EBE3] rounded-full hover:bg-neutral-100 dark:hover:bg-[#262520] transition-colors cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Inline Error Message */}
+            {attentionError && (
+              <div 
+                className="p-3 bg-red-50 dark:bg-rose-950/20 border border-red-200 dark:border-rose-900/40 text-red-700 dark:text-rose-300 rounded-xl text-xs flex items-start gap-1.5 animate-fade-in font-sans"
+                data-component-version="volunteer-attention-safe-error-v3"
+              >
+                <span className="shrink-0 font-medium">⚠️</span>
+                <span>{attentionError}</span>
+              </div>
+            )}
+
+            {/* Child Summary Block */}
+            {(() => {
+              const childPhoto = selectedAttentionItem.child_photo_file_id || selectedAttentionItem.childPhotoFileId;
+              const cName = selectedAttentionItem.child_name || selectedAttentionItem.childName || 'Child';
+              const cleaned = formatChildNameAndRef(cName);
+              
+              const resolvedPhotoUrl = childPhoto ? (
+                childPhoto.startsWith('http') || childPhoto.startsWith('/') || childPhoto.startsWith('data:') 
+                  ? childPhoto 
+                  : `/api/media/files/${childPhoto}`
+              ) : '';
+
+              const rawAge = selectedAttentionItem.child_age !== undefined && selectedAttentionItem.child_age !== null ? selectedAttentionItem.child_age : selectedAttentionItem.childAge;
+              let ageText = '';
+              if (rawAge !== undefined && rawAge !== null) {
+                if (rawAge === 0) {
+                  ageText = 'Under 1 year';
+                } else if (rawAge === 1) {
+                  ageText = '1 year';
+                } else {
+                  ageText = `${rawAge} years`;
+                }
+              }
+
+              const rawGroup = selectedAttentionItem.child_age_group || selectedAttentionItem.childAgeGroup || '';
+              const cleanGroup = rawGroup
+                .replace(/\s*\([^)]*review[^)]*\)/gi, '')
+                .replace(/\s*\([^)]*needed[^)]*\)/gi, '')
+                .trim();
+
+              const summaryParts: string[] = [];
+              if (ageText) summaryParts.push(ageText);
+              if (cleanGroup) summaryParts.push(cleanGroup);
+              const summaryLine = summaryParts.join(' · ') || 'Details pending';
+
+              return (
+                <div 
+                  className="bg-neutral-50/80 dark:bg-[#262520] border border-neutral-200/80 dark:border-[#3A3835] p-3.5 rounded-2xl flex items-center gap-3.5"
+                  data-component-version="volunteer-attention-modal-child-summary-v3"
+                >
+                  {/* Photo or Fallback */}
+                  <div 
+                    className="w-14 h-14 rounded-xl bg-[#FAF6EB] dark:bg-[#1D1D1A] border border-[#E5D5AE]/60 dark:border-[#3A3835] overflow-hidden shrink-0 flex items-center justify-center text-[#9A7326] dark:text-[#C59B27] font-sans font-bold text-base"
+                    data-component-version="volunteer-attention-child-photo-v3"
+                  >
+                    {resolvedPhotoUrl ? (
+                      <SafeImage 
+                        src={resolvedPhotoUrl} 
+                        alt="" 
+                        className="w-full h-full object-cover"
+                        containerClassName="w-full h-full flex items-center justify-center"
+                        fallbackComponent={
+                          <span className="font-sans font-bold text-base text-[#9A7326] dark:text-[#C59B27]">
+                            {cleaned.name.charAt(0).toUpperCase()}
+                          </span>
+                        }
+                      />
+                    ) : (
+                      <span className="font-sans font-bold text-base text-[#9A7326] dark:text-[#C59B27]">
+                        {cleaned.name.charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                  
+                  {/* Details */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h4 
+                        className="text-sm font-semibold text-neutral-900 dark:text-[#F0EBE3] font-sans truncate leading-tight"
+                        data-component-version="volunteer-attention-safe-child-display-v3"
+                      >
+                        {cleaned.name}
+                      </h4>
+                      {cleaned.ref && (
+                        <span 
+                          className="text-[10px] font-mono font-medium px-1.5 py-0.5 bg-white dark:bg-[#1D1D1A] text-neutral-600 dark:text-[#B8B0A5] border border-neutral-200 dark:border-[#3A3835] rounded shrink-0"
+                          data-component-version="volunteer-attention-child-reference-v3"
+                        >
+                          Ref: {cleaned.ref}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-neutral-600 dark:text-[#B8B0A5] font-sans mt-0.5" data-component-version="volunteer-child-age-display-v3">
+                      {summaryLine}
+                    </p>
+                    {selectedAttentionItem.parent_name && (
+                      <p className="text-[11px] text-neutral-500 dark:text-[#7A7570] font-sans mt-0.5 truncate">
+                        <span className="font-medium text-neutral-700 dark:text-[#B8B0A5]">Parent:</span> {selectedAttentionItem.parent_name} {selectedAttentionItem.parent_phone ? `(${selectedAttentionItem.parent_phone})` : ''}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Attention Reason */}
+            {(() => {
+              const cName = selectedAttentionItem.child_name || selectedAttentionItem.childName || 'Child';
+              const childDisplayName = formatChildNameAndRef(cName).name;
+              const rawAge = selectedAttentionItem.child_age !== undefined && selectedAttentionItem.child_age !== null ? selectedAttentionItem.child_age : selectedAttentionItem.childAge;
+              const t = (selectedAttentionItem.title || selectedAttentionItem.issue_type || selectedAttentionItem.issueType || '').toLowerCase();
+              
+              let attentionTitle = selectedAttentionItem.title || selectedAttentionItem.issue_type || selectedAttentionItem.issueType || 'Attention needed';
+              if (t === 'age_review' || t === 'age review needed' || t === 'age review required' || t.includes('age review') || t.includes('group verification')) {
+                attentionTitle = 'Age needs confirmation';
+              } else if (t === 'missing_pickup_photo' || t === 'missing pickup photo' || t.includes('pickup')) {
+                attentionTitle = 'Needs pickup verification';
+              } else if (t === 'medical_note' || t === 'medical note update' || t.includes('medical') || t.includes('care note')) {
+                attentionTitle = 'Care alert';
+              }
+
+              let attentionDescription = selectedAttentionItem.description || '';
+              if (t === 'age_review' || t === 'age review needed' || t === 'age review required' || t.includes('age review') || t.includes('group verification')) {
+                const agePhrase = (rawAge === 0 || rawAge === undefined || rawAge === null) ? 'under 1 year' : `${rawAge} years old`;
+                attentionDescription = `${childDisplayName} is ${agePhrase}. Please confirm that the assigned age group is correct.`;
+              } else if (t === 'missing_pickup_photo' || t === 'missing pickup photo' || t.includes('pickup')) {
+                attentionDescription = 'A pickup person photo has not been added yet. Please verify their physical ID or event pass, then add a brief note about who you confirmed.';
+              } else if (t === 'medical_note' || t === 'medical note update' || t.includes('medical') || t.includes('care note')) {
+                attentionDescription = 'A supportive care note is active for this child. Please read it to ensure all event-day preferences are handled safely.';
+              }
+
+              const isHighPriority = (selectedAttentionItem.priority || '').toLowerCase() === 'high' || (selectedAttentionItem.priority || '').toLowerCase() === 'urgent';
+
+              return (
+                <div 
+                  className="p-3.5 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40 rounded-2xl space-y-1.5"
+                  data-component-version="volunteer-attention-reason-card-v5"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2 text-amber-900 dark:text-[#F0EBE3]">
+                      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-[#C59B27]" />
+                      <span className="text-xs font-sans font-semibold text-amber-900 dark:text-[#F0EBE3]">
+                        {attentionTitle}
+                      </span>
+                    </div>
+                    {/* NORMAL badge removed completely */}
+                    {isHighPriority && (
+                      <span className="text-[10px] font-sans font-semibold px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-[#C59B27] border border-amber-300/60 dark:border-amber-900/60">
+                        High Priority
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs font-sans text-neutral-700 dark:text-[#B8B0A5] leading-relaxed">
+                    {attentionDescription}
+                  </p>
+                  {(selectedAttentionItem.type === 'medical_note' || selectedAttentionItem.title === 'Medical note update') && (
+                    <div className="text-[11px] font-sans text-amber-900 dark:text-[#F0EBE3] bg-amber-100/50 dark:bg-amber-950/40 p-2 rounded-xl border border-amber-200/40 dark:border-amber-900/50 mt-1 flex items-start gap-1.5">
+                      <span className="shrink-0 text-amber-600">❤️</span>
+                      <span>Special guidelines are active to support the child's health and comfort.</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* What you can do */}
+            <div 
+              className="space-y-1.5 text-xs text-neutral-600 dark:text-[#B8B0A5] font-sans pt-0.5"
+              data-component-version="volunteer-attention-guidance-v5"
+            >
+              <h5 className="font-semibold text-neutral-800 dark:text-[#F0EBE3] text-xs font-sans">What you can do</h5>
+              <ul className="space-y-1 text-xs text-neutral-500 dark:text-[#B8B0A5] font-sans pl-1">
+                <li className="flex items-center gap-2">
+                  <span className="text-neutral-400 dark:text-[#7A7570]">•</span>
+                  <span>Confirm the child's details</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-neutral-400 dark:text-[#7A7570]">•</span>
+                  <span>Add a note if something needs attention</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-neutral-400 dark:text-[#7A7570]">•</span>
+                  <span>Ask for help if you are unsure</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Note Form Section */}
+            <div 
+              className="space-y-1.5"
+              data-component-version="volunteer-attention-resolution-form-v5"
+            >
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-neutral-700 dark:text-[#F0EBE3] font-sans">
+                  Volunteer note <span className="text-red-500">*</span>
+                </label>
+                <span className="text-[10px] text-neutral-400 dark:text-[#7A7570] font-mono">
+                  {attentionNote.length}/200
+                </span>
+              </div>
+              <p className="text-[11px] text-neutral-500 dark:text-[#7A7570] font-sans leading-normal">
+                Add a short note about what was checked or why this needs support.
+              </p>
+              <textarea
+                rows={3}
+                maxLength={200}
+                value={attentionNote}
+                onChange={(e) => setAttentionNote(e.target.value)}
+                placeholder="Share your assessment, care actions, or pickup verification notes..."
+                className="w-full text-xs p-3 bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] rounded-xl focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] focus:outline-none placeholder-neutral-400 dark:placeholder-[#7A7570] font-sans leading-relaxed transition-all shadow-2xs"
+              />
+            </div>
+
+            {/* Request help for this child button */}
+            {selectedAttentionItem && (selectedAttentionItem.child_id || selectedAttentionItem.childId) && (
+              <button
+                type="button"
+                onClick={() => {
+                  const rawAge = selectedAttentionItem.child_age !== undefined && selectedAttentionItem.child_age !== null ? selectedAttentionItem.child_age : selectedAttentionItem.childAge;
+                  const rawGroup = selectedAttentionItem.child_age_group || selectedAttentionItem.childAgeGroup || '';
+                  const cleanGroup = rawGroup
+                    .replace(/\s*\([^)]*review[^)]*\)/gi, '')
+                    .replace(/\s*\([^)]*needed[^)]*\)/gi, '')
+                    .trim();
+                  const derivedAgeGroup = rawAge === 0 ? 'Under 1 year' : (cleanGroup || rawGroup);
+
+                  setShowAttentionDetailModal(false);
+                  handleOpenSafetyAlertModal({
+                    id: selectedAttentionItem.child_id || selectedAttentionItem.childId,
+                    fullName: selectedAttentionItem.child_name || selectedAttentionItem.childName || 'Child',
+                    ageGroup: derivedAgeGroup,
+                    status: selectedAttentionItem.status || 'needs attention',
+                    photoUrl: selectedAttentionItem.child_photo_file_id || selectedAttentionItem.childPhotoFileId
+                  });
+                }}
+                data-component-version="volunteer-alert-auto-linked-child-v2"
+                className="w-full py-2.5 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-sans font-semibold text-xs rounded-xl transition-colors border border-rose-200/80 dark:border-rose-900/40 flex items-center justify-center space-x-2 cursor-pointer mt-1"
+              >
+                <Bell className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                <span>Ask for help for this child</span>
+              </button>
+            )}
+
+            {/* Actions Row */}
+            <div 
+              className="flex flex-col sm:flex-row gap-2 pt-3 border-t border-neutral-100 dark:border-[#302E29]"
+              data-component-version="volunteer-attention-detail-footer-v5"
+            >
+              <button
+                onClick={() => {
+                  setShowAttentionDetailModal(false);
+                  setSelectedAttentionItem(null);
+                  setAttentionError(null);
+                }}
+                className="order-last sm:order-first px-4 py-2.5 bg-neutral-100 dark:bg-[#262520] hover:bg-neutral-200 dark:hover:bg-[#2A2926] text-neutral-700 dark:text-[#F0EBE3] border border-transparent dark:border-[#3A3835] font-sans font-semibold text-xs rounded-xl transition-colors cursor-pointer text-center sm:flex-1 h-11 flex items-center justify-center"
+              >
+                Cancel
+              </button>
+
+              {/* Escalate button */}
+              <button
+                onClick={() => handleResolveItem('escalate')}
+                disabled={resolvingAttention}
+                className="px-4 py-2.5 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-[#C59B27] hover:bg-amber-100 dark:hover:bg-amber-950/50 border border-amber-200/60 dark:border-amber-900/40 font-sans font-semibold text-xs rounded-xl transition-colors cursor-pointer text-center sm:flex-1 h-11 flex items-center justify-center gap-1.5"
+                data-component-version="volunteer-attention-escalate-action-v5"
+              >
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-[#C59B27]" />
+                <span>{resolvingAttention ? 'Saving...' : 'Escalate to admin'}</span>
+              </button>
+
+              {/* Resolve/Review/Verify button */}
+              <button
+                onClick={() => {
+                  if (selectedAttentionItem.action_text === 'RESOLVE' || selectedAttentionItem.actionText === 'RESOLVE' || selectedAttentionItem.type === 'missing_pickup_photo') {
+                    handleResolveItem('resolve');
+                  } else if (selectedAttentionItem.action_text === 'VERIFY' || selectedAttentionItem.actionText === 'VERIFY' || selectedAttentionItem.type === 'age_review') {
+                    handleResolveItem('verify');
+                  } else {
+                    handleResolveItem('review');
+                  }
+                }}
+                disabled={resolvingAttention}
+                className="px-4 py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] dark:hover:bg-[#B58E33] disabled:bg-neutral-300 dark:disabled:bg-[#262520] text-white dark:text-[#1D1D1A] font-sans font-semibold text-xs rounded-xl transition-colors cursor-pointer text-center sm:flex-1 h-11 flex items-center justify-center shadow-xs"
+                data-component-version={
+                  selectedAttentionItem.action_text === 'RESOLVE' || selectedAttentionItem.actionText === 'RESOLVE' || selectedAttentionItem.type === 'missing_pickup_photo'
+                    ? 'volunteer-attention-resolve-action-v5'
+                    : selectedAttentionItem.action_text === 'VERIFY' || selectedAttentionItem.actionText === 'VERIFY' || selectedAttentionItem.type === 'age_review'
+                    ? 'volunteer-attention-verify-action-v5'
+                    : 'volunteer-attention-review-action-v5'
+                }
+              >
+                {resolvingAttention ? 'Saving...' : (
+                  selectedAttentionItem.action_text === 'RESOLVE' || selectedAttentionItem.actionText === 'RESOLVE' || selectedAttentionItem.type === 'missing_pickup_photo' ? 'Resolve item' : 
+                  selectedAttentionItem.action_text === 'VERIFY' || selectedAttentionItem.actionText === 'VERIFY' || selectedAttentionItem.type === 'age_review' ? 'Verify item' : 'Mark reviewed'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. VOLUNTEER EVENT SAFETY ALERT FORM MODAL */}
+      {isSafetyModalOpen && (
+        <div className="fixed inset-0 bg-neutral-950/70 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-fade-in">
+          <div 
+            className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-scale-in flex flex-col max-h-[90vh]"
+            data-view-version="volunteer-admin-help-v9-production-refined"
+          >
+            {/* Header */}
+            <div className="bg-white dark:bg-[#1D1D1A] text-neutral-900 dark:text-[#F0EBE3] px-6 py-5 border-b border-neutral-100 dark:border-[#302E29] flex items-center justify-between shrink-0">
+              <div className="space-y-0.5">
+                <h3 className="text-xl font-serif font-bold text-neutral-900 dark:text-[#F0EBE3] tracking-tight">Ask for help</h3>
+                <p className="text-xs font-sans text-neutral-500 dark:text-[#B8B0A5]">Tell us what you need help with.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSafetyModalOpen(false)}
+                className="p-1.5 text-neutral-400 dark:text-[#B8B0A5] hover:text-neutral-600 dark:hover:text-[#F0EBE3] rounded-full hover:bg-neutral-100 dark:hover:bg-[#262520] transition-colors cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Form Scrollable Body */}
+            <form
+              id="volunteer-admin-help-form"
+              onSubmit={handleRaiseSafetyAlert}
+              noValidate
+              className="flex-1 flex flex-col min-h-0"
+              data-component-version="volunteer-help-form-v8-production"
+            >
+              <div className="p-6 overflow-y-auto space-y-5 text-neutral-800 dark:text-[#F0EBE3] text-xs flex-1">
+                {/* Child Involved Section */}
+                <div className="space-y-2.5" data-component-version="volunteer-alert-child-selector-v2">
+                  <label className="text-xs font-sans font-semibold text-neutral-700 dark:text-[#F0EBE3] block">Who is this about?</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSafetyLinkOption('general');
+                      }}
+                      className={`py-2.5 px-2 rounded-xl text-center border text-xs font-sans transition-all cursor-pointer ${
+                        safetyLinkOption === 'general'
+                          ? 'bg-amber-50/60 dark:bg-[#262520] border-[#C59B27]/40 dark:border-[#C59B27] text-[#9A7326] dark:text-[#F0EBE3] font-semibold shadow-xs'
+                          : 'border-neutral-200 dark:border-[#302E29] bg-white dark:bg-[#262520] text-neutral-700 dark:text-[#B8B0A5] hover:bg-neutral-50 dark:hover:bg-[#2A2926] font-medium'
+                      }`}
+                    >
+                      General concern
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSafetyLinkOption('link');
+                      }}
+                      className={`py-2.5 px-2 rounded-xl text-center border text-xs font-sans transition-all cursor-pointer ${
+                        safetyLinkOption === 'link'
+                          ? 'bg-amber-50/60 dark:bg-[#262520] border-[#C59B27]/40 dark:border-[#C59B27] text-[#9A7326] dark:text-[#F0EBE3] font-semibold shadow-xs'
+                          : 'border-neutral-200 dark:border-[#302E29] bg-white dark:bg-[#262520] text-neutral-700 dark:text-[#B8B0A5] hover:bg-neutral-50 dark:hover:bg-[#2A2926] font-medium'
+                      }`}
+                    >
+                      Choose a child
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSafetyLinkOption('unidentified');
+                      }}
+                      className={`py-2.5 px-2 rounded-xl text-center border text-xs font-sans transition-all cursor-pointer ${
+                        safetyLinkOption === 'unidentified'
+                          ? 'bg-amber-50/60 dark:bg-[#262520] border-[#C59B27]/40 dark:border-[#C59B27] text-[#9A7326] dark:text-[#F0EBE3] font-semibold shadow-xs'
+                          : 'border-neutral-200 dark:border-[#302E29] bg-white dark:bg-[#262520] text-neutral-700 dark:text-[#B8B0A5] hover:bg-neutral-50 dark:hover:bg-[#2A2926] font-medium'
+                      }`}
+                    >
+                      Child not identified
+                    </button>
+                  </div>
+
+                  {safetyLinkOption === 'general' && (
+                    <p className="text-[11px] font-sans text-neutral-500 dark:text-[#B8B0A5] mt-1 bg-neutral-50 dark:bg-[#21211E] p-2.5 rounded-xl border border-neutral-200/60 dark:border-[#302E29]">
+                      Use this when the request is not about a specific child.
+                    </p>
+                  )}
+
+                  {safetyLinkOption === 'unidentified' && (
+                    <div className="space-y-3 mt-1 bg-amber-50/30 dark:bg-[#21211E] p-3.5 rounded-2xl border border-amber-200/50 dark:border-[#302E29] animate-fade-in">
+                      <p className="text-[11px] font-sans text-amber-900 dark:text-[#F0EBE3] font-medium">
+                        Provide a brief description of the unidentified child for emergency triage:
+                      </p>
+                      <div className="space-y-2.5">
+                        <div>
+                          <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] block mb-1">Temporary Label or Descriptive Identifier <span className="text-amber-600 dark:text-[#D4AF37]">*</span></label>
+                          <input
+                            type="text"
+                            placeholder="e.g. lost boy in blue dinosaur t-shirt"
+                            value={safetyUcName}
+                            onChange={(e) => setSafetyUcName(e.target.value.substring(0, 50))}
+                            className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] placeholder:text-neutral-400 dark:placeholder:text-[#7A7570] rounded-xl px-3 py-2 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] block mb-1">Approx. Age Group</label>
+                            <select
+                              value={safetyUcAgeGroup}
+                              onChange={(e) => setSafetyUcAgeGroup(e.target.value)}
+                              className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] rounded-xl px-3 py-2 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                            >
+                              <option value="Toddler (1-2)" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Toddler (1-2)</option>
+                              <option value="Preschool (3-4)" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Preschool (3-4)</option>
+                              <option value="Early Primary (5-6)" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Early Primary (5-6)</option>
+                              <option value="Primary (7-9)" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Primary (7-9)</option>
+                              <option value="Pre-Teen (10-12)" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Pre-Teen (10-12)</option>
+                              <option value="Unknown" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Unknown age</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] block mb-1">Approx. Gender</label>
+                            <select
+                              value={safetyUcGender}
+                              onChange={(e) => setSafetyUcGender(e.target.value)}
+                              className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] rounded-xl px-3 py-2 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                            >
+                              <option value="Female" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Female</option>
+                              <option value="Male" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Male</option>
+                              <option value="Unknown" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Unknown / Other</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] block mb-1">Further physical descriptions / clothing / behavior</label>
+                          <textarea
+                            rows={2}
+                            placeholder="e.g. curly brown hair, carrying a green backpack, currently calm near front door..."
+                            value={safetyUcDescription}
+                            onChange={(e) => setSafetyUcDescription(e.target.value.substring(0, 200))}
+                            className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] placeholder:text-neutral-400 dark:placeholder:text-[#7A7570] rounded-xl p-3 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none resize-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {safetyLinkOption === 'link' && (
+                    <div className="space-y-3 mt-1">
+                      {safetyChildContext ? (
+                        /* Selected Child Card */
+                        <div 
+                          className="bg-neutral-50 dark:bg-[#21211E] border border-neutral-200/80 dark:border-[#302E29] rounded-2xl p-3.5 space-y-2"
+                          data-component-version="volunteer-alert-selected-child-card-v2"
+                        >
+                          <span className="text-[10px] font-sans font-semibold text-neutral-400 dark:text-[#7A7570] uppercase tracking-wider block">
+                            About
+                          </span>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center space-x-3 min-w-0">
+                              <div className="w-10 h-10 rounded-xl overflow-hidden bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE]/60 dark:border-[#302E29] shrink-0 flex items-center justify-center text-[#9A7326] dark:text-[#D4AF37] font-sans font-bold text-xs">
+                                {(() => {
+                                  const photo = safetyChildContext.photoUrl;
+                                  const resolvedUrl = photo ? (
+                                    photo.startsWith('http') || photo.startsWith('/') || photo.startsWith('data:')
+                                      ? photo
+                                      : `/api/media/files/${photo}`
+                                  ) : '';
+                                  const childInitial = safetyChildContext.fullName ? safetyChildContext.fullName.trim().charAt(0).toUpperCase() : '';
+
+                                  if (resolvedUrl) {
+                                    return (
+                                      <SafeImage
+                                        src={resolvedUrl}
+                                        alt=""
+                                        className="w-full h-full object-cover"
+                                        containerClassName="w-full h-full flex items-center justify-center"
+                                        fallbackComponent={
+                                          <span className="font-sans font-bold text-xs text-[#9A7326] dark:text-[#D4AF37]">
+                                            {childInitial || <User className="h-4 w-4 text-gray-400 dark:text-[#7A7570]" />}
+                                          </span>
+                                        }
+                                      />
+                                    );
+                                  }
+                                  return (
+                                    <span className="font-sans font-bold text-xs text-[#9A7326] dark:text-[#D4AF37]">
+                                      {childInitial || <User className="h-4 w-4 text-gray-400 dark:text-[#7A7570]" />}
+                                    </span>
+                                  );
+                                })()}
+                              </div>
+                              <div className="min-w-0">
+                                <h4 className="font-sans font-semibold text-neutral-900 dark:text-[#F0EBE3] text-xs truncate">
+                                  {safetyChildContext.fullName}
+                                </h4>
+                                <p className="text-[11px] text-neutral-500 dark:text-[#B8B0A5] font-sans mt-0.5">
+                                  {(() => {
+                                    const ag = (safetyChildContext.ageGroup || '')
+                                      .replace(/\s*\([^)]*review[^)]*\)/gi, '')
+                                      .replace(/\s*\([^)]*needed[^)]*\)/gi, '')
+                                      .trim();
+                                    return ag || 'Child details attached';
+                                  })()}
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setSafetyChildContext(null)}
+                              className="text-xs font-sans font-semibold text-[#A47E1F] dark:text-[#D4AF37] hover:text-[#8B6B1A] dark:hover:text-[#E5C158] bg-white dark:bg-[#262520] hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] border border-neutral-200 dark:border-[#302E29] px-3 py-1.5 rounded-xl transition-colors cursor-pointer shrink-0"
+                            >
+                              Change
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Child Search & Result List */
+                        <div className="space-y-2">
+                          <div className="relative">
+                            <input
+                              type="text"
+                              placeholder="Type child or parent name..."
+                              value={safetySearchQuery}
+                              onChange={(e) => handleSafetyChildSearch(e.target.value)}
+                              className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] placeholder:text-neutral-400 dark:placeholder:text-[#7A7570] rounded-xl pl-9 pr-4 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all"
+                            />
+                            <Search className="absolute left-3 top-3 h-4 w-4 text-neutral-400 dark:text-[#7A7570]" />
+                            {safetySearching && (
+                              <div className="absolute right-3 top-3">
+                                <div className="w-4 h-4 border-2 border-[#C59B27]/30 border-t-[#C59B27] rounded-full animate-spin"></div>
+                              </div>
+                            )}
+                          </div>
+
+                          {safetySearchResults.length > 0 && (
+                            <div className="bg-white dark:bg-[#21211E] border border-neutral-200 dark:border-[#302E29] rounded-xl max-h-44 overflow-y-auto divide-y divide-neutral-100 dark:divide-[#302E29] shadow-sm">
+                              {safetySearchResults.map((child: any) => {
+                                const childPhoto = child.photoUrl;
+                                const resolvedUrl = childPhoto ? (
+                                  childPhoto.startsWith('http') || childPhoto.startsWith('/') || childPhoto.startsWith('data:')
+                                    ? childPhoto
+                                    : `/api/media/files/${childPhoto}`
+                                ) : '';
+                                const cName = child.childName || child.fullName || 'Child';
+                                const initial = cName.trim().charAt(0).toUpperCase();
+                                const cleanGroup = (child.ageGroup || '')
+                                  .replace(/\s*\([^)]*review[^)]*\)/gi, '')
+                                  .replace(/\s*\([^)]*needed[^)]*\)/gi, '')
+                                  .trim();
+
+                                return (
+                                  <div key={child.childId} className="p-2.5 flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-[#262520] transition-colors">
+                                    <div className="flex items-center space-x-2.5 min-w-0 pr-2">
+                                      <div className="w-8 h-8 rounded-lg overflow-hidden bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE]/60 dark:border-[#302E29] shrink-0 flex items-center justify-center text-[#9A7326] dark:text-[#D4AF37] font-sans font-bold text-xs">
+                                        {resolvedUrl ? (
+                                          <SafeImage
+                                            src={resolvedUrl}
+                                            alt=""
+                                            className="w-full h-full object-cover"
+                                            containerClassName="w-full h-full flex items-center justify-center"
+                                            fallbackComponent={
+                                              <span className="font-sans font-bold text-xs text-[#9A7326] dark:text-[#D4AF37]">
+                                                {initial || <User className="h-4 w-4 text-gray-400 dark:text-[#7A7570]" />}
+                                              </span>
+                                            }
+                                          />
+                                        ) : (
+                                          <span className="font-sans font-bold text-xs text-[#9A7326] dark:text-[#D4AF37]">
+                                            {initial || <User className="h-4 w-4 text-gray-400 dark:text-[#7A7570]" />}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <h5 className="font-sans font-semibold text-neutral-900 dark:text-[#F0EBE3] text-xs truncate">{cName}</h5>
+                                        <p className="text-[10px] text-neutral-500 dark:text-[#B8B0A5] font-sans">
+                                          {cleanGroup || 'Class unknown'}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSafetyChildContext({
+                                          id: child.childId,
+                                          fullName: cName,
+                                          ageGroup: cleanGroup,
+                                          status: child.status,
+                                          photoUrl: child.photoUrl
+                                        });
+                                      }}
+                                      className="text-[11px] font-sans font-semibold text-[#A47E1F] dark:text-[#D4AF37] bg-[#FAF6EB] dark:bg-[#262520] border border-amber-200/50 dark:border-[#302E29] px-2.5 py-1 rounded-lg hover:bg-amber-100/50 dark:hover:bg-[#2A2926] transition-colors cursor-pointer shrink-0"
+                                    >
+                                      Select
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {safetySearchQuery.trim() && safetySearchResults.length === 0 && !safetySearching && (
+                            <p className="text-[11px] text-neutral-400 dark:text-[#7A7570] italic text-center py-2 font-sans">No matching children found.</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Severity / Urgency Levels */}
+                <div className="space-y-2.5" data-component-version="volunteer-urgency-selector-v3-clean">
+                  <label className="text-xs font-sans font-semibold text-neutral-700 dark:text-[#F0EBE3] block">
+                    How urgent is it?
+                  </label>
+                  <div className="flex flex-col gap-2">
+                    {[
+                      { 
+                        value: 'normal', 
+                        label: 'Not urgent', 
+                        desc: 'Can be handled when someone is available.'
+                      },
+                      { 
+                        value: 'important', 
+                        label: 'Needs attention soon', 
+                        desc: 'Please respond when possible.'
+                      },
+                      { 
+                        value: 'urgent', 
+                        label: 'Urgent', 
+                        desc: 'Help is needed now.'
+                      }
+                    ].map((level) => {
+                      const isSelected = safetySeverity === level.value;
+                      return (
+                        <button
+                          key={level.value}
+                          type="button"
+                          onClick={() => setSafetySeverity(level.value)}
+                          className={`border rounded-xl p-3 text-left transition-all cursor-pointer flex flex-col space-y-0.5 ${
+                            isSelected
+                              ? 'border-[#C59B27]/60 dark:border-[#C59B27] bg-amber-50/40 dark:bg-[#262520] text-neutral-900 dark:text-[#F0EBE3] shadow-xs'
+                              : 'border-neutral-200/80 dark:border-[#302E29] bg-white dark:bg-[#262520] text-neutral-700 dark:text-[#B8B0A5] hover:bg-neutral-50/60 dark:hover:bg-[#2A2926]'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between w-full">
+                            <span className="font-sans font-semibold text-xs text-neutral-900 dark:text-[#F0EBE3]">{level.label}</span>
+                            {isSelected && (
+                              <Check className="h-4 w-4 text-[#A47E1F] dark:text-[#D4AF37] shrink-0" />
+                            )}
+                          </div>
+                          <span className="text-[11px] font-sans leading-normal text-neutral-500 dark:text-[#B8B0A5]">
+                            {level.desc}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {safetySeverity === 'urgent' && (
+                    <div className="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 rounded-xl p-3.5 text-xs text-red-950 dark:text-red-200 flex flex-col gap-2.5 animate-fade-in mt-2">
+                      <div className="flex items-start gap-2">
+                        <ShieldAlert className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-sans font-semibold text-red-700 dark:text-red-400 text-xs">Send urgent alert?</p>
+                          <p className="mt-0.5 text-[11px] text-red-900 dark:text-red-200 leading-relaxed font-sans">
+                            This will notify enabled duty devices and may trigger repeating sound.
+                          </p>
+                        </div>
+                      </div>
+                      <label className="flex items-center space-x-2 mt-0.5 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={hasAcceptedUrgentWarning}
+                          onChange={(e) => setHasAcceptedUrgentWarning(e.target.checked)}
+                          className="h-4 w-4 rounded border-red-300 dark:border-red-800 text-red-600 dark:bg-[#262520] focus:ring-red-500 cursor-pointer"
+                        />
+                        <span className="font-sans font-medium text-red-900 dark:text-red-200 text-[11px]">
+                          I understand this triggers sound & vibration on duty devices. <span className="text-red-600 dark:text-red-400">*</span>
+                        </span>
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                {/* Category / Type Selector */}
+                <div className="space-y-1.5" data-component-version="alert-severity-category-contract-v1">
+                  <label className="text-xs font-sans font-semibold text-neutral-700 dark:text-[#F0EBE3] block">Category</label>
+                  <select
+                    value={safetyCategory}
+                    onChange={(e) => setSafetyCategory(e.target.value)}
+                    className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all cursor-pointer"
+                  >
+                    <option value="child_care" className="dark:bg-[#262520] dark:text-[#F0EBE3]">General child care concern</option>
+                    <option value="pickup_issue" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Pickup authorization issue</option>
+                    <option value="pass_issue" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Pass scan or verification failure</option>
+                    <option value="medical_support" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Medical or first aid support</option>
+                    <option value="security_concern" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Security / missing child concerns</option>
+                    <option value="location_support" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Room/classroom assistance</option>
+                    <option value="other" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Other - Care support needed</option>
+                  </select>
+                </div>
+
+                {/* Category-Specific Form Fields */}
+                <div className="bg-neutral-50/70 dark:bg-[#21211E] border border-neutral-200/80 dark:border-[#302E29] rounded-2xl p-4 space-y-4 animate-fade-in" data-component-version="category-specific-fields-container">
+                  <h4 className="font-sans font-semibold text-xs text-neutral-900 dark:text-[#F0EBE3] border-b border-neutral-200/60 dark:border-[#302E29] pb-2 flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#C59B27]" />
+                    Category details
+                  </h4>
+
+                  {safetyCategory === 'child_care' && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Specific Care Need <span className="text-rose-500">*</span></label>
+                        <select
+                          value={safetyCcSpecificNeeds}
+                          onChange={(e) => setSafetyCcSpecificNeeds(e.target.value)}
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                        >
+                          <option value="" className="dark:bg-[#262520] dark:text-[#F0EBE3]">-- Select care need --</option>
+                          <option value="Restroom assistance" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Restroom assistance</option>
+                          <option value="Feeding help" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Feeding help</option>
+                          <option value="Crying/unsettled" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Crying / Unsettled</option>
+                          <option value="Spill/accident" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Spill / Accident</option>
+                          <option value="Other care request" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Other care request</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1.5">Child Distress Level</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {['Mild', 'Moderate', 'Distressed'].map((lvl) => (
+                            <button
+                              key={lvl}
+                              type="button"
+                              onClick={() => setSafetyCcSeveritySubtype(lvl)}
+                              className={`py-2 rounded-xl text-center text-xs font-sans font-semibold border transition-all cursor-pointer ${
+                                safetyCcSeveritySubtype === lvl
+                                  ? 'bg-[#C59B27]/10 dark:bg-[#262520] border-[#C59B27]/30 dark:border-[#C59B27] text-[#A47E1F] dark:text-[#F0EBE3] shadow-xs'
+                                  : 'border-neutral-200 dark:border-[#302E29] bg-white dark:bg-[#262520] text-neutral-700 dark:text-[#B8B0A5] hover:bg-neutral-50 dark:hover:bg-[#2A2926]'
+                              }`}
+                            >
+                              {lvl}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {safetyCategory === 'pickup_issue' && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Reported Pickup Name <span className="text-rose-500">*</span></label>
+                        <input
+                          type="text"
+                          placeholder="Name of person attempting pickup"
+                          value={safetyPiReportedPickupName}
+                          onChange={(e) => setSafetyPiReportedPickupName(e.target.value.substring(0, 100))}
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] placeholder:text-neutral-400 dark:placeholder:text-[#7A7570] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Relationship to Child <span className="text-rose-500">*</span></label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Uncle, Neighbor, Friend"
+                          value={safetyPiRelationship}
+                          onChange={(e) => setSafetyPiRelationship(e.target.value.substring(0, 50))}
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] placeholder:text-neutral-400 dark:placeholder:text-[#7A7570] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Contact Phone (Optional)</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. +1 (555) 019-2834"
+                          value={safetyPiContactPhone}
+                          onChange={(e) => setSafetyPiContactPhone(e.target.value.substring(0, 30))}
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] placeholder:text-neutral-400 dark:placeholder:text-[#7A7570] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {safetyCategory === 'pass_issue' && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Scan Error Type <span className="text-rose-500">*</span></label>
+                        <select
+                          value={safetyPaErrorType}
+                          onChange={(e) => setSafetyPaErrorType(e.target.value)}
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                        >
+                          <option value="No match in roster" className="dark:bg-[#262520] dark:text-[#F0EBE3]">No match in roster</option>
+                          <option value="Expired pass" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Expired pass</option>
+                          <option value="Duplicate check-in attempt" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Duplicate check-in attempt</option>
+                          <option value="Device scan error" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Device scan error</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Pass Code (Optional)</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. PASS-8921"
+                          value={safetyPaPassCode}
+                          onChange={(e) => setSafetyPaPassCode(e.target.value.substring(0, 50))}
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] placeholder:text-neutral-400 dark:placeholder:text-[#7A7570] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none font-mono"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {safetyCategory === 'medical_support' && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Medical Symptom / Injury <span className="text-rose-500">*</span></label>
+                        <select
+                          value={safetyMsMedicalSymptom}
+                          onChange={(e) => setSafetyMsMedicalSymptom(e.target.value)}
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                        >
+                          <option value="" className="dark:bg-[#262520] dark:text-[#F0EBE3]">-- Select symptom --</option>
+                          <option value="Fever / Temperature" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Fever / Temperature</option>
+                          <option value="Asthma / Breathing issue" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Asthma / Breathing issue</option>
+                          <option value="Minor injury / cut / scrape" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Minor injury / Cut / Scrape</option>
+                          <option value="Allergic reaction" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Allergic reaction</option>
+                          <option value="Vomiting / Nausea" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Vomiting / Nausea</option>
+                          <option value="Other medical symptom" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Other medical symptom</option>
+                        </select>
+                      </div>
+                      <label className="flex items-center space-x-2.5 p-1 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={safetyMsRequiresMedic}
+                          onChange={(e) => setSafetyMsRequiresMedic(e.target.checked)}
+                          className="h-4 w-4 rounded border-neutral-300 dark:border-[#3A3835] dark:bg-[#262520] text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
+                        />
+                        <span className="font-sans font-medium text-neutral-800 dark:text-[#F0EBE3] text-[11px]">
+                          Requires on-site certified medic response
+                        </span>
+                      </label>
+                    </div>
+                  )}
+
+                  {safetyCategory === 'security_concern' && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">When Last Seen <span className="text-rose-500">*</span></label>
+                        <select
+                          value={safetyScLastSeenTime}
+                          onChange={(e) => setSafetyScLastSeenTime(e.target.value)}
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                        >
+                          <option value="Just now (under 2 mins)" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Just now (under 2 mins)</option>
+                          <option value="5 mins ago" className="dark:bg-[#262520] dark:text-[#F0EBE3]">5 mins ago</option>
+                          <option value="10 mins ago" className="dark:bg-[#262520] dark:text-[#F0EBE3]">10 mins ago</option>
+                          <option value="30+ mins ago" className="dark:bg-[#262520] dark:text-[#F0EBE3]">30+ mins ago</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Clothing Description <span className="text-rose-500">*</span></label>
+                        <input
+                          type="text"
+                          placeholder="e.g. yellow jumper, jeans, white sandals"
+                          value={safetyScClothingDescription}
+                          onChange={(e) => setSafetyScClothingDescription(e.target.value.substring(0, 150))}
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] placeholder:text-neutral-400 dark:placeholder:text-[#7A7570] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Physical Appearance (Optional)</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. height, hair style, glasses"
+                          value={safetyScPhysicalAppearance}
+                          onChange={(e) => setSafetyScPhysicalAppearance(e.target.value.substring(0, 150))}
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] placeholder:text-neutral-400 dark:placeholder:text-[#7A7570] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {safetyCategory === 'location_support' && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Reason for Assistance <span className="text-rose-500">*</span></label>
+                        <select
+                          value={safetyLsAssistanceReason}
+                          onChange={(e) => setSafetyLsAssistanceReason(e.target.value)}
+                          className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none cursor-pointer"
+                        >
+                          <option value="Teacher break relief" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Teacher break relief</option>
+                          <option value="Material / supply shortage" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Material / supply shortage</option>
+                          <option value="Crowd control help" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Crowd control help</option>
+                          <option value="Spill / clean-up needed" className="dark:bg-[#262520] dark:text-[#F0EBE3]">Spill / clean-up needed</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Extra Volunteers Needed</label>
+                        <div className="flex items-center space-x-3 mt-1">
+                          <button
+                            type="button"
+                            onClick={() => setSafetyLsVolunteerCountNeeded(Math.max(1, safetyLsVolunteerCountNeeded - 1))}
+                            className="w-9 h-9 border border-neutral-200 dark:border-[#302E29] rounded-xl bg-white dark:bg-[#262520] hover:bg-neutral-50 dark:hover:bg-[#2A2926] text-neutral-700 dark:text-[#F0EBE3] font-sans font-semibold transition-all text-sm flex items-center justify-center cursor-pointer select-none"
+                          >
+                            -
+                          </button>
+                          <span className="font-mono font-bold text-sm w-8 text-center text-neutral-900 dark:text-[#F0EBE3]">{safetyLsVolunteerCountNeeded}</span>
+                          <button
+                            type="button"
+                            onClick={() => setSafetyLsVolunteerCountNeeded(Math.min(5, safetyLsVolunteerCountNeeded + 1))}
+                            className="w-9 h-9 border border-neutral-200 dark:border-[#302E29] rounded-xl bg-white dark:bg-[#262520] hover:bg-neutral-50 dark:hover:bg-[#2A2926] text-neutral-700 dark:text-[#F0EBE3] font-sans font-semibold transition-all text-sm flex items-center justify-center cursor-pointer select-none"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {safetyCategory === 'other' && (
+                    <div>
+                      <label className="text-[10px] font-sans font-semibold text-neutral-600 dark:text-[#B8B0A5] uppercase tracking-wider block mb-1">Specify Care Request <span className="text-rose-500">*</span></label>
+                      <input
+                        type="text"
+                        placeholder="Please specify custom request..."
+                        value={safetyOtCustomCareType}
+                        onChange={(e) => setSafetyOtCustomCareType(e.target.value.substring(0, 100))}
+                        className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] placeholder:text-neutral-400 dark:placeholder:text-[#7A7570] rounded-xl px-3.5 py-2.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Your Location / Room Name - Managed Selector with Custom Fallback */}
+                <EventLocationSelector
+                  selectedLocationId={safetyLocationId}
+                  onSelectLocationId={setSafetyLocationId}
+                  customLocationLabel={safetyLocationLabel}
+                  onChangeCustomLocationLabel={setSafetyLocationLabel}
+                  locationDetail={safetyLocationDetail}
+                  onChangeLocationDetail={setSafetyLocationDetail}
+                  locationSource={safetyLocationSource}
+                  onSelectLocationSource={setSafetyLocationSource}
+                />
+
+                {/* Description Message */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-sans font-semibold text-neutral-700 dark:text-[#F0EBE3] block">
+                    Details / Message {(safetySeverity === 'important' || safetySeverity === 'urgent') && <span className="text-rose-500">*</span>}
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder={
+                      safetySeverity === 'urgent' 
+                        ? "Please describe the urgent situation immediately so the care team can respond..." 
+                        : "Add details to help the admin team understand your request..."
+                    }
+                    value={safetyMessage}
+                    onChange={(e) => setSafetyMessage(e.target.value)}
+                    className="w-full bg-white dark:bg-[#262520] border border-neutral-200 dark:border-[#3A3835] text-neutral-900 dark:text-[#F0EBE3] rounded-2xl p-3.5 text-xs font-sans font-medium focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] outline-none transition-all resize-none placeholder-neutral-400 dark:placeholder:text-[#7A7570]"
+                  />
+                  <p className="text-[10px] font-sans text-neutral-400 dark:text-[#7A7570] leading-normal">
+                    Limit message to 500 characters. Admin team receives these alerts in real-time.
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons & Validation Summary */}
+              <div className="p-5 bg-neutral-50/80 dark:bg-[#1D1D1A] border-t border-neutral-100 dark:border-[#302E29] flex flex-col space-y-3 shrink-0">
+                {safetyValidationErrors.length > 0 && (
+                  <div 
+                    id="safety-validation-summary" 
+                    className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-900 dark:text-rose-200 rounded-xl space-y-1 text-[11px] font-sans animate-fade-in"
+                    data-component-version="volunteer-alert-validation-v7-visible"
+                  >
+                    <p className="font-semibold text-rose-700 dark:text-rose-400">Please complete these details:</p>
+                    <ul className="list-disc pl-4 space-y-0.5 font-medium">
+                      {safetyValidationErrors.map((err, idx) => (
+                        <li key={idx}>- {err}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <div className="flex items-center space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsSafetyModalOpen(false)}
+                    className="flex-1 py-2.5 border border-neutral-200 dark:border-[#302E29] hover:bg-neutral-100 dark:hover:bg-[#2A2926] text-neutral-700 dark:text-[#F0EBE3] font-sans font-semibold text-xs rounded-xl transition-colors text-center cursor-pointer bg-white dark:bg-[#262520]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    form="volunteer-admin-help-form"
+                    disabled={isSubmittingSafetyAlert}
+                    data-component-version="volunteer-help-submit-v8-production"
+                    data-submit-state-version="volunteer-alert-submit-state-v7"
+                    data-idempotency-version="volunteer-alert-idempotency-v5"
+                    className="flex-1 py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-semibold text-xs rounded-xl transition-colors text-center cursor-pointer flex items-center justify-center space-x-2 shadow-xs disabled:bg-neutral-300 dark:disabled:bg-[#262520] dark:disabled:text-[#7A7570] dark:disabled:border dark:disabled:border-[#302E29]"
+                  >
+                    {isSubmittingSafetyAlert ? (
+                      <span className="flex items-center space-x-2">
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        <span>Sending request…</span>
+                      </span>
+                    ) : (
+                      <span>Send request</span>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 12. VOLUNTEER ALERTS HISTORY VIEW / FEEDBACK OVERLAY */}
+      {showMyAlertsView && (
+        <div className="fixed inset-0 bg-neutral-950/70 z-50 flex items-end sm:items-center justify-center backdrop-blur-xs animate-fade-in p-0 sm:p-4">
+          <div className="bg-white dark:bg-[#1D1D1A] border-t sm:border border-stone-200 dark:border-[#302E29] rounded-t-3xl sm:rounded-2xl w-full max-w-md max-h-[88vh] sm:max-h-[85vh] overflow-hidden flex flex-col animate-slide-up shadow-xl">
+            {/* Header */}
+            <div className="px-5 py-4 sm:px-6 sm:py-5 border-b border-stone-200/80 dark:border-[#302E29] shrink-0 flex items-start justify-between bg-white dark:bg-[#1D1D1A]">
+              <div>
+                <h3 className="text-lg sm:text-xl font-sans font-semibold text-stone-900 dark:text-[#F0EBE3] tracking-tight">My Care Requests</h3>
+                <p className="text-xs text-stone-500 dark:text-[#B8B0A5] font-sans mt-0.5">Requests you've raised and their current status.</p>
+              </div>
+              <button
+                onClick={() => setShowMyAlertsView(false)}
+                className="p-1.5 -mr-1.5 text-stone-400 hover:text-stone-600 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] rounded-full hover:bg-stone-100 dark:hover:bg-[#262520] transition-colors cursor-pointer shrink-0"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Scrollable Alerts List */}
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-3.5 flex-1 bg-stone-50/50 dark:bg-[#21211E]" data-view-version="volunteer-help-request-history-v2">
+              {mySafetyAlerts.length === 0 ? (
+                <div className="py-10 text-center space-y-1.5 font-sans">
+                  <p className="text-sm font-medium text-stone-700 dark:text-[#F0EBE3]">No requests raised yet</p>
+                  <p className="text-xs text-stone-500 dark:text-[#B8B0A5]">Care requests you submit will appear here.</p>
+                </div>
+              ) : (
+                mySafetyAlerts.map((alert: any) => {
+                  const isResolved = alert.status === 'resolved';
+                  const isUnderway = alert.status === 'acknowledged' || alert.status === 'in_progress';
+                  const isUrgent = alert.severity === 'urgent';
+
+                  return (
+                    <div
+                      key={alert.id}
+                      className="bg-white dark:bg-[#262520] border border-stone-200/80 dark:border-[#3A3835] rounded-xl p-4 sm:p-5 shadow-xs space-y-3 font-sans"
+                    >
+                      {/* Top Row: Single Natural Status + Timestamp */}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          {isResolved ? (
+                            <span className="text-xs font-medium text-stone-700 dark:text-[#B8B0A5]">
+                              Resolved
+                            </span>
+                          ) : isUnderway ? (
+                            <span className="text-xs font-medium text-amber-700 dark:text-[#D4AF37]">
+                              Response underway
+                            </span>
+                          ) : isUrgent ? (
+                            <span className="text-xs font-medium text-rose-700 dark:text-rose-400">
+                              Needs response
+                            </span>
+                          ) : (
+                            <span className="text-xs font-medium text-stone-700 dark:text-[#D4AF37]">
+                              Needs response
+                            </span>
+                          )}
+                        </div>
+
+                        <span className="text-xs text-stone-400 dark:text-[#B8B0A5] font-sans">
+                          {formatAlertTimestamp(alert.created_at || alert.createdAt) || 'Just now'}
+                        </span>
+                      </div>
+
+                      {/* Title & Clean Metadata */}
+                      <div className="space-y-1">
+                        <h4 className="text-base font-sans font-semibold text-stone-900 dark:text-[#F0EBE3] tracking-tight leading-snug">
+                          {alert.title}
+                        </h4>
+
+                        {(alert.location_label || alert.child_name) && (
+                          <div className="space-y-0.5 text-xs font-sans text-stone-600 dark:text-[#B8B0A5]">
+                            {alert.location_label && (
+                              <div>
+                                <span className="text-stone-400 dark:text-[#7A7570]">Location:</span>{' '}
+                                <span className="text-stone-700 dark:text-[#F0EBE3] font-medium">{alert.location_label}</span>
+                              </div>
+                            )}
+                            {alert.child_name && (
+                              <div>
+                                <span className="text-stone-400 dark:text-[#7A7570]">Child:</span>{' '}
+                                <span className="text-stone-700 dark:text-[#F0EBE3] font-medium">{alert.child_name}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Request Message Quote */}
+                      {alert.message && (
+                        <blockquote className="border-l-2 border-stone-300 dark:border-[#3A3835] pl-3 py-1 text-xs text-stone-700 dark:text-[#B8B0A5] italic font-sans leading-relaxed">
+                          “{alert.message}”
+                        </blockquote>
+                      )}
+
+                      {/* Response Progress & History */}
+                      <div className="pt-3 border-t border-stone-100 dark:border-[#302E29] space-y-3" data-component-version="volunteer-alert-response-progress-v2">
+                        <div className="text-xs font-semibold text-stone-700 dark:text-[#B8B0A5] font-sans">Response progress</div>
+
+                        {/* Clean Vertical Timeline */}
+                        <div className="space-y-0">
+                          {/* Step 1: Request sent */}
+                          <div className="flex gap-2.5">
+                            <div className="flex flex-col items-center shrink-0">
+                              <div className="w-2 h-2 rounded-full mt-1 bg-stone-500 dark:bg-[#7A7570]" />
+                              <div className="w-px flex-1 bg-stone-200 dark:bg-[#3A3835] mt-1" />
+                            </div>
+                            <div className="text-xs min-w-0 pb-3">
+                              <div className="flex items-baseline gap-2">
+                                <span className="font-medium text-stone-800 dark:text-[#F0EBE3]">Request sent</span>
+                                {(alert.created_at || alert.createdAt) && (
+                                  <span className="text-[10px] text-stone-400 dark:text-[#7A7570] font-sans">
+                                    {formatTime(alert.created_at || alert.createdAt)}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[11px] text-stone-500 dark:text-[#B8B0A5] block">Sent to the care team</span>
+                            </div>
+                          </div>
+
+                          {/* Step 2: Response underway */}
+                          <div className="flex gap-2.5">
+                            <div className="flex flex-col items-center shrink-0">
+                              <div className={`w-2 h-2 rounded-full mt-1 ${
+                                isResolved
+                                  ? 'bg-stone-500 dark:bg-[#7A7570]'
+                                  : isUnderway
+                                  ? 'bg-amber-500 dark:bg-[#D4AF37]'
+                                  : 'bg-stone-300 dark:bg-[#3A3835]'
+                              }`} />
+                              <div className="w-px flex-1 bg-stone-200 dark:bg-[#3A3835] mt-1" />
+                            </div>
+                            <div className="text-xs min-w-0 pb-3">
+                              <div className="flex items-baseline gap-2">
+                                <span className={`font-medium ${
+                                  isResolved || isUnderway ? 'text-stone-800 dark:text-[#F0EBE3]' : 'text-stone-400 dark:text-[#7A7570]'
+                                }`}>
+                                  {isResolved ? 'Care team responded' : isUnderway ? 'Response underway' : 'Response pending'}
+                                </span>
+                                {alert.acknowledged_at && (
+                                  <span className="text-[10px] text-stone-400 dark:text-[#7A7570] font-sans">
+                                    {formatTime(alert.acknowledged_at)}
+                                  </span>
+                                )}
+                              </div>
+                              {alert.status === 'open' && (
+                                <span className="text-[11px] text-stone-400 dark:text-[#7A7570] block">
+                                  Waiting for care team to acknowledge
+                                </span>
+                              )}
+                              {(isUnderway || isResolved) && (
+                                <span className="text-[11px] text-stone-500 dark:text-[#B8B0A5] block">
+                                  {alert.acknowledged_by_name ? `${alert.acknowledged_by_name} acknowledged` : 'Admin responded'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Step 3: Resolved */}
+                          <div className="flex gap-2.5">
+                            <div className="flex flex-col items-center shrink-0">
+                              <div className={`w-2 h-2 rounded-full mt-1 ${
+                                isResolved ? 'bg-stone-500 dark:bg-[#D4AF37]' : 'bg-stone-300 dark:bg-[#3A3835]'
+                              }`} />
+                            </div>
+                            <div className="text-xs min-w-0">
+                              <div className="flex items-baseline gap-2">
+                                <span className={`font-medium ${
+                                  isResolved ? 'text-stone-800 dark:text-[#F0EBE3]' : 'text-stone-400 dark:text-[#7A7570]'
+                                }`}>
+                                  Resolved
+                                </span>
+                                {alert.resolved_at && (
+                                  <span className="text-[10px] text-stone-400 dark:text-[#7A7570] font-sans">
+                                    {formatTime(alert.resolved_at)}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[11px] text-stone-500 dark:text-[#B8B0A5] block">
+                                {isResolved ? 'Request resolved' : 'Pending resolution'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Resolution Note if resolved and meaningful */}
+                        {isResolved && (() => {
+                          const note = (alert.resolution_note || '').trim();
+                          const isGeneric = !note || note.toLowerCase() === 'resolved' || note.toLowerCase() === 'resolved.';
+                          if (isGeneric && !alert.resolved_by_name) {
+                            return null;
+                          }
+                          return (
+                            <div className="pt-2 border-t border-stone-100 dark:border-[#302E29] text-xs font-sans text-stone-600 dark:text-[#B8B0A5] space-y-0.5">
+                              <span className="font-medium text-stone-700 dark:text-[#F0EBE3] block">Resolution</span>
+                              {isGeneric ? (
+                                <p className="text-stone-500 dark:text-[#B8B0A5]">
+                                  Resolved by {alert.resolved_by_name || 'the care team'}.
+                                </p>
+                              ) : (
+                                <div className="space-y-0.5">
+                                  <p className="text-stone-700 dark:text-[#F0EBE3] italic">"{note}"</p>
+                                  {alert.resolved_by_name && (
+                                    <span className="text-[11px] text-stone-400 dark:text-[#7A7570] block not-italic">
+                                      Resolved by {alert.resolved_by_name}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {/* Response History Disclosure & Child Details Action */}
+                        <div className="pt-2 border-t border-stone-100/80 dark:border-[#302E29] space-y-2 font-sans">
+                          <VolunteerDetailedAlertProgress alertId={alert.id} />
+
+                          <div className="pt-1">
+                            <button
+                              onClick={() => setActiveEmergencySummaryAlertId(alert.id)}
+                              className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-700 dark:text-[#B8B0A5] hover:text-stone-900 dark:hover:text-[#F0EBE3] transition-colors cursor-pointer py-1 font-sans"
+                            >
+                              <span>Child details</span>
+                              <span className="text-stone-400 dark:text-[#7A7570] text-sm leading-none" aria-hidden="true">→</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeEmergencySummaryAlertId && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-[#FAF9F5] rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col border border-[#EAE8E1]">
+            <div className="p-5 border-b border-[#EAE8E1] flex items-center justify-between shrink-0 bg-white rounded-t-2xl">
+              <div className="flex items-center gap-2">
+                <Shield className="w-5 h-5 text-amber-600 animate-pulse" />
+                <h3 className="text-base font-serif font-bold text-gray-900">Child Emergency & Safety Summary</h3>
+              </div>
+              <button
+                onClick={() => setActiveEmergencySummaryAlertId(null)}
+                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1">
+              <ChildEmergencySummary 
+                alertId={activeEmergencySummaryAlertId} 
+                onClose={() => setActiveEmergencySummaryAlertId(null)}
+                isAdmin={false}
+                onRefreshAlert={() => {
+                  fetchSafetyAlerts();
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cleanRoute === '/volunteer/readiness' && (
+        <div className="w-full px-4 sm:px-5 pt-5 pb-24">
+          <DeviceReadinessView
+            userRole="volunteer"
+            volunteerProfile={volunteerProfile}
+          />
+        </div>
+      )}
+
+      {cleanRoute === '/volunteer/profile' && (
+        /* ==================== 5. VOLUNTEER PROFILE VIEW ==================== */
+        <div className="w-full px-4 sm:px-5">
+          <VolunteerProfileView
+            onSignOut={onSignOut}
+            showSuccess={showSuccess}
+            showError={showError}
+            showWarning={showWarning}
+            isOffline={isOffline}
+            hasParentProfile={hasParentProfile}
+            onSwitchExperience={onSwitchExperience}
+            isSwitchingExperience={isSwitchingExperience}
+          />
+        </div>
+      )}
+
+      {cleanRoute === '/volunteer/team-alerts' && (
+        /* ==================== 6. VOLUNTEER TEAM SAFETY ALERTS VIEW ==================== */
+        <div className="w-full px-4 sm:px-5 text-zinc-900 dark:text-[#F0EBE3] pt-6 sm:pt-8 pb-24 flex-1" data-component-version="volunteer-team-alerts-v2-calm">
+          {/* Header Banner */}
+          <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-2xl p-4 sm:p-5">
+            <div className="w-full flex items-center justify-between gap-4">
+              <div>
+                <h1 className="font-sans text-lg font-semibold tracking-tight text-zinc-900 dark:text-[#F0EBE3]">
+                  Your safety alerts
+                </h1>
+                <p className="text-xs font-sans text-zinc-500 dark:text-[#B8B0A5] font-medium mt-0.5">
+                  {volunteerProfile?.assignedArea || 'General Area'} · {volunteerProfile?.assignedTeam || 'General Volunteer'}
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleOpenSafetyAlertModal()}
+                  className="bg-[#A47E1F] hover:bg-[#8e6c17] dark:bg-[#C59B27] dark:hover:bg-[#B58E33] text-white dark:text-[#1D1D1A] text-xs font-sans font-medium px-3 py-1.5 rounded-lg transition-all cursor-pointer shadow-2xs flex items-center space-x-1.5 active:scale-[0.99]"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>Report a concern</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => fetchTeamSafetyAlerts()}
+                  disabled={loadingTeamAlerts}
+                  title="Refresh alerts"
+                  className="p-1.5 text-zinc-400 dark:text-[#B8B0A5] hover:text-zinc-700 dark:hover:text-[#F0EBE3] hover:bg-zinc-100 dark:hover:bg-[#262520] rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingTeamAlerts ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="w-full mt-4 space-y-4">
+            {/* Filter Tabs - Restrained Segmented Control */}
+            <div className="flex bg-zinc-200/60 dark:bg-[#21211E] border border-transparent dark:border-[#302E29] p-1 rounded-lg">
+              <button
+                type="button"
+                onClick={() => setTeamAlertsTab('team')}
+                className={`flex-1 py-1.5 text-xs font-sans font-medium rounded-md transition-all cursor-pointer ${
+                  teamAlertsTab === 'team'
+                    ? 'bg-white text-zinc-900 shadow-2xs dark:bg-[#262520] dark:text-[#F0EBE3] dark:shadow-none border border-transparent dark:border-[#3A3835]/50'
+                    : 'text-zinc-500 hover:text-zinc-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] dark:hover:bg-[#2A2926]'
+                }`}
+              >
+                For my team
+              </button>
+              <button
+                type="button"
+                onClick={() => setTeamAlertsTab('all')}
+                className={`flex-1 py-1.5 text-xs font-sans font-medium rounded-md transition-all cursor-pointer ${
+                  teamAlertsTab === 'all'
+                    ? 'bg-white text-zinc-900 shadow-2xs dark:bg-[#262520] dark:text-[#F0EBE3] dark:shadow-none border border-transparent dark:border-[#3A3835]/50'
+                    : 'text-zinc-500 hover:text-zinc-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] dark:hover:bg-[#2A2926]'
+                }`}
+              >
+                All open
+              </button>
+              <button
+                type="button"
+                onClick={() => setTeamAlertsTab('resolved')}
+                className={`flex-1 py-1.5 text-xs font-sans font-medium rounded-md transition-all cursor-pointer ${
+                  teamAlertsTab === 'resolved'
+                    ? 'bg-white text-zinc-900 shadow-2xs dark:bg-[#262520] dark:text-[#F0EBE3] dark:shadow-none border border-transparent dark:border-[#3A3835]/50'
+                    : 'text-zinc-500 hover:text-zinc-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] dark:hover:bg-[#2A2926]'
+                }`}
+              >
+                Resolved
+              </button>
+            </div>
+
+            {/* List and Cards */}
+            {loadingTeamAlerts ? (
+              <ModuleLoadingState title="Loading alerts..." />
+            ) : (() => {
+              // Filtering logic based on tab
+              const filteredAlerts = teamAlerts.filter(alert => {
+                const isResolved = alert.status === 'resolved';
+                
+                if (teamAlertsTab === 'resolved') {
+                  return isResolved;
+                }
+                
+                // If we are looking for active alerts ('team' or 'all')
+                if (isResolved) return false;
+                
+                if (teamAlertsTab === 'team') {
+                  // Filter by purview category based on volunteer profile
+                  const pTeam = (volunteerProfile?.preferredTeam || '').toLowerCase();
+                  const pAssigned = (volunteerProfile?.assignedTeam || '').toLowerCase();
+                  const isCheckin = pTeam.includes('check-in') || pTeam.includes('entry') || pTeam.includes('gate') || pAssigned.includes('check-in') || pAssigned.includes('gate');
+                  const isPickup = pTeam.includes('pickup') || pTeam.includes('release') || pTeam.includes('checkout') || pAssigned.includes('pickup');
+                  
+                  if (isCheckin) {
+                    return ['pass_issue', 'security_concern', 'location_support'].includes(alert.category);
+                  } else if (isPickup) {
+                    return ['pickup_issue', 'child_care', 'other'].includes(alert.category);
+                  } else {
+                    return ['child_care', 'medical_support', 'location_support', 'other'].includes(alert.category);
+                  }
+                }
+                
+                return true; // 'all' tab returns all non-resolved alerts
+              });
+
+              if (filteredAlerts.length === 0) {
+                const isResolvedTab = teamAlertsTab === 'resolved';
+                return (
+                  <div className="py-16 text-center space-y-1.5">
+                    <ShieldCheck className="w-6 h-6 text-zinc-400 dark:text-[#C59B27] mx-auto" />
+                    <h3 className="font-sans font-semibold text-sm text-zinc-900 dark:text-[#F0EBE3]">
+                      {isResolvedTab ? 'No resolved concerns' : 'No open concerns'}
+                    </h3>
+                    <p className="font-sans text-xs text-zinc-500 dark:text-[#B8B0A5] max-w-xs mx-auto">
+                      {isResolvedTab 
+                        ? 'No resolved concerns yet.' 
+                        : 'There are no unresolved safety concerns for your team.'}
+                    </p>
+                  </div>
+                );
+              }
+
+              const myUserId = volunteerProfile?.user_id || volunteerProfile?.userId || volunteerProfile?.user?.id;
+              const myName = volunteerProfile?.full_name || volunteerProfile?.fullName;
+
+              return (
+                <div className="space-y-3">
+                  {filteredAlerts.map(alert => {
+                    const isUrgent = alert.severity === 'urgent';
+                    const isAck = alert.status === 'acknowledged';
+                    const priorityInfo = formatAlertPriority(alert.severity);
+                    const statusInfo = formatAlertStatus(alert, myUserId, myName);
+
+                    return (
+                      <div
+                        key={alert.id}
+                        className={`bg-white dark:bg-[#21211E] border rounded-xl p-4 transition-all shadow-2xs space-y-3 ${
+                          alert.status === 'resolved'
+                            ? 'border-zinc-200/70 dark:border-[#302E29] bg-zinc-50/40 dark:bg-[#1D1D1A] opacity-90'
+                            : isUrgent
+                            ? 'border-rose-200 dark:border-rose-900/60 bg-rose-50/10 dark:bg-rose-950/20 border-l-4 border-l-rose-500'
+                            : 'border-zinc-200/80 dark:border-[#302E29]'
+                        }`}
+                      >
+                        {/* Header Row: Category, Status/Priority, and Time */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <h3 className="font-sans font-semibold text-sm text-zinc-900 dark:text-[#F0EBE3]">
+                              {formatAlertCategory(alert.category)}
+                            </h3>
+                            <p className="text-xs font-sans text-zinc-500 dark:text-[#B8B0A5] mt-0.5 flex items-center space-x-1.5 flex-wrap">
+                              {priorityInfo.label && (
+                                <span className={priorityInfo.colorClass}>{priorityInfo.label}</span>
+                              )}
+                              {priorityInfo.label && <span className="text-zinc-400 dark:text-[#7A7570]">·</span>}
+                              <span className={statusInfo.colorClass}>{statusInfo.label}</span>
+                            </p>
+                          </div>
+
+                          <span className="text-[11px] font-sans text-zinc-400 dark:text-[#7A7570] shrink-0 whitespace-nowrap">
+                            {formatAlertTimestamp(alert.created_at)}
+                          </span>
+                        </div>
+
+                        {/* Reporter & Location */}
+                        <div className="text-xs font-sans text-zinc-500 dark:text-[#B8B0A5] leading-tight space-y-0.5">
+                          <p>
+                            Reported by <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">{alert.raised_by_name || 'Volunteer'}</span>
+                          </p>
+                          {alert.location_label && (
+                            <p className="text-zinc-600 dark:text-[#B8B0A5]">{alert.location_label}</p>
+                          )}
+                        </div>
+
+                        {/* Description - Plain text, no quotation card styling */}
+                        {alert.message && (
+                          <p className="text-xs font-sans text-zinc-700 dark:text-[#B8B0A5] leading-relaxed">
+                            {alert.message}
+                          </p>
+                        )}
+
+                        {/* Child Context if relevant */}
+                        {alert.child_name && (
+                          <p className="text-xs font-sans text-zinc-600 dark:text-[#B8B0A5]">
+                            <span className="text-zinc-400 dark:text-[#7A7570]">Regarding: </span>
+                            <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">{alert.child_name}</span>
+                          </p>
+                        )}
+
+                        {/* Parent Contact if relevant */}
+                        {alert.parent_name && alert.status !== 'resolved' && (
+                          <div className="flex items-center justify-between text-xs font-sans text-zinc-600 dark:text-[#B8B0A5] pt-0.5">
+                            <div>
+                              <span className="text-zinc-400 dark:text-[#7A7570]">Parent: </span>
+                              <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">{alert.parent_name}</span>
+                              {alert.parent_phone && (
+                                <span className="text-zinc-500 dark:text-[#7A7570] font-mono ml-1.5">{alert.parent_phone}</span>
+                              )}
+                            </div>
+                            {alert.parent_phone && (
+                              <a
+                                href={`tel:${alert.parent_phone}`}
+                                className="text-xs text-[#A47E1F] hover:text-[#8e6c17] dark:text-[#C59B27] dark:hover:text-[#D4AF37] font-medium transition-colors cursor-pointer"
+                              >
+                                Call parent
+                              </a>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Resolution section for resolved alerts */}
+                        {alert.status === 'resolved' && (
+                          <div className="pt-2 border-t border-zinc-100 dark:border-[#302E29] space-y-1 text-xs font-sans">
+                            <p className="text-[11px] font-semibold text-zinc-500 dark:text-[#7A7570] uppercase tracking-wider">Resolution</p>
+                            {alert.resolution_note && (
+                              <p className="text-xs text-zinc-700 dark:text-[#B8B0A5] leading-relaxed">{alert.resolution_note}</p>
+                            )}
+                            <p className="text-[11px] text-zinc-400 dark:text-[#7A7570]">
+                              {alert.resolved_by_name ? `Resolved by ${alert.resolved_by_name}` : 'Resolved'}
+                              {alert.resolved_at ? ` · ${formatAlertTimestamp(alert.resolved_at)}` : ''}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Actions for active alerts */}
+                        {alert.status !== 'resolved' && (
+                          <div className="flex items-center gap-2 pt-2 border-t border-zinc-100 dark:border-[#302E29] flex-wrap">
+                            {!isAck ? (
+                              <button
+                                type="button"
+                                onClick={() => handleAcknowledgeTeamAlert(alert.id)}
+                                disabled={teamActionInProgress !== null}
+                                className="text-xs font-sans font-medium bg-[#A47E1F] hover:bg-[#8e6c17] dark:bg-[#C59B27] dark:hover:bg-[#B58E33] text-white dark:text-[#1D1D1A] px-3.5 py-1.5 rounded-lg transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-50 active:scale-[0.99] shadow-2xs"
+                              >
+                                {teamActionInProgress === alert.id ? (
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <UserCheck className="w-3.5 h-3.5" />
+                                )}
+                                <span>Handle concern</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => { resumeAudioContext(); setResolvingTeamAlert(alert); }}
+                                disabled={teamActionInProgress !== null}
+                                className="text-xs font-sans font-medium bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-800 dark:hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-lg transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-50 active:scale-[0.99] shadow-2xs"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Resolve concern</span>
+                              </button>
+                            )}
+
+                            {!isUrgent && (
+                              <button
+                                type="button"
+                                onClick={() => handleEscalateTeamAlert(alert.id)}
+                                disabled={teamActionInProgress !== null}
+                                className="text-xs font-sans font-medium text-zinc-600 dark:text-[#B8B0A5] hover:text-rose-700 dark:hover:text-rose-400 hover:bg-rose-50/60 dark:hover:bg-rose-950/30 border border-zinc-200/80 dark:border-[#302E29] px-3 py-1.5 rounded-lg transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                              >
+                                {teamActionInProgress === `escalate-${alert.id}` ? (
+                                  <RefreshCw className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <AlertTriangle className="w-3 h-3" />
+                                )}
+                                <span>Ask coordinator for help</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* RESOLUTION DIALOG MODAL FOR TEAM ALERTS */}
+      {resolvingTeamAlert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            onClick={() => setResolvingTeamAlert(null)}
+            className="fixed inset-0 bg-black/40 backdrop-blur-xs" 
+          />
+          <div className="relative bg-white dark:bg-[#1D1D1A] border border-zinc-200/80 dark:border-[#302E29] rounded-2xl w-full max-w-md p-6 shadow-xl space-y-4 max-h-[90vh] flex flex-col z-10">
+            <div className="flex items-center justify-between pb-2 border-b border-zinc-100 dark:border-[#302E29]">
+              <h4 className="font-sans font-semibold text-base text-zinc-900 dark:text-[#F0EBE3] flex items-center gap-2">
+                <Check className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                Resolve concern
+              </h4>
+            </div>
+
+            <form onSubmit={handleResolveTeamAlertSubmit} className="space-y-4 text-xs font-sans">
+              <div className="space-y-1 bg-zinc-50 dark:bg-[#21211E] border border-zinc-200/60 dark:border-[#302E29] p-3 rounded-xl text-zinc-600 dark:text-[#B8B0A5]">
+                <p>Concern: <strong className="text-zinc-800 dark:text-[#F0EBE3]">{formatAlertCategory(resolvingTeamAlert.category)}</strong></p>
+                {resolvingTeamAlert.location_label && <p>Location: <strong className="text-zinc-800 dark:text-[#F0EBE3]">{resolvingTeamAlert.location_label}</strong></p>}
+                {resolvingTeamAlert.child_name && <p>Child: <strong className="text-zinc-800 dark:text-[#F0EBE3]">{resolvingTeamAlert.child_name}</strong></p>}
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-zinc-700 dark:text-[#F0EBE3] block">Resolution note</label>
+                <textarea
+                  value={teamResolutionNote}
+                  onChange={(e) => setTeamResolutionNote(e.target.value)}
+                  placeholder="Describe what was done to resolve this concern (e.g. parent contacted and child settled)..."
+                  className="w-full bg-zinc-50 dark:bg-[#21211E] border border-zinc-200 dark:border-[#302E29] hover:border-zinc-300 dark:hover:border-[#3A3835] focus:border-[#A47E1F] dark:focus:border-[#C59B27] focus:ring-1 focus:ring-[#A47E1F] dark:focus:ring-[#C59B27] rounded-xl p-3 text-xs outline-none min-h-[90px] resize-none transition-all placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] text-zinc-900 dark:text-[#F0EBE3]"
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setResolvingTeamAlert(null)}
+                  className="px-3.5 py-2 text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] hover:bg-zinc-100 dark:hover:bg-[#262520] dark:hover:text-[#F0EBE3] rounded-lg transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={teamActionInProgress !== null}
+                  className="px-4 py-2 text-xs font-medium bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-800 dark:hover:bg-emerald-700 text-white rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {teamActionInProgress === `resolve-${resolvingTeamAlert.id}` ? (
+                    <span className="flex items-center gap-1.5">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      Resolving...
+                    </span>
+                  ) : (
+                    'Resolve concern'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      </div>
+
+      {/* Floating Quick Action Button (FAB) - Fixed above bottom nav, attached to 500px app container */}
+      {cleanRoute === '/volunteer/event' && (
+        <div
+          className="fixed bottom-20 left-1/2 -translate-x-1/2 w-full max-w-[500px] z-30 pointer-events-none px-4 sm:px-5 flex justify-end"
+          data-component-version="volunteer-floating-quick-actions"
+        >
+          <div ref={quickActionsRef} className="flex flex-col items-end pointer-events-auto">
+            {/* Expanded Action Menu */}
+            <div
+              className={`flex flex-col items-end gap-2 mb-2.5 transition-all duration-200 ease-out origin-bottom-right ${
+                isQuickActionsOpen
+                  ? 'opacity-100 translate-y-0 scale-100 pointer-events-auto'
+                  : 'opacity-0 translate-y-2 scale-95 pointer-events-none'
+              }`}
+              role="menu"
+              aria-orientation="vertical"
+              aria-label="Quick action options"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setIsQuickActionsOpen(false);
+                  handleOpenSafetyAlertModal();
+                }}
+                className="flex items-center gap-2 py-2 px-3.5 bg-white/95 dark:bg-[#21211E]/95 backdrop-blur-md border border-rose-200/80 dark:border-rose-900/50 hover:bg-rose-50/70 dark:hover:bg-rose-950/40 text-rose-700 dark:text-rose-400 font-sans font-medium text-xs rounded-full shadow-md hover:shadow-lg transition-all cursor-pointer"
+                id="btn-fab-request-help"
+              >
+                <HelpCircle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+                <span>Request admin help</span>
+              </button>
+
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setIsQuickActionsOpen(false);
+                  setShowMyAlertsView(true);
+                }}
+                className="flex items-center gap-2 py-2 px-3.5 bg-white/95 dark:bg-[#21211E]/95 backdrop-blur-md border border-[#EAE8E1] dark:border-[#302E29] hover:bg-stone-50 dark:hover:bg-[#262520] text-stone-700 dark:text-[#F0EBE3] font-sans font-medium text-xs rounded-full shadow-md hover:shadow-lg transition-all cursor-pointer"
+                id="btn-fab-my-requests"
+              >
+                <Clock className="w-3.5 h-3.5 text-[#C59B27] shrink-0" />
+                <span>My requests</span>
+                {mySafetyAlerts.filter(a => a.status !== 'resolved').length > 0 && (
+                  <span className="px-1.5 py-0.5 text-[10px] font-sans font-semibold rounded-full bg-[#FAF6EB] text-[#C59B27] dark:bg-[#262520] dark:text-[#D4AF37] dark:border dark:border-[#302E29] leading-none">
+                    {mySafetyAlerts.filter(a => a.status !== 'resolved').length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Circular Floating Trigger */}
+            <button
+              type="button"
+              onClick={() => setIsQuickActionsOpen(prev => !prev)}
+              aria-label="Quick actions"
+              aria-expanded={isQuickActionsOpen}
+              aria-haspopup="menu"
+              className="w-12 h-12 rounded-full bg-white/95 dark:bg-[#21211E]/95 backdrop-blur-md border border-[#EAE8E1] dark:border-[#302E29] shadow-lg hover:shadow-xl hover:bg-stone-50 dark:hover:bg-[#262520] flex items-center justify-center cursor-pointer transition-all duration-200 active:scale-95"
+              id="btn-volunteer-fab"
+            >
+              <Plus className={`w-5 h-5 text-[#C59B27] transition-transform duration-200 ease-out ${isQuickActionsOpen ? 'rotate-45' : 'rotate-0'}`} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Persistent Bottom Navigation locked within the Volunteer app shell */}
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-40 max-w-[500px] mx-auto bg-white/95 dark:bg-[#1D1D1A]/95 backdrop-blur-md border-t border-[#EAE8E1] dark:border-[#302E29] shadow-lg"
+        data-component-version="volunteer-navigation-v4-persistent-app"
+        aria-label="Volunteer navigation"
+      >
+        <div className="w-full h-16 px-2 flex items-center justify-around">
+          {[
+            {
+              label: 'Events',
+              icon: <Calendar className="w-5 h-5 stroke-[1.75]" />,
+              isActive: cleanRoute === '/volunteer/event' || cleanRoute === '/volunteer/pickup',
+              onClick: () => onNavigate('/volunteer/event'),
+              id: 'tab-volunteer-events'
+            },
+            {
+              label: 'Scan',
+              icon: <QrCode className="w-5 h-5 stroke-[1.75]" />,
+              isActive: cleanRoute === '/volunteer/scan',
+              onClick: () => {
+                setCameraActive(true);
+                onNavigate('/volunteer/scan');
+              },
+              id: 'tab-volunteer-scan'
+            },
+            {
+              label: 'Children',
+              icon: <Users className="w-5 h-5 stroke-[1.75]" />,
+              isActive: cleanRoute === '/volunteer/children',
+              onClick: () => onNavigate('/volunteer/children'),
+              id: 'tab-volunteer-children'
+            },
+            {
+              label: 'Summary',
+              icon: <BarChart3 className="w-5 h-5 stroke-[1.75]" />,
+              isActive: cleanRoute === '/volunteer/reports' || cleanRoute === '/volunteer/summary',
+              onClick: () => onNavigate('/volunteer/reports'),
+              id: 'tab-volunteer-summary'
+            },
+            {
+              label: 'Safety',
+              icon: <ShieldAlert className="w-5 h-5 stroke-[1.75]" />,
+              isActive: cleanRoute === '/volunteer/team-alerts' || cleanRoute === '/volunteer/safety',
+              onClick: () => onNavigate('/volunteer/team-alerts'),
+              id: 'tab-volunteer-safety'
+            },
+          ].map((item) => {
+            return (
+              <button
+                key={item.label}
+                id={item.id}
+                type="button"
+                onClick={item.onClick}
+                className={`flex flex-col items-center justify-center flex-1 py-1.5 rounded-xl transition-all cursor-pointer focus:outline-none ${
+                  item.isActive
+                    ? 'text-[#B89047] dark:text-[#D4AF37] font-semibold'
+                    : 'text-stone-400 dark:text-[#B8B0A5] hover:text-stone-600 dark:hover:text-[#F0EBE3]'
+                }`}
+              >
+                <div
+                  className={`p-1 rounded-lg transition-transform ${
+                    item.isActive ? 'bg-[#FAF6EB] dark:bg-[#262520] scale-110 text-[#C59B27] dark:text-[#D4AF37]' : ''
+                  }`}
+                >
+                  {item.icon}
+                </div>
+                <span className="text-[11px] font-sans mt-0.5 tracking-tight">{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
+      {/* MANUAL LOCATION SELECT MODAL */}
+      {showLocationSelectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div 
+            onClick={() => setShowLocationSelectModal(false)}
+            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity" 
+          />
+          <div className="relative bg-white border border-[#EAE8E1] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col z-10">
+            <div className="flex items-center justify-between pb-3 border-b border-[#F4F3EF]">
+              <h3 className="font-serif font-bold text-base text-[#18181B] flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-[#C59B27]" />
+                <span>Choose your duty location</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowLocationSelectModal(false)}
+                className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 transition-all cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto max-h-[55vh] pr-1 py-1 space-y-2.5">
+              {availableLocations.length === 0 ? (
+                <div className="p-6 text-center text-xs text-zinc-500 font-sans">
+                  No active locations found for this event.
+                </div>
+              ) : (
+                availableLocations.map((loc) => {
+                  const isCurrent = currentDutyLocation?.locationId === loc.id || currentDutyLocation?.id === loc.id;
+                  const subtitle = [
+                    loc.ageGroup || loc.ageGroupKey,
+                    loc.team || loc.teamKey,
+                    !loc.ageGroup && !loc.ageGroupKey && !loc.team && !loc.teamKey ? (loc.type || loc.location_type) : null
+                  ].filter(Boolean).join(' · ');
+
+                  return (
+                    <button
+                      key={loc.id}
+                      type="button"
+                      disabled={presenceActionLoading}
+                      onClick={() => handleSelectManualLocation(loc.id)}
+                      className={`w-full p-4 text-left rounded-2xl border transition-all flex flex-col items-start gap-1 cursor-pointer group ${
+                        isCurrent
+                          ? 'bg-[#FAF6EB] border-[#C59B27] ring-1 ring-[#C59B27]'
+                          : 'bg-white border-[#EAE8E1] hover:border-[#C59B27] hover:bg-[#FAF9F5]'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center w-full">
+                        <span className="font-semibold text-zinc-900 text-sm font-sans group-hover:text-[#C59B27] transition-colors">
+                          {loc.name}
+                        </span>
+                        {isCurrent ? (
+                          <span className="text-[11px] font-sans font-medium text-[#C59B27] bg-white px-2 py-0.5 rounded-full border border-[#C59B27]/30">
+                            Current
+                          </span>
+                        ) : (
+                          <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-[#C59B27] group-hover:translate-x-0.5 transition-all" />
+                        )}
+                      </div>
+                      {subtitle && (
+                        <span className="text-xs text-zinc-500 font-sans">
+                          {subtitle}
+                        </span>
+                      )}
+                      {loc.instructions && (
+                        <p className="text-xs text-zinc-500 font-sans line-clamp-2 mt-0.5 leading-relaxed">
+                          {loc.instructions}
+                        </p>
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-[#F4F3EF]">
+              <button
+                type="button"
+                onClick={() => setShowLocationSelectModal(false)}
+                className="w-full py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-sans font-medium text-xs rounded-xl transition-all cursor-pointer text-center"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DUTY LOCATION DETAILS MODAL */}
+      {showDutyLocationDetailsModal && currentDutyLocation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div
+            onClick={() => setShowDutyLocationDetailsModal(false)}
+            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
+          />
+          <div className="relative bg-white border border-[#EAE8E1] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col z-10">
+            <div className="flex items-center justify-between pb-3 border-b border-[#F4F3EF]">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-[#C59B27]" />
+                <h3 className="font-serif font-bold text-base text-[#18181B]">
+                  Duty Location Details
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDutyLocationDetailsModal(false)}
+                className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 transition-all cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 py-1 text-left">
+              <div>
+                <h4 className="text-lg font-serif font-bold text-zinc-900">
+                  {currentDutyLocation.name || currentDutyLocation.locationName}
+                </h4>
+                <p className="text-xs text-zinc-500 font-sans mt-0.5">
+                  {[
+                    currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey,
+                    currentDutyLocation.type || currentDutyLocation.location_type || 'Room',
+                    currentDutyLocation.capacity ? `Capacity ${currentDutyLocation.capacity}` : null
+                  ].filter(Boolean).join(' · ')}
+                </p>
+              </div>
+
+              {currentDutyLocation.instructions && (
+                <div className="bg-[#FAF9F5] border border-[#EAE8E1] rounded-2xl p-3.5 space-y-1">
+                  <div className="text-xs font-semibold text-zinc-700 font-sans">Instructions & Guidelines</div>
+                  <p className="text-xs text-zinc-600 font-sans leading-relaxed">
+                    {currentDutyLocation.instructions}
+                  </p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3 text-xs font-sans">
+                <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-100">
+                  <div className="text-zinc-400 text-[11px]">Assignment</div>
+                  <div className="font-medium text-zinc-800 mt-0.5">
+                    {currentDutyLocation.isAssignedByAdmin ? 'Assigned by Admin' : 'Self-selected'}
+                  </div>
+                </div>
+                <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-100">
+                  <div className="text-zinc-400 text-[11px]">Duty Presence</div>
+                  <div className="font-medium text-zinc-800 mt-0.5">
+                    {currentDutyLocation.isPresent ? 'On duty' : 'Not confirmed yet'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-[#F4F3EF] flex gap-2">
+              {!currentDutyLocation.isPresent && (
+                <button
+                  type="button"
+                  disabled={presenceActionLoading}
+                  onClick={async () => {
+                    await handleConfirmArrival();
+                    setShowDutyLocationDetailsModal(false);
+                  }}
+                  className="flex-1 py-2.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-medium text-xs rounded-xl shadow-xs transition-all cursor-pointer text-center disabled:opacity-50"
+                >
+                  I'm here
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowDutyLocationDetailsModal(false)}
+                className="flex-1 py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-sans font-medium text-xs rounded-xl transition-all cursor-pointer text-center"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* LOCATION QR SCANNER MODAL */}
+      {showLocationQRModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" data-view-version="event-location-qr-scanner-v1">
+          <div 
+            onClick={() => {
+              stopLocationQRScanning();
+              setShowLocationQRModal(false);
+            }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs" 
+          />
+          <div className="relative bg-zinc-950 border border-zinc-800 rounded-[28px] w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col z-10 text-white overflow-y-auto">
+            <div className="flex items-center justify-between pb-2 border-b border-zinc-850">
+              <h4 className="font-serif font-bold text-base text-white flex items-center gap-2">
+                <QrCode className="w-5 h-5 text-[#C59B27]" />
+                <span>{scannedLocationData ? 'Location Access Verified' : 'Scan Location QR Code'}</span>
+              </h4>
+              <button
+                type="button"
+                onClick={() => {
+                  stopLocationQRScanning();
+                  setScannedLocationData(null);
+                  setShowLocationQRModal(false);
+                }}
+                className="p-1 hover:bg-zinc-900 rounded-lg text-zinc-400 hover:text-white transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {scannedLocationData ? (
+              /* LOCATION VERIFICATION RESULT VIEW */
+              <div className="space-y-4 pt-1">
+                <div className="text-center space-y-1 bg-zinc-900/80 border border-zinc-800 p-4 rounded-2xl">
+                  <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center mx-auto mb-2">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-950/80 px-2.5 py-0.5 rounded-full border border-emerald-800 inline-block">
+                    Verified Duty Location
+                  </span>
+                  <h3 className="text-xl font-serif font-bold text-white pt-1">
+                    {scannedLocationData.location.name}
+                  </h3>
+                  <p className="text-xs text-zinc-400 font-medium">
+                    {scannedLocationData.location.ageGroup || scannedLocationData.location.pathLabel || 'Event Duty Location'}
+                  </p>
+                </div>
+
+                {/* Operational Summary Grid */}
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="bg-zinc-900 border border-zinc-800 p-3 rounded-xl space-y-0.5">
+                    <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider block">Volunteers On Duty</span>
+                    <span className="text-sm font-bold text-white flex items-center gap-1.5">
+                      <Users className="w-4 h-4 text-[#C59B27]" />
+                      {scannedLocationData.operationalSummary?.onDutyCount ?? 0} Active
+                    </span>
+                  </div>
+
+                  <div className="bg-zinc-900 border border-zinc-800 p-3 rounded-xl space-y-0.5">
+                    <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider block">Readiness Status</span>
+                    <span className="text-sm font-bold text-emerald-400 flex items-center gap-1.5">
+                      <Shield className="w-4 h-4 text-emerald-400" />
+                      {scannedLocationData.operationalSummary?.deviceReadiness || 'Ready'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Assignment Info */}
+                <div className="bg-zinc-900/90 border border-zinc-800 p-3.5 rounded-xl space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-[10px] uppercase tracking-wider font-bold text-zinc-400">Duty Assignment</span>
+                    <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+                      scannedLocationData.assignment?.assigned ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-zinc-800 text-zinc-400'
+                    }`}>
+                      {scannedLocationData.assignment?.shiftStatus || 'Active'}
+                    </span>
+                  </div>
+                  <p className="text-xs font-bold text-white">
+                    {scannedLocationData.assignment?.responsibility || 'General Event Duty Response'}
+                  </p>
+                </div>
+
+                {/* Special Instructions */}
+                {scannedLocationData.location?.instructions && (
+                  <div className="bg-amber-950/40 border border-amber-800/50 p-3 rounded-xl text-xs text-amber-200/90 leading-relaxed space-y-0.5">
+                    <span className="font-bold text-[9px] uppercase tracking-wider text-amber-400 block">Duty Instructions:</span>
+                    <p>{scannedLocationData.location.instructions}</p>
+                  </div>
+                )}
+
+                {/* Primary Action Button */}
+                <div className="space-y-2 pt-2 border-t border-zinc-850">
+                  <button
+                    type="button"
+                    disabled={presenceActionLoading}
+                    onClick={handleConfirmArrivalFromQR}
+                    className="w-full py-3 bg-[#C59B27] hover:bg-[#A37E1C] text-white rounded-xl font-bold text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center space-x-2 disabled:opacity-50"
+                  >
+                    {presenceActionLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    <span>Confirm I'm here</span>
+                  </button>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScannedLocationData(null);
+                        startLocationQRScanning();
+                      }}
+                      className="py-2 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                    >
+                      Scan Again
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScannedLocationData(null);
+                        setShowLocationQRModal(false);
+                      }}
+                      className="py-2 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-400 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* SCANNER FEED VIEW */
+              <>
+                <div className="relative w-full aspect-square bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden flex flex-col items-center justify-center">
+                  {isLocationScannerActive ? (
+                    <>
+                      <video 
+                        id="location-scan-video" 
+                        className="absolute inset-0 w-full h-full object-cover" 
+                        playsInline 
+                        muted 
+                      />
+                      {/* Decorative Scan Frame */}
+                      <div className="absolute inset-8 border-2 border-dashed border-[#C59B27] rounded-xl pointer-events-none animate-pulse flex items-center justify-center">
+                        <span className="text-[10px] font-mono text-white/50 bg-black/60 px-2 py-1 rounded">Align QR Code</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="p-6 text-center space-y-3">
+                      <div className="h-12 w-12 rounded-full bg-zinc-800/85 flex items-center justify-center mx-auto text-zinc-400">
+                        <QrCode className="w-6 h-6 animate-pulse text-[#C59B27]" />
+                      </div>
+                      <p className="text-xs text-zinc-400 leading-relaxed max-w-xs mx-auto">
+                        Initializing scanner engine... Please grant camera access if prompted.
+                      </p>
+                    </div>
+                  )}
+                  {locationScannerError && (
+                    <div className="absolute inset-0 bg-zinc-950/95 flex flex-col items-center justify-center text-center p-4 space-y-3">
+                      <AlertTriangle className="w-8 h-8 text-rose-500" />
+                      <span className="text-xs text-rose-400 font-semibold max-w-xs leading-snug">{locationScannerError}</span>
+                      <button
+                        type="button"
+                        onClick={startLocationQRScanning}
+                        className="px-3.5 py-1.5 bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer text-white"
+                      >
+                        Retry Camera
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <p className="text-[11px] text-zinc-400 text-center leading-relaxed max-w-xs mx-auto">
+                  Scan the physical QR label displayed at check-in desk, first-aid point, or room entryway to confirm your active location presence.
+                </p>
+
+                <div className="flex justify-end gap-3.5 pt-2 border-t border-zinc-850">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      stopLocationQRScanning();
+                      setShowLocationQRModal(false);
+                    }}
+                    className="text-xs px-4 py-2 border border-zinc-800 hover:bg-zinc-900 rounded-xl cursor-pointer font-bold text-zinc-300 w-full text-center transition-all"
+                  >
+                    Close Scanner
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      <DeviceSecurityModal
+        isOpen={deviceVerifyActionOpen}
+        onClose={() => {
+          setDeviceVerifyActionOpen(false);
+          setPendingConfirmReleaseChild(null);
+        }}
+        onSuccess={() => {
+          if (pendingConfirmReleaseChild) {
+            handleConfirmRelease(pendingConfirmReleaseChild, true);
+          }
+          setDeviceVerifyActionOpen(false);
+        }}
+        actionName="pickup release confirmation"
+      />
+
+      {/* Device Readiness Modal */}
+      {showReadinessModal && (
+        <div className="fixed inset-0 bg-zinc-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-[#FAF9F5] rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-y-auto relative border border-[#EAE8E1] shadow-2xl animate-fade-in">
+            <button 
+              onClick={() => setShowReadinessModal(false)}
+              className="absolute top-4 right-4 p-2 bg-white border border-[#EAE8E1] hover:bg-zinc-50 text-zinc-500 rounded-full cursor-pointer z-50 transition-all"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <DeviceReadinessView 
+              userRole="volunteer" 
+              volunteerProfile={volunteerProfile}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* SET DUTY LOCATION BOTTOM SHEET */}
+      {showSetLocationSheet && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in">
+          <div 
+            onClick={() => setShowSetLocationSheet(false)} 
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity" 
+          />
+          <div className="relative bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 z-10 animate-slide-up border border-[#EAE8E1]">
+            <div className="w-12 h-1.5 bg-zinc-200 rounded-full mx-auto sm:hidden -mt-1 mb-2" />
+            
+            <div className="flex items-center justify-between pb-3 border-b border-[#F4F3EF]">
+              <div>
+                <h3 className="text-base font-serif font-bold text-[#18181B]">
+                  Choose duty location
+                </h3>
+                <p className="text-xs text-[#71717A] font-sans mt-0.5">
+                  Scan the location code or choose from your event locations.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSetLocationSheet(false)}
+                className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 transition-all cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSetLocationSheet(false);
+                  setShowLocationQRModal(true);
+                  startLocationQRScanning();
+                }}
+                className="w-full p-4 bg-[#FAF9F6] border border-[#EAE8E1] hover:border-[#C59B27] hover:bg-[#FAF6EB]/50 rounded-2xl text-left transition-all cursor-pointer flex items-start space-x-3.5 group"
+              >
+                <div className="w-10 h-10 rounded-xl bg-[#C59B27]/10 text-[#C59B27] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <QrCode className="w-5 h-5" />
+                </div>
+                <div className="space-y-0.5 min-w-0 flex-1">
+                  <span className="font-semibold text-sm text-[#18181B] font-sans block">Scan location QR</span>
+                  <span className="text-xs text-[#71717A] font-sans block">Use the code displayed at your location.</span>
+                </div>
+                <ChevronRight className="w-5 h-5 text-zinc-400 group-hover:text-[#C59B27] shrink-0 self-center" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSetLocationSheet(false);
+                  fetchAvailableLocations();
+                  setShowLocationSelectModal(true);
+                }}
+                className="w-full p-4 bg-[#FAF9F6] border border-[#EAE8E1] hover:border-[#C59B27] hover:bg-[#FAF6EB]/50 rounded-2xl text-left transition-all cursor-pointer flex items-start space-x-3.5 group"
+              >
+                <div className="w-10 h-10 rounded-xl bg-[#C59B27]/10 text-[#C59B27] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <MapPin className="w-5 h-5" />
+                </div>
+                <div className="space-y-0.5 min-w-0 flex-1">
+                  <span className="font-semibold text-sm text-[#18181B] font-sans block">Choose location</span>
+                  <span className="text-xs text-[#71717A] font-sans block">Select from available event locations.</span>
+                </div>
+                <ChevronRight className="w-5 h-5 text-zinc-400 group-hover:text-[#C59B27] shrink-0 self-center" />
+              </button>
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setShowSetLocationSheet(false)}
+                className="w-full py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-sans font-medium text-xs rounded-xl transition-all cursor-pointer text-center"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EVENT DETAILS MODAL */}
+      {showEventDetailsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div 
+            onClick={() => setShowEventDetailsModal(false)} 
+            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity" 
+          />
+          <div className="relative bg-white dark:bg-[#1D1D1A] rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl space-y-6 z-10 border border-[#EAE8E1] dark:border-[#302E29] max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-[#F4F3EF] dark:border-[#302E29]">
+              <h3 className="text-lg font-sans font-semibold text-[#18181B] dark:text-[#F0EBE3]">
+                Event details
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowEventDetailsModal(false)}
+                className="p-1.5 hover:bg-zinc-100 dark:hover:bg-[#262520] rounded-xl text-zinc-400 hover:text-zinc-600 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] transition-all cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-5">
+              <div className="space-y-1">
+                <h2 className="text-xl sm:text-2xl font-serif font-bold text-[#18181B] dark:text-[#F0EBE3] leading-tight">
+                  {eventDetails?.title || 'The General Assembly'}
+                </h2>
+                <p className="text-sm font-sans font-medium text-[#C59B27] dark:text-[#D4AF37]">
+                  {eventDetails?.section_name 
+                    ? eventDetails.section_name.replace(' Ministry', '') 
+                    : 'Children & Teens'}
+                </p>
+              </div>
+
+              <div className="flex items-start space-x-3 text-zinc-700 dark:text-[#B8B0A5] font-sans text-sm">
+                <Calendar className="w-4 h-4 text-[#C59B27] shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <div className="font-medium text-[#18181B] dark:text-[#F0EBE3]">
+                    {formatEventDateRange(eventDetails?.starts_at, eventDetails?.ends_at)}
+                  </div>
+                  <div className="text-xs text-zinc-500 dark:text-[#B8B0A5]">
+                    {eventDetails?.daily_start_time && eventDetails?.daily_end_time 
+                      ? `${eventDetails.daily_start_time} – ${eventDetails.daily_end_time}` 
+                      : '9:00 AM – 7:00 PM'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-start space-x-3 text-zinc-700 dark:text-[#B8B0A5] font-sans text-sm">
+                <MapPin className="w-4 h-4 text-[#C59B27] shrink-0 mt-0.5" />
+                <div className="text-[#18181B] dark:text-[#F0EBE3] font-medium leading-relaxed">
+                  {eventDetails?.location || 'Koinonia Global Auditorium & Children Pavilion, Abuja'}
+                </div>
+              </div>
+
+              <div className="text-xs text-zinc-500 dark:text-[#B8B0A5] font-sans pt-1">
+                Serving with <span className="text-zinc-800 dark:text-[#F0EBE3] font-medium">{teamName || 'General Team'}</span>
+              </div>
+
+              {eventDetails?.description && (
+                <div className="pt-2 border-t border-[#F4F3EF] dark:border-[#302E29] text-xs text-zinc-600 dark:text-[#B8B0A5] font-sans leading-relaxed">
+                  {eventDetails.description}
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setShowEventDetailsModal(false)}
+                className="w-full py-2.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-[#262520] dark:hover:bg-[#2A2926] border border-transparent dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] font-sans font-medium text-xs rounded-xl transition-all cursor-pointer text-center"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PWA In-App Install Banner */}
+      <PwaInstallBanner />
+    </div>
+  );
+};

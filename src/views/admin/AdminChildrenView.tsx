@@ -1,0 +1,2060 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Search, 
+  Users, 
+  Phone, 
+  ArrowLeft, 
+  CheckCircle, 
+  Clock, 
+  AlertTriangle, 
+  UserCheck, 
+  X, 
+  Sparkles,
+  Heart,
+  Calendar,
+  Eye,
+  CameraOff,
+  SlidersHorizontal,
+  MoreVertical,
+  RotateCcw,
+  Check,
+  Trash2,
+  Lock,
+  Unlock,
+  FileClock,
+  RefreshCw,
+  UserX,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight
+} from 'lucide-react';
+import { api, extractApiError } from '../../services/api';
+import { useNotification } from '../../context/NotificationContext';
+import { Button } from '../../components/common/Button';
+import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
+import { AdminReviewChildView } from './AdminReviewChildView';
+import { AddChildModal } from '../../components/admin/modals/AddChildModal';
+import { AdminSelectionCheckbox } from '../../components/common/AdminSelectionCheckbox';
+
+interface AdminChildrenViewProps {
+  onBackToOverview: () => void;
+  adminUser?: any;
+}
+
+export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOverview, adminUser }) => {
+  const isSuperAdmin = adminUser?.role === 'super_admin';
+  const { showError, showSuccess } = useNotification();
+  const [loading, setLoading] = useState(true);
+  const [showAddChildModal, setShowAddChildModal] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState({
+    totalChildren: 0,
+    selected: 0,
+    checkedIn: 0,
+    inside: 0,
+    pickedUp: 0,
+    needsAttention: 0
+  });
+  const [children, setChildren] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState<string>('all');
+  const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(null);
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
+  const [tempFilter, setTempFilter] = useState<string>('all');
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [limit, setLimit] = useState(25);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+
+  // More actions states
+  const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
+
+  const [childToReopen, setChildToReopen] = useState<any | null>(null);
+  const [reopenReason, setReopenReason] = useState('');
+  const [submittingReopen, setSubmittingReopen] = useState(false);
+
+  const [childToRemove, setChildToRemove] = useState<any | null>(null);
+  const [removeReason, setRemoveReason] = useState('');
+  const [submittingRemove, setSubmittingRemove] = useState(false);
+
+  const [childToRevoke, setChildToRevoke] = useState<any | null>(null);
+  const [revokeReason, setRevokeReason] = useState('');
+  const [submittingRevoke, setSubmittingRevoke] = useState(false);
+
+  const [childToRestore, setChildToRestore] = useState<any | null>(null);
+  const [submittingRestore, setSubmittingRestore] = useState(false);
+
+  // Single child permanent delete
+  const [childToPurge, setChildToPurge] = useState<any | null>(null);
+  const [singlePurgeConfirmText, setSinglePurgeConfirmText] = useState('');
+  const [submittingSinglePurge, setSubmittingSinglePurge] = useState(false);
+
+  // Multi-selection states
+  const [selectedChildIds, setSelectedChildIds] = useState<string[]>([]);
+  const [showBulkRemoveModal, setShowBulkRemoveModal] = useState(false);
+  const [bulkRemoveReason, setBulkRemoveReason] = useState('');
+  const [submittingBulkRemove, setSubmittingBulkRemove] = useState(false);
+  const [showBulkRestoreModal, setShowBulkRestoreModal] = useState(false);
+  const [submittingBulkRestore, setSubmittingBulkRestore] = useState(false);
+  const [submittingBulkDecision, setSubmittingBulkDecision] = useState<string | null>(null);
+  const [confirmReviewDecision, setConfirmReviewDecision] = useState<'selected' | 'waiting_list' | 'not_selected' | null>(null);
+  const [bulkMoreDropdownOpen, setBulkMoreDropdownOpen] = useState(false);
+
+  // Bulk Permanent Removal states
+  const [showBulkPurgeModal, setShowBulkPurgeModal] = useState(false);
+  const [purgeReason, setPurgeReason] = useState('');
+  const [purgeConfirmText, setPurgeConfirmText] = useState('');
+  const [submittingPurge, setSubmittingPurge] = useState(false);
+
+  const [submittingActionId, setSubmittingActionId] = useState<string | null>(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleGlobalClick = () => {
+      setActiveDropdownId(null);
+      setBulkMoreDropdownOpen(false);
+    };
+    window.addEventListener('click', handleGlobalClick);
+    return () => window.removeEventListener('click', handleGlobalClick);
+  }, []);
+
+  // Debounce search query
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
+    }, 400);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  // Reset page and clear selection when filtering or searching
+  useEffect(() => {
+    setCurrentPage(1);
+    setSelectedChildIds([]);
+  }, [debouncedQuery, activeFilter]);
+
+  useEffect(() => {
+    setSelectedChildIds([]);
+  }, [currentPage]);
+
+  const fetchChildren = async (pageToFetch = currentPage) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.admin.getChildren({
+        page: pageToFetch,
+        limit,
+        q: debouncedQuery,
+        filter: activeFilter === 'all' ? '' : activeFilter
+      });
+      if (res.success) {
+        setChildren(res.children || []);
+        if (res.stats) {
+          setStats(res.stats);
+        }
+        if (res.pagination) {
+          setCurrentPage(res.pagination.page);
+          setTotalPages(res.pagination.pages || 1);
+          setTotalCount(res.pagination.total || 0);
+        }
+      } else {
+        setError('We could not load child records right now. Please try again.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError('We could not load child records right now. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchChildren(currentPage);
+  }, [debouncedQuery, activeFilter, currentPage]);
+
+  const handleClearFilters = () => {
+    setSearchQuery('');
+    setActiveFilter('all');
+  };
+
+  // List actions implementations
+  const handleSelectChild = async (applicationId: string) => {
+    setSubmittingActionId(applicationId + '-select');
+    try {
+      const res = await api.admin.reviewApplication(applicationId, {
+        status: 'selected',
+        sendNotification: true
+      });
+      if (res.success) {
+        showSuccess('Child Approved', 'The child application has been approved and registered.');
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Action Failed', err.message || 'Could not approve child.');
+    } finally {
+      setSubmittingActionId(null);
+    }
+  };
+
+  const handleDeclineChild = async (applicationId: string) => {
+    setSubmittingActionId(applicationId + '-decline');
+    try {
+      const res = await api.admin.reviewApplication(applicationId, {
+        status: 'not_selected',
+        sendNotification: true
+      });
+      if (res.success) {
+        showSuccess('Application Declined', 'The child application status has been updated.');
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Action Failed', err.message || 'Could not update status.');
+    } finally {
+      setSubmittingActionId(null);
+    }
+  };
+
+  const handleWaitlistChild = async (applicationId: string) => {
+    setSubmittingActionId(applicationId + '-waitlist');
+    try {
+      const res = await api.admin.reviewApplication(applicationId, {
+        status: 'waiting_list',
+        sendNotification: true
+      });
+      if (res.success) {
+        showSuccess('Waitlisted', 'The child application has been placed on the waiting list.');
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Action Failed', err.message || 'Could not update status.');
+    } finally {
+      setSubmittingActionId(null);
+    }
+  };
+
+  const handleGeneratePass = async (childId: string) => {
+    setSubmittingActionId(childId + '-pass');
+    try {
+      const res = await api.admin.generateChildPass(childId);
+      if (res.success) {
+        showSuccess('Pass Issued', 'The digital event pass has been successfully generated.');
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Action Failed', err.message || 'Could not generate event pass.');
+    } finally {
+      setSubmittingActionId(null);
+    }
+  };
+
+  const isAllVisibleSelected = children.length > 0 && children.every(c => selectedChildIds.includes(c.applicationId));
+  const isSomeVisibleSelected = children.some(c => selectedChildIds.includes(c.applicationId));
+  const isIndeterminate = isSomeVisibleSelected && !isAllVisibleSelected;
+
+  const toggleSelectAllVisible = () => {
+    if (isAllVisibleSelected) {
+      setSelectedChildIds([]);
+    } else {
+      setSelectedChildIds(children.map(c => c.applicationId));
+    }
+  };
+
+  const toggleSelectChild = (id: string) => {
+    if (selectedChildIds.includes(id)) {
+      setSelectedChildIds(selectedChildIds.filter(i => i !== id));
+    } else {
+      setSelectedChildIds([...selectedChildIds, id]);
+    }
+  };
+
+  const isRemovedTab = activeFilter === 'removed';
+  const selectedChildren = children.filter(c => selectedChildIds.includes(c.applicationId));
+  const totalSelected = selectedChildren.length;
+
+  const attendanceProtectedChildren = selectedChildren.filter(c => 
+    !c.isDeleted && ['checked_in', 'inside', 'picked_up'].includes(c.entryStatus)
+  );
+  const attendanceProtectedCount = attendanceProtectedChildren.length;
+
+  const reviewEligibleChildren = selectedChildren.filter(c => 
+    !c.isDeleted && !['checked_in', 'inside', 'picked_up'].includes(c.entryStatus)
+  );
+  const reviewEligibleCount = reviewEligibleChildren.length;
+
+  const removeEligibleChildren = selectedChildren.filter(c => 
+    !c.isDeleted && !['checked_in', 'inside'].includes(c.entryStatus)
+  );
+  const removeEligibleCount = removeEligibleChildren.length;
+
+  const canRestore = isRemovedTab && selectedChildren.length > 0 && selectedChildren.every(c => c.isDeleted);
+  const canPurge = isRemovedTab && isSuperAdmin && selectedChildren.length > 0;
+
+  const handleBulkReviewDecision = async (decision: 'selected' | 'waiting_list' | 'not_selected') => {
+    const eligibleIds = reviewEligibleChildren.map(c => c.applicationId);
+
+    if (eligibleIds.length === 0) {
+      showError('Cannot update', 'None of the selected children are eligible for registration review.');
+      return;
+    }
+
+    setSubmittingBulkDecision(decision);
+    try {
+      const res = await api.admin.bulkReviewApplications({
+        applicationIds: eligibleIds,
+        decision
+      });
+      if (res.success) {
+        const actionText = decision === 'selected' ? 'selected for the event' : decision === 'waiting_list' ? 'moved to the waiting list' : 'marked as not selected';
+        let msg = `${eligibleIds.length} ${eligibleIds.length === 1 ? 'child' : 'children'} ${actionText}.`;
+        if (attendanceProtectedCount > 0) {
+          msg += ` ${attendanceProtectedCount} ${attendanceProtectedCount === 1 ? 'child was' : 'children were'} not changed because they are currently attending.`;
+        }
+        showSuccess('Review updated', msg);
+        setSelectedChildIds([]);
+        await fetchChildren();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Review failed', parsed.message);
+    } finally {
+      setSubmittingBulkDecision(null);
+    }
+  };
+
+  const handleBulkRemoveSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedChildIds.length === 0 || !bulkRemoveReason.trim()) return;
+    setSubmittingBulkRemove(true);
+    try {
+      const res = await api.admin.bulkRemoveChildren(selectedChildIds, bulkRemoveReason);
+      if (res.success) {
+        if (res.result?.skipped > 0 && res.result?.failures?.length > 0) {
+          const failureMsgs = res.result.failures.map((f: any) => f.reason).join('; ');
+          showError('Partial Removal Result', `${res.result.removed} removed. ${res.result.skipped} skipped: ${failureMsgs}`);
+        } else {
+          showSuccess('Children Removed', `${res.result?.removed || selectedChildIds.length} children removed from active event records.`);
+        }
+        if (res.summary) {
+          setStats(res.summary);
+        }
+        setShowBulkRemoveModal(false);
+        setBulkRemoveReason('');
+        setSelectedChildIds([]);
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Bulk Removal Failed', err.message || 'Could not remove selected children.');
+    } finally {
+      setSubmittingBulkRemove(false);
+    }
+  };
+
+  const handleBulkRestoreSubmit = async () => {
+    if (selectedChildIds.length === 0) return;
+    setSubmittingBulkRestore(true);
+    try {
+      const res = await api.admin.bulkRestoreChildren(selectedChildIds);
+      if (res.success) {
+        showSuccess('Children Restored', `${res.restoredCount || selectedChildIds.length} children restored successfully.`);
+        if (res.summary) {
+          setStats(res.summary);
+        }
+        setShowBulkRestoreModal(false);
+        setSelectedChildIds([]);
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Bulk Restore Failed', err.message || 'Could not restore selected children.');
+    } finally {
+      setSubmittingBulkRestore(false);
+    }
+  };
+
+  const handleSinglePurgeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!childToPurge || singlePurgeConfirmText.trim() !== 'DELETE' || submittingSinglePurge) return;
+    setSubmittingSinglePurge(true);
+    try {
+      const res = await api.admin.permanentlyDeleteChild(childToPurge.applicationId, 'Single permanent deletion by Super Admin', 'DELETE');
+      if (res.success) {
+        showSuccess('Child permanently deleted', `${childToPurge.fullName} was permanently deleted.`);
+        setChildToPurge(null);
+        setSinglePurgeConfirmText('');
+        if (res.summary) {
+          setStats(res.summary);
+        }
+        fetchChildren();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Permanent delete failed', parsed.message || "We couldn't permanently delete this child. Nothing was changed.");
+    } finally {
+      setSubmittingSinglePurge(false);
+    }
+  };
+
+  const handleBulkPurgeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const confirmationIsValid = purgeConfirmText.trim() === 'DELETE';
+    if (selectedChildIds.length === 0 || !confirmationIsValid || submittingPurge) return;
+    setSubmittingPurge(true);
+    try {
+      const res = await api.admin.bulkPurgeChildren(selectedChildIds, 'Bulk permanent deletion by Super Admin', 'DELETE');
+      if (res.success) {
+        const removed = res.result?.permanentlyRemoved || 0;
+        const retained = res.result?.retained || 0;
+        if (retained > 0 && removed > 0) {
+          showSuccess('Permanent deletion complete', `${removed} ${removed === 1 ? 'child' : 'children'} permanently deleted. ${retained} ${retained === 1 ? 'child was' : 'children were'} not changed because they are currently attending.`);
+        } else if (removed > 0) {
+          showSuccess('Permanent deletion complete', `${removed} ${removed === 1 ? 'child' : 'children'} permanently deleted.`);
+        } else {
+          showError('Records retained', `0 children deleted. ${retained} ${retained === 1 ? 'child was' : 'children were'} not changed because they are currently attending.`);
+        }
+
+        if (res.summary) {
+          setStats(res.summary);
+        }
+        setShowBulkPurgeModal(false);
+        setPurgeReason('');
+        setPurgeConfirmText('');
+        setSelectedChildIds([]);
+        fetchChildren();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Permanent delete failed', parsed.message || "We couldn't permanently delete selected children. Nothing was changed.");
+    } finally {
+      setSubmittingPurge(false);
+    }
+  };
+
+  const handleRestoreChildSubmit = async () => {
+    if (!childToRestore) return;
+    setSubmittingRestore(true);
+    try {
+      const res = await api.admin.restoreChild(childToRestore.applicationId);
+      if (res.success) {
+        showSuccess('Child Restored', 'The child record has been successfully restored.');
+        if (res.summary) {
+          setStats(res.summary);
+        }
+        setChildToRestore(null);
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Action Failed', err.message || 'Could not restore child.');
+    } finally {
+      setSubmittingRestore(false);
+    }
+  };
+
+  const handleReopenReviewSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!childToReopen) return;
+    setSubmittingReopen(true);
+    try {
+      const res = await api.admin.reopenApplicationReview(childToReopen.applicationId, reopenReason);
+      if (res.success) {
+        showSuccess('Review Reopened', 'The child application review has been reopened.');
+        setChildToReopen(null);
+        setReopenReason('');
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Action Failed', err.message || 'Could not reopen review.');
+    } finally {
+      setSubmittingReopen(false);
+    }
+  };
+
+  const handleRemoveChildSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!childToRemove) return;
+    setSubmittingRemove(true);
+    try {
+      const res = await api.admin.removeChild(childToRemove.applicationId, removeReason);
+      if (res.success) {
+        showSuccess('Child Removed', 'The child record has been removed from active event records.');
+        if (res.summary) {
+          setStats(res.summary);
+        }
+        setChildToRemove(null);
+        setRemoveReason('');
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Action Failed', err.message || 'Could not remove child.');
+    } finally {
+      setSubmittingRemove(false);
+    }
+  };
+
+  const handleRevokePassSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!childToRevoke) return;
+    setSubmittingRevoke(true);
+    try {
+      const res = await api.admin.revokeChildPass(childToRevoke.childId, revokeReason);
+      if (res.success) {
+        showSuccess('Pass Revoked', 'The digital event pass has been revoked.');
+        setChildToRevoke(null);
+        setRevokeReason('');
+        fetchChildren();
+      }
+    } catch (err: any) {
+      showError('Action Failed', err.message || 'Could not revoke pass.');
+    } finally {
+      setSubmittingRevoke(false);
+    }
+  };
+
+  if (selectedApplicationId) {
+    return (
+      <AdminReviewChildView
+        applicationId={selectedApplicationId}
+        onBack={() => setSelectedApplicationId(null)}
+        onSave={() => {
+          setSelectedApplicationId(null);
+          fetchChildren();
+        }}
+      />
+    );
+  }
+
+  // Render status badge helpers
+  const getReviewStatusBadge = (status: string) => {
+    switch (status) {
+      case 'selected':
+      case 'pass_ready':
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-900/40">
+            Selected
+          </span>
+        );
+      case 'under_review':
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-200/60 dark:border-amber-900/40">
+            Under review
+          </span>
+        );
+      case 'waiting_list':
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-zinc-100 dark:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] border border-zinc-200 dark:border-[#3A3835]">
+            Waiting list
+          </span>
+        );
+      case 'not_selected':
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-100 dark:border-red-900/40">
+            Needs attention
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-zinc-50 dark:bg-[#262520] text-zinc-500 dark:text-[#7A7570] border border-zinc-100 dark:border-[#302E29]">
+            {status}
+          </span>
+        );
+    }
+  };
+
+  const getEntryStatusBadge = (status: string) => {
+    if (status === 'checked_in') {
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+          <CheckCircle className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" />
+          Checked in
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-zinc-400 dark:text-[#7A7570]">
+        <Clock className="w-3.5 h-3.5" />
+        Not arrived
+      </span>
+    );
+  };
+
+  const getPickupStatusBadge = (status: string) => {
+    switch (status) {
+      case 'inside':
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-transparent dark:border-amber-900/40">
+            Inside
+          </span>
+        );
+      case 'picked_up':
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-zinc-100 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] border border-transparent dark:border-[#3A3835]">
+            Picked up
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-zinc-50 dark:bg-[#262520]/60 text-zinc-400 dark:text-[#7A7570] border border-transparent dark:border-[#302E29]">
+            Not arrived
+          </span>
+        );
+    }
+  };
+
+  const getTodayStatusText = (entryStatus: string, pickupStatus: string) => {
+    if (entryStatus === 'checked_in') {
+      if (pickupStatus === 'inside') {
+        return 'Checked in · Inside';
+      } else if (pickupStatus === 'picked_up') {
+        return 'Checked in · Picked up';
+      }
+      return 'Checked in';
+    }
+    return 'Not arrived';
+  };
+
+  return (
+    <div 
+      className="space-y-6 animate-fade-in"
+      data-view-version="admin-children-records-v2-mobile-refined"
+    >
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#EAE8E1] dark:border-[#302E29] pb-5">
+        <div className="space-y-1">
+          <div className="flex items-center space-x-2">
+            <button 
+              onClick={onBackToOverview}
+              className="text-zinc-400 hover:text-[#18181B] dark:text-[#7A7570] dark:hover:text-[#F0EBE3] p-1 rounded-lg transition-colors cursor-pointer"
+              title="Back to overview"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+          </div>
+          <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
+            Children
+          </h1>
+          <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] font-medium">
+            View each child’s review status, entry status, pickup status, parent, pickup person, and care notes.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => setShowAddChildModal(true)}
+            variant="primary"
+            className="text-xs px-4 py-2 flex items-center space-x-1.5 font-semibold"
+          >
+            <Users className="w-4 h-4" />
+            <span>Add child</span>
+          </Button>
+          <Button
+            onClick={onBackToOverview}
+            variant="secondary"
+            className="text-xs px-4 py-2 font-medium"
+          >
+            Back to overview
+          </Button>
+        </div>
+      </div>
+
+      {/* METRIC SUMMARIES */}
+      <div 
+        className="grid grid-cols-2 lg:grid-cols-5 gap-4"
+        data-component-version="admin-children-stats-v1"
+      >
+        {[
+          { label: 'Children', value: stats.totalChildren, color: 'border-[#EAE8E1] dark:border-[#302E29] text-[#18181B] dark:text-[#F0EBE3]' },
+          { label: 'Selected', value: stats.selected, color: 'border-emerald-100 dark:border-emerald-900/40 text-[#18181B] dark:text-[#F0EBE3]' },
+          { label: 'Checked in', value: stats.checkedIn, color: 'border-teal-100 dark:border-teal-900/40 text-[#18181B] dark:text-[#F0EBE3]' },
+          { label: 'Inside', value: stats.inside, color: 'border-[#C59B27]/20 dark:border-[#C59B27]/30 text-[#18181B] dark:text-[#F0EBE3]' },
+          { label: 'Picked up', value: stats.pickedUp, color: 'border-zinc-200 dark:border-[#3A3835] text-zinc-500 dark:text-[#7A7570]' }
+        ].map((card, idx) => (
+          <div 
+            key={idx}
+            className={`bg-white dark:bg-[#21211E] border rounded-2xl p-4 space-y-1.5 shadow-2xs ${card.color}`}
+          >
+            <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
+              {card.label}
+            </span>
+            <div className="text-2xl font-semibold text-[#18181B] dark:text-[#F0EBE3] tracking-tight">
+              {card.value}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* SEARCH AND FILTERS (MOBILE & DESKTOP SPLIT) */}
+      <div className="space-y-4">
+        {/* DESKTOP SEARCH AND FILTERS */}
+        <div 
+          className="hidden lg:block bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 space-y-4 shadow-2xs"
+          data-component-version="admin-children-search-filters-v1"
+        >
+          <div className="relative">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 dark:text-[#7A7570]" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search child, parent, or phone number"
+              className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl pl-10 pr-4 py-2.5 text-xs text-[#18181B] dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-hidden focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] transition-all font-medium"
+            />
+            {searchQuery && (
+              <button 
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-[#18181B] dark:text-[#7A7570] dark:hover:text-[#F0EBE3] p-0.5 rounded-full hover:bg-zinc-100 dark:hover:bg-[#2A2926] transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Filters */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center text-xs font-medium text-zinc-500 dark:text-[#7A7570]">
+              Filters:
+            </div>
+            <div className="flex flex-wrap gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+              {[
+                { id: 'all', label: 'All' },
+                { id: 'inside', label: 'Inside' },
+                { id: 'not_arrived', label: 'Not arrived' },
+                { id: 'picked_up', label: 'Picked up' },
+                { id: 'medical_note', label: 'Medical note' },
+                { id: 'missing_pickup_photo', label: 'Missing pickup photo' },
+                { id: 'below_event_age', label: 'Below event age' },
+                { id: 'special_support', label: 'Special support' },
+                { id: 'removed', label: 'Removed' }
+              ].map((f) => {
+                const active = activeFilter === f.id;
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => setActiveFilter(f.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all whitespace-nowrap cursor-pointer ${
+                      active
+                        ? 'bg-[#C59B27]/5 dark:bg-amber-950/30 text-[#C59B27] dark:text-amber-400 border-[#C59B27]/30 dark:border-amber-900/50 font-semibold'
+                        : 'bg-[#FAF9F6] dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] border-[#EAE8E1] dark:border-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#2A2926] hover:text-[#18181B] dark:hover:text-[#F0EBE3]'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* MOBILE SEARCH AND COMPACT FILTER BUTTON */}
+        <div 
+          className="lg:hidden flex flex-col sm:flex-row gap-3 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 shadow-2xs"
+          data-component-version="admin-children-mobile-filters-v1"
+        >
+          <div className="relative flex-1">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 dark:text-[#7A7570]" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search child, parent, or phone number"
+              className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl pl-10 pr-4 py-2.5 text-xs text-[#18181B] dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-hidden focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] transition-all font-medium"
+            />
+            {searchQuery && (
+              <button 
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-[#18181B] dark:text-[#7A7570] dark:hover:text-[#F0EBE3] p-0.5 rounded-full hover:bg-zinc-100 dark:hover:bg-[#2A2926] transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setTempFilter(activeFilter);
+              setIsFilterSheetOpen(true);
+            }}
+            data-component-version="admin-children-mobile-filter-trigger-v1"
+            className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+              activeFilter !== 'all'
+                ? 'bg-[#C59B27]/5 dark:bg-amber-950/30 text-[#C59B27] dark:text-amber-400 border-[#C59B27]/30 dark:border-amber-900/50 font-bold'
+                : 'bg-[#FAF9F6] dark:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] border-[#EAE8E1] dark:border-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#2A2926]'
+            }`}
+          >
+            <SlidersHorizontal className="w-4 h-4" />
+            <span>Filter</span>
+            {activeFilter !== 'all' && (
+              <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-[#C59B27] text-white rounded-full leading-none font-bold">
+                1
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* ERROR OR LOADING OR DATA */}
+      {loading ? (
+        <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-8 text-center shadow-2xs">
+          <KoinoniaInlineLoader
+            variant="skeleton"
+            size="lg"
+            label="Loading child records..."
+            centered
+          />
+        </div>
+      ) : error ? (
+        <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-8 text-center shadow-2xs space-y-3">
+          <AlertTriangle className="w-8 h-8 text-rose-500 mx-auto" />
+          <p className="text-xs text-rose-700 dark:text-rose-400 font-medium">{error}</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => fetchChildren()}>
+            Try again
+          </Button>
+        </div>
+      ) : children.length === 0 ? (
+        <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-12 text-center shadow-2xs space-y-3">
+          <Users className="w-10 h-10 text-zinc-300 dark:text-[#5A5550] mx-auto" />
+          <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] font-medium">No child records found for this filter.</p>
+          {(searchQuery || activeFilter !== 'all') && (
+            <Button type="button" variant="outline" size="sm" onClick={handleClearFilters}>
+              Reset search filters
+            </Button>
+          )}
+        </div>
+      ) : (
+        <>
+          {/* Contextual Action Bar */}
+          {selectedChildIds.length > 0 && (
+            <div className="bg-[#FAF9F5] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs animate-fade-in mb-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] whitespace-nowrap">
+                  {selectedChildIds.length} selected
+                </span>
+                {!isRemovedTab && attendanceProtectedCount > 0 && (
+                  <>
+                    <div className="h-4 w-px bg-[#EAE8E1] dark:bg-[#302E29] hidden sm:block" />
+                    <span className="text-zinc-500 dark:text-[#B8B0A5] font-medium">
+                      {reviewEligibleCount > 0 
+                        ? `${reviewEligibleCount} can be updated · ${attendanceProtectedCount} currently attending`
+                        : `${attendanceProtectedCount} currently attending and won't be changed`
+                      }
+                    </span>
+                  </>
+                )}
+                {isRemovedTab && (
+                  <>
+                    <div className="h-4 w-px bg-[#EAE8E1] dark:bg-[#302E29] hidden sm:block" />
+                    <span className="text-zinc-500 dark:text-[#B8B0A5] font-medium">
+                      {selectedChildIds.length} removed {selectedChildIds.length === 1 ? 'record' : 'records'}
+                    </span>
+                  </>
+                )}
+                <div className="h-4 w-px bg-[#EAE8E1] dark:bg-[#302E29] hidden sm:block" />
+                <div className="flex flex-wrap items-center gap-2">
+                  {!isRemovedTab ? (
+                    <>
+                      {reviewEligibleCount > 0 && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmReviewDecision('selected')}
+                            disabled={submittingBulkDecision !== null}
+                            className="px-3.5 py-1.5 rounded-xl bg-[#C59B27] text-white font-medium hover:bg-[#b08a23] transition-colors focus:outline-none disabled:opacity-50 cursor-pointer"
+                          >
+                            Select for event
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmReviewDecision('waiting_list')}
+                            disabled={submittingBulkDecision !== null}
+                            className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] font-medium hover:bg-zinc-50 dark:hover:bg-[#2A2926] transition-colors focus:outline-none disabled:opacity-50 cursor-pointer"
+                          >
+                            Move to waiting list
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmReviewDecision('not_selected')}
+                            disabled={submittingBulkDecision !== null}
+                            className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] font-medium hover:bg-zinc-50 dark:hover:bg-[#2A2926] transition-colors focus:outline-none disabled:opacity-50 cursor-pointer"
+                          >
+                            Not selected
+                          </button>
+                        </>
+                      )}
+                      {removeEligibleCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowBulkRemoveModal(true)}
+                          className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-[#262520] border border-red-200 dark:border-red-900/40 text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors focus:outline-none cursor-pointer"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      {canRestore && (
+                        <button
+                          type="button"
+                          onClick={() => setShowBulkRestoreModal(true)}
+                          className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors focus:outline-none cursor-pointer"
+                        >
+                          Restore
+                        </button>
+                      )}
+                      {canPurge && (
+                        <div className="relative inline-block text-left" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => setBulkMoreDropdownOpen(!bulkMoreDropdownOpen)}
+                            className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] font-medium hover:bg-zinc-50 dark:hover:bg-[#2A2926] transition-colors focus:outline-none cursor-pointer flex items-center gap-1"
+                          >
+                            <span>More</span>
+                            <ChevronDown className="w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570]" />
+                          </button>
+                          {bulkMoreDropdownOpen && (
+                            <div className="absolute left-0 mt-1 w-44 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl shadow-lg py-1 z-30 animate-fade-in text-left">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setBulkMoreDropdownOpen(false);
+                                  setShowBulkPurgeModal(true);
+                                }}
+                                className="w-full text-left px-3.5 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                                <span>Delete permanently</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedChildIds([])}
+                className="text-zinc-500 hover:text-[#18181B] dark:text-[#7A7570] dark:hover:text-[#F0EBE3] text-xs font-medium underline-offset-4 hover:underline transition-colors cursor-pointer"
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
+
+          {/* DESKTOP TABLE */}
+          <div 
+            className="hidden lg:block bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl overflow-hidden shadow-2xs"
+            data-component-version="admin-children-table-v1"
+            data-component-version-extra="admin-child-list-v3-actions"
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-[#FAF9F6] dark:bg-[#21211E] border-b border-[#EAE8E1] dark:border-[#302E29] text-xs font-medium text-zinc-500 dark:text-[#7A7570]">
+                    <th className="py-3 px-3 w-10 text-center">
+                      <AdminSelectionCheckbox
+                        checked={isAllVisibleSelected}
+                        indeterminate={isIndeterminate}
+                        onChange={toggleSelectAllVisible}
+                        ariaLabel="Select all visible children"
+                      />
+                    </th>
+                    <th className="py-3 px-4">Child</th>
+                    <th className="py-3 px-4">Age</th>
+                    <th className="py-3 px-4">Group</th>
+                    <th className="py-3 px-4">Parent</th>
+                    <th className="py-3 px-4">Pickup person</th>
+                    <th className="py-3 px-4 text-center">Review</th>
+                    <th className="py-3 px-4">Entry</th>
+                    <th className="py-3 px-4">Pickup</th>
+                    <th className="py-3 px-4 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 dark:divide-[#302E29] text-xs text-zinc-600 dark:text-[#B8B0A5]">
+                  {children.map((c) => (
+                    <tr 
+                      key={c.id}
+                      className={`hover:bg-[#FAF9F6]/40 dark:hover:bg-[#262520]/50 transition-colors ${selectedChildIds.includes(c.applicationId) ? 'bg-[#FAF8F2] dark:bg-amber-950/20' : ''} ${c.isDeleted ? 'opacity-70 bg-zinc-50/50 dark:bg-[#1D1D1A]/50' : ''}`}
+                    >
+                      <td className="py-3 px-3 w-10 text-center" onClick={(e) => e.stopPropagation()}>
+                        <AdminSelectionCheckbox
+                          checked={selectedChildIds.includes(c.applicationId)}
+                          onChange={() => toggleSelectChild(c.applicationId)}
+                          ariaLabel={`Select ${c.fullName}`}
+                        />
+                      </td>
+                      {/* Child info */}
+                      <td className="py-3 px-4">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-8 h-8 bg-zinc-50 dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-lg overflow-hidden shrink-0 flex items-center justify-center relative">
+                            {c.photoUrl ? (
+                              <img 
+                                src={c.photoUrl} 
+                                alt={c.fullName} 
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <Users className="w-4 h-4 text-zinc-300 dark:text-[#5A5550]" />
+                            )}
+                          </div>
+                          <div>
+                            <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3] hover:text-[#C59B27] cursor-pointer" onClick={() => setSelectedApplicationId(c.applicationId)}>
+                              {c.fullName}
+                            </span>
+                            {/* Warnings / Badges */}
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {c.isDeleted && (
+                                <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/40">
+                                  Removed
+                                </span>
+                              )}
+                              {c.flags?.includes('medical_notes') && (
+                                <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-rose-50 dark:bg-red-950/30 text-rose-600 dark:text-red-400 border border-rose-100 dark:border-red-900/40">
+                                  Medical
+                                </span>
+                              )}
+                              {c.flags?.includes('special_support') && (
+                                <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-900/40">
+                                  Support
+                                </span>
+                              )}
+                              {c.flags?.includes('needs_age_review') && (
+                                <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-[#C59B27]/5 dark:bg-amber-950/30 text-[#C59B27] dark:text-amber-400 border border-[#C59B27]/20 dark:border-amber-900/40">
+                                  Age review
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Age */}
+                      <td className="py-3 px-4 font-medium text-zinc-500 dark:text-[#B8B0A5]">
+                        {c.ageLabel}, {c.gender === 'Female' ? 'F' : 'M'}
+                      </td>
+
+                      {/* Group */}
+                      <td className="py-3 px-4">
+                        <span className="inline-block px-2 py-0.5 text-[10px] font-semibold text-[#C59B27] dark:text-amber-400 bg-[#C59B27]/5 dark:bg-amber-950/30 border border-[#C59B27]/10 dark:border-amber-900/40 rounded">
+                          {c.ageGroup}
+                        </span>
+                      </td>
+
+                      {/* Parent */}
+                      <td className="py-3 px-4">
+                        <div className="space-y-0.5">
+                          <p className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">{c.parentName}</p>
+                          <p className="text-xs text-zinc-400 dark:text-[#7A7570]">{c.parentPhone}</p>
+                        </div>
+                      </td>
+
+                      {/* Pickup Person */}
+                      <td className="py-3 px-4">
+                        {c.pickupPersonName ? (
+                          <div className="flex items-center space-x-2">
+                            <div className="w-5 h-5 bg-zinc-50 dark:bg-[#262520] border border-zinc-100 dark:border-[#3A3835] rounded-full overflow-hidden shrink-0 flex items-center justify-center">
+                              {c.pickupPersonPhotoUrl ? (
+                                <img 
+                                  src={c.pickupPersonPhotoUrl} 
+                                  alt={c.pickupPersonName} 
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <Users className="w-2.5 h-2.5 text-zinc-300 dark:text-[#5A5550]" />
+                              )}
+                            </div>
+                            <span className="font-medium text-zinc-700 dark:text-[#F0EBE3]">{c.pickupPersonName}</span>
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-rose-500 dark:text-red-400">
+                            <CameraOff className="w-3 h-3" />
+                            Missing
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Review status */}
+                      <td className="py-3 px-4 text-center">
+                        {getReviewStatusBadge(c.reviewStatus)}
+                      </td>
+
+                      {/* Entry status */}
+                      <td className="py-3 px-4">
+                        {getEntryStatusBadge(c.entryStatus)}
+                      </td>
+
+                      {/* Pickup status */}
+                      <td className="py-3 px-4">
+                        {getPickupStatusBadge(c.pickupStatus)}
+                      </td>
+
+                      {/* Action */}
+                      <td className="py-3 px-4 text-right relative">
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            onClick={() => setSelectedApplicationId(c.applicationId)}
+                            className="p-1.5 hover:bg-zinc-50 dark:hover:bg-[#262520] rounded-lg text-zinc-400 dark:text-[#7A7570] hover:text-[#C59B27] dark:hover:text-[#C59B27] transition-all cursor-pointer"
+                            title="View Details"
+                            data-component-version="admin-child-view-action-v2"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+
+                          <div className="relative inline-block text-left">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveDropdownId(activeDropdownId === c.applicationId ? null : c.applicationId);
+                              }}
+                              className="p-1.5 hover:bg-zinc-50 dark:hover:bg-[#262520] rounded-lg text-zinc-400 hover:text-zinc-600 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] transition-all cursor-pointer focus:outline-none"
+                              title="More Actions"
+                              id={`child-more-actions-trigger-${c.applicationId}`}
+                              data-component-version="admin-child-more-actions-v2"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
+
+                            {activeDropdownId === c.applicationId && (
+                              <div 
+                                className="absolute right-0 mt-2 w-56 rounded-2xl bg-[#FFFDF9] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] shadow-xl z-50 py-1.5 text-left focus:outline-none animate-fade-in"
+                                data-view-version="admin-children-v4-actions-management"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <div className="px-3 py-1 border-b border-zinc-100 dark:border-[#302E29] mb-1">
+                                  <span className="text-[11px] font-medium text-zinc-400 dark:text-[#7A7570] block">Child management</span>
+                                  <span className="text-xs font-semibold text-zinc-800 dark:text-[#F0EBE3] truncate block max-w-[200px]">{c.fullName}</span>
+                                </div>
+
+                                {c.isDeleted ? (
+                                  <>
+                                    <button
+                                      onClick={() => {
+                                        setChildToRestore(c);
+                                        setActiveDropdownId(null);
+                                      }}
+                                      className="w-full text-left px-3.5 py-2 text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 hover:text-emerald-700 transition-all flex items-center gap-2 cursor-pointer"
+                                    >
+                                      <RotateCcw className="w-3.5 h-3.5 shrink-0" /> Restore child
+                                    </button>
+                                    {isSuperAdmin && (
+                                      <>
+                                        <div className="h-px bg-zinc-100 dark:bg-[#302E29] my-1" />
+                                        <button
+                                          onClick={() => {
+                                            setChildToPurge(c);
+                                            setSinglePurgeConfirmText('');
+                                            setActiveDropdownId(null);
+                                          }}
+                                          className="w-full text-left px-3.5 py-2 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-700 transition-all flex items-center gap-2 cursor-pointer"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5 shrink-0" /> Delete permanently
+                                        </button>
+                                      </>
+                                    )}
+                                  </>
+                                ) : (
+                                  <>
+                                    {c.reviewStatus !== 'selected' && c.reviewStatus !== 'pass_ready' && (
+                                      <button
+                                        onClick={() => {
+                                          handleSelectChild(c.applicationId);
+                                          setActiveDropdownId(null);
+                                        }}
+                                        disabled={submittingActionId !== null}
+                                        className="w-full text-left px-3.5 py-2 text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 hover:text-emerald-700 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                                      >
+                                        <Check className="w-3.5 h-3.5 shrink-0" /> Select child
+                                      </button>
+                                    )}
+
+                                    {c.reviewStatus !== 'not_selected' && (
+                                      <button
+                                        onClick={() => {
+                                          handleDeclineChild(c.applicationId);
+                                          setActiveDropdownId(null);
+                                        }}
+                                        disabled={submittingActionId !== null}
+                                        className="w-full text-left px-3.5 py-2 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-700 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                                      >
+                                        <UserX className="w-3.5 h-3.5 shrink-0" /> Mark as not selected
+                                      </button>
+                                    )}
+
+                                    {c.reviewStatus !== 'waiting_list' && (
+                                      <button
+                                        onClick={() => {
+                                          handleWaitlistChild(c.applicationId);
+                                          setActiveDropdownId(null);
+                                        }}
+                                        disabled={submittingActionId !== null}
+                                        className="w-full text-left px-3.5 py-2 text-xs font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 hover:text-amber-700 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                                      >
+                                        <Clock className="w-3.5 h-3.5 shrink-0" /> Add to waiting list
+                                      </button>
+                                    )}
+
+                                    {c.reviewStatus !== 'under_review' && (
+                                      <button
+                                        onClick={() => {
+                                          setChildToReopen(c);
+                                          setActiveDropdownId(null);
+                                        }}
+                                        className="w-full text-left px-3.5 py-2 text-xs font-medium text-zinc-600 dark:text-[#B8B0A5] hover:bg-zinc-50 dark:hover:bg-[#262520] hover:text-zinc-800 dark:hover:text-[#F0EBE3] transition-all flex items-center gap-2 cursor-pointer"
+                                      >
+                                        <FileClock className="w-3.5 h-3.5 shrink-0" /> Reopen review
+                                      </button>
+                                    )}
+
+                                    {c.reviewStatus === 'selected' && (
+                                      <button
+                                        onClick={() => {
+                                          handleGeneratePass(c.childId);
+                                          setActiveDropdownId(null);
+                                        }}
+                                        disabled={submittingActionId !== null}
+                                        className="w-full text-left px-3.5 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                                      >
+                                        <Sparkles className="w-3.5 h-3.5 shrink-0" /> Generate pass
+                                      </button>
+                                    )}
+
+                                    {c.reviewStatus === 'pass_ready' && (
+                                      <button
+                                        onClick={() => {
+                                          setChildToRevoke(c);
+                                          setActiveDropdownId(null);
+                                        }}
+                                        className="w-full text-left px-3.5 py-2 text-xs font-semibold text-rose-700 dark:text-red-400 hover:bg-rose-50 dark:hover:bg-red-950/30 transition-all flex items-center gap-2 cursor-pointer"
+                                      >
+                                        <Lock className="w-3.5 h-3.5 shrink-0" /> Revoke pass
+                                      </button>
+                                    )}
+
+                                    <div className="h-px bg-zinc-100 dark:bg-[#302E29] my-1" />
+
+                                    <button
+                                      onClick={() => {
+                                        setChildToRemove(c);
+                                        setActiveDropdownId(null);
+                                      }}
+                                      className="w-full text-left px-3.5 py-2 text-xs font-medium text-zinc-500 dark:text-[#7A7570] hover:bg-zinc-100 dark:hover:bg-[#262520] hover:text-zinc-700 dark:hover:text-[#F0EBE3] transition-all flex items-center gap-2 cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5 shrink-0" /> Remove child
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* MOBILE RESPONSIVE CARDS */}
+          <div 
+            className="lg:hidden space-y-4"
+            data-component-version="admin-children-mobile-cards-v2-human"
+          >
+            {children.map((c) => (
+              <div 
+                key={c.id}
+                className={`bg-[#FAF9F6] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 space-y-3.5 shadow-xs ${c.isDeleted ? 'opacity-70 bg-zinc-50/50 dark:bg-[#1D1D1A]/50' : ''}`}
+              >
+                {/* Header info */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center space-x-3 min-w-0">
+                    <div className="w-10 h-10 bg-zinc-50 dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl overflow-hidden shrink-0 flex items-center justify-center">
+                      {c.photoUrl ? (
+                        <img 
+                          src={c.photoUrl} 
+                          alt={c.fullName} 
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <Users className="w-5 h-5 text-zinc-300 dark:text-[#5A5550]" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <h4 className="font-semibold text-sm text-[#18181B] dark:text-[#F0EBE3] truncate">
+                        {c.fullName}
+                      </h4>
+                      <p className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium">
+                        Age {c.ageLabel} • {c.gender}
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    {getReviewStatusBadge(c.reviewStatus)}
+                  </div>
+                </div>
+
+                {/* Tags / Badges if any */}
+                <div className="flex flex-wrap gap-1">
+                  {c.isDeleted && (
+                    <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/40">
+                      Removed
+                    </span>
+                  )}
+                  {c.flags?.includes('medical_notes') && (
+                    <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-rose-50 dark:bg-red-950/30 text-rose-600 dark:text-red-400 border border-rose-100 dark:border-red-900/40">
+                      Medical note
+                    </span>
+                  )}
+                  {c.flags?.includes('special_support') && (
+                    <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-900/40">
+                      Special support
+                    </span>
+                  )}
+                  {c.flags?.includes('needs_age_review') && (
+                    <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-[#C59B27]/5 dark:bg-amber-950/30 text-[#C59B27] dark:text-amber-400 border border-[#C59B27]/20 dark:border-amber-900/40">
+                      Below event age
+                    </span>
+                  )}
+                </div>
+
+                {/* Main Details (Subtle, Human Layout) */}
+                <div className="space-y-2.5 text-xs text-zinc-600 dark:text-[#B8B0A5]">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium">Age group</span>
+                    <span className="font-semibold text-zinc-700 dark:text-[#F0EBE3]">{c.ageGroup}</span>
+                  </div>
+                  <div className="flex items-baseline justify-between border-t border-zinc-100 dark:border-[#302E29] pt-2.5">
+                    <span className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium">Parent</span>
+                    <span className="font-semibold text-zinc-700 dark:text-[#F0EBE3]">{c.parentName}</span>
+                  </div>
+                  <div className="flex items-baseline justify-between border-t border-zinc-100 dark:border-[#302E29] pt-2.5">
+                    <span className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium">Today</span>
+                    <span className="font-semibold text-[#C59B27] dark:text-amber-400">{getTodayStatusText(c.entryStatus, c.pickupStatus)}</span>
+                  </div>
+                  <div className="flex items-baseline justify-between border-t border-zinc-100 dark:border-[#302E29] pt-2.5">
+                    <span className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium">Pickup</span>
+                    <span className="font-semibold text-zinc-700 dark:text-[#F0EBE3]">
+                      {c.pickupPersonName || (
+                        <span className="text-rose-500 dark:text-red-400 font-medium">No pickup person assigned</span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                {/* View Details action */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  fullWidth
+                  onClick={() => setSelectedApplicationId(c.applicationId)}
+                  className="py-2 text-xs font-semibold border-zinc-200 dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-700 dark:text-[#F0EBE3] hover:text-[#C59B27] dark:hover:text-[#C59B27] transition-colors"
+                >
+                  View details
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          {/* PAGINATION CONTROLS */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between border-t border-[#EAE8E1] dark:border-[#302E29] px-4 py-4 sm:px-6 bg-white dark:bg-[#1D1D1A] rounded-b-2xl mt-4">
+              <div className="flex flex-1 justify-between sm:hidden">
+                <Button
+                  onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1 || loading}
+                  className="text-xs bg-white dark:bg-[#262520] text-zinc-700 dark:text-[#F0EBE3] hover:bg-zinc-50 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835]"
+                >
+                  Previous
+                </Button>
+                <Button
+                  onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages || loading}
+                  className="text-xs bg-white dark:bg-[#262520] text-zinc-700 dark:text-[#F0EBE3] hover:bg-zinc-50 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835]"
+                >
+                  Next
+                </Button>
+              </div>
+              <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs text-zinc-500 dark:text-[#7A7570]">
+                    Showing <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">{((currentPage - 1) * limit) + 1}</span> to{' '}
+                    <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">
+                      {Math.min(currentPage * limit, totalCount)}
+                    </span>{' '}
+                    of <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">{totalCount}</span> results
+                  </p>
+                </div>
+                <div>
+                  <nav className="isolate inline-flex -space-x-px rounded-md shadow-xs" aria-label="Pagination">
+                    <button
+                      onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1 || loading}
+                      className="relative inline-flex items-center rounded-l-md px-2 py-2 text-zinc-400 dark:text-[#7A7570] ring-1 ring-inset ring-[#EAE8E1] dark:ring-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#262520] focus:z-20 focus:outline-offset-0 disabled:opacity-50 cursor-pointer"
+                    >
+                      <span className="sr-only">Previous</span>
+                      <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => setCurrentPage(p)}
+                        className={`relative inline-flex items-center px-4 py-2 text-xs font-semibold focus:z-20 cursor-pointer ${
+                          currentPage === p
+                            ? 'z-10 bg-[#C59B27] text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C59B27]'
+                            : 'text-zinc-600 dark:text-[#B8B0A5] ring-1 ring-inset ring-[#EAE8E1] dark:ring-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#262520] focus:outline-offset-0'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages || loading}
+                      className="relative inline-flex items-center rounded-r-md px-2 py-2 text-zinc-400 dark:text-[#7A7570] ring-1 ring-inset ring-[#EAE8E1] dark:ring-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#262520] focus:z-20 focus:outline-offset-0 disabled:opacity-50 cursor-pointer"
+                    >
+                      <span className="sr-only">Next</span>
+                      <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </nav>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* MOBILE FILTER SHEET */}
+      {isFilterSheetOpen && (
+        <div 
+          className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center p-0 sm:p-4 bg-black/40 backdrop-blur-xs animate-fade-in"
+          data-component-version="admin-children-mobile-filter-sheet-v1"
+        >
+          {/* Backdrop Click Dismiss */}
+          <div className="absolute inset-0" onClick={() => setIsFilterSheetOpen(false)} />
+
+          {/* Sheet Body */}
+          <div className="relative bg-[#FAF9F6] dark:bg-[#21211E] w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border-t sm:border border-[#EAE8E1] dark:border-[#302E29] shadow-2xl p-5 space-y-5 animate-slide-up sm:animate-zoom-in max-h-[85vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1] dark:border-[#302E29]">
+              <h3 className="text-base font-semibold text-[#18181B] dark:text-[#F0EBE3]">
+                Filter child records
+              </h3>
+              <button 
+                onClick={() => setIsFilterSheetOpen(false)}
+                className="text-zinc-400 hover:text-zinc-600 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] p-1 rounded-full hover:bg-zinc-100 dark:hover:bg-[#2A2926] transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Content Filters */}
+            <div className="space-y-4 text-xs">
+              {/* Group 1: Review and Entry */}
+              <div className="space-y-2">
+                <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
+                  Review and entry
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'all', label: 'All' },
+                    { id: 'inside', label: 'Inside' },
+                    { id: 'not_arrived', label: 'Not arrived' },
+                    { id: 'picked_up', label: 'Picked up' }
+                  ].map((f) => {
+                    const isSelected = tempFilter === f.id;
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setTempFilter(f.id)}
+                        className={`p-2.5 rounded-xl border text-left font-medium transition-all ${
+                          isSelected
+                            ? 'bg-[#C59B27]/5 text-[#C59B27] border-[#C59B27] font-bold dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/50'
+                            : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50 dark:bg-[#262520] dark:text-[#B8B0A5] dark:border-[#3A3835] dark:hover:bg-[#2A2926]'
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Group 2: Care and Attention */}
+              <div className="space-y-2">
+                <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
+                  Care and attention
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'medical_note', label: 'Medical note' },
+                    { id: 'missing_pickup_photo', label: 'Missing pickup photo' },
+                    { id: 'below_event_age', label: 'Below event age' },
+                    { id: 'special_support', label: 'Special support' },
+                    { id: 'removed', label: 'Removed' }
+                  ].map((f) => {
+                    const isSelected = tempFilter === f.id;
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setTempFilter(f.id)}
+                        className={`p-2.5 rounded-xl border text-left font-medium transition-all ${
+                          isSelected
+                            ? 'bg-[#C59B27]/5 text-[#C59B27] border-[#C59B27] font-bold dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/50'
+                            : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50 dark:bg-[#262520] dark:text-[#B8B0A5] dark:border-[#3A3835] dark:hover:bg-[#2A2926]'
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-[#EAE8E1] dark:border-[#302E29]">
+              <button
+                type="button"
+                onClick={() => {
+                  setTempFilter('all');
+                  setActiveFilter('all');
+                  setIsFilterSheetOpen(false);
+                }}
+                className="py-2.5 rounded-xl border border-zinc-200 text-zinc-600 font-semibold hover:bg-zinc-50 dark:border-[#3A3835] dark:text-[#B8B0A5] dark:hover:bg-[#262520] transition-colors"
+              >
+                Clear filters
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveFilter(tempFilter);
+                  setIsFilterSheetOpen(false);
+                }}
+                className="py-2.5 rounded-xl bg-[#C59B27] text-white font-semibold hover:bg-[#C59B27]/90 transition-colors shadow-sm"
+              >
+                Apply filters
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Child Reopen Review Confirmation Modal */}
+      {childToReopen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" id="confirm-reopen-child-review-modal">
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setChildToReopen(null)} />
+          <div className="relative bg-[#FFFDF9] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center space-x-2 text-[#C59B27] dark:text-amber-400">
+              <FileClock className="w-5 h-5 shrink-0" />
+              <h3 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3]">Reopen review</h3>
+            </div>
+            
+            <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+              Are you sure you want to reopen the review process for <strong>{childToReopen.fullName}</strong>?
+            </p>
+            <p className="text-xs text-zinc-500 dark:text-[#7A7570] leading-relaxed">
+              The child profile status will be set back to <strong>Under Review</strong>, allowing team members to make a new registration decision.
+            </p>
+
+            <form onSubmit={handleReopenReviewSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-zinc-600 dark:text-[#B8B0A5] block">Reason (optional)</label>
+                <textarea
+                  value={reopenReason}
+                  onChange={(e) => setReopenReason(e.target.value)}
+                  placeholder="Explain why the review is being reopened..."
+                  className="w-full h-16 px-3 py-2 text-xs border border-zinc-200 dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] dark:focus:border-amber-400/50 transition-all resize-none placeholder-zinc-400 dark:placeholder-[#7A7570] text-zinc-700 dark:text-[#F0EBE3]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+                <Button
+                  type="button"
+                  onClick={() => setChildToReopen(null)}
+                  variant="secondary"
+                  className="px-4 py-2 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  loading={submittingReopen}
+                  disabled={submittingReopen}
+                  className="px-5 py-2 text-xs bg-[#C59B27] hover:bg-[#B89047] hover:text-white border-none text-white font-semibold rounded-xl cursor-pointer"
+                  id="confirm-reopen-child-review-btn"
+                >
+                  Reopen review
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Child Confirmation Modal */}
+      {childToRemove && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" 
+          id="confirm-remove-child-modal"
+          data-component-version="admin-child-remove-v5-safe"
+        >
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setChildToRemove(null)} />
+          <div className="relative bg-[#FFFDF9] dark:bg-[#21211E] border border-zinc-200 dark:border-[#302E29] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            {/* Safe audit and error tracking proof markers */}
+            <div className="hidden" aria-hidden="true">
+              <span data-component-version="admin-audit-activity-storage-v1" />
+              <span data-component-version="admin-child-remove-error-v2-safe" />
+              <span data-component-version="admin-child-remove-safe-error-v1" />
+            </div>
+
+            <div className="flex items-center space-x-2 text-red-600 dark:text-red-400">
+              <Trash2 className="w-5 h-5 shrink-0" />
+              <h3 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3]">Remove child record</h3>
+            </div>
+            
+            <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+              Are you sure you want to remove and archive <strong>{childToRemove.fullName}</strong> from active event registration?
+            </p>
+            <div className="text-xs bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-300 p-3 rounded-xl border border-red-100 dark:border-red-900/40 space-y-1">
+              <span className="font-semibold block">⚠️ Important Information:</span>
+              <ul className="list-disc pl-4 text-[11px] space-y-0.5 text-red-600 dark:text-red-400">
+                <li>This child will be removed and excluded from active event rosters.</li>
+                <li>Admins can view and restore this child record anytime from the Removed tab.</li>
+              </ul>
+            </div>
+
+            <form onSubmit={handleRemoveChildSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-zinc-600 dark:text-[#B8B0A5] block">Reason for removal (required)</label>
+                <textarea
+                  required
+                  value={removeReason}
+                  onChange={(e) => setRemoveReason(e.target.value)}
+                  placeholder="Explain why this child registration is being removed..."
+                  className="w-full h-16 px-3 py-2 text-xs border border-zinc-200 dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] rounded-xl focus:outline-none focus:ring-2 focus:ring-red-600/10 focus:border-red-400 dark:focus:border-red-400/50 transition-all resize-none placeholder-zinc-400 dark:placeholder-[#7A7570] text-zinc-700 dark:text-[#F0EBE3]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+                <Button
+                  type="button"
+                  onClick={() => setChildToRemove(null)}
+                  variant="secondary"
+                  className="px-4 py-2 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  loading={submittingRemove}
+                  disabled={submittingRemove || !removeReason.trim()}
+                  className="px-5 py-2 text-xs bg-red-600 hover:bg-red-700 hover:text-white border-none text-white font-semibold rounded-xl cursor-pointer disabled:opacity-50"
+                  id="confirm-remove-child-btn"
+                >
+                  Remove child
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Revoke Child Pass Confirmation Modal */}
+      {childToRevoke && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" id="confirm-revoke-child-pass-modal">
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setChildToRevoke(null)} />
+          <div className="relative bg-[#FFFDF9] dark:bg-[#21211E] border border-zinc-200 dark:border-[#302E29] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center space-x-2 text-rose-700 dark:text-red-400">
+              <Lock className="w-5 h-5 shrink-0" />
+              <h3 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3]">Revoke event pass</h3>
+            </div>
+            
+            <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+              Are you sure you want to revoke the digital event pass for <strong>{childToRevoke.fullName}</strong>?
+            </p>
+            <p className="text-xs text-zinc-500 dark:text-[#7A7570] leading-relaxed">
+              The digital pass reference will be disabled. It will no longer scan validly at check-in terminals, and parents will see that the pass has been withdrawn.
+            </p>
+
+            <form onSubmit={handleRevokePassSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-zinc-600 dark:text-[#B8B0A5] block">Reason for revocation (required)</label>
+                <textarea
+                  required
+                  value={revokeReason}
+                  onChange={(e) => setRevokeReason(e.target.value)}
+                  placeholder="Specify the reason for revoking this digital event pass..."
+                  className="w-full h-16 px-3 py-2 text-xs border border-zinc-200 dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-600/10 focus:border-rose-400 dark:focus:border-red-400/50 transition-all resize-none placeholder-zinc-400 dark:placeholder-[#7A7570] text-zinc-700 dark:text-[#F0EBE3]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+                <Button
+                  type="button"
+                  onClick={() => setChildToRevoke(null)}
+                  variant="secondary"
+                  className="px-4 py-2 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  loading={submittingRevoke}
+                  disabled={submittingRevoke || !revokeReason.trim()}
+                  className="px-5 py-2 text-xs bg-rose-700 hover:bg-rose-800 hover:text-white border-none text-white font-semibold rounded-xl cursor-pointer disabled:opacity-50"
+                  id="confirm-revoke-child-pass-btn"
+                >
+                  Revoke pass
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Restore Child Confirmation Modal */}
+      {childToRestore && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" id="confirm-restore-child-modal">
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setChildToRestore(null)} />
+          <div className="relative bg-[#FFFDF9] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center space-x-2 text-emerald-600 dark:text-emerald-400">
+              <RotateCcw className="w-5 h-5 shrink-0 animate-spin-reverse" />
+              <h3 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3]">Restore child record</h3>
+            </div>
+            
+            <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+              Are you sure you want to restore the child record of <strong>{childToRestore.fullName}</strong>?
+            </p>
+            <p className="text-xs text-zinc-500 dark:text-[#7A7570] leading-relaxed">
+              This will return the child registration profile to active review status.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+              <Button
+                type="button"
+                onClick={() => setChildToRestore(null)}
+                variant="secondary"
+                className="px-4 py-2 text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleRestoreChildSubmit}
+                loading={submittingRestore}
+                disabled={submittingRestore}
+                className="px-5 py-2 text-xs bg-emerald-600 hover:bg-emerald-700 hover:text-white border-none text-white font-semibold rounded-xl cursor-pointer"
+                id="confirm-restore-child-btn"
+              >
+                Restore child
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Removal Confirmation Modal */}
+      {showBulkRemoveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in font-sans" id="confirm-bulk-remove-modal">
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setShowBulkRemoveModal(false)} />
+          <div className="relative bg-[#FFFDF9] dark:bg-[#21211E] border border-zinc-200 dark:border-[#302E29] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center space-x-2 text-rose-600 dark:text-red-400">
+              <Trash2 className="w-5 h-5 shrink-0" />
+              <h3 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3]">Bulk remove ({selectedChildIds.length}) children</h3>
+            </div>
+            
+            <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+              Are you sure you want to remove <strong>{selectedChildIds.length}</strong> selected child registrations?
+            </p>
+            <div className="text-xs bg-rose-50 dark:bg-red-950/20 text-rose-800 dark:text-red-300 p-3 rounded-xl border border-rose-100 dark:border-red-900/40 space-y-1">
+              <span className="font-semibold block">⚠️ Data integrity & safeguarding note:</span>
+              <ul className="list-disc pl-4 text-[11px] space-y-0.5 text-rose-700 dark:text-red-400">
+                <li>Selected children will be removed and excluded from active attendance counts.</li>
+                <li>Checked-in children will be safely skipped to prevent attendance discrepancy.</li>
+                <li>Historical audit logs, attendance history, and safeguarding records remain fully intact.</li>
+              </ul>
+            </div>
+
+            <form onSubmit={handleBulkRemoveSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-zinc-600 dark:text-[#B8B0A5] block">Reason for bulk removal (required)</label>
+                <textarea
+                  required
+                  value={bulkRemoveReason}
+                  onChange={(e) => setBulkRemoveReason(e.target.value)}
+                  placeholder="Provide an audit reason for bulk removing these child records..."
+                  className="w-full h-20 px-3 py-2 text-xs border border-zinc-200 dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-600/10 focus:border-rose-400 dark:focus:border-red-400/50 transition-all resize-none placeholder-zinc-400 dark:placeholder-[#7A7570] text-zinc-700 dark:text-[#F0EBE3]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+                <Button
+                  type="button"
+                  onClick={() => setShowBulkRemoveModal(false)}
+                  variant="secondary"
+                  className="px-4 py-2 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  loading={submittingBulkRemove}
+                  disabled={submittingBulkRemove || !bulkRemoveReason.trim()}
+                  className="px-5 py-2 text-xs bg-rose-600 hover:bg-rose-700 hover:text-white border-none text-white font-semibold rounded-xl cursor-pointer disabled:opacity-50"
+                  id="confirm-bulk-remove-btn"
+                >
+                  Remove {selectedChildIds.length} children
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Review Decision Confirmation Modal */}
+      {confirmReviewDecision && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in font-sans" id="confirm-review-decision-modal">
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setConfirmReviewDecision(null)} />
+          <div className="relative bg-[#FFFDF9] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <h3 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3]">
+              {confirmReviewDecision === 'selected'
+                ? `Select ${reviewEligibleCount} ${reviewEligibleCount === 1 ? 'child' : 'children'} for the event?`
+                : confirmReviewDecision === 'waiting_list'
+                ? `Move ${reviewEligibleCount} ${reviewEligibleCount === 1 ? 'child' : 'children'} to waiting list?`
+                : `Mark ${reviewEligibleCount} ${reviewEligibleCount === 1 ? 'child' : 'children'} as not selected?`
+              }
+            </h3>
+
+            {attendanceProtectedCount > 0 ? (
+              <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+                {attendanceProtectedCount} selected {attendanceProtectedCount === 1 ? 'child is' : 'children are'} currently attending and will not be changed.
+              </p>
+            ) : (
+              <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+                This will update the registration review status for {reviewEligibleCount} selected {reviewEligibleCount === 1 ? 'child' : 'children'}.
+              </p>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+              <Button
+                type="button"
+                onClick={() => setConfirmReviewDecision(null)}
+                variant="secondary"
+                className="px-4 py-2 text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={submittingBulkDecision !== null}
+                onClick={async () => {
+                  const dec = confirmReviewDecision;
+                  setConfirmReviewDecision(null);
+                  await handleBulkReviewDecision(dec);
+                }}
+                className={`px-5 py-2 text-xs text-white font-semibold rounded-xl cursor-pointer ${
+                  confirmReviewDecision === 'selected'
+                    ? 'bg-[#C59B27] hover:bg-[#b08a23]'
+                    : confirmReviewDecision === 'waiting_list'
+                    ? 'bg-zinc-800 hover:bg-zinc-900 dark:bg-[#302E29] dark:hover:bg-[#3A3835]'
+                    : 'bg-zinc-700 hover:bg-zinc-800 dark:bg-[#262520] dark:hover:bg-[#302E29]'
+                }`}
+              >
+                {confirmReviewDecision === 'selected'
+                  ? (submittingBulkDecision === 'selected' ? 'Selecting…' : `Select ${reviewEligibleCount} ${reviewEligibleCount === 1 ? 'child' : 'children'}`)
+                  : confirmReviewDecision === 'waiting_list'
+                  ? (submittingBulkDecision === 'waiting_list' ? 'Moving…' : `Move ${reviewEligibleCount} ${reviewEligibleCount === 1 ? 'child' : 'children'}`)
+                  : (submittingBulkDecision === 'not_selected' ? 'Updating…' : `Mark ${reviewEligibleCount} ${reviewEligibleCount === 1 ? 'child' : 'children'}`)
+                }
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Single Child Permanent Delete Modal */}
+      {childToPurge && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in font-sans" id="confirm-single-purge-modal">
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setChildToPurge(null)} />
+          <div className="relative bg-[#FFFDF9] dark:bg-[#21211E] border border-red-200 dark:border-red-900/30 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center space-x-2 text-red-600 dark:text-red-400">
+              <Trash2 className="w-5 h-5 shrink-0" />
+              <h3 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3]">
+                Delete {childToPurge.fullName} permanently?
+              </h3>
+            </div>
+
+            <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+              Their profile and associated personal information will be permanently removed and cannot be restored.
+            </p>
+
+            <form onSubmit={handleSinglePurgeSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-zinc-600 dark:text-[#B8B0A5] block">
+                  Type <span className="font-mono font-bold text-red-600 dark:text-red-400">DELETE</span> to continue
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={singlePurgeConfirmText}
+                  onChange={(e) => setSinglePurgeConfirmText(e.target.value)}
+                  placeholder="DELETE"
+                  className="w-full px-3 py-2 text-xs border border-zinc-200 dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] rounded-xl focus:outline-none focus:ring-2 focus:ring-red-600/10 focus:border-red-400 dark:focus:border-red-400/50 transition-all text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] font-mono"
+                  id="single-purge-confirm-input"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+                <Button
+                  type="button"
+                  onClick={() => setChildToPurge(null)}
+                  variant="secondary"
+                  className="px-4 py-2 text-xs"
+                >
+                  Cancel
+                </Button>
+                <button
+                  type="submit"
+                  disabled={submittingSinglePurge || singlePurgeConfirmText.trim() !== 'DELETE'}
+                  className="px-5 py-2 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
+                  id="confirm-single-purge-btn"
+                >
+                  {submittingSinglePurge ? 'Deleting…' : 'Delete permanently'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Permanent Deletion Modal */}
+      {showBulkPurgeModal && (() => {
+        const confirmationIsValid = purgeConfirmText.trim() === 'DELETE';
+        const selectedRecords = children.filter(c => selectedChildIds.includes(c.applicationId));
+        const ineligibleRecords = selectedRecords.filter(c => 
+          ['checked_in', 'inside', 'picked_up'].includes(c.entryStatus) ||
+          c.checkedInAt != null ||
+          c.pickedUpAt != null
+        );
+        const eligibleCount = selectedRecords.length - ineligibleRecords.length;
+        const canSubmit = selectedChildIds.length > 0 && confirmationIsValid && !submittingPurge && (selectedRecords.length === 0 || eligibleCount > 0);
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in font-sans" id="confirm-bulk-purge-modal">
+            <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setShowBulkPurgeModal(false)} />
+            <div className="relative bg-[#FFFDF9] dark:bg-[#21211E] border border-red-200 dark:border-red-900/30 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+              <div className="flex items-center space-x-2 text-red-600 dark:text-red-400">
+                <Trash2 className="w-5 h-5 shrink-0" />
+                <h3 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3]">
+                  Delete {selectedChildIds.length} children permanently?
+                </h3>
+              </div>
+
+              <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+                Their profiles and associated personal information will be permanently removed and cannot be restored.
+              </p>
+
+              {ineligibleRecords.length > 0 && (
+                <div className="text-xs bg-amber-50/80 dark:bg-amber-950/20 text-amber-900 dark:text-amber-300 p-3 rounded-xl border border-amber-200/70 dark:border-amber-900/40 leading-relaxed">
+                  <span className="font-semibold block mb-0.5">Live attendance protected:</span>
+                  {ineligibleRecords.length} selected {ineligibleRecords.length === 1 ? 'child is' : 'children are'} currently attending and will not be changed.
+                </div>
+              )}
+
+              <form onSubmit={handleBulkPurgeSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-zinc-600 dark:text-[#B8B0A5] block">
+                    Type <span className="font-mono font-bold text-red-600 dark:text-red-400">DELETE</span> to continue
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={purgeConfirmText}
+                    onChange={(e) => setPurgeConfirmText(e.target.value)}
+                    placeholder="DELETE"
+                    className="w-full px-3 py-2 text-xs border border-zinc-200 dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] rounded-xl focus:outline-none focus:ring-2 focus:ring-red-600/10 focus:border-red-400 dark:focus:border-red-400/50 transition-all text-zinc-800 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] font-mono"
+                    id="bulk-purge-confirm-input"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+                  <Button
+                    type="button"
+                    onClick={() => setShowBulkPurgeModal(false)}
+                    variant="secondary"
+                    className="px-4 py-2 text-xs"
+                  >
+                    Cancel
+                  </Button>
+                  <button
+                    type="submit"
+                    disabled={!canSubmit}
+                    id="confirm-bulk-purge-btn"
+                    className="px-5 py-2 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
+                  >
+                    {submittingPurge ? 'Deleting…' : 'Delete permanently'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Bulk Restore Confirmation Modal */}
+      {showBulkRestoreModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in font-sans" id="confirm-bulk-restore-modal">
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setShowBulkRestoreModal(false)} />
+          <div className="relative bg-[#FFFDF9] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center space-x-2 text-emerald-600 dark:text-emerald-400">
+              <RotateCcw className="w-5 h-5 shrink-0 animate-spin-reverse" />
+              <h3 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3]">Bulk restore ({selectedChildIds.length}) children</h3>
+            </div>
+            
+            <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+              Are you sure you want to restore <strong>{selectedChildIds.length}</strong> removed child registrations?
+            </p>
+            <p className="text-xs text-zinc-500 dark:text-[#7A7570] leading-relaxed">
+              Restoring these child records will return their registration statuses to Under Review and update all active platform statistics immediately.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+              <Button
+                type="button"
+                onClick={() => setShowBulkRestoreModal(false)}
+                variant="secondary"
+                className="px-4 py-2 text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleBulkRestoreSubmit}
+                loading={submittingBulkRestore}
+                disabled={submittingBulkRestore}
+                className="px-5 py-2 text-xs bg-emerald-600 hover:bg-emerald-700 hover:text-white border-none text-white font-semibold rounded-xl cursor-pointer"
+                id="confirm-bulk-restore-btn"
+              >
+                Restore {selectedChildIds.length} children
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Child Modal */}
+      <AddChildModal
+        isOpen={showAddChildModal}
+        onClose={() => setShowAddChildModal(false)}
+        onSuccess={() => fetchChildren()}
+      />
+    </div>
+  );
+};

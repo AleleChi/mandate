@@ -1,0 +1,85 @@
+import React, { useState, useEffect } from 'react';
+import { ShieldCheck, Heart, MapPin } from 'lucide-react';
+import { BrandLogo } from './BrandLogo';
+import { buildApiUrl } from '../../utils/urlHelper';
+
+export const Footer: React.FC = () => {
+  const [copyright, setCopyright] = useState({
+    copyrightYear: 2026,
+    copyrightText: 'Koinonia Children and Teens. All rights reserved.'
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    fetch(buildApiUrl('/api/admin/footer-settings'))
+      .then((res) => res.json())
+      .then((data) => {
+        if (isMounted && data && data.success && data.settings) {
+          setCopyright(data.settings);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load footer copyright settings:', err);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  return (
+    <footer className="bg-[#141416] text-[#A1A1AA] border-t border-[#C59B27]/20 pt-16 pb-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-10 pb-12 border-b border-white/10">
+        <div className="flex flex-col space-y-4">
+          <BrandLogo
+            context="compact"
+            className="flex items-center"
+          />
+          <p className="text-sm leading-relaxed text-[#D4AF37]/90 font-medium">
+            Official Parent Access, staff, and admin platform for managing children and teens access for major Koinonia events.
+          </p>
+          <p className="text-xs text-[#71717A]">
+            Photos, pickup details, passes, entry, and pickup are checked with care.
+          </p>
+        </div>
+
+        <div className="flex flex-col space-y-3">
+          <h4 className="text-sm font-semibold text-white tracking-wider uppercase">Parent Access Protocol</h4>
+          <ul className="text-xs space-y-2.5">
+            <li className="flex items-center">
+              <ShieldCheck className="w-4 h-4 mr-2 text-[#C59B27]" />
+              Strict identity & photo verification
+            </li>
+            <li className="flex items-center">
+              <ShieldCheck className="w-4 h-4 mr-2 text-[#C59B27]" />
+              Designated guardian pickup release only
+            </li>
+            <li className="flex items-center">
+              <ShieldCheck className="w-4 h-4 mr-2 text-[#C59B27]" />
+              Vetted care team & stewards on site
+            </li>
+          </ul>
+        </div>
+
+        <div className="flex flex-col space-y-3">
+          <h4 className="text-sm font-semibold text-white tracking-wider uppercase">Event Location & Care</h4>
+          <p className="text-xs text-[#A1A1AA] flex items-start leading-relaxed">
+            <MapPin className="w-4 h-4 mr-2 text-[#C59B27] shrink-0 mt-0.5" />
+            Koinonia Global Auditorium & Children Pavilion, Abuja.
+          </p>
+          <p className="text-xs text-[#A1A1AA] pt-2">
+            Need parent access assistance? Contact the Protocol & Care desk.
+          </p>
+        </div>
+      </div>
+      <div className="max-w-7xl mx-auto pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-[#71717A]">
+        <p>© {copyright.copyrightYear} {copyright.copyrightText}</p>
+        <div className="flex items-center space-x-6 mt-4 sm:mt-0">
+          <a href="/child-safety" className="hover:text-white transition-colors duration-200">Child Safety Policy</a>
+          <a href="/terms" className="hover:text-white transition-colors duration-200">Parent Terms</a>
+          <a href="/privacy" className="hover:text-white transition-colors duration-200">Privacy Notice</a>
+          <a href="/contact" className="hover:text-white transition-colors duration-200">Contact Us</a>
+        </div>
+      </div>
+    </footer>
+  );
+};

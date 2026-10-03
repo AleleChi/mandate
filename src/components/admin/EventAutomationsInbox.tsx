@@ -1,0 +1,354 @@
+import React, { useEffect, useState, useMemo } from 'react';
+import { RefreshCw, SlidersHorizontal, Lock, ArrowRight } from 'lucide-react';
+import { api } from '../../services/api';
+import { AutomationDetailModal, AutomationRecordItem } from './AutomationDetailModal';
+import { GroupedDetailModal } from './GroupedDetailModal';
+import { FullEventWatchModal } from './FullEventWatchModal';
+import { EventWatchSettingsModal } from './EventWatchSettingsModal';
+import {
+  groupAutomationsForOverview,
+  GroupedEventWatchItem,
+  formatHumanDate
+} from './eventWatchModel';
+
+interface EventAutomationsInboxProps {
+  onNavigateTab: (tab: string) => void;
+  onNavigateRoute: (route: string) => void;
+  onPrepareConfirmedAction?: (actionKey: string, automation: AutomationRecordItem) => void;
+}
+
+export const EventAutomationsInbox: React.FC<EventAutomationsInboxProps> = ({
+  onNavigateTab,
+  onNavigateRoute,
+  onPrepareConfirmedAction
+}) => {
+  const [activeItems, setActiveItems] = useState<AutomationRecordItem[]>([]);
+  const [resolvedItems, setResolvedItems] = useState<AutomationRecordItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [viewMode, setViewMode] = useState<'active' | 'resolved'>('active');
+
+  // Modal states
+  const [selectedItem, setSelectedItem] = useState<AutomationRecordItem | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<GroupedEventWatchItem | null>(null);
+  const [showFullModal, setShowFullModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+
+  const fetchAutomations = async (evaluate = false) => {
+    try {
+      if (evaluate) setRefreshing(true);
+      const res = await api.admin.getEventAutomations(evaluate);
+      if (res.success) {
+        setActiveItems(res.active || []);
+        setResolvedItems(res.resolved || []);
+      }
+    } catch (err) {
+      console.error('Failed to load event automations:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAutomations();
+  }, []);
+
+  const handleAcknowledge = async (id: string) => {
+    try {
+      await api.admin.acknowledgeEventAutomation(id);
+      fetchAutomations();
+    } catch (err) {
+      console.error('Failed to acknowledge automation:', err);
+    }
+  };
+
+  const handleRouteClick = (route: string) => {
+    if (['duty', 'duty_devices'].includes(route)) {
+      onNavigateTab('duty_devices');
+    } else if (route === 'events') {
+      onNavigateTab('events');
+    } else if (route === 'children') {
+      onNavigateTab('children');
+    } else if (route === 'reports') {
+      onNavigateTab('reports');
+    } else if (route === 'incidents' || route === 'escalations') {
+      onNavigateTab('incidents');
+    } else {
+      onNavigateRoute(route);
+    }
+  };
+
+  // Grouping computation for overview
+  const groupedResult = useMemo(() => {
+    return groupAutomationsForOverview(activeItems, 5);
+  }, [activeItems]);
+
+  const { overviewItems, totalActiveCount, categorySummaries, hasMore } = groupedResult;
+
+  // Bounded resolved items for overview
+  const displayedResolved = useMemo(() => {
+    return resolvedItems.slice(0, 4);
+  }, [resolvedItems]);
+
+  return (
+    <div
+      className="bg-white dark:bg-[#181817] rounded-2xl p-6 border border-[#EAE8E1]/80 dark:border-[#2A2926] shadow-2xs space-y-4 text-left"
+      data-component-version="admin-event-watch-v2"
+    >
+      {/* 1. Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#EAE8E1]/70 dark:border-[#2A2926] gap-3">
+        <div>
+          <div className="flex items-center gap-3">
+            <h3 className="font-sans text-base font-semibold text-zinc-900 dark:text-[#F7F4ED]">
+              Event watch
+            </h3>
+            {totalActiveCount > 0 ? (
+              <span className="text-xs font-medium text-zinc-500 dark:text-[#938C81]">
+                {categorySummaries.length > 1
+                  ? `${categorySummaries.length} areas need attention`
+                  : `${totalActiveCount} ${totalActiveCount === 1 ? 'item needs attention' : 'items need attention'}`}
+              </span>
+            ) : (
+              <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                All clear
+              </span>
+            )}
+          </div>
+
+          {/* Clean Category Summary Line (Section 12) */}
+          {totalActiveCount > 0 && viewMode === 'active' && categorySummaries.length > 0 && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500 dark:text-[#938C81] mt-1">
+              {categorySummaries.map((cat, idx) => (
+                <span key={cat.name} className="inline-flex items-center gap-1.5">
+                  <span className="text-zinc-700 dark:text-[#F7F4ED] font-medium">{cat.name}</span>
+                  <span className="text-zinc-400 dark:text-[#938C81] font-mono text-[11px]">{cat.count}</span>
+                  {idx < categorySummaries.length - 1 && <span className="text-zinc-300 dark:text-[#33322E]">·</span>}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Action Controls & Human Tabs */}
+        <div className="flex items-center gap-2 self-start sm:self-center">
+          {/* Needs attention / Cleared toggle */}
+          <div className="flex items-center bg-zinc-100 dark:bg-[#232220] p-0.5 rounded-lg text-[11px] font-medium text-zinc-600 dark:text-[#938C81]">
+            <button
+              type="button"
+              onClick={() => setViewMode('active')}
+              className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                viewMode === 'active'
+                  ? 'bg-white dark:bg-[#181817] text-zinc-900 dark:text-[#F7F4ED] shadow-2xs font-semibold'
+                  : 'hover:text-zinc-900 dark:hover:text-[#F7F4ED]'
+              }`}
+            >
+              Needs attention {totalActiveCount > 0 && `(${totalActiveCount})`}
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('resolved')}
+              className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                viewMode === 'resolved'
+                  ? 'bg-white dark:bg-[#181817] text-zinc-900 dark:text-[#F7F4ED] shadow-2xs font-semibold'
+                  : 'hover:text-zinc-900 dark:hover:text-[#F7F4ED]'
+              }`}
+            >
+              Cleared ({resolvedItems.length})
+            </button>
+          </div>
+
+          <button
+            type="button"
+            title="Refresh event watch"
+            onClick={() => fetchAutomations(true)}
+            disabled={refreshing}
+            className="p-1 text-zinc-400 dark:text-[#938C81] hover:text-zinc-600 dark:hover:text-[#F7F4ED] rounded-md hover:bg-zinc-100 dark:hover:bg-[#2A2926] transition-colors cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          </button>
+
+          <button
+            type="button"
+            title="Event watch settings"
+            aria-label="Event watch settings"
+            onClick={() => setShowSettingsModal(true)}
+            className={`p-1 rounded-md transition-colors cursor-pointer ${
+              showSettingsModal ? 'bg-zinc-100 dark:bg-[#2A2926] text-zinc-900 dark:text-[#F7F4ED]' : 'text-zinc-400 dark:text-[#938C81] hover:text-zinc-600 dark:hover:text-[#F7F4ED] hover:bg-zinc-100 dark:hover:bg-[#2A2926]'
+            }`}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* 3. List Content (Bounded Overview Rows) */}
+      {loading ? (
+        <div className="py-6 text-center text-xs text-zinc-400 dark:text-[#938C81]">
+          Updating event watch...
+        </div>
+      ) : viewMode === 'active' ? (
+        overviewItems.length === 0 ? (
+          <p className="text-xs text-zinc-500 dark:text-[#938C81] py-3">
+            Everything currently being monitored looks clear.
+          </p>
+        ) : (
+          <div className="divide-y divide-[#EAE8E1]/60 dark:divide-[#2A2926]">
+            {overviewItems.map((group) => (
+              <div
+                key={group.id}
+                className="py-3.5 first:pt-0 last:pb-0 space-y-1 group transition-colors"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (group.isGroup) {
+                        setSelectedGroup(group);
+                      } else {
+                        setSelectedItem(group.items[0]);
+                      }
+                    }}
+                    className="font-medium text-sm text-zinc-900 dark:text-[#F7F4ED] hover:text-[#9A7326] dark:hover:text-[#D4AF37] transition-colors text-left flex-1 cursor-pointer"
+                  >
+                    {group.title}
+                  </button>
+
+                  {group.severity === 'urgent' && (
+                    <span className="text-[11px] font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 px-2 py-0.5 rounded-full shrink-0">
+                      Urgent
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-xs text-zinc-500 dark:text-[#938C81] leading-relaxed">
+                  {group.summary}
+                </p>
+
+                {/* Direct Action Links */}
+                <div className="flex items-center gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (group.isGroup) {
+                        setSelectedGroup(group);
+                      } else if (group.actionTargetRoute) {
+                        handleRouteClick(group.actionTargetRoute);
+                      }
+                    }}
+                    className="text-xs font-semibold text-[#9A7326] dark:text-[#D4AF37] hover:text-[#7A5B1C] dark:hover:text-[#E2C366] hover:underline cursor-pointer"
+                  >
+                    {group.actionTargetLabel}
+                  </button>
+
+                  {!group.isGroup && group.proposedActionKey && onPrepareConfirmedAction && (
+                    <button
+                      type="button"
+                      onClick={() => onPrepareConfirmedAction(group.proposedActionKey!, group.items[0])}
+                      className="text-xs font-semibold text-zinc-700 dark:text-[#FAF9F6]/90 hover:text-zinc-900 dark:hover:text-[#F7F4ED] hover:underline cursor-pointer"
+                    >
+                      {group.proposedActionKey === 'SEND_DUTY_REMINDERS' && 'Review reminder →'}
+                      {group.proposedActionKey === 'REGENERATE_REPORT' && 'Regenerate report →'}
+                      {group.proposedActionKey === 'CREATE_ADMIN_OPERATIONS_ALERT' && 'Review Admin alert →'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : (
+        /* Resolved / Cleared Tab */
+        displayedResolved.length === 0 ? (
+          <p className="text-xs text-zinc-500 dark:text-[#938C81] py-3">
+            No cleared items recorded for this event.
+          </p>
+        ) : (
+          <div className="divide-y divide-[#EAE8E1]/60 dark:divide-[#2A2926]">
+            {displayedResolved.map((item) => {
+              const detectedStr = formatHumanDate(item.first_detected_at, true);
+              const clearedStr = item.resolved_at ? formatHumanDate(item.resolved_at, true) : null;
+
+              return (
+                <div key={item.id} className="py-3.5 first:pt-0 last:pb-0 space-y-1">
+                  <div className="flex items-start justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedItem(item)}
+                      className="font-medium text-sm text-zinc-900 dark:text-[#F7F4ED] hover:text-[#9A7326] dark:hover:text-[#D4AF37] transition-colors text-left flex-1 cursor-pointer"
+                    >
+                      {item.title}
+                    </button>
+                    <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full shrink-0">
+                      Cleared
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-500 dark:text-[#938C81]">{item.summary}</p>
+                  <p className="text-[11px] text-zinc-400 dark:text-[#938C81]">
+                    Detected {detectedStr} {clearedStr && `· Cleared ${clearedStr}`}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )
+      )}
+
+      {/* 4. Overview Footer Bounding: View all button */}
+      {(hasMore || totalActiveCount > 5 || (viewMode === 'resolved' && resolvedItems.length > 4)) && (
+        <div className="pt-2 border-t border-[#EAE8E1]/60 dark:border-[#2A2926]">
+          <button
+            type="button"
+            onClick={() => setShowFullModal(true)}
+            className="text-xs font-semibold text-[#9A7326] dark:text-[#D4AF37] hover:text-[#7A5B1C] dark:hover:text-[#E2C366] hover:underline cursor-pointer flex items-center gap-1"
+          >
+            <span>
+              {viewMode === 'active'
+                ? `View all ${totalActiveCount} items →`
+                : `View all ${resolvedItems.length} cleared records →`}
+            </span>
+          </button>
+        </div>
+      )}
+
+      {/* Modals */}
+      <GroupedDetailModal
+        group={selectedGroup}
+        isOpen={!!selectedGroup}
+        onClose={() => setSelectedGroup(null)}
+        onNavigateRoute={(route) => handleRouteClick(route)}
+        onSelectItem={(item) => setSelectedItem(item)}
+        onPrepareConfirmedAction={onPrepareConfirmedAction}
+      />
+
+      <FullEventWatchModal
+        isOpen={showFullModal}
+        onClose={() => setShowFullModal(false)}
+        activeItems={activeItems}
+        resolvedItems={resolvedItems}
+        onSelectItem={(item) => setSelectedItem(item)}
+        onNavigateRoute={(route) => handleRouteClick(route)}
+        onPrepareConfirmedAction={onPrepareConfirmedAction}
+      />
+
+      <AutomationDetailModal
+        automation={selectedItem}
+        isOpen={!!selectedItem}
+        onClose={() => setSelectedItem(null)}
+        onNavigate={(route) => handleRouteClick(route)}
+        onReviewAction={(item) => {
+          if (onPrepareConfirmedAction && item.proposed_action_key) {
+            onPrepareConfirmedAction(item.proposed_action_key, item);
+          }
+        }}
+        onAcknowledge={handleAcknowledge}
+      />
+
+      <EventWatchSettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        onSettingsChanged={() => fetchAutomations(true)}
+      />
+    </div>
+  );
+};

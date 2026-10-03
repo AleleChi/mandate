@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Synchronous theme bootstrap to prevent flash on reload with surface isolation
+      (function() {
+        try {
+          var hash = window.location.hash || '';
+          var pathname = window.location.pathname || '';
+          var isAdmin = hash.indexOf('/admin') !== -1 || pathname.indexOf('/admin') !== -1;
+          var theme = 'light';
+
+          if (isAdmin) {
+            // Admin defaults to light mode unless explicitly set to dark
+            var adminStored = localStorage.getItem('koinonia-admin-theme');
+            theme = adminStored === 'dark' ? 'dark' : 'light';
+          } else {
+            // Public theme: check koinonia-public-theme, fallback to koinonia-theme, then system
+            var publicStored = localStorage.getItem('koinonia-public-theme') || localStorage.getItem('koinonia-theme');
+            var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (publicStored === 'dark') {
+              theme = 'dark';
+            } else if (publicStored === 'light') {
+              theme = 'light';
+            } else if (publicStored === 'system' || !publicStored) {
+              theme = prefersDark ? 'dark' : 'light';
+            }
+          }
+
+          document.documentElement.setAttribute('data-theme', theme);
+          if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        } catch (e) {}
+      })();
+
+      // Early capture of PWA beforeinstallprompt to prevent missing prompt fired before React hydration
+      window.__koinoniaDeferredPrompt = null;
+      window.__koinoniaPromptListeners = [];
+      window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        window.__koinoniaDeferredPrompt = e;
+        if (window.__koinoniaPromptListeners) {
+          window.__koinoniaPromptListeners.forEach(function(fn) {
+            try { fn(true); } catch (err) {}
+          });
+        }
+      });
+      window.addEventListener('appinstalled', function() {
+        window.__koinoniaDeferredPrompt = null;
+        if (window.__koinoniaPromptListeners) {
+          window.__koinoniaPromptListeners.forEach(function(fn) {
+            try { fn(false); } catch (err) {}
+          });
+        }
+      });
+
+      // Safe environment check to prevent test/headless/extension-injection crash on undefined matchMedia or chrome runtime APIs
+      (function() {
+        if (typeof window !== 'undefined') {
+          // 1. Narrow matchMedia polyfill: only define or expand if missing/incomplete
+          if (!window.matchMedia) {
+            window.matchMedia = function(query) {
+              return {
+                matches: false,
+                media: query || '',
+                onchange: null,
+                addListener: function() {},
+                removeListener: function() {},
+                addEventListener: function() {},
+                removeEventListener: function() {},
+                dispatchEvent: function() { return false; }
+              };
+            };
+          } else {
+            try {
+              var testMedia = window.matchMedia('(max-width: 0px)');
+              if (testMedia) {
+                if (typeof testMedia.addListener !== 'function') testMedia.addListener = function() {};
+                if (typeof testMedia.removeListener !== 'function') testMedia.removeListener = function() {};
+              }
+            } catch (e) {}
+          }
+
+          // 2. Comprehensive chrome.runtime.onMessage defensive polyfill
+          try {
+            var createOnMessage = function(existing) {
+              var om = (typeof existing === 'object' && existing !== null) ? existing : {};
+              if (typeof om.addListener !== 'function') om.addListener = function() {};
+              if (typeof om.removeListener !== 'function') om.removeListener = function() {};
+              if (typeof om.hasListener !== 'function') om.hasListener = function() { return false; };
+              if (typeof om.hasListeners !== 'function') om.hasListeners = function() { return false; };
+              if (typeof om.emit !== 'function') om.emit = function() {};
+              if (typeof om.dispatch !== 'function') om.dispatch = function() {};
+              return om;
+            };
+
+            var createRuntime = function(existing) {
+              var rt = (typeof existing === 'object' && existing !== null) ? existing : {};
+              rt.onMessage = createOnMessage(rt.onMessage);
+              if (typeof rt.sendMessage !== 'function') rt.sendMessage = function() {};
+              if (typeof rt.connect !== 'function') rt.connect = function() {};
+              return rt;
+            };
+
+            var existingChrome = (typeof window.chrome === 'object' && window.chrome !== null) ? window.chrome : {};
+            var safeChrome = existingChrome;
+
+            if (typeof Proxy === 'function') {
+              safeChrome = new Proxy(existingChrome, {
+                get: function(target, prop) {
+                  if (prop === 'runtime') {
+                    return createRuntime(target.runtime);
+                  }
+                  return target[prop];
+                }
+              });
+            } else {
+              safeChrome.runtime = createRuntime(safeChrome.runtime);
+            }
+
+            try {
+              Object.defineProperty(window, 'chrome', {
+                value: safeChrome,
+                writable: true,
+                configurable: true,
+                enumerable: true
+              });
+            } catch (e) {
+              window.chrome = safeChrome;
+            }
+          } catch (e) {}
+        }
+      })();
+    </script>
+    <title>Koinonia Children and Teens Event Registration</title>
+    <meta name="description" content="Register, manage child details, receive event updates, and access secure check-in and pickup support for Koinonia Children and Teens events." />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" id="favicon-32" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" id="favicon-16" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" id="favicon-svg" />
+    <link rel="shortcut icon" href="/favicon.ico" id="favicon-ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" id="favicon-apple" />
+    <link rel="manifest" href="/manifest.json" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

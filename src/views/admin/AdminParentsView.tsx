@@ -1,0 +1,962 @@
+import React, { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import {
+  Users,
+  Search,
+  RotateCcw,
+  Trash2,
+  Plus,
+  MoreHorizontal,
+  AlertTriangle,
+  ChevronDown
+} from 'lucide-react';
+import { api, extractApiError } from '../../services/api';
+import { useNotification } from '../../context/NotificationContext';
+import { Button } from '../../components/common/Button';
+import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
+import { AddParentModal } from '../../components/admin/modals/AddParentModal';
+import { AdminSelectionCheckbox } from '../../components/common/AdminSelectionCheckbox';
+import { AppRoute } from '../../types';
+
+interface AdminParentsViewProps {
+  onBackToOverview?: () => void;
+  onNavigate: (route: AppRoute) => void;
+  adminUser?: any;
+}
+
+type ParentTab = 'active' | 'removed';
+
+export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, adminUser }) => {
+  const isSuperAdmin = adminUser?.role === 'super_admin';
+  const { showError, showSuccess } = useNotification();
+  const [parents, setParents] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<ParentTab>('active');
+
+  // Bulk selection & actions
+  const [selectedParentIds, setSelectedParentIds] = useState<string[]>([]);
+  const [showBulkRemoveModal, setShowBulkRemoveModal] = useState(false);
+  const [bulkRemoveReason, setBulkRemoveReason] = useState('');
+  const [submittingBulkRemove, setSubmittingBulkRemove] = useState(false);
+  const [showBulkRestoreModal, setShowBulkRestoreModal] = useState(false);
+  const [submittingBulkRestore, setSubmittingBulkRestore] = useState(false);
+  const [bulkMoreDropdownOpen, setBulkMoreDropdownOpen] = useState(false);
+  const bulkMoreDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Bulk Permanent Delete
+  const [showBulkPurgeModal, setShowBulkPurgeModal] = useState(false);
+  const [bulkPurgeConfirmText, setBulkPurgeConfirmText] = useState('');
+  const [submittingBulkPurge, setSubmittingBulkPurge] = useState(false);
+
+  // Stats across active parents
+  const [stats, setStats] = useState({
+    parents: 0,
+    childrenLinked: 0,
+    teamMembers: 0,
+    whatsAppNumbers: 0,
+    whatsAppOptedIn: 0
+  });
+
+  // Overflow menu state per row
+  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+  const actionMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // Soft remove confirmation modal
+  const [parentToRemove, setParentToRemove] = useState<any | null>(null);
+  const [removeReason, setRemoveReason] = useState('');
+  const [submittingRemove, setSubmittingRemove] = useState(false);
+
+  // Restore confirmation modal
+  const [parentToRestore, setParentToRestore] = useState<any | null>(null);
+  const [submittingRestore, setSubmittingRestore] = useState(false);
+
+  // Permanent delete modal
+  const [parentToDelete, setParentToDelete] = useState<any | null>(null);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
+  const [submittingDelete, setSubmittingDelete] = useState(false);
+
+  // Add parent modal
+  const [showAddParentModal, setShowAddParentModal] = useState(false);
+
+  const fetchParents = async () => {
+    setLoading(true);
+    try {
+      const res = await api.admin.getParents({ q: searchQuery, status: activeTab });
+      if (res.success) {
+        const list = res.parents || [];
+        setParents(list);
+
+        // Update overall summary statistics when looking at active tab without search filters
+        if (activeTab === 'active' && !searchQuery.trim()) {
+          setStats({
+            parents: list.length,
+            childrenLinked: list.reduce((sum: number, p: any) => sum + Number(p.childrenCount || 0), 0),
+            teamMembers: list.filter((p: any) => p.isKoinoniaWorker).length,
+            whatsAppNumbers: list.filter((p: any) => Boolean(p.whatsapp && String(p.whatsapp).trim())).length,
+            whatsAppOptedIn: list.filter((p: any) => p.whatsappConsentStatus === 'opted_in').length
+          });
+        }
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Unable to load parents', parsed.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchParents();
+  }, [searchQuery, activeTab]);
+
+  // Clear bulk selection on tab switch or search change
+  useEffect(() => {
+    setSelectedParentIds([]);
+  }, [searchQuery, activeTab]);
+
+  const isAllVisibleSelected = parents.length > 0 && parents.every(p => selectedParentIds.includes(String(p.id)));
+  const isSomeVisibleSelected = parents.some(p => selectedParentIds.includes(String(p.id)));
+  const isIndeterminate = isSomeVisibleSelected && !isAllVisibleSelected;
+
+  const handleToggleSelectAll = () => {
+    if (isAllVisibleSelected) {
+      setSelectedParentIds([]);
+    } else {
+      setSelectedParentIds(parents.map(p => String(p.id)));
+    }
+  };
+
+  const handleToggleSelectParent = (id: string) => {
+    setSelectedParentIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkRemoveSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmittingBulkRemove(true);
+    try {
+      const res = await api.admin.bulkRemoveParents({
+        parentIds: selectedParentIds,
+        reason: bulkRemoveReason || undefined
+      });
+      if (res.success) {
+        showSuccess('Parents removed', `${res.count} parent(s) moved to Removed. Linked children and event history are preserved.`);
+        setShowBulkRemoveModal(false);
+        setBulkRemoveReason('');
+        setSelectedParentIds([]);
+        fetchParents();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Removal failed', parsed.message);
+    } finally {
+      setSubmittingBulkRemove(false);
+    }
+  };
+
+  const handleBulkRestoreSubmit = async () => {
+    setSubmittingBulkRestore(true);
+    try {
+      const res = await api.admin.bulkRestoreParents({
+        parentIds: selectedParentIds
+      });
+      if (res.success) {
+        showSuccess('Parents restored', `${res.count} parent(s) restored to Active.`);
+        setShowBulkRestoreModal(false);
+        setSelectedParentIds([]);
+        fetchParents();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Restore failed', parsed.message);
+    } finally {
+      setSubmittingBulkRestore(false);
+    }
+  };
+
+  const handleBulkPurge = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (submittingBulkPurge || selectedParentIds.length === 0) return;
+    setSubmittingBulkPurge(true);
+    try {
+      const res = await api.admin.bulkPermanentlyDeleteParents({
+        parentIds: selectedParentIds,
+        confirmText: 'DELETE',
+        reason: 'Bulk permanent deletion by Super Admin'
+      });
+      if (res.success && (res.count > 0 || !res.failures || res.failures.length === 0)) {
+        showSuccess('Parents permanently deleted', `${res.count ?? selectedParentIds.length} parent(s) permanently deleted.`);
+        setShowBulkPurgeModal(false);
+        setBulkPurgeConfirmText('');
+        setSelectedParentIds([]);
+        fetchParents();
+      } else if (res.failures && res.failures.length > 0) {
+        showError('Permanent delete failed', res.failures[0]?.reason || "We couldn't permanently delete selected parents.");
+      } else {
+        showError('Permanent delete failed', res.message || "We couldn't permanently delete selected parents. Nothing was changed.");
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Permanent delete failed', parsed.message || "We couldn't permanently delete selected parents. Nothing was changed.");
+    } finally {
+      setSubmittingBulkPurge(false);
+    }
+  };
+
+  // Close overflow action menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (actionMenuRef.current && !actionMenuRef.current.contains(e.target as Node)) {
+        setOpenActionMenuId(null);
+      }
+      if (bulkMoreDropdownRef.current && !bulkMoreDropdownRef.current.contains(e.target as Node)) {
+        setBulkMoreDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleTabChange = (tab: ParentTab) => {
+    setActiveTab(tab);
+    setOpenActionMenuId(null);
+    setBulkMoreDropdownOpen(false);
+    setSelectedParentIds([]);
+  };
+
+  const handleRemoveParentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!parentToRemove) return;
+    setSubmittingRemove(true);
+    try {
+      const res = await api.admin.removeParent(parentToRemove.id, removeReason);
+      if (res.success) {
+        showSuccess('Parent removed', 'Their account will move to Removed and can be restored later.');
+        setParentToRemove(null);
+        setRemoveReason('');
+        setOpenActionMenuId(null);
+        fetchParents();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Action failed', parsed.message);
+    } finally {
+      setSubmittingRemove(false);
+    }
+  };
+
+  const handleRestoreParentSubmit = async () => {
+    if (!parentToRestore) return;
+    setSubmittingRestore(true);
+    try {
+      const res = await api.admin.restoreParent(parentToRestore.id);
+      if (res.success) {
+        showSuccess('Parent restored', 'The parent profile has been restored to Active.');
+        setParentToRestore(null);
+        setOpenActionMenuId(null);
+        fetchParents();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Action failed', parsed.message);
+    } finally {
+      setSubmittingRestore(false);
+    }
+  };
+
+  const handlePermanentDeleteSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!parentToDelete || submittingDelete) return;
+    setSubmittingDelete(true);
+    try {
+      const res = await api.admin.permanentlyDeleteParent(parentToDelete.id, {
+        reason: 'Single permanent deletion by Super Admin',
+        confirmation: 'DELETE'
+      });
+      if (res.success) {
+        showSuccess('Parent permanently deleted', `${getDisplayName(parentToDelete)} was permanently deleted.`);
+        setParentToDelete(null);
+        setDeleteReason('');
+        setDeleteConfirmationText('');
+        setOpenActionMenuId(null);
+        fetchParents();
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Permanent delete failed', parsed.message || "We couldn't permanently delete this parent. Nothing was changed.");
+    } finally {
+      setSubmittingDelete(false);
+    }
+  };
+
+  const getInitials = (name: any): string => {
+    if (!name || typeof name !== 'string') return 'P';
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return 'P';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+
+  const getDisplayName = (p: any): string => {
+    const raw = typeof p?.fullName === 'string' ? p.fullName.trim() : '';
+    if (!raw || raw.toLowerCase() === 'invited user') return 'Invited parent';
+    return raw;
+  };
+
+  const formatChildrenCount = (count: number): string => {
+    if (count === 1) return '1 child';
+    return `${count} children`;
+  };
+
+  const isDomReady = typeof document !== 'undefined' && Boolean(document.body);
+
+  // ---- PORTAL MODALS ----
+  const removeModal = (parentToRemove && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+      <div
+        onClick={() => setParentToRemove(null)}
+        className="fixed inset-0 bg-black/50"
+        style={{ backdropFilter: 'blur(2px)' }}
+      />
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
+        <div className="flex items-center gap-3 mb-4 text-amber-600 dark:text-amber-400">
+          <AlertTriangle className="w-5 h-5 shrink-0" />
+          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
+            Remove this parent?
+          </h4>
+        </div>
+        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-4 leading-relaxed">
+          Their account will move to Removed and can be restored later.
+        </p>
+        <form onSubmit={handleRemoveParentSubmit} className="space-y-4">
+          <div>
+            <label className="text-zinc-500 dark:text-[#7A7570] text-[10px] font-semibold uppercase tracking-wider block mb-1.5">
+              Reason for removal (optional)
+            </label>
+            <textarea
+              placeholder="State a reason for your records..."
+              value={removeReason}
+              onChange={(e) => setRemoveReason(e.target.value)}
+              rows={3}
+              className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] focus:outline-none focus:border-red-400 transition-all bg-zinc-50 dark:bg-[#262520] resize-none text-zinc-700 dark:text-[#F0EBE3]"
+            />
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+            <Button
+              type="button"
+              onClick={() => setParentToRemove(null)}
+              variant="secondary"
+              className="px-4 py-2 text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              loading={submittingRemove}
+              disabled={submittingRemove}
+              className="bg-red-600 hover:bg-red-700 text-white px-5 py-2 text-xs font-semibold rounded-xl focus:outline-none"
+            >
+              Remove parent
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  const restoreModal = (parentToRestore && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+      <div
+        onClick={() => setParentToRestore(null)}
+        className="fixed inset-0 bg-black/50"
+        style={{ backdropFilter: 'blur(2px)' }}
+      />
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
+        <div className="flex items-center gap-3 text-emerald-600 mb-4">
+          <RotateCcw className="w-5 h-5 shrink-0" />
+          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
+            Restore this parent?
+          </h4>
+        </div>
+        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-6 leading-relaxed">
+          This parent will be restored and will appear under Active parents again.
+        </p>
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+          <Button
+            onClick={() => setParentToRestore(null)}
+            variant="secondary"
+            className="px-4 py-2 text-xs"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleRestoreParentSubmit}
+            loading={submittingRestore}
+            disabled={submittingRestore}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 text-xs font-semibold rounded-xl focus:outline-none"
+          >
+            Restore parent
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  const permanentDeleteModal = (parentToDelete && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-fade-in font-sans" id="confirm-single-parent-delete-modal">
+      <div
+        className="fixed inset-0 bg-black/50"
+        onClick={() => !submittingDelete && setParentToDelete(null)}
+        style={{ backdropFilter: 'blur(2px)' }}
+      />
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-red-200 dark:border-red-900/40 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+        <div className="flex items-center gap-2 text-red-600">
+          <Trash2 className="w-5 h-5 shrink-0" />
+          <h3 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
+            Delete {getDisplayName(parentToDelete)} permanently?
+          </h3>
+        </div>
+        <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+          This cannot be undone. The selected parent record will be permanently removed.
+        </p>
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+          <Button
+            type="button"
+            onClick={() => setParentToDelete(null)}
+            variant="secondary"
+            disabled={submittingDelete}
+            className="px-4 py-2 text-xs"
+          >
+            Cancel
+          </Button>
+          <button
+            type="button"
+            onClick={() => handlePermanentDeleteSubmit()}
+            disabled={submittingDelete}
+            className="px-5 py-2 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
+            id="confirm-single-parent-delete-btn"
+          >
+            {submittingDelete ? 'Deleting…' : 'Delete permanently'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  const bulkPurgeModal = (showBulkPurgeModal && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-fade-in font-sans" id="confirm-bulk-parent-purge-modal">
+      <div
+        onClick={() => !submittingBulkPurge && setShowBulkPurgeModal(false)}
+        className="fixed inset-0 bg-black/50"
+        style={{ backdropFilter: 'blur(2px)' }}
+      />
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-red-200 dark:border-red-900/40 rounded-3xl w-full max-w-md shadow-2xl p-6 space-y-4">
+        <div className="flex items-center gap-2 text-red-600">
+          <Trash2 className="w-5 h-5 shrink-0" />
+          <h3 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
+            Delete {selectedParentIds.length} parents permanently?
+          </h3>
+        </div>
+        <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+          This cannot be undone. The selected parent records will be permanently removed.
+        </p>
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+          <Button
+            type="button"
+            onClick={() => setShowBulkPurgeModal(false)}
+            variant="secondary"
+            disabled={submittingBulkPurge}
+            className="px-4 py-2 text-xs"
+          >
+            Cancel
+          </Button>
+          <button
+            type="button"
+            onClick={() => handleBulkPurge()}
+            disabled={submittingBulkPurge}
+            className="px-5 py-2 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
+            id="confirm-bulk-parent-purge-btn"
+          >
+            {submittingBulkPurge ? 'Deleting…' : 'Delete permanently'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  const bulkRemoveModal = (showBulkRemoveModal && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+      <div
+        onClick={() => !submittingBulkRemove && setShowBulkRemoveModal(false)}
+        className="fixed inset-0 bg-black/50"
+        style={{ backdropFilter: 'blur(2px)' }}
+      />
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
+        <div className="flex items-center gap-3 text-red-600 mb-4">
+          <Trash2 className="w-5 h-5 shrink-0" />
+          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
+            Remove {selectedParentIds.length} parents?
+          </h4>
+        </div>
+        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-4 leading-relaxed">
+          These parents will be moved to the Removed tab. All linked children, event registrations, attendance records, and audit history will be safely preserved. You can restore these parents at any time.
+        </p>
+        <form onSubmit={handleBulkRemoveSubmit} className="space-y-4">
+          <div>
+            <label className="text-[10px] font-semibold text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block mb-1">
+              Reason (optional)
+            </label>
+            <input
+              type="text"
+              value={bulkRemoveReason}
+              onChange={(e) => setBulkRemoveReason(e.target.value)}
+              placeholder="e.g., Requested account closure"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] focus:outline-none focus:border-[#C59B27] text-zinc-800 dark:text-[#F0EBE3]"
+            />
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+            <Button
+              type="button"
+              onClick={() => setShowBulkRemoveModal(false)}
+              variant="secondary"
+              disabled={submittingBulkRemove}
+              className="px-4 py-2 text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              loading={submittingBulkRemove}
+              disabled={submittingBulkRemove}
+              className="bg-red-600 hover:bg-red-700 text-white px-5 py-2 text-xs font-semibold rounded-xl focus:outline-none"
+            >
+              Remove parents
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  const bulkRestoreModal = (showBulkRestoreModal && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+      <div
+        onClick={() => !submittingBulkRestore && setShowBulkRestoreModal(false)}
+        className="fixed inset-0 bg-black/50"
+        style={{ backdropFilter: 'blur(2px)' }}
+      />
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
+        <div className="flex items-center gap-3 text-emerald-600 mb-4">
+          <RotateCcw className="w-5 h-5 shrink-0" />
+          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
+            Restore {selectedParentIds.length} parents?
+          </h4>
+        </div>
+        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-6 leading-relaxed">
+          These parent profiles will be restored and will appear under Active parents again.
+        </p>
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+          <Button
+            type="button"
+            onClick={() => setShowBulkRestoreModal(false)}
+            variant="secondary"
+            disabled={submittingBulkRestore}
+            className="px-4 py-2 text-xs"
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            onClick={handleBulkRestoreSubmit}
+            loading={submittingBulkRestore}
+            disabled={submittingBulkRestore}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 text-xs font-semibold rounded-xl focus:outline-none"
+          >
+            Restore parents
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  return (
+    <div
+      className="space-y-6"
+      data-view-version="admin-parents-refined"
+      id="admin-parents-module-root"
+    >
+      {/* Portal modals */}
+      {removeModal}
+      {restoreModal}
+      {permanentDeleteModal}
+      {bulkRemoveModal}
+      {bulkRestoreModal}
+      {bulkPurgeModal}
+
+      {/* 1. Header */}
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 pb-4 border-b border-[#EAE8E1] dark:border-[#302E29]">
+        <div>
+          <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
+            Parents
+          </h1>
+          <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">
+            View parent details, contact information and the children connected to each account.
+          </p>
+        </div>
+        <Button
+          onClick={() => setShowAddParentModal(true)}
+          variant="primary"
+          className="text-xs px-4 py-2 flex items-center gap-1.5 shrink-0"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Add parent</span>
+        </Button>
+      </div>
+
+      {/* 2. Restrained Summary Strip */}
+      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl px-6 py-4">
+        <div className="flex items-center divide-x divide-[#EAE8E1] dark:divide-[#302E29] overflow-x-auto">
+          <div className="pr-8 shrink-0">
+            <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-0.5">Parents</p>
+            <p className="text-lg font-semibold text-[#18181B] dark:text-[#F0EBE3]">{stats.parents}</p>
+          </div>
+          <div className="px-8 shrink-0">
+            <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-0.5">Children linked</p>
+            <p className="text-lg font-semibold text-zinc-700 dark:text-[#B8B0A5]">{stats.childrenLinked}</p>
+          </div>
+          <div className="px-8 shrink-0">
+            <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-0.5">Team members</p>
+            <p className="text-lg font-semibold text-zinc-700 dark:text-[#B8B0A5]">{stats.teamMembers}</p>
+          </div>
+          <div className="px-8 shrink-0">
+            <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-0.5">WhatsApp numbers</p>
+            <p className="text-lg font-semibold text-zinc-700 dark:text-[#B8B0A5]">{stats.whatsAppNumbers}</p>
+          </div>
+          <div className="pl-8 shrink-0">
+            <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-0.5">Opted in</p>
+            <p className="text-lg font-semibold text-zinc-700 dark:text-[#B8B0A5]">{stats.whatsAppOptedIn}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. Text Tabs */}
+      <div className="flex border-b border-[#EAE8E1] dark:border-[#302E29]" id="parents-directory-tabs">
+        <button
+          onClick={() => handleTabChange('active')}
+          className={`px-4 py-2.5 text-xs font-medium transition-all border-b-2 cursor-pointer focus:outline-none ${
+            activeTab === 'active'
+              ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3]'
+              : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5]'
+          }`}
+          id="tab-active-parents"
+        >
+          Active
+        </button>
+        <button
+          onClick={() => handleTabChange('removed')}
+          className={`px-4 py-2.5 text-xs font-medium transition-all border-b-2 cursor-pointer focus:outline-none ${
+            activeTab === 'removed'
+              ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3]'
+              : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5]'
+          }`}
+          id="tab-removed-parents"
+        >
+          Removed
+        </button>
+      </div>
+
+      {/* 4. Search Filter */}
+      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 flex gap-3 items-center">
+        <div className="relative w-full">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 dark:text-[#7A7570]" />
+          <input
+            type="text"
+            placeholder="Search by name, email or phone"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] focus:outline-none focus:border-[#C59B27] transition-all bg-zinc-50/50 dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#5A5550]"
+          />
+        </div>
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="text-xs text-zinc-400 dark:text-[#7A7570] hover:text-zinc-700 dark:hover:text-[#F0EBE3] transition-colors shrink-0 ml-1 cursor-pointer focus:outline-none"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      {/* Contextual Action Bar */}
+      {selectedParentIds.length > 0 && (
+        <div className="bg-[#FAF9F5] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs animate-fade-in mb-4">
+          <div className="flex items-center gap-3">
+            <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] whitespace-nowrap">
+              {selectedParentIds.length} selected
+            </span>
+            <div className="h-4 w-px bg-[#EAE8E1] dark:bg-[#302E29] hidden sm:block" />
+            <div className="flex flex-wrap items-center gap-2">
+              {activeTab === 'active' ? (
+                <button
+                  type="button"
+                  onClick={() => setShowBulkRemoveModal(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-[#262520] border border-red-200 dark:border-red-900/40 text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors focus:outline-none cursor-pointer"
+                >
+                  Remove
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowBulkRestoreModal(true)}
+                    disabled={submittingBulkRestore}
+                    className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors focus:outline-none cursor-pointer disabled:opacity-50"
+                  >
+                    {submittingBulkRestore ? 'Restoring…' : 'Restore'}
+                  </button>
+                  {isSuperAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBulkMoreDropdownOpen(false);
+                        setBulkPurgeConfirmText('');
+                        setShowBulkPurgeModal(true);
+                      }}
+                      disabled={submittingBulkPurge}
+                      className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-[#262520] border border-red-200 dark:border-red-900/40 text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors focus:outline-none cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                      id="bulk-parent-permanent-delete-btn"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                      <span>Delete permanently</span>
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedParentIds([])}
+            className="text-zinc-500 dark:text-[#7A7570] hover:text-[#18181B] dark:hover:text-[#F0EBE3] text-xs font-medium underline-offset-4 hover:underline transition-colors cursor-pointer"
+          >
+            Clear selection
+          </button>
+        </div>
+      )}
+
+      {/* 5. Parent Table */}
+      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl overflow-hidden shadow-xs">
+        {loading ? (
+          <div className="p-8">
+            <KoinoniaInlineLoader
+              variant="skeleton"
+              size="lg"
+              label="Loading parents..."
+              centered
+            />
+          </div>
+        ) : parents.length === 0 ? (
+          <div className="text-center py-16 text-zinc-400 dark:text-[#5A5550] space-y-2">
+            <Users className="w-7 h-7 stroke-[1.5] mx-auto text-zinc-300 dark:text-[#5A5550]" />
+            <p className="text-sm text-zinc-500 dark:text-[#B8B0A5] font-medium">
+              {activeTab === 'active' ? 'No active parents found.' : 'No removed parents.'}
+            </p>
+            {searchQuery && (
+              <p className="text-xs text-zinc-400 dark:text-[#7A7570]">No results matching "{searchQuery}".</p>
+            )}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left text-xs">
+              <thead>
+                <tr className="bg-[#FAF9F6] dark:bg-[#21211E] border-b border-[#EAE8E1] dark:border-[#302E29] text-zinc-500 dark:text-[#7A7570]">
+                  <th className="p-4 pl-6 w-10 text-center">
+                    <AdminSelectionCheckbox
+                      checked={isAllVisibleSelected}
+                      indeterminate={isIndeterminate}
+                      onChange={handleToggleSelectAll}
+                      ariaLabel="Select all visible parents"
+                    />
+                  </th>
+                  <th className="p-4 text-[11px] font-semibold">Parent</th>
+                  <th className="p-4 text-[11px] font-semibold">Children</th>
+                  <th className="p-4 text-[11px] font-semibold">Role</th>
+                  <th className="p-4 text-[11px] font-semibold">Location</th>
+                  <th className="p-4 pr-6 text-right text-[11px] font-semibold">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#EAE8E1] dark:divide-[#302E29]">
+                {parents.map((p) => {
+                  const displayName = getDisplayName(p);
+                  const isRemoved = p.isDeleted || activeTab === 'removed';
+                  const isSelected = selectedParentIds.includes(String(p.id));
+
+                  return (
+                    <tr
+                      key={p.id}
+                      className={`transition-colors ${isSelected ? 'bg-[#FAF8F2] dark:bg-[#262520]' : 'hover:bg-zinc-50/50 dark:hover:bg-[#21211E]/60'}`}
+                      data-parent-row-id={p.id}
+                    >
+                      {/* Checkbox */}
+                      <td className="p-4 pl-6 w-10 text-center" onClick={(e) => e.stopPropagation()}>
+                        <AdminSelectionCheckbox
+                          checked={isSelected}
+                          onChange={() => handleToggleSelectParent(String(p.id))}
+                          ariaLabel={`Select ${displayName}`}
+                        />
+                      </td>
+
+                      {/* Parent name & email */}
+                      <td className="p-4">
+                        <div className="flex items-center gap-3">
+                          {p.photoUrl ? (
+                            <img
+                              src={p.photoUrl}
+                              alt={displayName}
+                              referrerPolicy="no-referrer"
+                              className="w-9 h-9 rounded-xl object-cover border border-[#EAE8E1] dark:border-[#3A3835] shrink-0"
+                            />
+                          ) : (
+                            <div className="w-9 h-9 rounded-xl bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] flex items-center justify-center text-zinc-400 dark:text-[#7A7570] font-semibold shrink-0 text-sm uppercase">
+                              {getInitials(displayName)}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <span className="font-medium text-[#18181B] dark:text-[#F0EBE3] block text-xs leading-snug truncate">
+                              {displayName}
+                            </span>
+                            <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block truncate">
+                              {p.email || 'No email provided'}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Linked Children */}
+                      <td className="p-4">
+                        <span className="text-zinc-600 dark:text-[#B8B0A5] text-xs">
+                          {formatChildrenCount(Number(p.childrenCount || 0))}
+                        </span>
+                      </td>
+
+                      {/* Role */}
+                      <td className="p-4">
+                        {p.isKoinoniaWorker ? (
+                          <span className="text-xs font-medium text-[#C59B27] dark:text-amber-400">
+                            Team member{p.department ? ` • ${p.department}` : ''}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-zinc-500 dark:text-[#7A7570]">Parent</span>
+                        )}
+                      </td>
+
+                      {/* Location */}
+                      <td className="p-4 text-zinc-500 dark:text-[#7A7570] text-xs">
+                        {p.city
+                          ? `${p.city}${p.stateRegion ? `, ${p.stateRegion}` : ''}`
+                          : <span className="text-zinc-400 dark:text-[#5A5550] italic">Not provided</span>}
+                      </td>
+
+                      {/* Action buttons */}
+                      <td className="p-4 pr-6 text-right">
+                        <div className="inline-flex items-center gap-1.5 justify-end">
+                          <button
+                            onClick={() => onNavigate(`/admin/parents/${p.id}` as AppRoute)}
+                            className="px-3 py-1.5 text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] hover:border-zinc-300 dark:hover:border-[#4A4740] rounded-xl transition-all cursor-pointer focus:outline-none"
+                          >
+                            View profile
+                          </button>
+
+                          {/* Overflow menu trigger */}
+                          <div className="relative inline-block text-left" ref={openActionMenuId === p.id ? actionMenuRef : undefined}>
+                            <button
+                              onClick={() => setOpenActionMenuId(openActionMenuId === p.id ? null : p.id)}
+                              className="p-1.5 text-zinc-400 dark:text-[#7A7570] hover:text-zinc-700 dark:hover:text-[#F0EBE3] hover:bg-zinc-100 dark:hover:bg-[#262520] rounded-lg transition-colors cursor-pointer focus:outline-none"
+                              aria-label="More options"
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </button>
+
+                            {openActionMenuId === p.id && (
+                              <div className="absolute right-0 mt-1 w-44 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl shadow-lg py-1 z-30 animate-fade-in text-left">
+                                {!isRemoved ? (
+                                  <button
+                                    onClick={() => {
+                                      setOpenActionMenuId(null);
+                                      setParentToRemove(p);
+                                    }}
+                                    className="w-full text-left px-3.5 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2 transition-colors cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>Remove parent</span>
+                                  </button>
+                                ) : (
+                                  <>
+                                    <button
+                                      onClick={() => {
+                                        setOpenActionMenuId(null);
+                                        setParentToRestore(p);
+                                      }}
+                                      className="w-full text-left px-3.5 py-2 text-xs text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 flex items-center gap-2 transition-colors cursor-pointer"
+                                    >
+                                      <RotateCcw className="w-3.5 h-3.5" />
+                                      <span>Restore parent</span>
+                                    </button>
+                                    {isSuperAdmin && (
+                                      <>
+                                        <div className="h-px bg-zinc-100 dark:bg-[#302E29] my-1" />
+                                        <button
+                                          onClick={() => {
+                                            setOpenActionMenuId(null);
+                                            setParentToDelete(p);
+                                            setDeleteConfirmationText('');
+                                          }}
+                                          className="w-full text-left px-3.5 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2 transition-colors cursor-pointer"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                          <span>Delete permanently</span>
+                                        </button>
+                                      </>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Add Parent Modal */}
+      <AddParentModal
+        isOpen={showAddParentModal}
+        onClose={() => setShowAddParentModal(false)}
+        onSuccess={() => fetchParents()}
+      />
+
+      {/* Action and Confirmation Modals */}
+      {removeModal}
+      {restoreModal}
+      {permanentDeleteModal}
+      {bulkPurgeModal}
+      {bulkRemoveModal}
+      {bulkRestoreModal}
+    </div>
+  );
+};

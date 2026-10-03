@@ -1,0 +1,2074 @@
+import React, { useEffect, useState } from 'react';
+import { 
+  Download, 
+  RefreshCw, 
+  Plus, 
+  Eye, 
+  ChevronRight, 
+  Loader2, 
+  FileSpreadsheet, 
+  X, 
+  Check, 
+  ArrowLeft, 
+  Calendar,
+  AlertCircle,
+  Trash2
+} from 'lucide-react';
+import { api, extractApiError } from '../../services/api';
+import { buildApiUrl } from '../../utils/urlHelper';
+import { useNotification } from '../../context/NotificationContext';
+import { Button } from '../../components/common/Button';
+import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
+import { motion, AnimatePresence } from 'motion/react';
+import { TemplateConfigureView } from '../../components/admin/TemplateConfigureView';
+import { GeneratedReportPreviewModal } from '../../components/admin/reports/GeneratedReportPreviewModal';
+import { ReportActionsMenu } from '../../components/admin/reports/ReportActionsMenu';
+import { ReportChartRenderer } from '../../components/admin/reports/ReportChartRenderer';
+
+interface AdminReportsViewProps {
+  onBackToOverview: () => void;
+  onNavigate?: (route: string) => void;
+  currentRoute?: string;
+}
+
+// 4 Canonical Tabs (Prompt Section 5)
+type MainTab = 'reports_centre' | 'template_library' | 'custom_builder' | 'live_metrics';
+
+function formatReportDate(value?: string | null): string {
+  if (!value) return 'Date unavailable';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return 'Date unavailable';
+  }
+  return new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date);
+}
+
+// Human-facing statuses (Prompt Section 8 & 57)
+function getReportStatusLabel(status: string): string {
+  switch (status) {
+    case 'queued':
+    case 'generating':
+      return 'Preparing';
+    case 'ready':
+    case 'completed':
+      return 'Ready';
+    case 'failed':
+      return "Couldn't create report";
+    case 'cancelled':
+      return 'Cancelled';
+    case 'archived':
+      return 'Archived';
+    default:
+      return 'Preparing';
+  }
+}
+
+interface ReportTemplate {
+  key: string;
+  name: string;
+  description: string;
+  privacyClassification: string;
+  recommendedSections: string[];
+  supportedSections?: string[];
+  defaultSections?: string[];
+  availableFilters?: any;
+  includes?: string[];
+  audience?: string;
+  reportDomain?: string;
+}
+
+// 6 Canonical Templates (Prompt Section 9)
+const CANONICAL_TEMPLATES: ReportTemplate[] = [
+  {
+    key: 'management-summary',
+    name: 'Event Executive',
+    description: 'A complete operational overview of the event.',
+    privacyClassification: 'Internal operational',
+    recommendedSections: [
+      'Executive summary',
+      'Registration & participation',
+      'Attendance & movement',
+      'Volunteer coverage',
+      'Care & safety',
+      'Key observations'
+    ],
+    supportedSections: [
+      'Executive summary',
+      'Registration & participation',
+      'Attendance & movement',
+      'Volunteer coverage',
+      'Care & safety',
+      'Key observations'
+    ],
+    reportDomain: 'Leadership',
+    audience: 'Senior Leadership, Event Directors',
+    includes: [
+      'Executive KPI summary band',
+      'Deterministic key findings & attention items',
+      'Registration & attendance yields',
+      'Volunteer coverage ratios',
+      'Aggregated care & safety status'
+    ]
+  },
+  {
+    key: 'registration-selection',
+    name: 'Registration & Selection',
+    description: 'Registration, selection and capacity.',
+    privacyClassification: 'Internal operational',
+    recommendedSections: ['Registration & selection', 'Participation profile', 'Key observations'],
+    supportedSections: ['Executive summary', 'Registration & selection', 'Participation profile', 'Key observations'],
+    reportDomain: 'Registration',
+    audience: 'Registration Leads, Review Coordinators',
+    includes: [
+      'Registration demand & intake volumes',
+      'Application review outcome breakdown',
+      'Age-group cohort registration demand',
+      'Capacity pressure evaluation'
+    ]
+  },
+  {
+    key: 'attendance-movement',
+    name: 'Attendance & Demographics',
+    description: 'Attendance patterns and participant breakdown.',
+    privacyClassification: 'Internal operational',
+    recommendedSections: ['Attendance & movement', 'Participation profile', 'Key observations'],
+    supportedSections: ['Executive summary', 'Attendance & movement', 'Participation profile', 'Key observations'],
+    reportDomain: 'Attendance',
+    audience: 'Attendance Lead, Operations Supervisors',
+    includes: [
+      'Expected vs checked-in attendance rate',
+      'Active inside vs verified pickups',
+      'Attendance rate breakdown by age group',
+      'Chronological check-in activity flow'
+    ]
+  },
+  {
+    key: 'volunteer-coverage',
+    name: 'Volunteer Team',
+    description: 'Volunteer approvals, assignments and duty.',
+    privacyClassification: 'Internal operational',
+    recommendedSections: ['Volunteer coverage', 'Key observations'],
+    supportedSections: ['Executive summary', 'Volunteer coverage', 'Operational appendix', 'Key observations'],
+    reportDomain: 'People',
+    audience: 'Volunteer Coordinator, Team Leads',
+    includes: [
+      'Approved vs on-duty volunteer headcounts',
+      'Volunteer deployment by ministry team',
+      'Staff-to-child ratios per location',
+      'Coverage gaps and staffing observations'
+    ]
+  },
+  {
+    key: 'care-safety-summary',
+    name: 'Child Safety',
+    description: 'Safety notices, incidents and escalation records.',
+    privacyClassification: 'Safeguarding restricted',
+    recommendedSections: ['Care & safety', 'Key observations'],
+    supportedSections: ['Executive summary', 'Care & safety', 'Key observations'],
+    reportDomain: 'Safeguarding',
+    audience: 'Safeguarding Lead, Executive Leadership',
+    includes: [
+      'Aggregated medical and care awareness count',
+      'Safety concerns recorded by resolution status',
+      'Incident severity distribution (anonymised)',
+      'Safeguarding follow-up items'
+    ]
+  },
+  {
+    key: 'full-event-report',
+    name: 'Custom Event Report',
+    description: 'Choose the sections you need.',
+    privacyClassification: 'Internal operational',
+    recommendedSections: [
+      'Executive summary',
+      'Registration & selection',
+      'Participation profile',
+      'Attendance & movement',
+      'Volunteer coverage',
+      'Care & support',
+      'Safety & incidents',
+      'Key observations',
+      'Appendix'
+    ],
+    supportedSections: [
+      'Executive summary',
+      'Registration & selection',
+      'Participation profile',
+      'Attendance & movement',
+      'Volunteer coverage',
+      'Care & support',
+      'Safety & incidents',
+      'Key observations',
+      'Appendix'
+    ],
+    reportDomain: 'Comprehensive',
+    audience: 'Executive Leadership, Department Leads',
+    includes: [
+      'Comprehensive executive summary',
+      'Registration pipeline & selection outcomes',
+      'Hourly arrival & pickup movement trends',
+      'Volunteer deployment & location loads',
+      'Aggregated safeguarding & care analysis',
+      'Observations and operational appendix'
+    ]
+  }
+];
+
+export const AdminReportsView: React.FC<AdminReportsViewProps> = ({ 
+  onBackToOverview,
+  onNavigate,
+  currentRoute
+}) => {
+  const { showError, showSuccess } = useNotification();
+  
+  // Tabs State (Prompt Section 5: Reports, Templates, Create report, Event overview)
+  const [activeMainTab, setActiveMainTab] = useState<MainTab>('reports_centre');
+
+  // Loading States
+  const [loadingReportsList, setLoadingReportsList] = useState(false);
+  const [reportsListError, setReportsListError] = useState(false);
+  const [loadingOverview, setLoadingOverview] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Events & Templates
+  const [availableEvents, setAvailableEvents] = useState<any[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string>('event-ga-2026');
+  const [templates, setTemplates] = useState<ReportTemplate[]>(CANONICAL_TEMPLATES);
+  const [generatedReports, setGeneratedReports] = useState<any[]>([]);
+
+  // Preview & Expired Modal State
+  const [previewingReportId, setPreviewingReportId] = useState<string | null>(null);
+  const [previewReportTitle, setPreviewReportTitle] = useState<string>('');
+  const [previewEventTitle, setPreviewEventTitle] = useState<string>('');
+  const [expiredModalReportId, setExpiredModalReportId] = useState<string | null>(null);
+  
+  // Create Report Editorial Workflow State (Prompt Sections 10-14 & 48)
+  const [createStep, setCreateStep] = useState<number>(1);
+  const [builderTemplate, setBuilderTemplate] = useState<string>('management-summary');
+  const [builderClassification, setBuilderClassification] = useState<string>('Internal operational');
+  const [customReportTitle, setCustomReportTitle] = useState<string>('');
+  const [customSubtitle, setCustomSubtitle] = useState<string>('Children & Teens Ministry');
+  const [builderSections, setBuilderSections] = useState<string[]>([
+    'Executive summary',
+    'Registration & participation',
+    'Attendance & movement',
+    'Volunteer coverage',
+    'Care & safety',
+    'Key observations'
+  ]);
+  const [builderFilters, setBuilderFilters] = useState({
+    ageGroup: 'All',
+    location: 'All',
+    timezone: 'Africa/Lagos'
+  });
+  const [submittingJob, setSubmittingJob] = useState(false);
+  const [activeProgressJobId, setActiveProgressJobId] = useState<string | null>(null);
+
+  // Event Overview State (Prompt Sections 44-46)
+  const [liveOverviewAnalytics, setLiveOverviewAnalytics] = useState<any>(null);
+
+  // Bulk selection & Delete modal states (Priority 14, 15, 16)
+  const [selectedReportIds, setSelectedReportIds] = useState<string[]>([]);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [bulkDownloading, setBulkDownloading] = useState(false);
+
+  // Audit modal
+  const [auditReportId, setAuditReportId] = useState<string | null>(null);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [loadingAudit, setLoadingAudit] = useState(false);
+
+  // 1. Fetch Events List
+  const fetchEvents = async () => {
+    try {
+      const res = await api.request<any>('/api/admin/events');
+      if (res && res.success && res.events && res.events.length > 0) {
+        setAvailableEvents(res.events);
+        const current = res.events.find((e: any) => e.status === 'current' || e.is_current)
+          || res.events.find((e: any) => e.status === 'open' || e.status === 'active')
+          || res.events[0];
+        if (current) {
+          setSelectedEventId(prev => {
+            if (prev && res.events.some((e: any) => e.id === prev)) {
+              return prev;
+            }
+            return current.id;
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Could not load events list:', err);
+    }
+  };
+
+  // 2. Fetch Reports List & Server Templates (Resilient & Event-Isolated)
+  const fetchReportsListAndTemplates = async (eventId?: string) => {
+    setLoadingReportsList(true);
+    setReportsListError(false);
+    try {
+      const targetEventId = eventId !== undefined ? eventId : selectedEventId;
+      const reportsUrl = targetEventId ? `/api/admin/reports?eventId=${encodeURIComponent(targetEventId)}` : '/api/admin/reports';
+
+      const [tempRes, jobsRes] = await Promise.allSettled([
+        api.request('/api/admin/reports/templates'),
+        api.request(reportsUrl)
+      ]);
+
+      if (tempRes.status === 'fulfilled' && tempRes.value?.success && Array.isArray(tempRes.value.templates)) {
+        // Ensure canonical templates are at the front
+        const merged = [...CANONICAL_TEMPLATES];
+        tempRes.value.templates.forEach((t: any) => {
+          if (!merged.some(m => m.key === t.key)) {
+            merged.push(t);
+          }
+        });
+        setTemplates(merged);
+      }
+
+      if (jobsRes.status === 'fulfilled' && jobsRes.value?.success) {
+        setGeneratedReports(jobsRes.value.reports || []);
+      } else if (jobsRes.status === 'rejected') {
+        console.error('Failed to load reports list:', jobsRes.reason);
+        setReportsListError(true);
+      }
+    } catch (err) {
+      console.error('Failed to load reports list or templates:', err);
+      setReportsListError(true);
+    } finally {
+      setLoadingReportsList(false);
+    }
+  };
+
+  // 3. Fetch Live Overview Analytics for Event overview Tab (Prompt Section 44-46)
+  const fetchLiveOverview = async (eventId?: string) => {
+    setLoadingOverview(true);
+    try {
+      const targetId = eventId || selectedEventId || 'event-ga-2026';
+      const res = await api.request<any>('/api/admin/reports/preview', {
+        method: 'POST',
+        body: JSON.stringify({
+          templateKey: 'management-summary',
+          privacyLevel: 'Internal operational',
+          sections: [
+            'Executive summary',
+            'Registration & participation',
+            'Attendance & movement',
+            'Volunteer coverage',
+            'Care & safety',
+            'Key observations'
+          ],
+          filters: { ageGroup: 'All', location: 'All' },
+          eventId: targetId
+        })
+      });
+      if (res && res.success && res.analytics) {
+        setLiveOverviewAnalytics(res.analytics);
+      }
+    } catch (err) {
+      console.warn('Could not load live event overview:', err);
+    } finally {
+      setLoadingOverview(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchEvents();
+  }, []);
+
+  useEffect(() => {
+    if (selectedEventId) {
+      fetchReportsListAndTemplates(selectedEventId);
+    }
+  }, [selectedEventId]);
+
+  useEffect(() => {
+    if (activeMainTab === 'live_metrics') {
+      fetchLiveOverview(selectedEventId);
+    }
+  }, [activeMainTab, selectedEventId]);
+
+  // Set default report title when template or event changes
+  useEffect(() => {
+    const ev = availableEvents.find(e => e.id === selectedEventId);
+    const eventName = ev?.title || 'The General Assembly 2026';
+    const tm = templates.find(t => t.key === builderTemplate);
+    const templateName = tm?.name || 'Management summary';
+    setCustomReportTitle(`${eventName} — ${templateName}`);
+  }, [selectedEventId, builderTemplate, availableEvents, templates]);
+
+  // Handle template selection from template library
+  const handleSelectTemplate = (templateKey: string) => {
+    const tm = templates.find(t => t.key === templateKey);
+    if (!tm) return;
+    setBuilderTemplate(tm.key);
+    setBuilderClassification(tm.privacyClassification || 'Internal operational');
+    setBuilderSections(tm.recommendedSections || tm.defaultSections || [
+      'Executive summary',
+      'Registration & participation',
+      'Attendance & movement',
+      'Volunteer coverage',
+      'Care & safety',
+      'Key observations'
+    ]);
+    setCreateStep(2); // Advance to event selection
+    setActiveMainTab('custom_builder');
+    showSuccess('Template Selected', `Configuring "${tm.name}".`);
+  };
+
+  // Toggle section selection in Step 4
+  const handleToggleSection = (sec: string) => {
+    if (builderSections.includes(sec)) {
+      setBuilderSections(builderSections.filter(s => s !== sec));
+    } else {
+      setBuilderSections([...builderSections, sec]);
+    }
+  };
+
+  // Submit report generation job
+  const handleCreateReportJob = async () => {
+    setSubmittingJob(true);
+    const idempotencyKey = 'key-' + Math.random().toString(36).substring(2);
+
+    try {
+      const response = await api.request('/api/admin/reports', {
+        method: 'POST',
+        body: JSON.stringify({
+          templateKey: builderTemplate,
+          privacyLevel: builderClassification,
+          sections: builderSections,
+          filters: builderFilters,
+          eventId: selectedEventId,
+          reportTitle: customReportTitle,
+          idempotencyKey
+        })
+      });
+
+      if (response && response.success) {
+        const newJobId = response.jobId;
+        setActiveProgressJobId(newJobId);
+        pollJobStatus(newJobId);
+      } else {
+        showError('Request Failed', 'Could not create report. Please try again.');
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Submission Failed', parsed.message);
+    } finally {
+      setSubmittingJob(false);
+    }
+  };
+
+  // Poll Job Status (Prompt Section 58 & 59)
+  const pollJobStatus = (jobId: string) => {
+    let attempts = 0;
+    const interval = setInterval(async () => {
+      attempts++;
+      if (attempts > 30) {
+        clearInterval(interval);
+        setActiveProgressJobId(null);
+        showError('Notice', 'Report generation is taking a moment. Please check the reports list shortly.');
+        fetchReportsListAndTemplates();
+        return;
+      }
+
+      try {
+        const res = await api.request(`/api/admin/reports/${jobId}`);
+        const job = res?.report || res?.job;
+        if (res && res.success && job) {
+          const status = job.status;
+          
+          if (status === 'completed' || status === 'ready') {
+            clearInterval(interval);
+            setTimeout(() => {
+              setActiveProgressJobId(null);
+              showSuccess('Report ready', 'Your report has been created and is ready for review.');
+              setActiveMainTab('reports_centre');
+              fetchReportsListAndTemplates();
+              setCreateStep(1);
+            }, 800);
+          } else if (status === 'failed') {
+            clearInterval(interval);
+            setActiveProgressJobId(null);
+            showError("We couldn't create this report", 'Please try again. If the problem continues, refresh the page and try once more.');
+            fetchReportsListAndTemplates();
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }, 1500);
+  };
+
+  // Secure authorized download via standard auth header token (Prompt Section 52 & 55)
+  const handleDownloadReportPDF = (reportId: string, filename?: string) => {
+    const token = api.getToken();
+    if (!token) {
+      showError('Error', 'You are currently logged out.');
+      return;
+    }
+
+    // If report is known to have an expired artifact, open recovery modal directly
+    const existing = generatedReports.find(r => r.id === reportId);
+    if (existing?.downloadExpired) {
+      setExpiredModalReportId(reportId);
+      return;
+    }
+
+    showSuccess('Preparing file', 'Preparing report download…');
+    
+    const downloadUrl = buildApiUrl(`/api/admin/reports/${reportId}/download`);
+    
+    fetch(downloadUrl, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+    .then(async (res) => {
+      const contentType = res.headers.get('content-type') || '';
+      
+      if (!res.ok || contentType.includes('application/json')) {
+        let errorMsg = 'We could not download this report.';
+        let isExpired = res.status === 410;
+        try {
+          const errData = await res.json();
+          if (errData && errData.error) {
+            errorMsg = errData.error;
+          }
+          if (errData?.code === 'DOWNLOAD_EXPIRED' || (typeof errorMsg === 'string' && errorMsg.toLowerCase().includes('expired'))) {
+            isExpired = true;
+          }
+        } catch (_) {}
+
+        if (isExpired) {
+          // Open friendly recovery modal without tech jargon / HTTP codes
+          setExpiredModalReportId(reportId);
+          return;
+        }
+
+        throw new Error(errorMsg);
+      }
+
+      if (!contentType.includes('application/pdf')) {
+        throw new Error('We could not download this report.');
+      }
+
+      const blob = await res.blob();
+      if (blob.size === 0) {
+        throw new Error('Downloaded report file was empty.');
+      }
+
+      const disposition = res.headers.get('content-disposition') || '';
+      let headerFilename = '';
+      const filenameStarMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+      if (filenameStarMatch) {
+        try {
+          headerFilename = decodeURIComponent(filenameStarMatch[1]);
+        } catch (_) {}
+      }
+      if (!headerFilename) {
+        const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+        if (filenameMatch) headerFilename = filenameMatch[1];
+      }
+
+      const safeDownloadName = headerFilename || (filename && filename.endsWith('.pdf') ? filename : 'TGA-2026-Management-Report.pdf');
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = safeDownloadName;
+      document.body.appendChild(a);
+      a.click();
+      
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }, 200);
+
+      showSuccess('Download started', `Downloading ${safeDownloadName}`);
+    })
+    .catch((err) => {
+      console.error('Download error:', err);
+      showError('Download failed', err.message || 'Failed to download report.');
+    });
+  };
+
+  // CSV Export
+  const handleExport = (type: string, format: string) => {
+    const url = buildApiUrl(`/api/admin/reports/export?type=${type}&format=${format}&eventId=${selectedEventId}`);
+    window.open(url, '_blank');
+  };
+
+  // Actions
+  const handleRegenerateReport = async (reportId: string) => {
+    try {
+      const res = await api.request(`/api/admin/reports/${reportId}/regenerate`, { method: 'POST' });
+      if (res && res.success) {
+        showSuccess('Queued', 'Report regeneration has been queued.');
+        setActiveProgressJobId(reportId);
+        pollJobStatus(reportId);
+        fetchReportsListAndTemplates(selectedEventId);
+      }
+    } catch (err: any) {
+      showError('Failed', extractApiError(err).message);
+    }
+  };
+
+  const handleArchiveReport = async (reportId: string) => {
+    try {
+      const res = await api.request(`/api/admin/reports/${reportId}/archive`, { method: 'POST' });
+      if (res && res.success) {
+        showSuccess('Archived', 'Report moved to archived records.');
+        fetchReportsListAndTemplates();
+      }
+    } catch (err: any) {
+      showError('Failed', extractApiError(err).message);
+    }
+  };
+
+  // Selection Handlers (Priority 14)
+  const handleToggleSelectRow = (reportId: string) => {
+    setSelectedReportIds(prev =>
+      prev.includes(reportId) ? prev.filter(id => id !== reportId) : [...prev, reportId]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedReportIds.length === generatedReports.length) {
+      setSelectedReportIds([]);
+    } else {
+      setSelectedReportIds(generatedReports.map(r => r.id));
+    }
+  };
+
+  // Single Delete Confirmation & Execution (Priority 16)
+  const handleDeleteReport = (reportId: string, title?: string) => {
+    const report = generatedReports.find(r => r.id === reportId);
+    const reportTitle = title || report?.reportTitle || report?.report_name || report?.templateName || 'Report';
+    setDeleteTarget({ id: reportId, title: reportTitle });
+  };
+
+  const handleConfirmSingleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const res = await api.request<any>(`/api/admin/reports/${deleteTarget.id}`, { method: 'DELETE' });
+      if (res && res.success) {
+        // Optimistic UI update without browser refresh
+        setGeneratedReports(prev => prev.filter(r => r.id !== deleteTarget.id));
+        setSelectedReportIds(prev => prev.filter(id => id !== deleteTarget.id));
+        showSuccess('Deleted', 'Report deleted.');
+        setDeleteTarget(null);
+        fetchReportsListAndTemplates();
+      } else {
+        showError('Delete Failed', res?.error || 'Could not delete report.');
+      }
+    } catch (err: any) {
+      showError('Delete Failed', extractApiError(err).message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Bulk Delete Confirmation & Execution (Priority 15)
+  const handleConfirmBulkDelete = async () => {
+    if (selectedReportIds.length === 0) return;
+    setDeleting(true);
+    try {
+      const res = await api.request<any>('/api/admin/reports/bulk-delete', {
+        method: 'POST',
+        body: JSON.stringify({ reportIds: selectedReportIds })
+      });
+      if (res && res.success) {
+        const deletedCount = res.deletedCount || selectedReportIds.length;
+        // Optimistic UI update without browser refresh
+        setGeneratedReports(prev => prev.filter(r => !selectedReportIds.includes(r.id)));
+        setSelectedReportIds([]);
+        setBulkDeleteConfirmOpen(false);
+        showSuccess('Deleted', `${deletedCount} report${deletedCount === 1 ? '' : 's'} deleted.`);
+        fetchReportsListAndTemplates();
+      } else {
+        showError('Delete Failed', res?.error || 'Could not delete selected reports.');
+      }
+    } catch (err: any) {
+      showError('Delete Failed', extractApiError(err).message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Bulk Download as ZIP (Priority 17)
+  const handleBulkDownload = async () => {
+    if (selectedReportIds.length === 0) return;
+    setBulkDownloading(true);
+    try {
+      const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') || '';
+      const res = await fetch(buildApiUrl('/api/admin/reports/bulk-download'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ reportIds: selectedReportIds })
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Failed to download selected reports.');
+      }
+
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      const dateStr = new Date().toISOString().slice(0, 10);
+      a.download = `Koinonia-Reports-Archive-${dateStr}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(blobUrl);
+      showSuccess('Downloaded', `Downloaded ${selectedReportIds.length} reports in ZIP.`);
+    } catch (err: any) {
+      showError('Download Failed', err?.message || 'Could not complete bulk download.');
+    } finally {
+      setBulkDownloading(false);
+    }
+  };
+
+  const handleTriggerUpdatedVersion = async (reportId: string) => {
+    try {
+      const res = await api.request(`/api/admin/reports/${reportId}/generate-updated`, { method: 'POST' });
+      if (res && res.success) {
+        showSuccess('Queued', 'A new updated report has been queued.');
+        pollJobStatus(res.jobId);
+        fetchReportsListAndTemplates();
+      }
+    } catch (err: any) {
+      showError('Failed', extractApiError(err).message);
+    }
+  };
+
+  const viewAuditLogs = async (reportId: string) => {
+    setAuditReportId(reportId);
+    setLoadingAudit(true);
+    try {
+      const res = await api.request(`/api/admin/reports/${reportId}/history`);
+      if (res && res.success) {
+        setAuditLogs(res.history || []);
+      }
+    } catch (err) {
+      showError('Error', 'Failed to fetch audit log.');
+    } finally {
+      setLoadingAudit(false);
+    }
+  };
+
+  // Sub-route handling
+  const isConfigureRoute = currentRoute && currentRoute.startsWith('/admin/reports/templates/') && currentRoute.endsWith('/configure');
+  const templateKey = isConfigureRoute ? currentRoute.split('/')[4] : null;
+
+  if (isConfigureRoute && templateKey) {
+    return (
+      <TemplateConfigureView 
+        templateKey={templateKey}
+        onBack={() => {
+          if (onNavigate) {
+            onNavigate('/admin/reports');
+          }
+        }}
+        onNavigate={onNavigate}
+        showSuccess={showSuccess}
+        showError={showError}
+      />
+    );
+  }
+
+  const selectedEventObj = availableEvents.find(e => e.id === selectedEventId) || availableEvents[0];
+  const selectedTemplateObj = templates.find(t => t.key === builderTemplate) || templates[0];
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: 'easeOut' }}
+      className="space-y-8 pb-16 text-stone-900 dark:text-[#F0EBE3]"
+      id="admin-reports-module"
+    >
+      {/* ----------------- 1. MAIN PAGE HEADER (Prompt Section 4) ----------------- */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-stone-200/80 dark:border-[#302E29] pb-6">
+        <div>
+          <h1 className="type-h1-app text-stone-900 dark:text-[#F0EBE3]">
+            Reports
+          </h1>
+          <p className="text-stone-500 dark:text-[#7A7570] text-sm mt-1.5 leading-relaxed">
+            Create clear event reports for leadership, review previous reports and understand how the current event is progressing.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={() => {
+              fetchReportsListAndTemplates();
+              if (activeMainTab === 'live_metrics') fetchLiveOverview(selectedEventId);
+            }}
+            variant="outline"
+            className="border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#21211E] hover:bg-stone-50 dark:hover:bg-[#262520] text-stone-700 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] text-xs py-2 px-3.5 flex items-center gap-1.5 rounded-lg font-medium"
+            id="btn-refresh-all-reports"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-stone-500 dark:text-[#7A7570]" />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {/* ----------------- 2. TOP-LEVEL TABS (Prompt Section 5) ----------------- */}
+      <div className="flex border-b border-stone-200 dark:border-[#302E29] -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto scrollbar-none">
+        <div className="flex space-x-8 min-w-max pb-1">
+          {[
+            { id: 'reports_centre', label: 'Reports' },
+            { id: 'template_library', label: 'Templates' },
+            { id: 'custom_builder', label: 'Create report' },
+            { id: 'live_metrics', label: 'Event overview' }
+          ].map((tab) => {
+            const isActive = activeMainTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveMainTab(tab.id as MainTab)}
+                className={`pb-3 text-left transition-all relative font-sans ${
+                  isActive 
+                    ? 'text-[#C59B27] dark:text-amber-400 font-semibold'
+                    : 'text-stone-500 dark:text-[#7A7570] hover:text-stone-800 dark:hover:text-[#F0EBE3] font-medium'
+                }`}
+                id={`main-tab-${tab.id}`}
+              >
+                <div className="text-sm">{tab.label}</div>
+                {isActive && (
+                  <motion.div 
+                    layoutId="activeMainTabUnderline" 
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#C59B27] dark:bg-amber-400"
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ----------------- 3. COMPILATION LOADING FLOATER (Prompt Section 58) ----------------- */}
+      <AnimatePresence>
+        {activeProgressJobId && (
+          <motion.div 
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 40 }}
+            className="fixed bottom-6 right-6 z-50 bg-stone-900 text-stone-100 rounded-xl p-5 shadow-xl border border-stone-800 w-84"
+            id="report-compilation-progress-widget"
+          >
+            <div className="flex items-center gap-2.5 mb-1.5">
+              <Loader2 className="w-4 h-4 animate-spin text-[#C59B27]" />
+              <span className="text-sm font-medium text-white">
+                Preparing your report…
+              </span>
+            </div>
+            <p className="text-xs text-stone-400 pl-6.5">This may take a moment.</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ----------------- TAB 1: REPORTS ARCHIVE (Prompt Section 6, 7, 8) ----------------- */}
+      {activeMainTab === 'reports_centre' && (() => {
+        const displayedReports = selectedEventId
+          ? generatedReports.filter(r => !r.eventId || r.eventId === selectedEventId)
+          : generatedReports;
+
+        return (
+          <div className="space-y-6">
+            <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200/80 dark:border-[#302E29] p-5 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="space-y-0.5">
+                <h2 className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">Reports</h2>
+                <p className="text-stone-500 dark:text-[#7A7570] text-xs leading-relaxed">
+                  Reports created for this event will appear here.
+                </p>
+              </div>
+              <div className="flex items-center gap-3 self-start sm:self-auto">
+                {availableEvents.length > 1 && (
+                  <select
+                    value={selectedEventId}
+                    onChange={(e) => {
+                      const newId = e.target.value;
+                      setSelectedEventId(newId);
+                      fetchReportsListAndTemplates(newId);
+                    }}
+                    className="text-xs py-2 px-3 bg-stone-50 dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg text-stone-800 dark:text-[#F0EBE3] font-medium focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                    id="select-reports-event"
+                    aria-label="Filter reports by event"
+                  >
+                    {availableEvents.map((ev) => (
+                      <option key={ev.id} value={ev.id}>
+                        {ev.title} {ev.is_current || ev.status === 'current' ? '· Current' : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <Button
+                  onClick={() => {
+                    setCreateStep(1);
+                    setActiveMainTab('custom_builder');
+                  }}
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] dark:bg-[#C59B27] dark:hover:bg-[#B08621] text-white text-xs font-semibold py-2 px-4 rounded-lg flex items-center gap-1.5 shadow-2xs transition-all"
+                  id="btn-nav-custom-builder"
+                >
+                  <Plus className="w-4 h-4" />
+                  Create report
+                </Button>
+              </div>
+            </div>
+
+            {loadingReportsList ? (
+              <div className="flex items-center justify-center p-12 min-h-[30vh]">
+                <KoinoniaInlineLoader variant="logo" size="md" label="Loading reports..." />
+              </div>
+            ) : reportsListError ? (
+              <div className="flex flex-col items-center justify-center p-12 bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl min-h-[30vh] text-center space-y-4">
+                <div className="space-y-1.5 max-w-sm">
+                  <AlertCircle className="w-8 h-8 text-amber-600 dark:text-amber-400 mx-auto mb-2" />
+                  <p className="text-base font-medium text-stone-800 dark:text-[#F0EBE3]">We couldn't load reports. Try again.</p>
+                </div>
+                <Button
+                  onClick={() => fetchReportsListAndTemplates(selectedEventId)}
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] dark:bg-[#C59B27] dark:hover:bg-[#B08621] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
+                  id="btn-retry-reports-list"
+                >
+                  Try again
+                </Button>
+              </div>
+            ) : displayedReports.length === 0 ? (
+              /* Quiet Empty State (Prompt Section 7) */
+              <div className="flex flex-col items-center justify-center p-12 bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl min-h-[30vh] text-center space-y-4">
+                <div className="space-y-1.5 max-w-sm">
+                  <p className="text-base font-medium text-stone-800 dark:text-[#F0EBE3]">No reports have been created for this event yet.</p>
+                  <p className="text-xs text-stone-500 dark:text-[#7A7570] leading-relaxed">
+                    Create a report to summarise registrations, attendance, participation and event operations.
+                  </p>
+                </div>
+                <Button
+                  onClick={() => {
+                    setCreateStep(1);
+                    setActiveMainTab('custom_builder');
+                  }}
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] dark:bg-[#C59B27] dark:hover:bg-[#B08621] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
+                >
+                  Create report
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {/* Contextual Bulk Action Bar (Priority 14, 15, 17) */}
+                {selectedReportIds.length > 0 && (
+                  <div className="bg-[#FAF9F6] dark:bg-[#21211E] border border-[#C59B27]/30 dark:border-amber-900/40 rounded-xl px-5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-in fade-in duration-150">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-stone-800 dark:text-[#F0EBE3]">
+                        {selectedReportIds.length} {selectedReportIds.length === 1 ? 'report' : 'reports'} selected
+                      </span>
+                      <button
+                        onClick={() => setSelectedReportIds([])}
+                        className="text-xs text-stone-500 dark:text-[#7A7570] hover:text-stone-800 dark:hover:text-[#F0EBE3] underline ml-2 cursor-pointer"
+                      >
+                        Clear selection
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        onClick={handleBulkDownload}
+                        disabled={bulkDownloading}
+                        variant="outline"
+                        className="bg-white dark:bg-[#262520] border-stone-200 dark:border-[#3A3835] text-stone-700 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#2A2926] dark:hover:text-[#F0EBE3] text-xs py-1.5 px-3 flex items-center gap-1.5 rounded-lg font-medium shadow-2xs"
+                        id="btn-bulk-download"
+                      >
+                        {bulkDownloading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C59B27]" /> : <Download className="w-3.5 h-3.5 text-stone-500 dark:text-[#7A7570]" />}
+                        Download selected
+                      </Button>
+                      <Button
+                        onClick={() => setBulkDeleteConfirmOpen(true)}
+                        disabled={deleting}
+                        variant="outline"
+                        className="bg-white dark:bg-[#262520] border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 text-xs py-1.5 px-3 flex items-center gap-1.5 rounded-lg font-medium shadow-2xs"
+                        id="btn-bulk-delete"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                        Delete selected
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Generated Report List Table (Prompt Section 8) */}
+                <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl overflow-hidden shadow-2xs">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse" aria-label="Reports Archive">
+                      <thead>
+                        <tr className="bg-stone-50 dark:bg-[#21211E] border-b border-stone-200 dark:border-[#302E29]">
+                          <th className="py-3 px-4 w-10 text-center">
+                            <input
+                              type="checkbox"
+                              checked={displayedReports.length > 0 && selectedReportIds.length === displayedReports.length}
+                              ref={el => {
+                                if (el) {
+                                  el.indeterminate = selectedReportIds.length > 0 && selectedReportIds.length < displayedReports.length;
+                                }
+                              }}
+                              onChange={handleToggleSelectAll}
+                              className="w-4 h-4 rounded border-stone-300 dark:border-[#3A3835] text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
+                              aria-label="Select all reports"
+                            />
+                          </th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 dark:text-[#7A7570] uppercase tracking-wider">Report</th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 dark:text-[#7A7570] uppercase tracking-wider">Event</th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 dark:text-[#7A7570] uppercase tracking-wider">Type</th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 dark:text-[#7A7570] uppercase tracking-wider">Created</th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 dark:text-[#7A7570] uppercase tracking-wider">Created by</th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 dark:text-[#7A7570] uppercase tracking-wider">Status</th>
+                          <th className="py-3 px-6 text-[11px] font-semibold text-stone-500 dark:text-[#7A7570] uppercase tracking-wider text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-stone-100 dark:divide-[#302E29]">
+                        {displayedReports.map((report) => {
+                          const isComplete = report.status === 'completed' || report.status === 'ready';
+                          const isPending = ['queued', 'generating'].includes(report.status);
+                          const isFailed = report.status === 'failed';
+                          const isExpired = Boolean(report.downloadExpired);
+
+                          const reportTitle = report.reportTitle || report.report_name || report.templateName || 'Management Report';
+                          const eventTitle = report.eventTitle || report.eventName || 'The General Assembly 2026';
+                          const typeName = report.templateName || 'Management summary';
+                          const preparedBy = report.requestedByName || report.requestedByEmail || 'Super Admin';
+                          const statusLabel = isExpired ? 'Download expired' : getReportStatusLabel(report.status);
+                          const formattedDate = formatReportDate(report.createdAt || report.created_at || report.updatedAt);
+                          const isSelected = selectedReportIds.includes(report.id);
+
+                          return (
+                            <tr
+                              key={report.id}
+                              className={`hover:bg-stone-50/60 dark:hover:bg-[#262520]/60 transition-colors ${isSelected ? 'bg-[#FAF9F6] dark:bg-amber-950/15' : ''}`}
+                            >
+                              <td className="py-4 px-4 w-10 text-center" onClick={e => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => handleToggleSelectRow(report.id)}
+                                  className="w-4 h-4 rounded border-stone-300 dark:border-[#3A3835] text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
+                                  aria-label={`Select report ${reportTitle}`}
+                                />
+                              </td>
+                              <td className="py-4 px-6">
+                                <div className="space-y-0.5">
+                                  <span className="text-sm font-semibold text-stone-900 dark:text-[#F0EBE3] block line-clamp-1">
+                                    {reportTitle}
+                                  </span>
+                                  <span className="text-xs text-stone-400 dark:text-[#7A7570] block">
+                                    {report.pageCount ? `${report.pageCount} pages` : 'PDF Document'}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="py-4 px-6 text-xs text-stone-700 dark:text-[#B8B0A5] font-medium">
+                                {eventTitle}
+                              </td>
+                              <td className="py-4 px-6 text-xs text-stone-600 dark:text-[#7A7570]">
+                                {typeName}
+                              </td>
+                              <td className="py-4 px-6 text-xs text-stone-500 dark:text-[#7A7570] tabular-nums">
+                                {formattedDate}
+                              </td>
+                              <td className="py-4 px-6 text-xs text-stone-700 dark:text-[#B8B0A5] font-medium">
+                                {preparedBy}
+                              </td>
+                              <td className="py-4 px-6">
+                                <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-0.5 rounded-full ${
+                                  isExpired ? 'bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-400 border border-amber-200/70 dark:border-amber-900/40' :
+                                  isComplete ? 'bg-stone-100 dark:bg-[#262520] text-stone-700 dark:text-[#B8B0A5] border border-stone-200/80 dark:border-[#3A3835]' :
+                                  isPending ? 'bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40' :
+                                  isFailed ? 'bg-red-50 dark:bg-red-950/20 text-red-800 dark:text-red-400 border border-red-200/60 dark:border-red-900/40' :
+                                  'bg-stone-100 dark:bg-[#262520] text-stone-600 dark:text-[#B8B0A5]'
+                                }`}>
+                                  {isPending && <Loader2 className="w-2.5 h-2.5 animate-spin text-amber-600 dark:text-amber-400" />}
+                                  {statusLabel}
+                                </span>
+                              </td>
+                              <td className="py-4 px-6 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  {isComplete && (
+                                    <>
+                                      <button
+                                        onClick={() => {
+                                          setPreviewingReportId(report.id);
+                                          setPreviewReportTitle(reportTitle);
+                                          setPreviewEventTitle(eventTitle);
+                                        }}
+                                        className="h-8 px-3 bg-white dark:bg-[#21211E] border border-stone-200 dark:border-[#3A3835] text-stone-800 dark:text-[#F0EBE3] rounded-lg text-xs font-semibold hover:bg-stone-50 dark:hover:bg-[#262520] transition-all flex items-center justify-center gap-1 shadow-2xs cursor-pointer"
+                                        id={`btn-view-${report.id}`}
+                                      >
+                                        <Eye className="w-3.5 h-3.5 text-stone-500 dark:text-[#7A7570]" />
+                                        Review report
+                                      </button>
+
+                                      {isExpired ? (
+                                        <button
+                                          onClick={() => handleRegenerateReport(report.id)}
+                                          className="h-8 px-3 bg-[#C59B27] hover:bg-[#b08920] text-white rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1 shadow-2xs cursor-pointer"
+                                          id={`btn-regenerate-${report.id}`}
+                                        >
+                                          <RefreshCw className="w-3.5 h-3.5" />
+                                          Regenerate report
+                                        </button>
+                                      ) : (
+                                        <button
+                                          onClick={() => handleDownloadReportPDF(report.id, report.storage_key || report.storageKey)}
+                                          className="h-8 px-3 bg-[#C59B27] hover:bg-[#b08920] text-white rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1 shadow-2xs cursor-pointer"
+                                          id={`btn-download-${report.id}`}
+                                        >
+                                          <Download className="w-3.5 h-3.5" />
+                                          Download
+                                        </button>
+                                      )}
+                                    </>
+                                  )}
+
+                                  {isFailed && (
+                                    <button
+                                      onClick={() => handleRegenerateReport(report.id)}
+                                      className="h-8 px-3 bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold rounded-lg flex items-center gap-1 cursor-pointer"
+                                      id={`btn-retry-${report.id}`}
+                                    >
+                                      <RefreshCw className="w-3 h-3" />
+                                      Try again
+                                    </button>
+                                  )}
+
+                                  <ReportActionsMenu
+                                    reportId={report.id}
+                                    status={report.status}
+                                    onUpdateVersion={isComplete ? () => handleTriggerUpdatedVersion(report.id) : undefined}
+                                    onViewHistory={() => viewAuditLogs(report.id)}
+                                    onRegenerate={() => handleRegenerateReport(report.id)}
+                                    onArchive={() => handleArchiveReport(report.id)}
+                                    onDelete={() => handleDeleteReport(report.id, reportTitle)}
+                                  />
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ----------------- TAB 2: TEMPLATES (Prompt Section 9 & 47) ----------------- */}
+      {activeMainTab === 'template_library' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {templates.slice(0, 6).map((temp) => (
+              <div 
+                key={temp.key} 
+                className="bg-white dark:bg-[#1D1D1A] p-6 rounded-xl border border-stone-200 dark:border-[#302E29] hover:border-[#C59B27]/40 dark:hover:border-amber-500/40 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between space-y-6"
+                id={`template-card-${temp.key}`}
+              >
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <h2 className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3] leading-snug">
+                      {temp.name}
+                    </h2>
+                    <p className="text-stone-500 dark:text-[#7A7570] text-xs leading-relaxed">
+                      {temp.description}
+                    </p>
+                  </div>
+
+                  {/* Included Sections */}
+                  <div className="border-t border-stone-100 dark:border-[#302E29] pt-3.5 space-y-2">
+                    <span className="text-[11px] font-semibold text-stone-700 dark:text-[#B8B0A5] uppercase tracking-wider block">
+                      Included sections
+                    </span>
+                    <ul className="space-y-1 text-xs text-stone-600 dark:text-[#7A7570]">
+                      {(temp.recommendedSections || temp.defaultSections || []).slice(0, 5).map((item: string, idx: number) => (
+                        <li key={idx} className="flex items-start gap-1.5">
+                          <span className="text-[#C59B27] dark:text-amber-400 shrink-0 font-bold">•</span>
+                          <span className="leading-tight">{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="border-t border-stone-100 dark:border-[#302E29] pt-4">
+                  <button
+                    onClick={() => handleSelectTemplate(temp.key)}
+                    className="w-full bg-white dark:bg-[#21211E] hover:bg-stone-50 dark:hover:bg-[#262520] border border-stone-200 dark:border-[#3A3835] text-stone-800 dark:text-[#F0EBE3] text-xs font-semibold py-2.5 px-4 rounded-lg flex items-center justify-between transition-all cursor-pointer"
+                    id={`btn-use-template-${temp.key}`}
+                  >
+                    <span>Use template</span>
+                    <span className="text-[#C59B27] dark:text-amber-400 font-bold text-sm">→</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ----------------- TAB 3: CREATE REPORT FLOW (Prompt Section 10-14 & 48) ----------------- */}
+      {activeMainTab === 'custom_builder' && (
+        <div className="max-w-3xl mx-auto bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-6 sm:p-8 space-y-8 shadow-2xs">
+          {/* Step Progress Tracker */}
+          <div className="border-b border-stone-200 dark:border-[#302E29] pb-4">
+            <div className="flex items-center justify-between text-xs font-medium text-stone-500 dark:text-[#7A7570]">
+              {[
+                { step: 1, label: 'Report type' },
+                { step: 2, label: 'Event' },
+                { step: 3, label: 'Report title' },
+                { step: 4, label: 'Sections' },
+                { step: 5, label: 'Preview' }
+              ].map(({ step, label }) => (
+                <button
+                  key={step}
+                  type="button"
+                  onClick={() => setCreateStep(step)}
+                  className={`flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    createStep === step ? 'text-[#C59B27] dark:text-amber-400 font-semibold' : createStep > step ? 'text-stone-800 dark:text-[#F0EBE3]' : 'text-stone-400 dark:text-[#7A7570]'
+                  }`}
+                >
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${
+                    createStep === step ? 'bg-[#C59B27] text-white' : createStep > step ? 'bg-stone-200 dark:bg-[#262520] text-stone-700 dark:text-[#F0EBE3]' : 'bg-stone-100 dark:bg-[#21211E] text-stone-400 dark:text-[#7A7570]'
+                  }`}>
+                    {step}
+                  </span>
+                  <span className="hidden sm:inline">{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* STEP 1: CHOOSE REPORT TYPE (Prompt Section 11) */}
+          {createStep === 1 && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="space-y-1">
+                <h2 className="text-xl font-sans font-semibold text-stone-900 dark:text-[#F0EBE3]">Choose report type</h2>
+                <p className="text-xs text-stone-500 dark:text-[#7A7570]">Select the report template designed for your audience.</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {templates.slice(0, 6).map((temp) => {
+                  const isSelected = builderTemplate === temp.key;
+                  return (
+                    <div
+                      key={temp.key}
+                      onClick={() => {
+                        setBuilderTemplate(temp.key);
+                        setBuilderClassification(temp.privacyClassification || 'Internal operational');
+                        if (temp.recommendedSections) setBuilderSections(temp.recommendedSections);
+                      }}
+                      className={`p-4 rounded-xl border cursor-pointer transition-all space-y-2 ${
+                        isSelected 
+                          ? 'border-[#C59B27] dark:border-amber-400 bg-[#C59B27]/5 dark:bg-amber-950/20 ring-1 ring-[#C59B27] dark:ring-amber-400'
+                          : 'border-stone-200 dark:border-[#302E29] hover:border-stone-300 dark:hover:border-[#3A3835] bg-white dark:bg-[#21211E]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-semibold text-stone-900 dark:text-[#F0EBE3]">{temp.name}</span>
+                        {isSelected && <Check className="w-4 h-4 text-[#C59B27] dark:text-amber-400" />}
+                      </div>
+                      <p className="text-xs text-stone-500 dark:text-[#7A7570] leading-relaxed">{temp.description}</p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex justify-end pt-4 border-t border-stone-100 dark:border-[#302E29]">
+                <Button
+                  onClick={() => setCreateStep(2)}
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] dark:bg-[#C59B27] dark:hover:bg-[#B08621] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
+                >
+                  Continue to event selection →
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 2: CHOOSE EVENT (Prompt Section 12) */}
+          {createStep === 2 && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="space-y-1">
+                <h2 className="text-xl font-sans font-semibold text-stone-900 dark:text-[#F0EBE3]">Choose event</h2>
+                <p className="text-xs text-stone-500 dark:text-[#7A7570]">Select the event to report on. Data will be compiled from current event records.</p>
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-xs font-semibold text-stone-700 dark:text-[#B8B0A5] block uppercase tracking-wider">Event</label>
+                <select
+                  value={selectedEventId}
+                  onChange={(e) => setSelectedEventId(e.target.value)}
+                  className="w-full text-sm p-3 bg-stone-50 dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg text-stone-900 dark:text-[#F0EBE3] focus:outline-none focus:ring-2 focus:ring-[#C59B27]"
+                >
+                  {availableEvents.map((ev) => (
+                    <option key={ev.id} value={ev.id}>
+                      {ev.title} {ev.starts_at ? `(${new Date(ev.starts_at).toLocaleDateString('en-GB')})` : ''} {ev.is_current || ev.status === 'current' ? '· Current event' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex justify-between items-center pt-4 border-t border-stone-100 dark:border-[#302E29]">
+                <Button
+                  onClick={() => setCreateStep(1)}
+                  variant="outline"
+                  className="border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#21211E] text-stone-700 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#262520] dark:hover:text-[#F0EBE3] text-xs py-2 px-4 rounded-lg"
+                >
+                  ← Back
+                </Button>
+                <Button
+                  onClick={() => setCreateStep(3)}
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] dark:bg-[#C59B27] dark:hover:bg-[#B08621] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
+                >
+                  Continue to report title →
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3: REPORT TITLE (Prompt Section 13) */}
+          {createStep === 3 && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="space-y-1">
+                <h2 className="text-xl font-sans font-semibold text-stone-900 dark:text-[#F0EBE3]">Report title</h2>
+                <p className="text-xs text-stone-500 dark:text-[#7A7570]">Edit the presentation title and subtitle for the final management document.</p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-stone-700 dark:text-[#B8B0A5] block uppercase tracking-wider">Document title</label>
+                  <input
+                    type="text"
+                    value={customReportTitle}
+                    onChange={(e) => setCustomReportTitle(e.target.value)}
+                    placeholder="e.g. The General Assembly 2026 — Management Report"
+                    className="w-full text-sm p-3 bg-stone-50 dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg text-stone-900 dark:text-[#F0EBE3] placeholder-stone-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-2 focus:ring-[#C59B27]"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-stone-700 dark:text-[#B8B0A5] block uppercase tracking-wider">Subtitle</label>
+                  <input
+                    type="text"
+                    value={customSubtitle}
+                    onChange={(e) => setCustomSubtitle(e.target.value)}
+                    placeholder="Children & Teens Ministry"
+                    className="w-full text-sm p-3 bg-stone-50 dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg text-stone-900 dark:text-[#F0EBE3] placeholder-stone-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-2 focus:ring-[#C59B27]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center pt-4 border-t border-stone-100 dark:border-[#302E29]">
+                <Button
+                  onClick={() => setCreateStep(2)}
+                  variant="outline"
+                  className="border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#21211E] text-stone-700 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#262520] dark:hover:text-[#F0EBE3] text-xs py-2 px-4 rounded-lg"
+                >
+                  ← Back
+                </Button>
+                <Button
+                  onClick={() => setCreateStep(4)}
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] dark:bg-[#C59B27] dark:hover:bg-[#B08621] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
+                >
+                  Continue to sections →
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 4: INCLUDED SECTIONS (Prompt Section 14) */}
+          {createStep === 4 && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="space-y-1">
+                <h2 className="text-xl font-sans font-semibold text-stone-900 dark:text-[#F0EBE3]">Included sections</h2>
+                <p className="text-xs text-stone-500 dark:text-[#7A7570]">Select which analysis sections to compile into this report.</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {[
+                  'Executive summary',
+                  'Registration & selection',
+                  'Participation profile',
+                  'Attendance & movement',
+                  'Volunteer coverage',
+                  'Care & support',
+                  'Safety & incidents',
+                  'Key observations',
+                  'Appendix'
+                ].map((sec) => {
+                  const checked = builderSections.includes(sec);
+                  return (
+                    <label 
+                      key={sec} 
+                      className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                        checked ? 'border-[#C59B27] dark:border-amber-400 bg-[#C59B27]/5 dark:bg-amber-950/20 text-stone-900 dark:text-[#F0EBE3] font-medium' : 'border-stone-200 dark:border-[#302E29] text-stone-600 dark:text-[#B8B0A5] bg-white dark:bg-[#21211E] hover:bg-stone-50 dark:hover:bg-[#262520]'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => handleToggleSection(sec)}
+                        className="rounded border-stone-300 dark:border-[#3A3835] text-[#C59B27] focus:ring-[#C59B27] h-4 w-4"
+                      />
+                      <span className="text-xs">{sec}</span>
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="flex justify-between items-center pt-4 border-t border-stone-100 dark:border-[#302E29]">
+                <Button
+                  onClick={() => setCreateStep(3)}
+                  variant="outline"
+                  className="border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#21211E] text-stone-700 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#262520] dark:hover:text-[#F0EBE3] text-xs py-2 px-4 rounded-lg"
+                >
+                  ← Back
+                </Button>
+                <Button
+                  onClick={() => setCreateStep(5)}
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] dark:bg-[#C59B27] dark:hover:bg-[#B08621] text-white text-xs font-semibold py-2.5 px-5 rounded-lg"
+                >
+                  Preview report →
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 5: PREVIEW & CREATE (Prompt Section 48) */}
+          {createStep === 5 && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="space-y-1">
+                <h2 className="text-xl font-sans font-semibold text-stone-900 dark:text-[#F0EBE3]">Preview report</h2>
+                <p className="text-xs text-stone-500 dark:text-[#7A7570]">Review your report configuration before creating the official PDF snapshot.</p>
+              </div>
+
+              {/* Summary Card */}
+              <div className="bg-stone-50 dark:bg-[#21211E] border border-stone-200 dark:border-[#302E29] rounded-xl p-6 space-y-4">
+                <div className="border-b border-stone-200 dark:border-[#302E29] pb-3 space-y-1">
+                  <span className="text-[10px] uppercase font-semibold tracking-wider text-[#C59B27] dark:text-amber-400 block">Document title</span>
+                  <h3 className="text-base font-sans font-semibold text-stone-900 dark:text-[#F0EBE3]">{customReportTitle}</h3>
+                  <p className="text-xs text-stone-500 dark:text-[#7A7570]">{customSubtitle}</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 text-xs">
+                  <div>
+                    <span className="text-stone-400 dark:text-[#7A7570] block text-[10px] uppercase font-semibold">Event</span>
+                    <span className="font-semibold text-stone-800 dark:text-[#F0EBE3]">{selectedEventObj?.title || 'The General Assembly'}</span>
+                  </div>
+                  <div>
+                    <span className="text-stone-400 dark:text-[#7A7570] block text-[10px] uppercase font-semibold">Report type</span>
+                    <span className="font-semibold text-stone-800 dark:text-[#F0EBE3]">{selectedTemplateObj?.name || 'Management summary'}</span>
+                  </div>
+                </div>
+
+                <div className="border-t border-stone-200 dark:border-[#302E29] pt-3 space-y-1.5">
+                  <span className="text-[10px] uppercase font-semibold tracking-wider text-stone-400 dark:text-[#7A7570] block">Included sections</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {builderSections.map((sec) => (
+                      <span key={sec} className="text-[11px] bg-white dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] px-2.5 py-0.5 rounded text-stone-700 dark:text-[#B8B0A5] font-medium">
+                        {sec}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center pt-4 border-t border-stone-100 dark:border-[#302E29]">
+                <Button
+                  onClick={() => setCreateStep(4)}
+                  variant="outline"
+                  className="border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#21211E] text-stone-700 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#262520] dark:hover:text-[#F0EBE3] text-xs py-2 px-4 rounded-lg"
+                >
+                  ← Back
+                </Button>
+                <Button
+                  onClick={handleCreateReportJob}
+                  disabled={submittingJob}
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] dark:bg-[#C59B27] dark:hover:bg-[#B08621] text-white text-xs font-semibold py-2.5 px-6 rounded-lg flex items-center gap-2"
+                >
+                  {submittingJob ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Preparing your report…
+                    </>
+                  ) : (
+                    'Create report'
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ----------------- TAB 4: EVENT OVERVIEW (Prompt Section 44, 45, 46) ----------------- */}
+      {activeMainTab === 'live_metrics' && (
+        <div className="space-y-6">
+          {/* Header & Event Selector */}
+          <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200/80 dark:border-[#302E29] p-5 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="space-y-1">
+              <h2 className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">Event overview</h2>
+              <p className="text-stone-500 dark:text-[#7A7570] text-xs leading-relaxed">
+                Current operational and participation data for event reporting.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-stone-500 dark:text-[#7A7570] font-medium">Event:</span>
+                <select
+                  value={selectedEventId}
+                  onChange={(e) => {
+                    setSelectedEventId(e.target.value);
+                    fetchLiveOverview(e.target.value);
+                  }}
+                  className="text-xs p-2 bg-stone-50 dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg text-stone-800 dark:text-[#F0EBE3] font-medium focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                >
+                  {availableEvents.map((ev) => (
+                    <option key={ev.id} value={ev.id}>
+                      {ev.title} {ev.is_current || ev.status === 'current' ? '· Current' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <Button
+                onClick={() => fetchLiveOverview(selectedEventId)}
+                variant="outline"
+                className="border-stone-200 dark:border-[#3A3835] text-stone-700 dark:text-[#B8B0A5] dark:bg-[#21211E] dark:hover:bg-[#262520] text-xs py-1.5 px-3 rounded-lg"
+              >
+                <RefreshCw className="w-3 h-3" />
+              </Button>
+            </div>
+          </div>
+
+          {loadingOverview ? (
+            <div className="flex items-center justify-center p-12 min-h-[30vh]">
+              <KoinoniaInlineLoader variant="logo" size="md" label="Loading event overview…" />
+            </div>
+          ) : !liveOverviewAnalytics ? (
+            <div className="p-12 text-center text-xs text-stone-500 dark:text-[#7A7570] bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl">
+              No report data available for the selected event.
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Top Compact Metrics Row (Prompt Section 45: Registered, Selected, Checked in, Inside, Picked up, Volunteers) */}
+              <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl overflow-hidden shadow-2xs divide-y sm:divide-y-0 sm:divide-x divide-stone-200 dark:divide-[#302E29] grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+                {[
+                  {
+                    label: 'Registered',
+                    value: liveOverviewAnalytics.registrations?.totalRegistrations ?? liveOverviewAnalytics.attendance?.totalRegistrations ?? 0,
+                    sub: 'Total applications'
+                  },
+                  {
+                    label: 'Selected',
+                    value: liveOverviewAnalytics.registrations?.selectedTotal ?? liveOverviewAnalytics.attendance?.expectedTotal ?? 0,
+                    sub: 'Admitted'
+                  },
+                  {
+                    label: 'Checked in',
+                    value: liveOverviewAnalytics.attendance?.checkedInTotal ?? 0,
+                    sub: `${liveOverviewAnalytics.attendance?.attendanceRate?.toFixed(0) ?? 0}% turnout`
+                  },
+                  {
+                    label: 'Inside',
+                    value: liveOverviewAnalytics.attendance?.insideTotal ?? 0,
+                    sub: 'Currently present'
+                  },
+                  {
+                    label: 'Picked up',
+                    value: liveOverviewAnalytics.attendance?.releasedTotal ?? 0,
+                    sub: 'Verified dismissals'
+                  },
+                  {
+                    label: 'Volunteers',
+                    value: liveOverviewAnalytics.volunteers?.activeOnDuty ?? 0,
+                    sub: `${liveOverviewAnalytics.volunteers?.totalApproved ?? 0} assigned`
+                  }
+                ].map((kpi, idx) => (
+                  <div key={idx} className="p-4 space-y-1 bg-white dark:bg-[#1D1D1A]">
+                    <span className="text-[10px] uppercase font-semibold text-stone-500 dark:text-[#7A7570] block tracking-wider truncate">
+                      {kpi.label}
+                    </span>
+                    <span className="text-2xl font-bold text-stone-900 dark:text-[#F0EBE3] block tracking-tight tabular-nums font-sans">
+                      {kpi.value}
+                    </span>
+                    <span className="text-[10px] text-stone-400 dark:text-[#7A7570] block truncate leading-tight">
+                      {kpi.sub}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* 6 Key Analytical Charts (Prompt Section 46) */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Chart 1: Registration outcomes */}
+                {liveOverviewAnalytics.registrations?.registrationOutcomes?.length > 0 ? (
+                  <ReportChartRenderer
+                    chart={{
+                      id: 'overview-reg-outcomes',
+                      kind: 'donut',
+                      title: 'Registration outcomes',
+                      subtitle: 'Status of all applications received',
+                      labels: liveOverviewAnalytics.registrations.registrationOutcomes.map((o: any) => o.label),
+                      series: [{
+                        id: 's-reg-out',
+                        label: 'Applications',
+                        values: liveOverviewAnalytics.registrations.registrationOutcomes.map((o: any) => o.count)
+                      }],
+                      caption: 'Distribution of reviewed applications.',
+                      accessibleSummary: 'Donut chart of application review outcomes.'
+                    }}
+                  />
+                ) : (
+                  <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-5 text-center text-xs text-stone-500 dark:text-[#7A7570] min-h-[160px] flex items-center justify-center">
+                    No registration outcome data recorded.
+                  </div>
+                )}
+
+                {/* Chart 2: Children by age group */}
+                {Object.keys(liveOverviewAnalytics.registrations?.registrationsByAgeGroup || {}).length > 0 ? (
+                  <ReportChartRenderer
+                    chart={{
+                      id: 'overview-reg-age',
+                      kind: 'horizontalBar',
+                      title: 'Children by age group',
+                      subtitle: 'Registrations across configured age cohorts',
+                      labels: Object.keys(liveOverviewAnalytics.registrations.registrationsByAgeGroup),
+                      series: [{
+                        id: 's-reg-age',
+                        label: 'Registered',
+                        values: Object.values(liveOverviewAnalytics.registrations.registrationsByAgeGroup) as number[]
+                      }],
+                      caption: 'Demand by configured age group.',
+                      accessibleSummary: 'Horizontal bar chart of registrations by age cohort.'
+                    }}
+                  />
+                ) : (
+                  <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-5 text-center text-xs text-stone-500 dark:text-[#7A7570] min-h-[160px] flex items-center justify-center">
+                    No age group distribution available.
+                  </div>
+                )}
+
+                {/* Chart 3: Attendance by age group */}
+                {liveOverviewAnalytics.attendance?.ageGroupAttendance?.length > 0 ? (
+                  <ReportChartRenderer
+                    chart={{
+                      id: 'overview-att-age',
+                      kind: 'horizontalBar',
+                      title: 'Attendance by age group',
+                      subtitle: 'Actual checked-in attendance by cohort',
+                      labels: liveOverviewAnalytics.attendance.ageGroupAttendance.map((a: any) => a.ageGroup),
+                      series: [{
+                        id: 's-att-age',
+                        label: 'Attended',
+                        values: liveOverviewAnalytics.attendance.ageGroupAttendance.map((a: any) => a.attended)
+                      }],
+                      caption: 'Turnout across configured age groups.',
+                      accessibleSummary: 'Horizontal bar chart of attendance by age cohort.'
+                    }}
+                  />
+                ) : (
+                  <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-5 text-center text-xs text-stone-500 dark:text-[#7A7570] min-h-[160px] flex items-center justify-center">
+                    No attendance has been recorded yet.
+                  </div>
+                )}
+
+                {/* Chart 4: Check-in / pickup activity over time */}
+                {liveOverviewAnalytics.attendance?.checkInTimeSeries?.length > 1 ? (
+                  <ReportChartRenderer
+                    chart={{
+                      id: 'overview-time-series',
+                      kind: 'line',
+                      title: 'Check-in and pickup activity',
+                      subtitle: 'Check-in arrivals across time windows',
+                      labels: liveOverviewAnalytics.attendance.checkInTimeSeries.map((t: any) => t.hour),
+                      series: [{
+                        id: 's-hourly',
+                        label: 'Check-ins',
+                        values: liveOverviewAnalytics.attendance.checkInTimeSeries.map((t: any) => t.count)
+                      }],
+                      caption: 'Gate arrival throughput recorded at check-in desks.',
+                      accessibleSummary: 'Line chart showing arrival activity over time.'
+                    }}
+                  />
+                ) : (
+                  <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-5 text-center text-xs text-stone-500 dark:text-[#7A7570] min-h-[160px] flex items-center justify-center">
+                    Check-in times were not recorded in enough detail to show an arrival trend.
+                  </div>
+                )}
+
+                {/* Chart 5: Volunteers by team */}
+                {Object.keys(liveOverviewAnalytics.volunteers?.volunteersByTeam || {}).length > 0 ? (
+                  <ReportChartRenderer
+                    chart={{
+                      id: 'overview-vol-teams',
+                      kind: 'horizontalBar',
+                      title: 'Volunteers by team',
+                      subtitle: 'Supervisor assignments by ministry team',
+                      labels: Object.keys(liveOverviewAnalytics.volunteers.volunteersByTeam),
+                      series: [{
+                        id: 's-vols',
+                        label: 'Volunteers',
+                        values: Object.values(liveOverviewAnalytics.volunteers.volunteersByTeam) as number[]
+                      }],
+                      caption: 'On-duty supervisors across active ministry teams.',
+                      accessibleSummary: 'Horizontal bar chart of volunteers assigned to each team.'
+                    }}
+                  />
+                ) : (
+                  <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-5 text-center text-xs text-stone-500 dark:text-[#7A7570] min-h-[160px] flex items-center justify-center">
+                    No recorded team distribution is available for this event.
+                  </div>
+                )}
+
+                {/* Chart 6: Safety summary */}
+                {liveOverviewAnalytics.alerts?.totalAlerts > 0 ? (
+                  <ReportChartRenderer
+                    chart={{
+                      id: 'overview-safety',
+                      kind: 'donut',
+                      title: 'Safety matters by status',
+                      subtitle: 'Resolved vs active safety alerts',
+                      labels: ['Resolved', 'Active / open'],
+                      series: [{
+                        id: 's-alerts',
+                        label: 'Alerts',
+                        values: [
+                          liveOverviewAnalytics.alerts.alertsByStatus?.resolved || 0,
+                          (liveOverviewAnalytics.alerts.alertsByStatus?.open || 0) + (liveOverviewAnalytics.alerts.alertsByStatus?.in_progress || 0)
+                        ]
+                      }],
+                      caption: 'Recorded safeguarding alerts and status.',
+                      accessibleSummary: 'Donut chart of safety alerts by status.'
+                    }}
+                  />
+                ) : (
+                  <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-5 text-center text-xs text-stone-500 dark:text-[#7A7570] min-h-[160px] flex items-center justify-center">
+                    No safety matters were recorded for this event.
+                  </div>
+                )}
+              </div>
+
+              {/* Care & Safety Aggregated Summary (Prompt Section 31: Zero child PII) */}
+              <div className="bg-white dark:bg-[#1D1D1A] border border-stone-200 dark:border-[#302E29] rounded-xl p-6 space-y-4">
+                <div className="space-y-0.5">
+                  <h3 className="text-sm font-semibold text-stone-900 dark:text-[#F0EBE3]">Care & support summary</h3>
+                  <p className="text-xs text-stone-500 dark:text-[#7A7570]">
+                    Aggregated care indicators requiring administrative awareness. Individual medical records remain protected.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                  <div className="bg-stone-50 dark:bg-[#21211E] p-4 rounded-lg border border-stone-100 dark:border-[#302E29] space-y-1">
+                    <span className="text-stone-500 dark:text-[#7A7570] font-medium block">Care records on file</span>
+                    <span className="text-xl font-bold text-stone-900 dark:text-[#F0EBE3] tabular-nums font-sans">
+                      {liveOverviewAnalytics.registrations?.totalCareCount ?? 0}
+                    </span>
+                    <span className="text-[10px] text-stone-400 dark:text-[#7A7570] block">Children requiring care awareness</span>
+                  </div>
+
+                  <div className="bg-stone-50 dark:bg-[#21211E] p-4 rounded-lg border border-stone-100 dark:border-[#302E29] space-y-1">
+                    <span className="text-stone-500 dark:text-[#7A7570] font-medium block">Dietary & allergy notices</span>
+                    <span className="text-xl font-bold text-stone-900 dark:text-[#F0EBE3] tabular-nums font-sans">
+                      {liveOverviewAnalytics.registrations?.medicalNotesCount ?? 0}
+                    </span>
+                    <span className="text-[10px] text-stone-400 dark:text-[#7A7570] block">Notified to refreshments teams</span>
+                  </div>
+
+                  <div className="bg-stone-50 dark:bg-[#21211E] p-4 rounded-lg border border-stone-100 dark:border-[#302E29] space-y-1">
+                    <span className="text-stone-500 dark:text-[#7A7570] font-medium block">Additional support</span>
+                    <span className="text-xl font-bold text-stone-900 dark:text-[#F0EBE3] tabular-nums font-sans">
+                      {liveOverviewAnalytics.registrations?.extraSupportCount ?? 0}
+                    </span>
+                    <span className="text-[10px] text-stone-400 dark:text-[#7A7570] block">Support volunteers assigned</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Standard Spreadsheet Exports (Preserved functionality) */}
+              <div className="bg-white dark:bg-[#1D1D1A] p-6 rounded-xl border border-stone-200 dark:border-[#302E29] shadow-2xs space-y-3">
+                <h3 className="text-sm font-semibold text-stone-900 dark:text-[#F0EBE3]">Data spreadsheet exports</h3>
+                <div className="flex flex-wrap gap-3">
+                  <button 
+                    onClick={() => handleExport('attendance', 'csv')}
+                    className="bg-stone-50 dark:bg-[#21211E] hover:bg-stone-100 dark:hover:bg-[#262520] border border-stone-200 dark:border-[#3A3835] text-stone-700 dark:text-[#B8B0A5] text-xs font-semibold py-2 px-3.5 rounded-lg flex items-center gap-1.5 transition-all"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-stone-400 dark:text-[#7A7570]" />
+                    Download Attendance CSV
+                  </button>
+                  <button 
+                    onClick={() => handleExport('care_notes', 'csv')}
+                    className="bg-stone-50 dark:bg-[#21211E] hover:bg-stone-100 dark:hover:bg-[#262520] border border-stone-200 dark:border-[#3A3835] text-stone-700 dark:text-[#B8B0A5] text-xs font-semibold py-2 px-3.5 rounded-lg flex items-center gap-1.5 transition-all"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-stone-400 dark:text-[#7A7570]" />
+                    Download Care Notes CSV
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ----------------- PREVIEW MODAL ----------------- */}
+      {previewingReportId && (
+        <GeneratedReportPreviewModal
+          reportId={previewingReportId}
+          reportTitle={previewReportTitle}
+          eventTitle={previewEventTitle}
+          onClose={() => setPreviewingReportId(null)}
+          onDownloadPdf={(id) => handleDownloadReportPDF(id)}
+          onRegenerate={(id) => handleRegenerateReport(id)}
+        />
+      )}
+
+      {/* ----------------- AUDIT LOG MODAL ----------------- */}
+      <AnimatePresence>
+        {auditReportId && (
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4"
+            role="dialog"
+            aria-labelledby="audit-modal-title"
+            aria-modal="true"
+          >
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-[#21211E] rounded-xl shadow-2xl border border-stone-200 dark:border-[#302E29] w-full max-w-2xl overflow-hidden"
+            >
+              <div className="bg-[#FAF9F6] dark:bg-[#1D1D1A] border-b border-stone-200 dark:border-[#302E29] px-6 py-4 flex items-center justify-between">
+                <div>
+                  <h3 id="audit-modal-title" className="text-base font-sans font-semibold text-stone-900 dark:text-[#F0EBE3]">Report history</h3>
+                </div>
+                <button 
+                  onClick={() => setAuditReportId(null)}
+                  className="text-stone-400 dark:text-[#7A7570] hover:text-stone-700 dark:hover:text-[#F0EBE3] p-1.5 hover:bg-stone-100 dark:hover:bg-[#262520] rounded-full transition-all"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 max-h-[60vh] overflow-y-auto space-y-4">
+                {loadingAudit ? (
+                  <div className="flex justify-center py-12">
+                    <Loader2 className="w-6 h-6 animate-spin text-[#C59B27]" />
+                  </div>
+                ) : auditLogs.length === 0 ? (
+                  <div className="text-center text-xs text-stone-400 dark:text-[#7A7570] py-12">No history actions recorded yet.</div>
+                ) : (
+                  <div className="space-y-3">
+                    {auditLogs.map((log) => (
+                      <div key={log.id} className="bg-stone-50 dark:bg-[#1D1D1A] p-3.5 rounded-lg border border-stone-100 dark:border-[#302E29] flex justify-between gap-4 text-xs">
+                        <div className="space-y-1">
+                          <span className="font-semibold text-stone-800 dark:text-[#F0EBE3] capitalize">{log.action_type.replace(/_/g, ' ')}</span>
+                          <p className="text-stone-500 dark:text-[#7A7570] leading-relaxed text-[11px]">{log.safe_summary}</p>
+                        </div>
+                        <span className="text-[10px] text-stone-400 dark:text-[#7A7570] shrink-0 mt-0.5 tabular-nums">
+                          {new Date(log.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-stone-50 dark:bg-[#1D1D1A] border-t border-stone-200 dark:border-[#302E29] px-6 py-3.5 flex justify-end">
+                <Button 
+                  onClick={() => setAuditReportId(null)}
+                  className="bg-stone-900 hover:bg-black dark:bg-[#262520] dark:hover:bg-[#2A2926] dark:border dark:border-[#3A3835] text-white dark:text-[#F0EBE3] text-xs font-semibold py-2 px-4 rounded-lg"
+                >
+                  Close
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ----------------- SINGLE DELETE CONFIRMATION MODAL (Priority 16) ----------------- */}
+      <AnimatePresence>
+        {deleteTarget && (
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4"
+            role="dialog"
+            aria-labelledby="single-delete-title"
+            aria-modal="true"
+          >
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-[#21211E] rounded-xl shadow-2xl border border-stone-200 dark:border-[#302E29] w-full max-w-md overflow-hidden p-6 space-y-4"
+            >
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 rounded-full shrink-0 border border-transparent dark:border-red-900/40">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div className="space-y-1">
+                  <h3 id="single-delete-title" className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">
+                    Delete report?
+                  </h3>
+                  <p className="text-xs text-stone-500 dark:text-[#7A7570] leading-relaxed">
+                    Are you sure you want to delete <span className="font-medium text-stone-800 dark:text-[#F0EBE3] font-sans">"{deleteTarget.title}"</span>? This will permanently remove the generated PDF document and snapshot data.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setDeleteTarget(null)}
+                  disabled={deleting}
+                  className="border-stone-200 dark:border-[#3A3835] text-stone-700 dark:text-[#B8B0A5] dark:bg-[#262520] dark:hover:bg-[#2A2926] text-xs py-2 px-3.5 rounded-lg"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleConfirmSingleDelete}
+                  disabled={deleting}
+                  className="bg-red-600 hover:bg-red-700 dark:bg-red-600/90 dark:hover:bg-red-600 text-white text-xs font-semibold py-2 px-4 rounded-lg flex items-center gap-1.5"
+                  id="btn-confirm-single-delete"
+                >
+                  {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  Delete report
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ----------------- BULK DELETE CONFIRMATION MODAL (Priority 15) ----------------- */}
+      <AnimatePresence>
+        {bulkDeleteConfirmOpen && (
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4"
+            role="dialog"
+            aria-labelledby="bulk-delete-title"
+            aria-modal="true"
+          >
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-[#21211E] rounded-xl shadow-2xl border border-stone-200 dark:border-[#302E29] w-full max-w-md overflow-hidden p-6 space-y-4"
+            >
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 rounded-full shrink-0 border border-transparent dark:border-red-900/40">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div className="space-y-1">
+                  <h3 id="bulk-delete-title" className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">
+                    Delete {selectedReportIds.length} {selectedReportIds.length === 1 ? 'report' : 'reports'}?
+                  </h3>
+                  <p className="text-xs text-stone-500 dark:text-[#7A7570] leading-relaxed">
+                    Are you sure you want to delete {selectedReportIds.length} selected {selectedReportIds.length === 1 ? 'report' : 'reports'}? This will permanently remove the generated files and snapshot data.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setBulkDeleteConfirmOpen(false)}
+                  disabled={deleting}
+                  className="border-stone-200 dark:border-[#3A3835] text-stone-700 dark:text-[#B8B0A5] dark:bg-[#262520] dark:hover:bg-[#2A2926] text-xs py-2 px-3.5 rounded-lg"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleConfirmBulkDelete}
+                  disabled={deleting}
+                  className="bg-red-600 hover:bg-red-700 dark:bg-red-600/90 dark:hover:bg-red-600 text-white text-xs font-semibold py-2 px-4 rounded-lg flex items-center gap-1.5"
+                  id="btn-confirm-bulk-delete"
+                >
+                  {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  Delete {selectedReportIds.length} {selectedReportIds.length === 1 ? 'report' : 'reports'}
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ----------------- EXPIRED DOWNLOAD RECOVERY MODAL (Prompt Section 5) ----------------- */}
+      <AnimatePresence>
+        {expiredModalReportId && (
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4"
+            role="dialog"
+            aria-labelledby="expired-download-title"
+            aria-modal="true"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-[#21211E] rounded-xl shadow-2xl border border-stone-200 dark:border-[#302E29] w-full max-w-md overflow-hidden p-6 space-y-4"
+            >
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 rounded-full shrink-0 border border-transparent dark:border-amber-900/40">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div className="space-y-1">
+                  <h3 id="expired-download-title" className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">
+                    That download has expired.
+                  </h3>
+                  <p className="text-xs text-stone-500 dark:text-[#7A7570] leading-relaxed">
+                    Regenerate the report to create a fresh copy.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setExpiredModalReportId(null)}
+                  className="border-stone-200 dark:border-[#3A3835] text-stone-700 dark:text-[#B8B0A5] dark:bg-[#262520] dark:hover:bg-[#2A2926] text-xs py-2 px-3.5 rounded-lg"
+                  id="btn-close-expired-modal"
+                >
+                  Close
+                </Button>
+                <Button
+                  onClick={() => {
+                    const id = expiredModalReportId;
+                    setExpiredModalReportId(null);
+                    handleRegenerateReport(id);
+                  }}
+                  className="bg-[#C59B27] hover:bg-[#A37B1B] text-white text-xs font-semibold py-2 px-4 rounded-lg flex items-center gap-1.5 shadow-2xs"
+                  id="btn-confirm-regenerate-modal"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Regenerate report
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+};

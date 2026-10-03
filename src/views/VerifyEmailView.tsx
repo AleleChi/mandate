@@ -1,0 +1,291 @@
+import React, { useEffect, useState } from 'react';
+import { CheckCircle2, XCircle, Loader2, ArrowRight, Mail } from 'lucide-react';
+import { AppRoute } from '../types';
+import { api, extractApiError } from '../services/api';
+import { validateEmailSyntax } from '../utils/validation';
+import { AuthScreenShell } from '../components/common/AuthScreenShell';
+
+interface VerifyEmailViewProps {
+  onNavigate: (route: AppRoute) => void;
+}
+
+export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) => {
+  const [status, setStatus] = useState<'verifying' | 'success' | 'error'>('verifying');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [emailInput, setEmailInput] = useState('');
+  const [showEmailInput, setShowEmailInput] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState<string | null>(null);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendError, setResendError] = useState<{ title: string; description: string } | null>(null);
+
+  const [emailInputError, setEmailInputError] = useState<string | null>(null);
+  const [emailInputSuggestion, setEmailInputSuggestion] = useState<string | null>(null);
+  const [emailInputTouched, setEmailInputTouched] = useState(false);
+
+  const validateEmailInput = (val: string) => {
+    const res = validateEmailSyntax(val);
+    if (!res.valid) {
+      if (res.suggestion) {
+        const [local] = val.trim().split('@');
+        setEmailInputSuggestion(`${local}@${res.suggestion}`);
+      } else {
+        setEmailInputSuggestion(null);
+      }
+      return res.message || 'Enter a valid email address.';
+    }
+    setEmailInputSuggestion(null);
+    return null;
+  };
+
+  // Extract query parameters from hash route
+  const getQueryParams = () => {
+    const hash = window.location.hash;
+    const queryIndex = hash.indexOf('?');
+    const queryString = queryIndex !== -1 ? hash.substring(queryIndex) : window.location.search;
+    return new URLSearchParams(queryString);
+  };
+
+  const queryParams = getQueryParams();
+  const token = queryParams.get('token') || '';
+  const emailParam = queryParams.get('email') || '';
+
+  useEffect(() => {
+    const performVerification = async () => {
+      if (!token) {
+        setStatus('error');
+        setErrorMessage('Verification link is missing or invalid. Please request a new email link.');
+        return;
+      }
+
+      try {
+        await api.auth.verifyEmail(token);
+        setStatus('success');
+      } catch (err: any) {
+        setStatus('error');
+        const { message } = extractApiError(err);
+        setErrorMessage(message || 'The verification link is invalid or expired.');
+      }
+    };
+
+    performVerification();
+  }, [token]);
+
+  const handleSendNewLink = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const emailToUse = emailParam || emailInput;
+    if (!emailToUse) {
+      setShowEmailInput(true);
+      return;
+    }
+
+    if (!emailParam) {
+      setEmailInputTouched(true);
+      const err = validateEmailInput(emailInput);
+      setEmailInputError(err);
+      if (err) {
+        return;
+      }
+    }
+
+    setResendLoading(true);
+    setErrorMessage(null);
+    setResendSuccess(null);
+    setResendError(null);
+
+    try {
+      const res = await api.auth.resendVerification(emailToUse);
+      if (res && res.message && res.message.toLowerCase().includes('already verified')) {
+        setResendSuccess('already_verified');
+      } else {
+        setResendSuccess('sent');
+      }
+    } catch (err: any) {
+      setResendError({
+        title: 'We could not send a new link',
+        description: 'Please try again in a moment.'
+      });
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
+  return (
+    <AuthScreenShell
+      dataViewVersion="parent-verify-email-soft-surface-v1"
+      showBack={status === 'error'}
+      onBack={() => onNavigate('/parent/sign-in')}
+      maxWidth="md"
+    >
+      <div className="text-center space-y-6">
+        {status === 'verifying' && (
+          <div className="space-y-6 py-6 flex flex-col items-center">
+            <Loader2 className="w-12 h-12 text-[#C59B27] animate-spin stroke-[2]" />
+            <div>
+              <h1 className="type-h1-app text-2xl text-[#18181B] dark:text-[#F0EBE3] tracking-tight mb-2">
+                Verifying your email...
+              </h1>
+              <p className="text-sm text-[#71717A] dark:text-[#B8B0A5]">
+                Please hold on while we verify your secure access credentials.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {status === 'success' && (
+          <div className="space-y-6 py-4">
+            <div className="flex justify-center">
+              <div className="w-16 h-16 rounded-full bg-emerald-50 dark:bg-emerald-950/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 className="w-10 h-10 stroke-[1.5]" />
+              </div>
+            </div>
+            <div>
+              <h1 className="type-h1-app text-2xl text-[#18181B] dark:text-[#F0EBE3] tracking-tight mb-3">
+                Email verified
+              </h1>
+              <p className="text-sm text-[#3F3F46] dark:text-[#B8B0A5] leading-relaxed">
+                Your email has been confirmed. You can now continue setting up your parent profile.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => onNavigate('/parent/profile-setup')}
+              className="w-full py-3.5 px-6 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-base shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27]/40"
+            >
+              <span>Continue</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {status === 'error' && (
+          <div className="space-y-6 py-4">
+            <div className="flex justify-center">
+              <div className="w-16 h-16 rounded-full bg-red-50 dark:bg-red-950/20 flex items-center justify-center text-red-600 dark:text-red-400">
+                <XCircle className="w-10 h-10 stroke-[1.5]" />
+              </div>
+            </div>
+            
+            <div>
+              <h1 className="type-h1-app text-2xl text-[#18181B] dark:text-[#F0EBE3] tracking-tight mb-3">
+                This link is no longer valid
+              </h1>
+              <p className="text-sm text-[#3F3F46] dark:text-[#B8B0A5] leading-relaxed">
+                Please request a new email link.
+              </p>
+            </div>
+
+             {resendSuccess === 'already_verified' ? (
+              <div className="p-5 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] text-left space-y-3.5 animate-fadeIn">
+                <div className="flex items-center gap-2 text-[#065F46] text-sm font-bold">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 stroke-[2.5]" />
+                  <span>Email already confirmed</span>
+                </div>
+                <p className="text-xs text-[#047857] leading-relaxed font-medium">
+                  This email is already confirmed. You can sign in directly to continue.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('/parent/sign-in')}
+                  className="w-full py-2.5 bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer focus:outline-none"
+                >
+                  Proceed to Sign In
+                </button>
+              </div>
+            ) : resendSuccess === 'sent' ? (
+              <div className="p-4 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] text-left space-y-1">
+                <div className="flex items-center gap-2 text-[#065F46] text-sm font-semibold">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                  <span>New link sent</span>
+                </div>
+                <p className="text-xs text-[#047857] pl-7">Please check your email.</p>
+              </div>
+            ) : (
+              <form onSubmit={handleSendNewLink} className="space-y-4">
+                {resendError ? (
+                  <div className="text-left bg-red-50 p-4 rounded-xl border border-red-100 space-y-1">
+                    <div className="flex items-center gap-2 text-red-800 text-sm font-semibold">
+                      <XCircle className="w-5 h-5 text-red-500 shrink-0" />
+                      <span>{resendError.title}</span>
+                    </div>
+                    <p className="text-xs text-red-600 pl-7">{resendError.description}</p>
+                  </div>
+                ) : errorMessage ? (
+                  <p className="text-xs text-red-600 font-medium leading-normal bg-red-50 p-2.5 rounded-lg border border-red-100">
+                    {errorMessage}
+                  </p>
+                ) : null}
+
+                {showEmailInput && (
+                  <div className="space-y-1.5 text-left">
+                    <label htmlFor="resend-email" className="text-xs font-semibold uppercase tracking-wider text-[#71717A] dark:text-[#B8B0A5]">
+                      Email Address
+                    </label>
+                    <input
+                      id="resend-email"
+                      type="email"
+                      required
+                      value={emailInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setEmailInput(val);
+                        if (emailInputTouched) {
+                          setEmailInputError(validateEmailInput(val));
+                        }
+                      }}
+                      onBlur={() => {
+                        setEmailInputTouched(true);
+                        setEmailInputError(validateEmailInput(emailInput));
+                      }}
+                      placeholder="e.g. sarah@example.com"
+                      className={`w-full px-3.5 py-2.5 rounded-xl border bg-white dark:bg-[#262520] text-[#18181B] dark:text-[#F0EBE3] placeholder:text-[#9CA3AF] dark:placeholder:text-[#7A7570] text-sm focus:outline-none focus:ring-2 focus:ring-[#C59B27]/30 focus:border-[#C59B27] transition-all ${
+                        emailInputError ? 'border-red-500 bg-red-50/10' : 'border-[#D9D6CE] dark:border-[#3A3835]'
+                      }`}
+                    />
+                    {emailInputError && (
+                      <p className="text-xs text-red-600 dark:text-red-400 mt-1.5 font-medium">{emailInputError}</p>
+                    )}
+                    {emailInputSuggestion && (
+                      <div className="mt-1.5 text-xs text-[#B89047] dark:text-[#D4AF37] font-semibold bg-[#FAF6EC] dark:bg-[#21211E] border border-[#EBE3D3] dark:border-[#302E29] p-2 px-3 rounded-xl flex items-center justify-between">
+                        <span>Did you mean <strong>{emailInputSuggestion}</strong>?</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEmailInput(emailInputSuggestion);
+                            setEmailInputError(null);
+                            setEmailInputSuggestion(null);
+                          }}
+                          className="ml-2 bg-[#B89047] hover:bg-[#A37E3A] text-white font-bold px-2.5 py-1 rounded-lg text-[10px] transition-colors cursor-pointer focus:outline-none shrink-0"
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={resendLoading}
+                  className="w-full py-3.5 px-6 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-base shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27]/40 disabled:opacity-50"
+                >
+                  {resendLoading ? 'Sending...' : 'Send new link'}
+                </button>
+              </form>
+            )}
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => onNavigate('/parent/sign-in')}
+                className="text-xs font-semibold tracking-widest text-[#18181B] dark:text-[#F0EBE3] underline underline-offset-4 hover:text-[#C59B27] dark:hover:text-[#D4AF37] uppercase transition-colors"
+              >
+                Back to Sign In
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </AuthScreenShell>
+  );
+};

@@ -1,0 +1,3225 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Lock, 
+  Mail, 
+  MessageSquare, 
+  Plus, 
+  Edit2, 
+  Check, 
+  X, 
+  ShieldCheck, 
+  UserPlus, 
+  Loader2, 
+  ToggleLeft, 
+  ToggleRight, 
+  Settings as SettingsIcon, 
+  Users, 
+  CheckSquare, 
+  Square,
+  ShieldAlert,
+  ChevronRight,
+  RefreshCw,
+  Phone,
+  Image,
+  Upload,
+  Trash2,
+  Bell,
+  Volume2,
+  Activity,
+  TrendingUp,
+  Play,
+  FileText
+} from 'lucide-react';
+import { Button } from '../../components/common/Button';
+import { api } from '../../services/api';
+import { updateDocumentFavicon } from '../../utils/faviconHelper';
+import { AdminLandingView } from './AdminLandingView';
+import { SafeImage } from '../../components/common/SafeImage';
+import { DeviceSecuritySettings } from '../../components/common/DeviceSecuritySettings';
+import { playSound, resumeAudioContext, stopAllUrgentAlertEffects } from '../../utils/sound';
+import { subscribeUserToPush } from '../../utils/pushSubscription';
+import { useAlertAudioPreferences } from '../../hooks/useAlertAudioPreferences';
+
+interface AdminSettingsViewProps {
+  onBackToOverview?: () => void;
+  isSuperAdmin: boolean;
+  adminUser?: any;
+  onTriggerTestAlert?: (testAlert: any) => void;
+  initialSubTab?: 'parent-access' | 'team-access' | 'message-channels' | 'alert-delivery' | 'landing-page' | 'app-media' | 'device-security' | 'footer-settings';
+}
+
+export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({ 
+  onBackToOverview,
+  isSuperAdmin,
+  adminUser,
+  onTriggerTestAlert,
+  initialSubTab
+}) => {
+  // General State
+  const [loading, setLoading] = useState(true);
+  const [savingGeneral, setSavingGeneral] = useState(false);
+  const [savingMessages, setSavingMessages] = useState(false);
+  const [savingRole, setSavingRole] = useState(false);
+
+  // Access Removal State
+  const [removingMember, setRemovingMember] = useState<any | null>(null);
+  const [isRemovingAccess, setIsRemovingAccess] = useState(false);
+
+  // Fallback Escalation Rule State
+  const [fallbackRule, setFallbackRule] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_urgent_alert_fallback') || 'Off';
+    }
+    return 'Off';
+  });
+
+  const [lastTestTime, setLastTestTime] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_last_test_time') || 'Never';
+    }
+    return 'Never';
+  });
+
+  const [lastTestStatus, setLastTestStatus] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_last_test_status') || 'No test run yet';
+    }
+    return 'No test run yet';
+  });
+
+  const [isTestingDevice, setIsTestingDevice] = useState(false);
+  
+  // Tab/Active Panel State inside Settings
+  const [activeSubTab, setActiveSubTab] = useState<'parent-access' | 'team-access' | 'message-channels' | 'alert-delivery' | 'landing-page' | 'app-media' | 'device-security' | 'footer-settings'>(initialSubTab || 'parent-access');
+
+  useEffect(() => {
+    if (initialSubTab) {
+      setActiveSubTab(initialSubTab);
+    }
+  }, [initialSubTab]);
+
+  // Audio preferences hook for device sound profile and volume controls
+  const {
+    urgentSoundProfile: alertProfile,
+    urgentVolumeBoost: alertVolume,
+    updatePreference: updateAudioPreference
+  } = useAlertAudioPreferences();
+
+  // Feedback State
+  const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  const showFeedback = (text: string, type: 'success' | 'error' = 'success') => {
+    setFeedbackMessage({ type, text });
+    setTimeout(() => {
+      setFeedbackMessage(null);
+    }, 4000);
+  };
+
+  // Global Admin Alert Delivery Rules State
+  const [recipientRoles, setRecipientRoles] = useState<Record<string, boolean>>(() => {
+    try {
+      const stored = localStorage.getItem('koinonia_admin_recipient_roles');
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return { super_admin: true, admin: true, care_lead: true, gate_lead: false, pickup_lead: false };
+  });
+
+  const [alertCategories, setAlertCategories] = useState<Record<string, boolean>>(() => {
+    try {
+      const stored = localStorage.getItem('koinonia_admin_alert_categories');
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return { child_care: true, pickup_issue: true, pass_issue: true, medical_support: true, security_concern: true, general_help: true };
+  });
+
+  const [deliveryMethods, setDeliveryMethods] = useState<Record<string, boolean>>(() => {
+    try {
+      const stored = localStorage.getItem('koinonia_admin_delivery_methods');
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return { in_app: true, urgent_screen: true, sound: true, vibration: true, push: false, email_fallback: false };
+  });
+
+  const [severityRules, setSeverityRules] = useState<Record<string, string>>(() => {
+    try {
+      const stored = localStorage.getItem('koinonia_admin_severity_rules');
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return { normal: 'bell_only', important: 'bell_sound', urgent: 'bell_overlay_vibe_push' };
+  });
+
+  const [includeSecureInAppChildDetails, setIncludeSecureInAppChildDetails] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_include_secure_in_app_child_details') !== 'false';
+    }
+    return true;
+  });
+
+  const [deliveryChannelMode, setDeliveryChannelMode] = useState<'app_only' | 'sms_push_fallback'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('koinonia_delivery_channel_mode') as any) || 'app_only';
+    }
+    return 'app_only';
+  });
+
+  // Device-specific Alert Preferences State
+  const [deviceReceiveUrgent, setDeviceReceiveUrgent] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_device_receive_urgent') !== 'false';
+    }
+    return true;
+  });
+  const [deviceUrgentOnly, setDeviceUrgentOnly] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_device_urgent_only') === 'true';
+    }
+    return false;
+  });
+  const [deviceSound, setDeviceSound] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_device_sound') !== 'false';
+    }
+    return true;
+  });
+  const [deviceVibration, setDeviceVibration] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_device_vibration') !== 'false';
+    }
+    return true;
+  });
+  const [devicePush, setDevicePush] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_device_push') !== 'false';
+    }
+    return true;
+  });
+  const [deviceShowPopup, setDeviceShowPopup] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_device_show_popup') !== 'false';
+    }
+    return true;
+  });
+  const [deviceRepeatUrgent, setDeviceRepeatUrgent] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koinonia_device_repeat_urgent') !== 'false';
+    }
+    return true;
+  });
+
+  // Push Subscription & Permission States
+  const [pushPermission, setPushPermission] = useState<NotificationPermission>(() => {
+    if (typeof Notification !== 'undefined') {
+      return Notification.permission;
+    }
+    return 'default';
+  });
+  const [pushConnected, setPushConnected] = useState(false);
+  const [isSubscribingPush, setIsSubscribingPush] = useState(false);
+  const [pushFeedback, setPushFeedback] = useState('');
+  const [isVapidConfigured, setIsVapidConfigured] = useState<boolean | null>(null);
+  const [isSwRegistered, setIsSwRegistered] = useState(false);
+
+  useEffect(() => {
+    const checkStatus = async () => {
+      // 1. Check Service Worker Registration
+      if ('serviceWorker' in navigator) {
+        try {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          setIsSwRegistered(regs.length > 0);
+        } catch (e) {
+          console.warn('SW registration check failed:', e);
+        }
+      }
+
+      // 2. Check Push subscription on ready sw
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          if (reg && reg.pushManager) {
+            const sub = await reg.pushManager.getSubscription();
+            setPushConnected(!!sub);
+          }
+        } catch (e) {
+          console.warn('Push subscription check failed:', e);
+        }
+      }
+
+      // 3. Fetch VAPID key configured state
+      try {
+        const { publicKey } = await api.parent.getVapidPublicKey();
+        setIsVapidConfigured(!!publicKey);
+      } catch (err) {
+        console.error('Failed to query VAPID key:', err);
+        setIsVapidConfigured(false);
+      }
+    };
+    checkStatus();
+  }, []);
+
+  // Cover Media Settings State
+  const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({
+    parent_dashboard_hero: '',
+    volunteer_dashboard_hero: '',
+    default_event_hero: '',
+    site_favicon: ''
+  });
+  const [loadingMedia, setLoadingMedia] = useState(false);
+  const [uploadingSlot, setUploadingSlot] = useState<string | null>(null);
+  const [mediaFeedback, setMediaFeedback] = useState<string>('');
+  const [mediaError, setMediaError] = useState<string>('');
+
+  // General Settings State
+  const [parentRegistrationEnabled, setParentRegistrationEnabled] = useState(true);
+  const [parentLoginEnabled, setParentLoginEnabled] = useState(true);
+  const [requiredChildPhoto, setRequiredChildPhoto] = useState(true);
+  const [requiredParentPhoto, setRequiredParentPhoto] = useState(true);
+  const [requiredMedicalNotes, setRequiredMedicalNotes] = useState(false);
+  const [requiredPickupPerson, setRequiredPickupPerson] = useState(true);
+
+  // Message Channel Settings State
+  const [senderName, setSenderName] = useState('');
+  const [replyToEmail, setReplyToEmail] = useState('');
+  const [emailEnabled, setEmailEnabled] = useState(false);
+  const [whatsappEnabled, setWhatsappEnabled] = useState(false);
+  const [emailProvider, setEmailProvider] = useState<string | null>(null);
+  const [whatsappProvider, setWhatsappProvider] = useState<string | null>(null);
+
+  // Team Access / Staff Roles State
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [volunteers, setVolunteers] = useState<any[]>([]);
+  const [loadingTeam, setLoadingTeam] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<any | null>(null);
+  
+  // Add Team Member Form
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'admin' | 'super_admin' | 'team'>('team');
+  const [sendingInvite, setSendingInvite] = useState(false);
+  const [inviteSuccessMsg, setInviteSuccessMsg] = useState('');
+  const [inviteErrorMsg, setInviteErrorMsg] = useState('');
+  const [resendingInviteId, setResendingInviteId] = useState<string | null>(null);
+
+  // Editing Team Member state
+  const [editRoleValue, setEditRoleValue] = useState<string>('');
+  const [editPermissions, setEditPermissions] = useState({
+    manageRegistrations: false,
+    gateOperations: false,
+    messageDispatch: false,
+    fullGovernance: false
+  });
+
+  // Self Profile Security State
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordSuccess, setPasswordSuccess] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+
+  // Footer & Copyright Settings State
+  const [copyrightYear, setCopyrightYear] = useState(new Date().getFullYear());
+  const [copyrightText, setCopyrightText] = useState('Koinonia Children and Teens. All rights reserved.');
+  const [savingFooter, setSavingFooter] = useState(false);
+
+  const handleSaveFooterSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingFooter(true);
+    try {
+      const res = await api.admin.updateFooterSettings({
+        copyrightYear,
+        copyrightText
+      });
+      if (res.success) {
+        showFeedback('Footer copyright settings updated successfully.');
+      } else {
+        showFeedback('Failed to update footer settings.', 'error');
+      }
+    } catch (err: any) {
+      console.error('Save footer settings error:', err);
+      showFeedback('An error occurred while saving footer settings.', 'error');
+    } finally {
+      setSavingFooter(false);
+    }
+  };
+
+  // Load All Settings Data
+  const loadSettingsData = async () => {
+    setLoading(true);
+    try {
+      // 1. Fetch General Settings
+      const genRes = await api.admin.getGeneralSettings();
+      if (genRes.success && genRes.settings) {
+        setParentRegistrationEnabled(genRes.settings.parentRegistrationEnabled === 1);
+        setParentLoginEnabled(genRes.settings.parentLoginEnabled === 1);
+        setRequiredChildPhoto(genRes.settings.requiredChildPhoto === 1);
+        setRequiredParentPhoto(genRes.settings.requiredParentPhoto === 1);
+        setRequiredMedicalNotes(genRes.settings.requiredMedicalNotes === 1);
+        setRequiredPickupPerson(genRes.settings.requiredPickupPerson === 1);
+      }
+
+      // 2. Fetch Messages Settings
+      const msgRes = await api.admin.getMessagesSettings();
+      if (msgRes.success) {
+        setSenderName(msgRes.senderName);
+        setReplyToEmail(msgRes.replyToEmail || '');
+        setEmailEnabled(msgRes.emailEnabled);
+        setWhatsappEnabled(msgRes.whatsappEnabled);
+        setEmailProvider(msgRes.emailProvider);
+        setWhatsappProvider(msgRes.whatsappProvider);
+      }
+
+      // 3. Load Team Directory
+      await fetchTeamDirectory();
+
+      // 4. Fetch Footer Settings
+      try {
+        const footerRes = await api.admin.getFooterSettings();
+        if (footerRes.success && footerRes.settings) {
+          setCopyrightYear(footerRes.settings.copyrightYear);
+          setCopyrightText(footerRes.settings.copyrightText);
+        }
+      } catch (e) {
+        console.error('Failed to load footer settings in admin console:', e);
+      }
+
+    } catch (err: any) {
+      console.error('Failed to load settings data:', err);
+      showFeedback('Failed to retrieve settings profiles from secure server storage.', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchTeamDirectory = async () => {
+    setLoadingTeam(true);
+    try {
+      const adminRes = await api.admin.listAdmins();
+      const volRes = await api.admin.getVolunteers();
+
+      let adminsList: any[] = [];
+      if (adminRes.success && adminRes.admins) {
+        adminsList = adminRes.admins;
+      }
+
+      let volsList: any[] = [];
+      if (volRes.success && volRes.volunteers) {
+        volsList = volRes.volunteers.filter(v => v.status === 'approved' || v.status === 'active');
+      }
+
+      setTeamMembers(adminsList);
+      setVolunteers(volsList);
+    } catch (err) {
+      console.error('Error listing team directories:', err);
+    } finally {
+      setLoadingTeam(false);
+    }
+  };
+
+  const loadMediaSettings = async () => {
+    setLoadingMedia(true);
+    setMediaError('');
+    try {
+      const res = await api.admin.getSettingsMedia();
+      if (res.success && res.media) {
+        setMediaUrls({
+          parent_dashboard_hero: res.media.parent_dashboard_hero || '',
+          volunteer_dashboard_hero: res.media.volunteer_dashboard_hero || '',
+          default_event_hero: res.media.default_event_hero || '',
+          site_favicon: res.media.site_favicon || ''
+        });
+        if (res.media.site_favicon) {
+          updateDocumentFavicon(res.media.site_favicon);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to load media settings:', err);
+      setMediaError('Failed to retrieve cover image configuration.');
+    } finally {
+      setLoadingMedia(false);
+    }
+  };
+
+  const handleUploadMedia = async (slot: string, file: File) => {
+    setUploadingSlot(slot);
+    setMediaError('');
+    setMediaFeedback('');
+    try {
+      const res = await api.admin.uploadSettingsMedia(slot, file);
+      if (res.success && res.media) {
+        setMediaUrls(prev => ({
+          ...prev,
+          [slot]: res.media.url
+        }));
+        if (slot === 'site_favicon') {
+          updateDocumentFavicon(res.media.url, Date.now());
+        }
+        setMediaFeedback('Custom image uploaded and saved successfully.');
+        setTimeout(() => setMediaFeedback(''), 4000);
+      }
+    } catch (err: any) {
+      console.error('Failed to upload settings media:', err);
+      setMediaError('Could not process or upload this image file.');
+    } finally {
+      setUploadingSlot(null);
+    }
+  };
+
+  const handleResetMedia = async (slot: string) => {
+    if (!window.confirm('Reset this cover image? This will return it to the default view.')) {
+      return;
+    }
+    setUploadingSlot(slot);
+    setMediaError('');
+    setMediaFeedback('');
+    try {
+      const res = await api.admin.resetSettingsMedia(slot);
+      if (res.success) {
+        setMediaUrls(prev => ({
+          ...prev,
+          [slot]: ''
+        }));
+        if (slot === 'site_favicon') {
+          updateDocumentFavicon(null);
+        }
+        setMediaFeedback('Custom image removed successfully.');
+        setTimeout(() => setMediaFeedback(''), 4000);
+      }
+    } catch (err: any) {
+      console.error('Failed to reset settings media:', err);
+      setMediaError('Could not clear this custom image.');
+    } finally {
+      setUploadingSlot(null);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSubTab === 'app-media') {
+      loadMediaSettings();
+    }
+  }, [activeSubTab]);
+
+  useEffect(() => {
+    loadSettingsData();
+  }, []);
+
+  // Update General Settings
+  const handleSaveGeneralSettings = async () => {
+    setSavingGeneral(true);
+    try {
+      const res = await api.admin.updateGeneralSettings({
+        parentRegistrationEnabled,
+        parentLoginEnabled,
+        requiredChildPhoto,
+        requiredParentPhoto,
+        requiredMedicalNotes,
+        requiredPickupPerson
+      });
+      if (res.success) {
+        showFeedback('General settings and required registration details updated successfully.');
+      } else {
+        showFeedback(res.message || 'Failed to update settings.', 'error');
+      }
+    } catch (err: any) {
+      console.error('Save General Settings Error:', err);
+      showFeedback('An error occurred while saving the registration criteria.', 'error');
+    } finally {
+      setSavingGeneral(false);
+    }
+  };
+
+  // Update Message Channel Settings
+  const handleSaveMessageSettings = async () => {
+    setSavingMessages(true);
+    try {
+      const res = await api.admin.updateMessagesSettings({
+        senderName,
+        replyToEmail
+      });
+      if (res.success) {
+        showFeedback('Message channel credentials and sender defaults saved.');
+      } else {
+        showFeedback('Failed to update message channels settings.', 'error');
+      }
+    } catch (err: any) {
+      console.error('Save Message Settings Error:', err);
+      showFeedback('Failed to save message sender configurations.', 'error');
+    } finally {
+      setSavingMessages(false);
+    }
+  };
+
+  const handleSaveAlertDeliverySettings = () => {
+    localStorage.setItem('koinonia_admin_recipient_roles', JSON.stringify(recipientRoles));
+    localStorage.setItem('koinonia_admin_alert_categories', JSON.stringify(alertCategories));
+    localStorage.setItem('koinonia_admin_delivery_methods', JSON.stringify(deliveryMethods));
+    localStorage.setItem('koinonia_admin_severity_rules', JSON.stringify(severityRules));
+    localStorage.setItem('koinonia_include_secure_in_app_child_details', String(includeSecureInAppChildDetails));
+    localStorage.setItem('koinonia_delivery_channel_mode', deliveryChannelMode);
+    
+    showFeedback('Alert delivery rules updated successfully.');
+  };
+
+  const handleSaveDeviceAlertPreferences = () => {
+    localStorage.setItem('koinonia_device_receive_urgent', String(deviceReceiveUrgent));
+    localStorage.setItem('koinonia_device_urgent_only', String(deviceUrgentOnly));
+    localStorage.setItem('koinonia_device_sound', String(deviceSound));
+    localStorage.setItem('koinonia_device_vibration', String(deviceVibration));
+    localStorage.setItem('koinonia_device_push', String(devicePush));
+    localStorage.setItem('koinonia_device_show_popup', String(deviceShowPopup));
+    localStorage.setItem('koinonia_device_repeat_urgent', String(deviceRepeatUrgent));
+
+    // Update the other soundEnabled state used in app
+    localStorage.setItem('koinonia_sound_enabled', String(deviceSound));
+
+    showFeedback('Device alert preferences saved.');
+  };
+
+  const handleEnablePushNotifications = async () => {
+    setPushFeedback('');
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setPushFeedback('Browser notifications are not supported on this device.');
+      return;
+    }
+
+    setIsSubscribingPush(true);
+    try {
+      const res = await subscribeUserToPush();
+      if (res.success) {
+        setPushConnected(true);
+        setDevicePush(true);
+        localStorage.setItem('koinonia_device_push', 'true');
+        if (typeof Notification !== 'undefined') {
+          setPushPermission(Notification.permission);
+        }
+        setPushFeedback('');
+        showFeedback('Browser notifications successfully enabled and registered!');
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          setIsSwRegistered(regs.length > 0);
+        }
+      } else {
+        setPushConnected(false);
+        if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+          setPushFeedback('Notifications are blocked for this browser. Please allow notifications in your browser settings.');
+        } else {
+          setPushFeedback(res.error || 'Failed to complete registration.');
+        }
+      }
+    } catch (err: any) {
+      console.error('Push enabling error:', err);
+      setPushFeedback(err.message || 'An unexpected error occurred during subscription.');
+    } finally {
+      setIsSubscribingPush(false);
+    }
+  };
+
+  const handleSendTestAlert = async () => {
+    setIsTestingDevice(true);
+    try {
+      const res = await api.admin.testDeviceAlert();
+      
+      if (res && res.success && res.alert) {
+        const nowStr = new Date().toLocaleTimeString();
+        setLastTestTime(nowStr);
+        setLastTestStatus(res.message || 'Success (Triggered)');
+        localStorage.setItem('koinonia_last_test_time', nowStr);
+        localStorage.setItem('koinonia_last_test_status', res.message || 'Success (Triggered)');
+
+        showFeedback(res.message || 'Safe test alert triggered! Check overlay/sound/vibe.');
+
+        if (deviceSound) {
+          try {
+            resumeAudioContext();
+            playSound('alert');
+          } catch (e) {
+            console.warn('Sound play failed on test alert:', e);
+          }
+        }
+
+        if (deviceVibration && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+          try {
+            navigator.vibrate([200, 100, 200, 100, 500]);
+          } catch (e) {
+            console.warn('Vibration failed on test alert:', e);
+          }
+        }
+
+        if (onTriggerTestAlert) {
+          onTriggerTestAlert(res.alert);
+        }
+      } else {
+        const errMessage = res?.message || 'Failed to dispatch device test alert.';
+        setLastTestStatus(`Failed: ${errMessage}`);
+        localStorage.setItem('koinonia_last_test_status', `Failed: ${errMessage}`);
+        showFeedback(errMessage, 'error');
+      }
+    } catch (err: any) {
+      console.error('Error triggering test alert:', err);
+      const errMessage = err?.message || 'Network error dispatching test alert.';
+      setLastTestStatus(`Failed: ${errMessage}`);
+      localStorage.setItem('koinonia_last_test_status', `Failed: ${errMessage}`);
+      showFeedback('Could not dispatch test alert: ' + errMessage, 'error');
+    } finally {
+      setIsTestingDevice(false);
+    }
+  };
+
+  const handleFallbackRuleChange = (val: string) => {
+    setFallbackRule(val);
+    localStorage.setItem('koinonia_urgent_alert_fallback', val);
+    showFeedback(`Fallback rule updated: Escalate after ${val}.`);
+  };
+
+  // Invite Team Member
+  const handleInviteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteEmail) return;
+    setSendingInvite(true);
+    setInviteSuccessMsg('');
+    setInviteErrorMsg('');
+
+    try {
+      const res = await api.admin.inviteAdmin({
+        email: inviteEmail,
+        role: inviteRole
+      });
+
+      if (res.success) {
+        setInviteSuccessMsg(`Onboarding link sent successfully to ${inviteEmail}.`);
+        setInviteEmail('');
+        fetchTeamDirectory();
+      } else {
+        setInviteErrorMsg(res.message || res.error || 'Failed to send team invitation.');
+        fetchTeamDirectory();
+      }
+    } catch (err: any) {
+      console.error('Invite Team Member Error:', err);
+      setInviteErrorMsg(err?.message || 'An error occurred during onboarding setup.');
+    } finally {
+      setSendingInvite(false);
+    }
+  };
+
+  // Resend Team Member Invitation
+  const handleResendInvite = async (member: any) => {
+    if (!member) return;
+    setResendingInviteId(member.id);
+    try {
+      const res = await api.admin.resendInvite({ userId: member.id, email: member.email });
+      if (res.success) {
+        showFeedback(res.message || `Invitation link resent successfully to ${member.email}.`);
+        fetchTeamDirectory();
+      } else {
+        showFeedback(res.message || res.error || 'Failed to resend team invitation.', 'error');
+        fetchTeamDirectory();
+      }
+    } catch (err: any) {
+      console.error('Resend Invite Error:', err);
+      showFeedback(err?.message || 'An error occurred while resending the invitation.', 'error');
+    } finally {
+      setResendingInviteId(null);
+    }
+  };
+
+  // Handle Selection of Team Member
+  const handleSelectMember = (member: any) => {
+    setSelectedMember(member);
+    setEditRoleValue(member.role);
+    
+    // Set mock permissions based on selected role
+    setEditPermissions({
+      manageRegistrations: member.role === 'super_admin' || member.role === 'admin',
+      gateOperations: member.role === 'super_admin' || member.role === 'admin' || member.role === 'team' || member.role === 'volunteer',
+      messageDispatch: member.role === 'super_admin' || member.role === 'admin',
+      fullGovernance: member.role === 'super_admin'
+    });
+  };
+
+  // Save Team Member Role Assignment
+  const handleSaveMemberRole = async () => {
+    if (!selectedMember) return;
+    setSavingRole(true);
+    try {
+      const res = await api.admin.updateTeamMemberRole({
+        userId: selectedMember.id,
+        role: editRoleValue
+      });
+
+      if (res.success) {
+        showFeedback(`Role for ${selectedMember.fullName} updated to ${editRoleValue}.`);
+        setSelectedMember(null);
+        fetchTeamDirectory();
+      } else {
+        showFeedback(res.message || 'Failed to update team role.', 'error');
+      }
+    } catch (err: any) {
+      console.error('Save Member Role Error:', err);
+      showFeedback(err?.message || 'Failed to update role assignment.', 'error');
+    } finally {
+      setSavingRole(false);
+    }
+  };
+
+  // Save Team Member Access Status Assignment (Part 9)
+  const handleSaveMemberStatus = async (status: string) => {
+    if (!selectedMember) return;
+    setSavingRole(true);
+    try {
+      const res = await api.admin.updateTeamMemberStatus({
+        userId: selectedMember.id,
+        status: status
+      });
+
+      if (res.success) {
+        showFeedback(`Access status for ${selectedMember.fullName} has been updated to ${status}.`);
+        setSelectedMember(null);
+        fetchTeamDirectory();
+      } else {
+        showFeedback(res.message || 'Failed to update access status.', 'error');
+      }
+    } catch (err: any) {
+      console.error('Save Member Status Error:', err);
+      showFeedback(err?.message || 'Failed to update status assignment.', 'error');
+    } finally {
+      setSavingRole(false);
+    }
+  };
+
+  // Handle Permanent Removal of Admin Access
+  const handleConfirmRemoveAccess = async () => {
+    if (!removingMember) return;
+    setIsRemovingAccess(true);
+    try {
+      const res = await api.admin.removeTeamMemberAccess({
+        userId: removingMember.id
+      });
+      if (res.success) {
+        setRemovingMember(null);
+        setSelectedMember(null);
+        showFeedback('Access removed');
+        await fetchTeamDirectory();
+      } else {
+        showFeedback(res.message || 'Failed to remove access.', 'error');
+      }
+    } catch (err: any) {
+      console.error('Remove Member Access Error:', err);
+      showFeedback(err?.message || 'Failed to remove access.', 'error');
+    } finally {
+      setIsRemovingAccess(false);
+    }
+  };
+
+  // Change Password Submission
+  const handleChangePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError('');
+    setPasswordSuccess('');
+
+    if (newPassword.length < 8) {
+      setPasswordError('New password must be at least 8 characters long.');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError('Passwords do not match.');
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      const res = await api.admin.changePassword({
+        currentPassword,
+        newPassword
+      });
+
+      if (res.success) {
+        setPasswordSuccess('Your password has been changed successfully.');
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmNewPassword('');
+      } else {
+        setPasswordError(res.message || 'Incorrect current password or invalid requirements.');
+      }
+    } catch (err: any) {
+      console.error('Change Password Error:', err);
+      setPasswordError(err?.message || 'Failed to update security password.');
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
+  // Computed Metrics
+  const totalSuperAdmins = teamMembers.filter(m => m.role === 'super_admin').length;
+  const totalAdmins = teamMembers.filter(m => m.role === 'admin').length;
+  const totalTeamStaff = teamMembers.filter(m => m.role === 'team').length;
+  const totalActiveVols = volunteers.length;
+
+  return (
+    <div 
+      className="space-y-6 sm:space-y-8 max-w-7xl mx-auto px-4 sm:px-6 pb-12 text-[#18181B] dark:text-[#F0EBE3] bg-[#FAF9F6] dark:bg-[#19191A]"
+      data-view-version="admin-settings-v2-ui-refined"
+    >
+      {/* HEADER SECTION */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-[#EAE8E1] dark:border-[#302E29] pb-5 gap-4">
+        <div>
+          <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
+            Settings
+          </h1>
+          <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1.5 max-w-xl leading-relaxed">
+            Configure parent access parameters, registration requirements, event team roles, and notification channels.
+          </p>
+        </div>
+        {onBackToOverview && (
+          <button 
+            onClick={onBackToOverview}
+            className="self-start sm:self-center bg-white dark:bg-[#21211E] hover:bg-zinc-50 dark:hover:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] text-[#18181B] dark:text-[#F0EBE3] px-4 py-2 rounded-xl text-xs font-semibold transition-all shadow-xs shrink-0 cursor-pointer"
+          >
+            Back to overview
+          </button>
+        )}
+      </div>
+
+      {/* FEEDBACK TOAST */}
+      {feedbackMessage && (
+        <div className={`fixed bottom-6 right-6 z-50 p-4 rounded-xl shadow-lg border animate-fade-in flex items-center space-x-3 text-xs font-medium max-w-md ${
+          feedbackMessage.type === 'success'
+            ? 'bg-emerald-50 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/40'
+            : 'bg-red-50 dark:bg-red-950/80 text-red-800 dark:text-red-300 border-red-200 dark:border-red-900/40'
+        }`}>
+          <div className={`p-1.5 rounded-lg ${feedbackMessage.type === 'success' ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-red-100 dark:bg-red-900/40'}`}>
+            <Check className="w-4 h-4" />
+          </div>
+          <span>{feedbackMessage.text}</span>
+        </div>
+      )}
+
+      {/* QUICK STATS / METRICS BANNER */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" data-component-version="admin-settings-metrics-approved">
+        {[
+          { label: 'Super administrators', val: totalSuperAdmins, sub: 'full permissions' },
+          { label: 'Admins & registrars', val: totalAdmins, sub: 'application reviews' },
+          { label: 'Team members', val: totalTeamStaff, sub: 'check-in & gate operations' },
+          { label: 'Active volunteers', val: totalActiveVols, sub: 'approved helpers' }
+        ].map((item, idx) => (
+          <div 
+            key={idx} 
+            className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 relative overflow-hidden shadow-xs"
+          >
+            <span className="text-[10px] font-medium text-zinc-400 dark:text-[#7A7570] block">
+              {item.label}
+            </span>
+            <span className="text-2xl sm:text-3xl font-bold font-sans text-[#18181B] dark:text-[#F0EBE3] mt-1.5 block">
+              {item.val}
+            </span>
+            <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block mt-1">
+              {item.sub}
+            </span>
+            <div className="absolute top-0 right-0 h-full w-1.5 bg-[#C59B27]/10" />
+          </div>
+        ))}
+      </div>
+
+      {/* SETTINGS SUB-NAVIGATION TABS */}
+      <div 
+        className="flex border-b border-[#EAE8E1] dark:border-[#302E29] overflow-x-auto gap-2 scrollbar-none pb-0.5"
+        data-component-version="admin-settings-tabs-v2-refined"
+      >
+        {[
+          { id: 'parent-access', label: 'Parent access & details', icon: Users },
+          { id: 'team-access', label: 'Event team access', icon: ShieldCheck },
+          { id: 'message-channels', label: 'Message channels', icon: MessageSquare },
+          { id: 'alert-delivery', label: 'Alert delivery & device preferences', icon: ShieldAlert },
+          { id: 'landing-page', label: 'Landing page', icon: SettingsIcon },
+          { id: 'app-media', label: 'App media', icon: Image },
+          { id: 'device-security', label: 'Device security', icon: Lock },
+          { id: 'footer-settings', label: 'Footer & copyright settings', icon: FileText }
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeSubTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setActiveSubTab(tab.id as any);
+                setSelectedMember(null);
+              }}
+              className={`flex items-center space-x-2 py-3 px-4 text-xs font-medium border-b-2 transition-all whitespace-nowrap focus:outline-none cursor-pointer ${
+                isActive 
+                  ? 'border-[#C59B27] text-[#C59B27]' 
+                  : 'border-transparent text-zinc-500 dark:text-[#7A7570] hover:text-zinc-800 dark:hover:text-[#F0EBE3] hover:border-zinc-300 dark:hover:border-[#3A3835]'
+              }`}
+            >
+              <Icon className={`w-4 h-4 ${isActive ? 'text-[#C59B27]' : 'text-zinc-400 dark:text-[#7A7570]'}`} />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* CONTENT WORKSPACE */}
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-24 space-y-4">
+          <Loader2 className="w-8 h-8 text-[#C59B27] animate-spin" />
+          <p className="text-xs text-zinc-400 dark:text-[#7A7570] font-medium">Loading settings...</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          
+          {/* MAIN SETTINGS LEFT COLUMN (7 or 12 columns depending on selection) */}
+          <div className={`${activeSubTab === 'team-access' || activeSubTab === 'landing-page' || activeSubTab === 'app-media' || activeSubTab === 'alert-delivery' || activeSubTab === 'device-security' || activeSubTab === 'footer-settings' ? 'lg:col-span-12' : 'lg:col-span-7'} space-y-6`}>
+            
+            {/* SUB-TAB 1: PARENT ACCESS */}
+            {activeSubTab === 'parent-access' && (
+              <div className="space-y-6">
+                
+                {/* Parent Access Toggles */}
+                <div 
+                  className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-5"
+                  data-component-version="admin-settings-parent-access-v2-refined"
+                >
+                  <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-3">
+                    <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] text-lg">Parent access</h3>
+                    <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Choose how parents can register, sign in, and update child details.</p>
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* Toggle: New Registrations */}
+                    <div className="flex items-center justify-between py-2">
+                      <div className="space-y-1 pr-4">
+                        <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3] block">New parent registration</span>
+                        <p className="text-xs text-zinc-400 dark:text-[#7A7570] leading-normal max-w-md">
+                          Allow new parents to create accounts from the landing page.
+                        </p>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => setParentRegistrationEnabled(!parentRegistrationEnabled)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          parentRegistrationEnabled ? 'bg-[#C59B27]' : 'bg-zinc-200 dark:bg-[#3A3835]'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-[#F0EBE3] shadow-md ring-0 transition duration-200 ease-in-out ${
+                            parentRegistrationEnabled ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Toggle: Parent Login */}
+                    <div className="flex items-center justify-between py-4 border-t border-zinc-100 dark:border-[#302E29]">
+                      <div className="space-y-1 pr-4">
+                        <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3] block">Parent sign in</span>
+                        <p className="text-xs text-zinc-400 dark:text-[#7A7570] leading-normal max-w-md">
+                          Allow existing parents to sign in, view passes, and update allowed details.
+                        </p>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => setParentLoginEnabled(!parentLoginEnabled)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          parentLoginEnabled ? 'bg-[#C59B27]' : 'bg-zinc-200 dark:bg-[#3A3835]'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-[#F0EBE3] shadow-md ring-0 transition duration-200 ease-in-out ${
+                            parentLoginEnabled ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Required Details Configuration */}
+                <div 
+                  className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-5"
+                  data-component-version="admin-settings-required-details-v2-refined"
+                >
+                  <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-3">
+                    <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] text-lg">Required details</h3>
+                    <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Choose the details parents must provide before an application can be reviewed.</p>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                      {/* Checkbox: Child photo */}
+                      <button 
+                        type="button"
+                        onClick={() => setRequiredChildPhoto(!requiredChildPhoto)}
+                        className={`flex items-start space-x-3.5 p-4 rounded-xl border text-left cursor-pointer transition-all duration-200 ${
+                          requiredChildPhoto 
+                            ? 'border-[#C59B27]/40 bg-[#C59B27]/5 dark:bg-amber-950/20 dark:border-amber-900/40'
+                            : 'border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#21211E] hover:border-zinc-300 dark:hover:border-[#3A3835]'
+                        }`}
+                      >
+                        <div className="mt-0.5 shrink-0">
+                          {requiredChildPhoto ? (
+                            <div className="w-5 h-5 rounded bg-[#C59B27] flex items-center justify-center text-white">
+                              <Check className="w-3.5 h-3.5" />
+                            </div>
+                          ) : (
+                            <div className="w-5 h-5 rounded border border-zinc-300 dark:border-[#3A3835] bg-white dark:bg-[#262520]" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] block">Child photo</span>
+                          <span className="text-[11px] text-zinc-500 dark:text-[#7A7570] block mt-0.5 leading-normal">
+                            Required for child identification.
+                          </span>
+                        </div>
+                      </button>
+
+                      {/* Checkbox: Parent photo */}
+                      <button 
+                        type="button"
+                        onClick={() => setRequiredParentPhoto(!requiredParentPhoto)}
+                        className={`flex items-start space-x-3.5 p-4 rounded-xl border text-left cursor-pointer transition-all duration-200 ${
+                          requiredParentPhoto 
+                            ? 'border-[#C59B27]/40 bg-[#C59B27]/5 dark:bg-amber-950/20 dark:border-amber-900/40'
+                            : 'border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#21211E] hover:border-zinc-300 dark:hover:border-[#3A3835]'
+                        }`}
+                      >
+                        <div className="mt-0.5 shrink-0">
+                          {requiredParentPhoto ? (
+                            <div className="w-5 h-5 rounded bg-[#C59B27] flex items-center justify-center text-white">
+                              <Check className="w-3.5 h-3.5" />
+                            </div>
+                          ) : (
+                            <div className="w-5 h-5 rounded border border-zinc-300 dark:border-[#3A3835] bg-white dark:bg-[#262520]" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] block">Parent photo</span>
+                          <span className="text-[11px] text-zinc-500 dark:text-[#7A7570] block mt-0.5 leading-normal">
+                            Required for parent profile checks.
+                          </span>
+                        </div>
+                      </button>
+
+                      {/* Checkbox: Authorized Pickup Person */}
+                      <button 
+                        type="button"
+                        onClick={() => setRequiredPickupPerson(!requiredPickupPerson)}
+                        className={`flex items-start space-x-3.5 p-4 rounded-xl border text-left cursor-pointer transition-all duration-200 ${
+                          requiredPickupPerson 
+                            ? 'border-[#C59B27]/40 bg-[#C59B27]/5 dark:bg-amber-950/20 dark:border-amber-900/40'
+                            : 'border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#21211E] hover:border-zinc-300 dark:hover:border-[#3A3835]'
+                        }`}
+                      >
+                        <div className="mt-0.5 shrink-0">
+                          {requiredPickupPerson ? (
+                            <div className="w-5 h-5 rounded bg-[#C59B27] flex items-center justify-center text-white">
+                              <Check className="w-3.5 h-3.5" />
+                            </div>
+                          ) : (
+                            <div className="w-5 h-5 rounded border border-zinc-300 dark:border-[#3A3835] bg-white dark:bg-[#262520]" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] block">Pickup person photo</span>
+                          <span className="text-[11px] text-zinc-500 dark:text-[#7A7570] block mt-0.5 leading-normal">
+                            Required for safe pickup.
+                          </span>
+                        </div>
+                      </button>
+
+                      {/* Checkbox: Care Consent */}
+                      <button 
+                        type="button"
+                        onClick={() => setRequiredMedicalNotes(!requiredMedicalNotes)}
+                        className={`flex items-start space-x-3.5 p-4 rounded-xl border text-left cursor-pointer transition-all duration-200 ${
+                          requiredMedicalNotes 
+                            ? 'border-[#C59B27]/40 bg-[#C59B27]/5 dark:bg-amber-950/20 dark:border-amber-900/40'
+                            : 'border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#21211E] hover:border-zinc-300 dark:hover:border-[#3A3835]'
+                        }`}
+                      >
+                        <div className="mt-0.5 shrink-0">
+                          {requiredMedicalNotes ? (
+                            <div className="w-5 h-5 rounded bg-[#C59B27] flex items-center justify-center text-white">
+                              <Check className="w-3.5 h-3.5" />
+                            </div>
+                          ) : (
+                            <div className="w-5 h-5 rounded border border-zinc-300 dark:border-[#3A3835] bg-white dark:bg-[#262520]" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] block">Care consent</span>
+                          <span className="text-[11px] text-zinc-500 dark:text-[#7A7570] block mt-0.5 leading-normal">
+                            Required before review.
+                          </span>
+                        </div>
+                      </button>
+
+                      {/* Checkbox: Home Address (Locked/Safety-critical) */}
+                      <div 
+                        className="flex items-start space-x-3.5 p-4 rounded-xl border border-[#EAE8E1] dark:border-[#302E29] bg-[#FAF9F6] dark:bg-[#21211E] text-left select-none relative"
+                      >
+                        <div className="mt-0.5 shrink-0">
+                          <div className="w-5 h-5 rounded bg-zinc-300 dark:bg-[#3A3835] flex items-center justify-center text-white dark:text-[#B8B0A5]">
+                            <Lock className="w-3 h-3" />
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0 pr-24">
+                          <span className="text-xs font-semibold text-zinc-500 dark:text-[#B8B0A5] block">Home address</span>
+                          <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] block mt-0.5 leading-normal">
+                            Required for parent records.
+                          </span>
+                        </div>
+                        <span className="absolute top-4 right-4 bg-zinc-100 dark:bg-[#262520] text-zinc-500 dark:text-[#7A7570] text-[9px] font-medium px-2 py-0.5 rounded uppercase tracking-wider">
+                          Required for safety
+                        </span>
+                      </div>
+
+                      {/* Checkbox: WhatsApp Number (Locked/Safety-critical) */}
+                      <div 
+                        className="flex items-start space-x-3.5 p-4 rounded-xl border border-[#EAE8E1] dark:border-[#302E29] bg-[#FAF9F6] dark:bg-[#21211E] text-left select-none relative"
+                      >
+                        <div className="mt-0.5 shrink-0">
+                          <div className="w-5 h-5 rounded bg-zinc-300 dark:bg-[#3A3835] flex items-center justify-center text-white dark:text-[#B8B0A5]">
+                            <Lock className="w-3 h-3" />
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0 pr-24">
+                          <span className="text-xs font-semibold text-zinc-500 dark:text-[#B8B0A5] block">WhatsApp number</span>
+                          <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] block mt-0.5 leading-normal">
+                            Required for event updates.
+                          </span>
+                        </div>
+                        <span className="absolute top-4 right-4 bg-zinc-100 dark:bg-[#262520] text-zinc-500 dark:text-[#7A7570] text-[9px] font-medium px-2 py-0.5 rounded uppercase tracking-wider">
+                          Required for safety
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Save button for Parent Access */}
+                <div className="flex justify-end pt-2">
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={handleSaveGeneralSettings}
+                    loading={savingGeneral}
+                    className="px-6 py-2.5 text-xs font-semibold"
+                  >
+                    Save Changes
+                  </Button>
+                </div>
+
+              </div>
+            )}
+
+            {/* SUB-TAB 2: EVENT TEAM ACCESS / STAFF ROLES */}
+            {activeSubTab === 'team-access' && (
+              <div className="space-y-6" data-component-version="admin-settings-event-team-v1">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                  
+                  {/* Left: Interactive Team Members Table (7 Columns) */}
+                  <div className="lg:col-span-8 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-5">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-[#EAE8E1] dark:border-[#302E29] gap-2">
+                      <div>
+                        <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] text-lg">Team members</h3>
+                        <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Manage authorized event staff and coordinators.</p>
+                      </div>
+                      <button 
+                        onClick={fetchTeamDirectory}
+                        className="self-start sm:self-center flex items-center space-x-1 text-xs text-[#C59B27] font-medium hover:underline cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Refresh list</span>
+                      </button>
+                    </div>
+
+                    {loadingTeam ? (
+                      <div className="flex items-center justify-center py-20">
+                        <Loader2 className="w-6 h-6 text-[#C59B27] animate-spin" />
+                      </div>
+                    ) : teamMembers.length === 0 ? (
+                      <p className="text-xs text-zinc-400 dark:text-[#7A7570] text-center py-10">No active team records retrieved.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs min-w-[500px]">
+                          <thead>
+                            <tr className="border-b border-[#EAE8E1] dark:border-[#302E29] bg-[#FAF9F6] dark:bg-[#21211E] text-zinc-500 dark:text-[#7A7570] font-medium text-[10px]">
+                              <th className="py-3 px-4 font-medium">Member</th>
+                              <th className="py-3 px-4 font-medium">Role</th>
+                              <th className="py-3 px-4 font-medium">Status</th>
+                              <th className="py-3 px-4 font-medium text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-100 dark:divide-[#302E29]">
+                            {teamMembers.map((member) => (
+                              <tr 
+                                key={member.id} 
+                                className={`hover:bg-[#FAF9F6]/50 dark:hover:bg-[#262520]/50 transition-colors group cursor-pointer ${
+                                  selectedMember?.id === member.id ? 'bg-[#FAF9F6] dark:bg-[#262520]' : ''
+                                }`}
+                                onClick={() => handleSelectMember(member)}
+                              >
+                                <td className="py-3 px-4">
+                                  <div className="flex items-center space-x-3">
+                                    <div className="w-7 h-7 rounded-full bg-[#C59B27]/15 text-[#C59B27] flex items-center justify-center font-semibold text-[10px] border border-[#C59B27]/20 uppercase">
+                                      {member.fullName?.substring(0, 2) || 'AD'}
+                                    </div>
+                                    <div>
+                                      <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] block">{member.fullName}</span>
+                                      <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block">{member.email}</span>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium ${
+                                    member.role === 'super_admin' ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-100 dark:border-red-900/40' :
+                                    member.role === 'admin' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-900/40' :
+                                    'bg-zinc-50 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] border border-zinc-200 dark:border-[#3A3835]'
+                                  }`}>
+                                    {member.role === 'super_admin' ? 'Super admin' : member.role === 'admin' ? 'Admin' : 'Team member'}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                    member.status === 'active' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/40' : 'bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-100 dark:border-amber-900/40'
+                                  }`}>
+                                    {member.status}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <div className="flex items-center justify-end space-x-1.5">
+                                    {member.status === 'invited' && (
+                                      <button
+                                        type="button"
+                                        title="Resend invitation"
+                                        disabled={resendingInviteId === member.id}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleResendInvite(member);
+                                        }}
+                                        className="text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 px-2 py-1 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-200 dark:border-amber-800/40 rounded-lg transition-colors inline-flex items-center space-x-1 text-[11px] font-medium cursor-pointer"
+                                      >
+                                        {resendingInviteId === member.id ? (
+                                          <Loader2 className="w-3 h-3 animate-spin" />
+                                        ) : (
+                                          <Mail className="w-3 h-3" />
+                                        )}
+                                        <span>Resend invitation</span>
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleSelectMember(member);
+                                      }}
+                                      className="text-zinc-400 dark:text-[#7A7570] group-hover:text-[#C59B27] p-1 hover:bg-zinc-100 dark:hover:bg-[#262520] rounded-lg transition-colors inline-flex cursor-pointer"
+                                    >
+                                      <Edit2 className="w-3.5 h-3.5" />
+                                    </button>
+                                    {isSuperAdmin && member.status !== 'revoked' && (
+                                      <button
+                                        type="button"
+                                        title="Remove team member"
+                                        disabled={isRemovingAccess}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setRemovingMember(member);
+                                        }}
+                                        className="text-zinc-400 dark:text-[#7A7570] hover:text-red-600 dark:hover:text-red-400 p-1 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors inline-flex cursor-pointer"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right Column: Add or Edit Details Form (4 Columns) */}
+                  <div className="lg:col-span-4 space-y-6">
+                    
+                    {/* Add Team Member Card (Only visible to Super Admin) */}
+                    {isSuperAdmin && !selectedMember && (
+                      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-5">
+                        <div className="flex items-center space-x-3 border-b border-[#EAE8E1] dark:border-[#302E29] pb-3">
+                          <div className="p-1.5 bg-[#C59B27]/5 rounded-lg text-[#C59B27] border border-[#C59B27]/10">
+                            <UserPlus className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] text-base">Add team member</h3>
+                            <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Invite a new staff or team member.</p>
+                          </div>
+                        </div>
+
+                        <form onSubmit={handleInviteSubmit} className="space-y-4">
+                          {inviteSuccessMsg && (
+                            <div className="bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 text-[11px] p-2.5 rounded-xl border border-emerald-100 dark:border-emerald-900/40 font-medium">
+                              {inviteSuccessMsg}
+                            </div>
+                          )}
+                          {inviteErrorMsg && (
+                            <div className="bg-red-50 dark:bg-red-950/20 text-red-800 dark:text-red-300 text-[11px] p-2.5 rounded-xl border border-red-100 dark:border-red-900/40 font-medium">
+                              {inviteErrorMsg}
+                            </div>
+                          )}
+
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] block">
+                              Email address
+                            </label>
+                            <input
+                              type="email"
+                              required
+                              value={inviteEmail}
+                              onChange={(e) => setInviteEmail(e.target.value)}
+                              placeholder="invited@koinonia.org"
+                              className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-[#18181B] dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:border-[#C59B27] transition-all"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] block">
+                              Role
+                            </label>
+                            <select
+                              value={inviteRole}
+                              onChange={(e) => setInviteRole(e.target.value as any)}
+                              className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-[#18181B] dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27] transition-all cursor-pointer"
+                            >
+                              <option value="team">Team member (gate check-in)</option>
+                              <option value="admin">Admin (reviews & history)</option>
+                              <option value="super_admin">Super admin (full permissions)</option>
+                            </select>
+                          </div>
+
+                          <Button
+                            type="submit"
+                            variant="primary"
+                            fullWidth
+                            loading={sendingInvite}
+                            className="py-2.5 text-xs font-semibold"
+                          >
+                            Send Invitation Link
+                          </Button>
+                        </form>
+                      </div>
+                    )}
+
+                    {/* Selected Team Member Detail & Role Assignment (Edit Mode) */}
+                    {selectedMember && (
+                      <div className="bg-[#FAF9F6] dark:bg-[#1D1D1A] border border-[#C59B27]/30 dark:border-[#C59B27]/40 rounded-2xl p-6 space-y-5 shadow-xs">
+                        <div className="flex items-center justify-between border-b border-[#EAE8E1] dark:border-[#302E29] pb-3">
+                          <div className="flex items-center space-x-2.5">
+                            <div className="p-1.5 bg-[#C59B27]/10 rounded-lg text-[#C59B27] border border-[#C59B27]/15">
+                              <ShieldCheck className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] text-base">Staff details</h3>
+                              <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Configure role permissions for this member.</p>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => setSelectedMember(null)}
+                            className="text-zinc-400 dark:text-[#7A7570] hover:text-[#18181B] dark:hover:text-[#F0EBE3] p-1 bg-zinc-100 dark:bg-[#262520] rounded-lg transition-colors cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* Details */}
+                        <div className="space-y-3.5 text-xs">
+                          <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] p-3 rounded-xl space-y-1.5">
+                            <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block font-medium">Currently editing</span>
+                            <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] block text-sm">{selectedMember.fullName}</span>
+                            <span className="text-zinc-500 dark:text-[#B8B0A5] block">{selectedMember.email}</span>
+                          </div>
+
+                          {/* Role Select */}
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] block">
+                              Assigned role
+                            </label>
+                            {isSuperAdmin ? (
+                              <select
+                                value={editRoleValue}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setEditRoleValue(val);
+                                  setEditPermissions({
+                                    manageRegistrations: val === 'super_admin' || val === 'admin',
+                                    gateOperations: val === 'super_admin' || val === 'admin' || val === 'team' || val === 'volunteer',
+                                    messageDispatch: val === 'super_admin' || val === 'admin',
+                                    fullGovernance: val === 'super_admin'
+                                  });
+                                }}
+                                className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] text-[#18181B] dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27] transition-all font-semibold cursor-pointer"
+                              >
+                                <option value="volunteer">Volunteer (gate team)</option>
+                                <option value="team">Team member (on-site staff)</option>
+                                <option value="admin">Admin (reviews & history)</option>
+                                <option value="super_admin">Super admin (full permissions)</option>
+                              </select>
+                            ) : (
+                              <div className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-zinc-200 dark:border-[#3A3835] bg-zinc-100 dark:bg-[#262520] text-zinc-500 dark:text-[#B8B0A5] font-medium">
+                                {selectedMember.role === 'super_admin' ? 'Super admin' : selectedMember.role === 'admin' ? 'Admin' : 'Team member'}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Access Management Section (Part 9) */}
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] block">
+                              Access Status
+                            </label>
+                            <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl p-3.5 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium">Current Status:</span>
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                                  selectedMember.status === 'active' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/40' :
+                                  selectedMember.status === 'suspended' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40 animate-pulse' :
+                                  selectedMember.status === 'revoked' ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-900/40' :
+                                  'bg-zinc-100 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] border border-zinc-200 dark:border-[#3A3835]'
+                                }`}>
+                                  {selectedMember.status || 'active'}
+                                </span>
+                              </div>
+
+                              {selectedMember.status === 'invited' && (
+                                <button
+                                  type="button"
+                                  disabled={resendingInviteId === selectedMember.id}
+                                  onClick={() => handleResendInvite(selectedMember)}
+                                  className="w-full text-center px-3 py-2 text-xs font-semibold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-200 dark:border-amber-800/40 rounded-xl transition-colors cursor-pointer flex items-center justify-center space-x-2"
+                                >
+                                  {resendingInviteId === selectedMember.id ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <Mail className="w-3.5 h-3.5" />
+                                  )}
+                                  <span>Resend invitation</span>
+                                </button>
+                              )}
+
+                              {isSuperAdmin && (
+                                <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-100 dark:border-[#302E29]">
+                                  {selectedMember.status !== 'suspended' && selectedMember.status !== 'revoked' ? (
+                                    <button
+                                      type="button"
+                                      disabled={savingRole}
+                                      onClick={() => handleSaveMemberStatus('suspended')}
+                                      className="flex-1 min-w-[100px] text-center px-3 py-1.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-200 dark:border-amber-900/40 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      Suspend Account
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      disabled={savingRole}
+                                      onClick={() => handleSaveMemberStatus('active')}
+                                      className="flex-1 min-w-[100px] text-center px-3 py-1.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-900/40 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      Reactivate Account
+                                    </button>
+                                  )}
+
+                                  {selectedMember.status !== 'revoked' && (
+                                    <button
+                                      type="button"
+                                      disabled={savingRole}
+                                      onClick={() => {
+                                        if (confirm(`Are you absolutely sure you want to REVOKE admin access for ${selectedMember.fullName}? This cannot be undone.`)) {
+                                          handleSaveMemberStatus('revoked');
+                                        }
+                                      }}
+                                      className="flex-1 min-w-[100px] text-center px-3 py-1.5 text-[10px] font-semibold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-200 dark:border-red-900/40 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      Revoke Access
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Interactive Permissions Overlay */}
+                          <div className="space-y-2 pt-1">
+                            <label className="text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] block">
+                              Permissions
+                            </label>
+                            
+                            <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl p-3 space-y-2.5">
+                              {[
+                                { key: 'manageRegistrations', label: 'Manage registrations and review applications', checked: editPermissions.manageRegistrations },
+                                { key: 'gateOperations', label: 'Gate operations, checking in and out children', checked: editPermissions.gateOperations },
+                                { key: 'messageDispatch', label: 'Message dispatch and notification broadcasts', checked: editPermissions.messageDispatch },
+                                { key: 'fullGovernance', label: 'Full administrative access and role configurations', checked: editPermissions.fullGovernance }
+                              ].map((perm) => (
+                                <div key={perm.key} className="flex items-start space-x-2">
+                                  {perm.checked ? (
+                                    <Check className="w-4 h-4 text-[#C59B27] shrink-0 mt-0.5" />
+                                  ) : (
+                                    <div className="w-4 h-4 border border-zinc-300 dark:border-[#3A3835] rounded shrink-0 mt-0.5" />
+                                  )}
+                                  <span className="text-[11px] text-zinc-600 dark:text-[#B8B0A5] font-medium leading-normal">{perm.label}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Save Actions */}
+                          {isSuperAdmin ? (
+                            <div className="flex items-center space-x-2 pt-2">
+                              <Button
+                                type="button"
+                                variant="primary"
+                                fullWidth
+                                loading={savingRole}
+                                onClick={handleSaveMemberRole}
+                                className="py-2.5 text-xs font-semibold"
+                              >
+                                Save Changes
+                              </Button>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedMember(null)}
+                                className="px-4 py-2.5 text-xs font-medium border border-zinc-300 dark:border-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#262520] bg-white dark:bg-[#21211E] rounded-xl text-zinc-700 dark:text-[#B8B0A5] transition-all shrink-0 cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <p className="text-[10px] text-zinc-400 dark:text-[#7A7570] text-center italic pt-2">
+                              Only Super Administrators can edit role allocations.
+                            </p>
+                          )}
+
+                          {/* Super Admin: Remove Member Access (Permanent) */}
+                          {isSuperAdmin && (
+                            <div className="pt-3 border-t border-[#EAE8E1] dark:border-[#302E29] flex items-center justify-between">
+                              {Boolean(
+                                selectedMember && adminUser && (
+                                  selectedMember.id === adminUser.id ||
+                                  (selectedMember.email && adminUser.email && selectedMember.email.toLowerCase() === adminUser.email.toLowerCase())
+                                )
+                              ) ? (
+                                <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] italic">
+                                  You cannot remove your own access while signed in.
+                                </span>
+                              ) : selectedMember.role === 'super_admin' && selectedMember.status === 'active' && teamMembers.filter(m => m.role === 'super_admin' && m.status === 'active').length <= 1 ? (
+                                <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] italic">
+                                  This Super Admin cannot be removed because at least one Super Admin must remain.
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={isRemovingAccess}
+                                  onClick={() => setRemovingMember(selectedMember)}
+                                  className="text-xs font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50/80 dark:hover:bg-red-950/30 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>Remove team member</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                        </div>
+                      </div>
+                    )}
+
+                  </div>
+
+                </div>
+
+                {/* Remove Access Confirmation Modal */}
+                {removingMember && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 dark:bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+                    <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl max-w-sm w-full p-6 shadow-xl border border-[#EAE8E1] dark:border-[#302E29] space-y-4 animate-in zoom-in-95 duration-150 font-sans">
+                      <div className="space-y-1.5">
+                        <h3 className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">
+                          {removingMember.role === 'super_admin' ? 'Remove Super Admin?' : 'Remove team member?'}
+                        </h3>
+                        {Boolean(
+                          adminUser && (
+                            removingMember.id === adminUser.id ||
+                            (removingMember.email && adminUser.email && removingMember.email.toLowerCase() === adminUser.email.toLowerCase())
+                          )
+                        ) ? (
+                          <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 p-2.5 rounded-lg border border-amber-200 dark:border-amber-900/40 leading-relaxed">
+                            You cannot remove your own access while signed in.
+                          </p>
+                        ) : removingMember.role === 'super_admin' && removingMember.status === 'active' && teamMembers.filter(m => m.role === 'super_admin' && m.status === 'active').length <= 1 ? (
+                          <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 p-2.5 rounded-lg border border-amber-200 dark:border-amber-900/40 leading-relaxed">
+                            This Super Admin cannot be removed because at least one Super Admin must remain.
+                          </p>
+                        ) : (
+                          <div className="text-xs text-stone-600 dark:text-[#B8B0A5] leading-relaxed space-y-1.5">
+                            {removingMember.role === 'super_admin' ? (
+                              <>
+                                <p>This will remove Super Admin access for:</p>
+                                <p className="font-semibold text-stone-900 dark:text-[#F0EBE3]">{removingMember.email || removingMember.fullName}</p>
+                              </>
+                            ) : (
+                              <>
+                                <p>You are about to remove Admin access for:</p>
+                                <p className="font-semibold text-stone-900 dark:text-[#F0EBE3]">{removingMember.email || removingMember.fullName}</p>
+                                <p>They will no longer be able to access the Admin portal.</p>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#EAE8E1] dark:border-[#302E29]">
+                        <button
+                          type="button"
+                          disabled={isRemovingAccess}
+                          onClick={() => setRemovingMember(null)}
+                          className="px-3.5 py-2 text-xs font-medium rounded-lg text-stone-700 dark:text-[#B8B0A5] hover:bg-stone-100 dark:hover:bg-[#262520] transition-colors cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        {!Boolean(
+                          adminUser && (
+                            removingMember.id === adminUser.id ||
+                            (removingMember.email && adminUser.email && removingMember.email.toLowerCase() === adminUser.email.toLowerCase())
+                          )
+                        ) && !(removingMember.role === 'super_admin' && removingMember.status === 'active' && teamMembers.filter(m => m.role === 'super_admin' && m.status === 'active').length <= 1) && (
+                          <button
+                            type="button"
+                            disabled={isRemovingAccess}
+                            onClick={handleConfirmRemoveAccess}
+                            className="px-3.5 py-2 text-xs font-medium rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                          >
+                            {isRemovingAccess && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                            <span>Remove access</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SUB-TAB 3: MESSAGE CHANNELS */}
+            {activeSubTab === 'message-channels' && (
+              <div className="space-y-6" data-component-version="admin-settings-message-channels-v1">
+                
+                {/* Channel Provider Status Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Email Channel status */}
+                  <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-5 space-y-3 relative overflow-hidden">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <Mail className="w-4.5 h-4.5 text-[#C59B27]" />
+                        <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">Email channel</span>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+                        emailEnabled ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/40' : 'bg-zinc-100 dark:bg-[#262520] text-zinc-500 dark:text-[#7A7570]'
+                      }`}>
+                        {emailEnabled ? 'Active' : 'Unconfigured'}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-zinc-500 dark:text-[#B8B0A5] space-y-1">
+                      <p>Provider: <strong className="text-zinc-700 dark:text-[#F0EBE3] font-medium">{emailProvider || 'Resend'}</strong></p>
+                      <p>API key: <strong className="text-zinc-500 dark:text-[#7A7570] font-normal">••••••••••••••••</strong></p>
+                    </div>
+                    <p className="text-[11px] text-zinc-400 dark:text-[#7A7570] leading-normal border-t border-zinc-100 dark:border-[#302E29] pt-2.5">
+                      Used for issuing secure admin activation links and volunteer approval emails.
+                    </p>
+                  </div>
+
+                  {/* WhatsApp/SMS channel status */}
+                  <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-5 space-y-3 relative overflow-hidden">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <MessageSquare className="w-4.5 h-4.5 text-[#C59B27]" />
+                        <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">WhatsApp channel</span>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+                        whatsappEnabled ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/40' : 'bg-zinc-100 dark:bg-[#262520] text-zinc-500 dark:text-[#7A7570]'
+                      }`}>
+                        {whatsappEnabled ? 'Active' : 'Unconfigured'}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-zinc-500 dark:text-[#B8B0A5] space-y-1">
+                      <p>Provider: <strong className="text-zinc-700 dark:text-[#F0EBE3] font-medium">{whatsappProvider || 'Twilio WhatsApp'}</strong></p>
+                      <p>Sender ID: <strong className="text-zinc-500 dark:text-[#7A7570] font-normal">••••••••••••••••</strong></p>
+                    </div>
+                    <p className="text-[11px] text-zinc-400 dark:text-[#7A7570] leading-normal border-t border-zinc-100 dark:border-[#302E29] pt-2.5">
+                      Used for broadcasting attendance alerts and quick gate release notification receipts.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Message Sender Defaults Settings */}
+                <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-5">
+                  <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-3">
+                    <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] text-lg">Message channels</h3>
+                    <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Set default sender names and reply-to email signatures.</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] block">
+                        Sender name
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={senderName}
+                        onChange={(e) => setSenderName(e.target.value)}
+                        placeholder="Koinonia Children & Teens"
+                        className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-[#18181B] dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:border-[#C59B27] transition-all"
+                      />
+                      <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block">Displays as sender signature.</span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] block">
+                        Reply-to email
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        value={replyToEmail}
+                        onChange={(e) => setReplyToEmail(e.target.value)}
+                        placeholder="helpdesk@koinoniaglobal.org"
+                        className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-[#18181B] dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:border-[#C59B27] transition-all"
+                      />
+                      <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block">Replies will be routed here.</span>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end border-t border-zinc-100 dark:border-[#302E29] pt-4">
+                    <Button
+                      type="button"
+                      variant="primary"
+                      onClick={handleSaveMessageSettings}
+                      loading={savingMessages}
+                      className="px-6 py-2.5 text-xs font-semibold"
+                    >
+                      Save Changes
+                    </Button>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+            {/* SUB-TAB 4: LANDING PAGE MANAGER */}
+            {activeSubTab === 'landing-page' && (
+              <AdminLandingView isSuperAdmin={isSuperAdmin} />
+            )}
+
+            {/* SUB-TAB 5: APP MEDIA */}
+            {activeSubTab === 'app-media' && (
+              <div 
+                className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-6"
+                data-view-version="admin-settings-media-v1"
+              >
+                <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-4 flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-[#C59B27]/5 rounded-xl text-[#C59B27] border border-[#C59B27]/15">
+                      <Image className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] text-base">App media</h3>
+                      <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Manage coverages and high-resolution images across parent and volunteer views.</p>
+                    </div>
+                  </div>
+                  <Button 
+                    variant="secondary" 
+                    size="sm" 
+                    onClick={loadMediaSettings}
+                    disabled={loadingMedia}
+                    className="text-xs flex items-center space-x-1.5"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${loadingMedia ? 'animate-spin' : ''}`} />
+                    <span>Refresh</span>
+                  </Button>
+                </div>
+
+                {mediaFeedback && (
+                  <div 
+                    data-feedback="media-saved-success"
+                    className="bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 text-xs p-3 rounded-xl border border-emerald-100 dark:border-emerald-900/40 font-medium flex items-center space-x-2"
+                  >
+                    <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>{mediaFeedback}</span>
+                  </div>
+                )}
+
+                {mediaError && (
+                  <div className="bg-red-50 dark:bg-red-950/20 text-red-800 dark:text-red-300 text-xs p-3 rounded-xl border border-red-100 dark:border-red-900/40 font-medium flex items-center space-x-2">
+                    <X className="w-4 h-4 text-red-600 dark:text-red-400" />
+                    <span>{mediaError}</span>
+                  </div>
+                )}
+
+                <div 
+                  className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6"
+                  data-component-version="admin-media-preview-v3-secure-resolved"
+                >
+                  {/* Parent Dashboard Hero Card */}
+                  <div 
+                    className="border border-[#EAE8E1] dark:border-[#302E29] rounded-xl overflow-hidden bg-zinc-50 dark:bg-[#21211E] flex flex-col"
+                    data-slot-key="parent_dashboard_hero"
+                    data-component-version="admin-media-parent-hero-v1"
+                  >
+                    <div className="p-4 border-b border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#1D1D1A]">
+                      <h4 className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">Parent Hero Image</h4>
+                      <p className="text-[11px] text-zinc-500 dark:text-[#7A7570] mt-0.5">Shown on parent home screen.</p>
+                    </div>
+                    <div className="relative aspect-video bg-zinc-100 dark:bg-[#262520] flex items-center justify-center border-b border-[#EAE8E1] dark:border-[#302E29]">
+                      {mediaUrls.parent_dashboard_hero ? (
+                        <SafeImage 
+                          src={mediaUrls.parent_dashboard_hero} 
+                          alt="Parent Hero" 
+                          className="w-full h-full object-cover"
+                          containerClassName="w-full h-full"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-zinc-400 dark:text-[#7A7570] p-4 text-center">
+                          <Image className="w-8 h-8 text-zinc-300 dark:text-[#7A7570] mb-2" />
+                          <span className="text-[11px] font-medium">Default Illustration</span>
+                        </div>
+                      )}
+                      {uploadingSlot === 'parent_dashboard_hero' && (
+                        <div className="absolute inset-0 bg-white/70 dark:bg-[#1D1D1A]/70 flex items-center justify-center z-10">
+                          <Loader2 className="w-6 h-6 text-[#C59B27] animate-spin" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-4 flex items-center justify-between gap-2 mt-auto bg-white dark:bg-[#1D1D1A]">
+                      <div className="relative">
+                        <input
+                          type="file"
+                          id="file-parent-hero"
+                          className="sr-only"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleUploadMedia('parent_dashboard_hero', file);
+                          }}
+                        />
+                        <label
+                          htmlFor="file-parent-hero"
+                          className="px-3 py-1.5 bg-zinc-100 dark:bg-[#262520] hover:bg-zinc-200 dark:hover:bg-[#2A2926] border border-zinc-200 dark:border-[#3A3835] text-[#18181B] dark:text-[#F0EBE3] text-[11px] font-semibold rounded-lg cursor-pointer flex items-center space-x-1 transition-all"
+                        >
+                          <Upload className="w-3 h-3" />
+                          <span>Upload / Replace</span>
+                        </label>
+                      </div>
+                      {mediaUrls.parent_dashboard_hero && (
+                        <button
+                          onClick={() => handleResetMedia('parent_dashboard_hero')}
+                          className="p-1.5 text-zinc-400 dark:text-[#7A7570] hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-all border border-transparent hover:border-red-100"
+                          title="Reset to default image"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Volunteer Dashboard Hero Card */}
+                  <div 
+                    className="border border-[#EAE8E1] dark:border-[#302E29] rounded-xl overflow-hidden bg-zinc-50 dark:bg-[#21211E] flex flex-col"
+                    data-slot-key="volunteer_dashboard_hero"
+                    data-component-version="admin-media-volunteer-hero-v1"
+                  >
+                    <div className="p-4 border-b border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#1D1D1A]">
+                      <h4 className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">Volunteer Hero Image</h4>
+                      <p className="text-[11px] text-zinc-500 dark:text-[#7A7570] mt-0.5">Shown on volunteer dashboard screen.</p>
+                    </div>
+                    <div className="relative aspect-video bg-zinc-100 dark:bg-[#262520] flex items-center justify-center border-b border-[#EAE8E1] dark:border-[#302E29]">
+                      {mediaUrls.volunteer_dashboard_hero ? (
+                        <SafeImage 
+                          src={mediaUrls.volunteer_dashboard_hero} 
+                          alt="Volunteer Hero" 
+                          className="w-full h-full object-cover"
+                          containerClassName="w-full h-full"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-zinc-400 dark:text-[#7A7570] p-4 text-center">
+                          <Image className="w-8 h-8 text-zinc-300 dark:text-[#7A7570] mb-2" />
+                          <span className="text-[11px] font-medium">Default Illustration</span>
+                        </div>
+                      )}
+                      {uploadingSlot === 'volunteer_dashboard_hero' && (
+                        <div className="absolute inset-0 bg-white/70 dark:bg-[#1D1D1A]/70 flex items-center justify-center z-10">
+                          <Loader2 className="w-6 h-6 text-[#C59B27] animate-spin" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-4 flex items-center justify-between gap-2 mt-auto bg-white dark:bg-[#1D1D1A]">
+                      <div className="relative">
+                        <input
+                          type="file"
+                          id="file-volunteer-hero"
+                          className="sr-only"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleUploadMedia('volunteer_dashboard_hero', file);
+                          }}
+                        />
+                        <label
+                          htmlFor="file-volunteer-hero"
+                          className="px-3 py-1.5 bg-zinc-100 dark:bg-[#262520] hover:bg-zinc-200 dark:hover:bg-[#2A2926] border border-zinc-200 dark:border-[#3A3835] text-[#18181B] dark:text-[#F0EBE3] text-[11px] font-semibold rounded-lg cursor-pointer flex items-center space-x-1 transition-all"
+                        >
+                          <Upload className="w-3 h-3" />
+                          <span>Upload / Replace</span>
+                        </label>
+                      </div>
+                      {mediaUrls.volunteer_dashboard_hero && (
+                        <button
+                          onClick={() => handleResetMedia('volunteer_dashboard_hero')}
+                          className="p-1.5 text-zinc-400 dark:text-[#7A7570] hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-all border border-transparent hover:border-red-100"
+                          title="Reset to default image"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Default Event Cover Card */}
+                  <div 
+                    className="border border-[#EAE8E1] dark:border-[#302E29] rounded-xl overflow-hidden bg-zinc-50 dark:bg-[#21211E] flex flex-col"
+                    data-slot-key="default_event_hero"
+                    data-component-version="admin-media-default-event-v1"
+                  >
+                    <div className="p-4 border-b border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#1D1D1A]">
+                      <h4 className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">Default Event Cover</h4>
+                      <p className="text-[11px] text-zinc-500 dark:text-[#7A7570] mt-0.5">Used as backup for events.</p>
+                    </div>
+                    <div className="relative aspect-video bg-zinc-100 dark:bg-[#262520] flex items-center justify-center border-b border-[#EAE8E1] dark:border-[#302E29]">
+                      {mediaUrls.default_event_hero ? (
+                        <SafeImage 
+                          src={mediaUrls.default_event_hero} 
+                          alt="Default Event Cover" 
+                          className="w-full h-full object-cover"
+                          containerClassName="w-full h-full"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-zinc-400 dark:text-[#7A7570] p-4 text-center">
+                          <Image className="w-8 h-8 text-zinc-300 dark:text-[#7A7570] mb-2" />
+                          <span className="text-[11px] font-medium">Default Cover Image</span>
+                        </div>
+                      )}
+                      {uploadingSlot === 'default_event_hero' && (
+                        <div className="absolute inset-0 bg-white/70 dark:bg-[#1D1D1A]/70 flex items-center justify-center z-10">
+                          <Loader2 className="w-6 h-6 text-[#C59B27] animate-spin" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-4 flex items-center justify-between gap-2 mt-auto bg-white dark:bg-[#1D1D1A]">
+                      <div className="relative">
+                        <input
+                          type="file"
+                          id="file-event-cover"
+                          className="sr-only"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleUploadMedia('default_event_hero', file);
+                          }}
+                        />
+                        <label
+                          htmlFor="file-event-cover"
+                          className="px-3 py-1.5 bg-zinc-100 dark:bg-[#262520] hover:bg-zinc-200 dark:hover:bg-[#2A2926] border border-zinc-200 dark:border-[#3A3835] text-[#18181B] dark:text-[#F0EBE3] text-[11px] font-semibold rounded-lg cursor-pointer flex items-center space-x-1 transition-all"
+                        >
+                          <Upload className="w-3 h-3" />
+                          <span>Upload / Replace</span>
+                        </label>
+                      </div>
+                      {mediaUrls.default_event_hero && (
+                        <button
+                          onClick={() => handleResetMedia('default_event_hero')}
+                          className="p-1.5 text-zinc-400 dark:text-[#7A7570] hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-all border border-transparent hover:border-red-100"
+                          title="Reset to default image"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Official Favicon / App Icon Card */}
+                  <div 
+                    className="border border-[#EAE8E1] dark:border-[#302E29] rounded-xl overflow-hidden bg-zinc-50 dark:bg-[#21211E] flex flex-col"
+                    data-slot-key="site_favicon"
+                    data-component-version="admin-media-favicon-v2"
+                  >
+                    <div className="p-4 border-b border-[#EAE8E1] dark:border-[#302E29] bg-white dark:bg-[#1D1D1A]">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">Favicon and app icon</h4>
+                        <span className="px-1.5 py-0.5 bg-[#C59B27]/10 text-[#C59B27] text-[10px] font-bold rounded">Bird Mark Only</span>
+                      </div>
+                      <p className="text-[11px] text-zinc-500 dark:text-[#7A7570] mt-0.5">Upload the bird mark used in browser tabs and installed app icons.</p>
+                    </div>
+                    <div className="relative bg-zinc-100 dark:bg-[#262520] border-b border-[#EAE8E1] dark:border-[#302E29] p-4 flex flex-col items-center justify-center space-y-3">
+                      {/* Realistic Sizes Preview: 16x16, 32x32, 48x48 */}
+                      <div className="text-[10px] font-semibold text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider">Realistic Tab Previews</div>
+                      <div className="flex items-end justify-center gap-6">
+                        {/* 16x16 */}
+                        <div className="flex flex-col items-center space-y-1">
+                          <div className="w-8 h-8 rounded-lg bg-white dark:bg-[#1D1D1A] border border-zinc-200 dark:border-[#3A3835] flex items-center justify-center p-1 shadow-xs">
+                            <img 
+                              src={mediaUrls.site_favicon || '/favicon-16x16.png'} 
+                              alt="16x16 Preview" 
+                              className="w-4 h-4 object-contain"
+                              onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.svg'; }}
+                            />
+                          </div>
+                          <span className="text-[9px] font-mono text-zinc-400 dark:text-[#7A7570]">16px</span>
+                        </div>
+                        {/* 32x32 */}
+                        <div className="flex flex-col items-center space-y-1">
+                          <div className="w-10 h-10 rounded-lg bg-white dark:bg-[#1D1D1A] border border-zinc-200 dark:border-[#3A3835] flex items-center justify-center p-1 shadow-xs">
+                            <img 
+                              src={mediaUrls.site_favicon || '/favicon-32x32.png'} 
+                              alt="32x32 Light Preview" 
+                              className="w-8 h-8 object-contain"
+                              onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.svg'; }}
+                            />
+                          </div>
+                          <span className="text-[9px] font-mono text-zinc-400 dark:text-[#7A7570]">32px Light</span>
+                        </div>
+                        {/* 32x32 Dark Tab */}
+                        <div className="flex flex-col items-center space-y-1">
+                          <div className="w-10 h-10 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center p-1 shadow-xs">
+                            <img 
+                              src={mediaUrls.site_favicon || '/favicon-32x32.png'} 
+                              alt="32x32 Dark Preview" 
+                              className="w-8 h-8 object-contain"
+                              onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.svg'; }}
+                            />
+                          </div>
+                          <span className="text-[9px] font-mono text-zinc-400 dark:text-[#7A7570]">32px Dark</span>
+                        </div>
+                        {/* 48x48 App Icon */}
+                        <div className="flex flex-col items-center space-y-1">
+                          <div className="w-14 h-14 rounded-xl bg-white dark:bg-[#1D1D1A] border border-zinc-200 dark:border-[#3A3835] flex items-center justify-center p-1.5 shadow-xs">
+                            <img 
+                              src={mediaUrls.site_favicon || '/apple-touch-icon.png'} 
+                              alt="48x48 Preview" 
+                              className="w-11 h-11 object-contain"
+                              onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.svg'; }}
+                            />
+                          </div>
+                          <span className="text-[9px] font-mono text-zinc-400 dark:text-[#7A7570]">48px App</span>
+                        </div>
+                      </div>
+                      {uploadingSlot === 'site_favicon' && (
+                        <div className="absolute inset-0 bg-white/80 dark:bg-[#1D1D1A]/80 flex items-center justify-center z-10">
+                          <Loader2 className="w-6 h-6 text-[#C59B27] animate-spin" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-4 flex items-center justify-between gap-2 mt-auto bg-white dark:bg-[#1D1D1A]">
+                      <div className="relative">
+                        <input
+                          type="file"
+                          id="file-site-favicon"
+                          className="sr-only"
+                          accept="image/png,image/svg+xml,image/webp"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleUploadMedia('site_favicon', file);
+                          }}
+                        />
+                        <label
+                          htmlFor="file-site-favicon"
+                          className="px-3.5 py-1.5 bg-zinc-900 dark:bg-[#262520] hover:bg-zinc-800 dark:hover:bg-[#2A2926] text-white dark:text-[#F0EBE3] text-[11px] font-semibold rounded-lg cursor-pointer flex items-center space-x-1.5 transition-all shadow-xs border dark:border-[#3A3835]"
+                        >
+                          <Upload className="w-3.5 h-3.5 text-[#C59B27]" />
+                          <span>{mediaUrls.site_favicon ? 'Replace icon' : 'Upload icon'}</span>
+                        </label>
+                      </div>
+                      {mediaUrls.site_favicon && (
+                        <button
+                          onClick={() => handleResetMedia('site_favicon')}
+                          className="px-3 py-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg text-[11px] font-semibold transition-all border border-rose-200 dark:border-rose-900/40 flex items-center space-x-1 cursor-pointer"
+                          title="Remove custom icon and revert to default bird mark"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Remove icon</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SUB-TAB: ALERT DELIVERY & DEVICE PREFERENCES */}
+            {activeSubTab === 'alert-delivery' && (
+              <div 
+                className="grid grid-cols-1 lg:grid-cols-2 gap-8"
+                data-view-version="admin-alert-delivery-settings-v2"
+              >
+                {/* COLUMN 1: GLOBAL ALERT CONTEXT & ROUTING RULES */}
+                <div className="space-y-8">
+                  {/* CARD 1: GLOBAL ALERT ROUTING RULES */}
+                  <div 
+                    className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-6 flex flex-col justify-between"
+                    data-component-version="admin-alert-delivery-rules-v1"
+                  >
+                    <div className="space-y-6">
+                      <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-4">
+                        <div className="flex items-center space-x-2.5">
+                          <div className="p-2 bg-[#C59B27]/5 rounded-xl text-[#C59B27] border border-[#C59B27]/15">
+                            <ShieldAlert className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] text-base">Global alert routing rules</h3>
+                            <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-0.5">Control how volunteer safety alerts are escalated across the organization.</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Section 1: Who Receives Urgent Alerts */}
+                      <div className="space-y-3">
+                        <h4 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] tracking-wider uppercase">1. Recipient roles</h4>
+                        <p className="text-[11px] text-zinc-400 dark:text-[#7A7570] mt-1">Select the active management roles that should receive urgent escalated alerts.</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                          {Object.entries(recipientRoles).map(([role, checked]) => {
+                            const labelMap: Record<string, string> = {
+                              super_admin: 'Super administrators',
+                              admin: 'Admins & registrars',
+                              care_lead: 'Care leads & coordinators',
+                              gate_lead: 'Gate/check-in leads',
+                              pickup_lead: 'Pickup safety coordinators'
+                            };
+                            return (
+                              <button
+                                key={role}
+                                type="button"
+                                onClick={() => setRecipientRoles(prev => ({ ...prev, [role]: !checked }))}
+                                className="flex items-center space-x-3 p-3 rounded-xl border border-zinc-100 dark:border-[#302E29] bg-transparent dark:bg-[#21211E] hover:border-[#C59B27]/30 hover:bg-zinc-50/50 dark:hover:bg-[#262520] transition-all text-left cursor-pointer"
+                              >
+                                <div className="text-zinc-500">
+                                  {checked ? (
+                                    <CheckSquare className="w-4.5 h-4.5 text-[#C59B27]" />
+                                  ) : (
+                                    <Square className="w-4.5 h-4.5 text-zinc-300 dark:text-[#7A7570]" />
+                                  )}
+                                </div>
+                                <span className="text-xs font-medium text-zinc-700 dark:text-[#B8B0A5]">{labelMap[role] || role}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Section 2: Alert Categories */}
+                      <div className="space-y-3 pt-2">
+                        <h4 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] tracking-wider uppercase">2. Routed categories</h4>
+                        <p className="text-[11px] text-zinc-400 dark:text-[#7A7570] mt-1">Active event concern classifications subject to this routing profile.</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                          {Object.entries(alertCategories).map(([cat, checked]) => {
+                            const labelMap: Record<string, string> = {
+                              child_care: 'Child care concern',
+                              pickup_issue: 'Pickup issue',
+                              pass_issue: 'Pass/check-in issue',
+                              medical_support: 'Medical support',
+                              security_concern: 'Security concern',
+                              general_help: 'General care support'
+                            };
+                            return (
+                              <button
+                                key={cat}
+                                type="button"
+                                onClick={() => setAlertCategories(prev => ({ ...prev, [cat]: !checked }))}
+                                className="flex items-center space-x-3 p-3 rounded-xl border border-zinc-100 dark:border-[#302E29] bg-transparent dark:bg-[#21211E] hover:border-[#C59B27]/30 hover:bg-zinc-50/50 dark:hover:bg-[#262520] transition-all text-left cursor-pointer"
+                              >
+                                <div className="text-zinc-500">
+                                  {checked ? (
+                                    <CheckSquare className="w-4.5 h-4.5 text-[#C59B27]" />
+                                  ) : (
+                                    <Square className="w-4.5 h-4.5 text-zinc-300 dark:text-[#7A7570]" />
+                                  )}
+                                </div>
+                                <span className="text-xs font-medium text-zinc-700 dark:text-[#B8B0A5]">{labelMap[cat] || cat}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Section 3: Delivery Methods */}
+                      <div className="space-y-3 pt-2">
+                        <h4 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] tracking-wider uppercase">3. Delivery channels</h4>
+                        <p className="text-[11px] text-zinc-400 dark:text-[#7A7570] mt-1">Authorized channels for transmitting active real-time safety alerts.</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                          {Object.entries(deliveryMethods).map(([method, checked]) => {
+                            const labelMap: Record<string, string> = {
+                              in_app: 'In-app notification banner',
+                              urgent_screen: 'Urgent screen takeover',
+                              sound: 'Synthesized audio sound',
+                              vibration: 'Physical vibration pulse',
+                              push: 'Secure push notification',
+                              email_fallback: 'Email fallback digest'
+                            };
+                            return (
+                              <button
+                                key={method}
+                                type="button"
+                                onClick={() => setDeliveryMethods(prev => ({ ...prev, [method]: !checked }))}
+                                className="flex items-center space-x-3 p-3 rounded-xl border border-zinc-100 dark:border-[#302E29] bg-transparent dark:bg-[#21211E] hover:border-[#C59B27]/30 hover:bg-zinc-50/50 dark:hover:bg-[#262520] transition-all text-left cursor-pointer"
+                              >
+                                <div className="text-zinc-500">
+                                  {checked ? (
+                                    <CheckSquare className="w-4.5 h-4.5 text-[#C59B27]" />
+                                  ) : (
+                                    <Square className="w-4.5 h-4.5 text-zinc-300 dark:text-[#7A7570]" />
+                                  )}
+                                </div>
+                                <span className="text-xs font-medium text-zinc-700 dark:text-[#B8B0A5]">{labelMap[method] || method}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Section 4: Severity-based Routing Rules */}
+                      <div className="space-y-3 pt-2">
+                        <h4 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] tracking-wider uppercase">4. Severity-based routing rules</h4>
+                        <div className="border border-zinc-100 dark:border-[#302E29] rounded-xl overflow-hidden divide-y divide-zinc-50 dark:divide-[#302E29]">
+                          <div className="p-3 bg-zinc-50/50 dark:bg-[#21211E] flex justify-between text-[11px] font-semibold text-zinc-500 dark:text-[#7A7570]">
+                            <span>SEVERITY LEVEL</span>
+                            <span>ROUTING ACTION</span>
+                          </div>
+                          <div className="p-3 flex justify-between items-center text-xs">
+                            <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">🟢 Normal</span>
+                            <span className="text-zinc-500 dark:text-[#7A7570] bg-zinc-100 dark:bg-[#262520] px-2.5 py-1 rounded-lg text-[10px]">Bell notification only</span>
+                          </div>
+                          <div className="p-3 flex justify-between items-center text-xs">
+                            <span className="font-medium text-amber-600 dark:text-amber-400">🟡 Important</span>
+                            <span className="text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-2.5 py-1 rounded-lg text-[10px] font-medium border border-amber-100/50 dark:border-amber-900/40">Bell + Sound Chime</span>
+                          </div>
+                          <div className="p-3 flex justify-between items-center text-xs">
+                            <span className="font-medium text-red-600 dark:text-red-400">🔴 Urgent</span>
+                            <span className="text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 px-2.5 py-1 rounded-lg text-[10px] font-medium border border-red-100/50 dark:border-red-900/40">Bell + Full Overlay + Sound + Vibe + Push</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Section 5: Recipients & Delivery Panel */}
+                      <div 
+                        className="space-y-4 pt-4 border-t border-zinc-100 dark:border-[#302E29]"
+                        data-component-version="alert-recipients-delivery-panel-v1"
+                      >
+                        <h4 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] tracking-wider uppercase">
+                          5. Secure recipients & delivery details policy
+                        </h4>
+                        
+                        {/* Channel preference */}
+                        <div className="space-y-2">
+                          <span className="text-[11px] font-bold text-zinc-500 dark:text-[#7A7570] block uppercase">
+                            Primary Transmission Channel
+                          </span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setDeliveryChannelMode('app_only')}
+                              className={`p-3 rounded-xl border text-left flex items-start space-x-3 transition-all cursor-pointer ${
+                                deliveryChannelMode === 'app_only'
+                                  ? 'border-[#C59B27] bg-[#C59B27]/5 dark:bg-[#C59B27]/10'
+                                  : 'border-zinc-100 dark:border-[#302E29] bg-transparent dark:bg-[#21211E] hover:bg-zinc-50/50 dark:hover:bg-[#262520]'
+                              }`}
+                            >
+                              <div className="mt-0.5">
+                                <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                                  deliveryChannelMode === 'app_only' ? 'border-[#C59B27]' : 'border-zinc-300 dark:border-[#3A3835]'
+                                }`}>
+                                  {deliveryChannelMode === 'app_only' && <div className="w-2 h-2 rounded-full bg-[#C59B27]" />}
+                                </div>
+                              </div>
+                              <div>
+                                <span className="text-xs font-semibold text-zinc-700 dark:text-[#F0EBE3] block">Secure App-Only</span>
+                                <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-sans mt-0.5">Restricted strictly within authenticated dashboards</span>
+                              </div>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setDeliveryChannelMode('sms_push_fallback')}
+                              className={`p-3 rounded-xl border text-left flex items-start space-x-3 transition-all cursor-pointer ${
+                                deliveryChannelMode === 'sms_push_fallback'
+                                  ? 'border-amber-500 bg-amber-50/40 dark:bg-amber-950/20'
+                                  : 'border-zinc-100 dark:border-[#302E29] bg-transparent dark:bg-[#21211E] hover:bg-zinc-50/50 dark:hover:bg-[#262520]'
+                              }`}
+                            >
+                              <div className="mt-0.5">
+                                <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                                  deliveryChannelMode === 'sms_push_fallback' ? 'border-amber-500' : 'border-zinc-300 dark:border-[#3A3835]'
+                                }`}>
+                                  {deliveryChannelMode === 'sms_push_fallback' && <div className="w-2 h-2 rounded-full bg-amber-500" />}
+                                </div>
+                              </div>
+                              <div>
+                                <span className="text-xs font-semibold text-zinc-700 dark:text-[#F0EBE3] block">SMS & Push Fallback</span>
+                                <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-sans mt-0.5">Allows external SMS previews with zero child details</span>
+                              </div>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Child Details Inclusion Policy */}
+                        <div className="space-y-2 pt-1">
+                          <span className="text-[11px] font-bold text-zinc-500 dark:text-[#7A7570] block uppercase">
+                            Child Context Disclosure Policy
+                          </span>
+                          
+                          <div className="space-y-3">
+                            <button
+                              type="button"
+                              onClick={() => setIncludeSecureInAppChildDetails(true)}
+                              className={`w-full p-3.5 rounded-xl border text-left flex items-start space-x-3 transition-all cursor-pointer ${
+                                includeSecureInAppChildDetails
+                                  ? 'border-emerald-500 bg-emerald-50/10 dark:bg-emerald-950/20'
+                                  : 'border-zinc-100 dark:border-[#302E29] bg-transparent dark:bg-[#21211E] hover:bg-zinc-50/50 dark:hover:bg-[#262520]'
+                              }`}
+                            >
+                              <div className="mt-0.5">
+                                <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                                  includeSecureInAppChildDetails ? 'border-emerald-500' : 'border-zinc-300 dark:border-[#3A3835]'
+                                }`}>
+                                  {includeSecureInAppChildDetails && <div className="w-2 h-2 rounded-full bg-emerald-500" />}
+                                </div>
+                              </div>
+                              <div>
+                                <span className="text-xs font-bold text-zinc-800 dark:text-[#F0EBE3] block">
+                                  Include secure in-app child details/photo (Recommended)
+                                </span>
+                                <span className="text-[10px] text-zinc-500 dark:text-[#7A7570] leading-relaxed font-sans block mt-1">
+                                  Authorized users see names, photos, events, and medical/pickup flags securely inside the live app ONLY. Lock screen and SMS alerts remain anonymous.
+                                </span>
+                              </div>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setIncludeSecureInAppChildDetails(false)}
+                              className={`w-full p-3.5 rounded-xl border text-left flex items-start space-x-3 transition-all cursor-pointer ${
+                                !includeSecureInAppChildDetails
+                                  ? 'border-zinc-500 bg-zinc-50 dark:bg-[#262520] dark:border-[#3A3835]'
+                                  : 'border-zinc-100 dark:border-[#302E29] bg-transparent dark:bg-[#21211E] hover:bg-zinc-50/50 dark:hover:bg-[#262520]'
+                              }`}
+                            >
+                              <div className="mt-0.5">
+                                <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                                  !includeSecureInAppChildDetails ? 'border-zinc-500' : 'border-zinc-300 dark:border-[#3A3835]'
+                                }`}>
+                                  {!includeSecureInAppChildDetails && <div className="w-2 h-2 rounded-full bg-zinc-500" />}
+                                </div>
+                              </div>
+                              <div>
+                                <span className="text-xs font-bold text-zinc-800 dark:text-[#F0EBE3] block">
+                                  Minimal alert only (No child details in push payload/lock screen)
+                                </span>
+                                <span className="text-[10px] text-zinc-500 dark:text-[#7A7570] leading-relaxed font-sans block mt-1">
+                                  Hides child identities completely across all views and alerts. Operators must query the register physically or reference pre-distributed manifests.
+                                </span>
+                              </div>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Critical Safety Disclaimer */}
+                        <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/40 rounded-xl text-[10px] text-red-700/80 dark:text-red-300/80 leading-relaxed font-sans">
+                          <strong className="font-bold text-red-800 dark:text-red-300 block mb-0.5">⚠️ Secure Notification Compliance Notice</strong>
+                          Full child profiles, primary guardians, photographs, and health/allergy flags are restricted strictly to authorized in-app views. SMS, WhatsApp, and external push notifications are completely masked for privacy compliance.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-zinc-100 dark:border-[#302E29] pt-5 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="primary"
+                        onClick={handleSaveAlertDeliverySettings}
+                        className="px-6 py-2.5 text-xs font-semibold flex items-center space-x-1.5"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>Save Global Rules</span>
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* CARD 4: FALLBACK ESCALATION RULE */}
+                  <div 
+                    className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-6 flex flex-col justify-between"
+                    data-component-version="urgent-alert-fallback-rule-v1"
+                  >
+                    <div className="space-y-6">
+                      <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-4">
+                        <div className="flex items-center space-x-2.5">
+                          <div className="p-2 bg-[#C59B27]/5 rounded-xl text-[#C59B27] border border-[#C59B27]/15">
+                            <TrendingUp className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] text-base">Unresolved Escalation Fallback</h3>
+                            <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-0.5">Automatically escalate unresolved critical alerts if left unacknowledged.</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4 text-xs">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] block">
+                            Escalate if urgent alert is not acknowledged after:
+                          </label>
+                          <select
+                            value={fallbackRule}
+                            onChange={(e) => handleFallbackRuleChange(e.target.value)}
+                            className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] text-[#18181B] dark:text-[#F0EBE3] hover:border-zinc-300 dark:hover:border-[#302E29] focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] rounded-xl p-3 text-xs outline-none transition-all cursor-pointer"
+                          >
+                            <option value="Off">Off</option>
+                            <option value="1 minute">1 minute</option>
+                            <option value="2 minutes">2 minutes</option>
+                            <option value="5 minutes">5 minutes</option>
+                          </select>
+                          <p className="text-[10px] text-zinc-400 dark:text-[#7A7570] mt-1">
+                            If enabled, the safety tracking service monitors open urgent alerts and broadcasts a second-wave high priority notification to all active care channels if the initial dispatcher does not respond.
+                          </p>
+                        </div>
+
+                        <div className="p-4 bg-zinc-50 dark:bg-[#21211E] border border-zinc-100 dark:border-[#302E29] rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-semibold uppercase block">SMS & WhatsApp Fallback Channel</span>
+                          <p className="text-[11px] text-zinc-500 dark:text-[#B8B0A5] leading-relaxed">
+                            External fallback is not connected yet.
+                          </p>
+                          <p className="text-[10px] text-zinc-400 dark:text-[#7A7570] leading-normal">
+                            Secure SMS gateways must be registered via Settings &gt; Message Channels first.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* COLUMN 2: DEVICE-SPECIFIC SETTINGS & REAL-TIME READINESS */}
+                <div className="space-y-8">
+                  {/* CARD 2: DEVICE-SPECIFIC ALERT PREFERENCES */}
+                  <div 
+                    className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-6 flex flex-col justify-between shadow-xs"
+                    data-component-version="device-alert-preferences-v1"
+                  >
+                    <div className="space-y-6">
+                      <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-4">
+                        <div className="flex items-center space-x-2.5">
+                          <div className="p-2 bg-[#C59B27]/5 dark:bg-amber-950/20 rounded-xl text-[#C59B27] dark:text-amber-400 border border-[#C59B27]/15 dark:border-amber-900/40">
+                            <Bell className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-base">This device alert preferences</h3>
+                            <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-0.5">Configure individual alert behavior specifically on this browser and device.</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Toggle: Receive alerts */}
+                      <div className="flex items-center justify-between p-4 bg-zinc-50/50 dark:bg-[#21211E] border border-zinc-100 dark:border-[#302E29] rounded-xl">
+                        <div className="space-y-0.5 pr-4">
+                          <span className="text-xs font-semibold text-zinc-800 dark:text-[#F0EBE3]">Receive safety alerts on this device</span>
+                          <p className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Enable or disable all real-time visual and audio alerts on this browser.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setDeviceReceiveUrgent(!deviceReceiveUrgent)}
+                          className="focus:outline-none cursor-pointer"
+                        >
+                          {deviceReceiveUrgent ? (
+                            <ToggleRight className="w-10 h-10 text-[#C59B27] dark:text-amber-400" />
+                          ) : (
+                            <ToggleLeft className="w-10 h-10 text-zinc-300 dark:text-zinc-600" />
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Only show sub-settings if alerts are enabled on this device */}
+                      <div 
+                        className={`space-y-4 transition-all ${deviceReceiveUrgent ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}
+                        data-component-version="urgent-alert-sound-settings-v2"
+                      >
+                        <h4 className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] tracking-wider uppercase">Device Delivery Preferences</h4>
+                        
+                        {/* Sound Preference */}
+                        <div className="flex items-center justify-between py-2 border-b border-zinc-100 dark:border-[#302E29]">
+                          <div className="space-y-0.5">
+                            <span className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3] flex items-center space-x-1.5">
+                              <Volume2 className="w-3.5 h-3.5 text-zinc-500 dark:text-[#7A7570]" />
+                              <span>Play alert sound</span>
+                            </span>
+                            <p className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Plays synthesized major chord chimes during critical alert events.</p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                resumeAudioContext();
+                                playSound('alert');
+                              }}
+                              className="mt-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 text-[#C59B27] dark:text-amber-400 border border-[#C59B27]/30 dark:border-amber-900/40 rounded text-[10px] font-bold flex items-center space-x-1 transition-all cursor-pointer"
+                              title="Test alert sound trigger"
+                            >
+                              <Volume2 className="w-3 h-3" />
+                              <span>Test alert sound</span>
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={!deviceReceiveUrgent}
+                            onClick={() => setDeviceSound(!deviceSound)}
+                            className="focus:outline-none cursor-pointer"
+                          >
+                            {deviceSound ? (
+                              <ToggleRight className="w-9 h-9 text-[#C59B27] dark:text-amber-400" />
+                            ) : (
+                              <ToggleLeft className="w-9 h-9 text-zinc-300 dark:text-zinc-600" />
+                            )}
+                          </button>
+                        </div>
+
+                        {/* Sound Profile Selection */}
+                        <div className={`space-y-1.5 py-2 border-b border-zinc-100 dark:border-[#302E29] ${deviceSound ? '' : 'opacity-40 pointer-events-none'}`}>
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3] block">
+                              Alert tone
+                            </label>
+                            <span className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Tone urgency</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-1.5 bg-zinc-50 dark:bg-[#21211E] p-1.5 rounded-xl border border-zinc-100 dark:border-[#302E29]">
+                            {[
+                              { id: 'normal', label: 'Soft' },
+                              { id: 'important', label: 'Standard' },
+                              { id: 'emergency', label: 'Urgent' }
+                            ].map((prof) => (
+                              <button
+                                key={prof.id}
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  updateAudioPreference('urgentSoundProfile', prof.id);
+                                  showFeedback(`Alert tone set to ${prof.label}.`);
+                                }}
+                                className={`py-1.5 rounded-lg font-medium text-xs text-center transition-all cursor-pointer ${
+                                  alertProfile === prof.id
+                                    ? 'bg-[#18181B] dark:bg-[#C59B27] text-white shadow-xs'
+                                    : 'text-zinc-600 dark:text-[#B8B0A5] hover:text-zinc-900 dark:hover:text-[#F0EBE3] bg-transparent'
+                                }`}
+                              >
+                                {prof.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Volume Multiplier Controls */}
+                        <div className={`space-y-1.5 py-2 border-b border-zinc-100 dark:border-[#302E29] ${deviceSound ? '' : 'opacity-40 pointer-events-none'}`}>
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3] block">
+                              Alert volume
+                            </label>
+                            <span className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Volume level</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-1.5 bg-zinc-50 dark:bg-[#21211E] p-1.5 rounded-xl border border-zinc-100 dark:border-[#302E29]">
+                            {[
+                              { id: 'standard', label: 'Normal' },
+                              { id: 'loud', label: 'Loud' },
+                              { id: 'very_loud', label: 'Very loud' }
+                            ].map((vol) => (
+                              <button
+                                key={vol.id}
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  updateAudioPreference('urgentVolumeBoost', vol.id);
+                                  showFeedback(`Alert volume set to ${vol.label}.`);
+                                }}
+                                className={`py-1.5 rounded-lg font-medium text-xs text-center transition-all cursor-pointer ${
+                                  alertVolume === vol.id
+                                    ? 'bg-[#C59B27] text-white shadow-xs'
+                                    : 'text-zinc-600 dark:text-[#B8B0A5] hover:text-zinc-900 dark:hover:text-[#F0EBE3] bg-transparent'
+                                }`}
+                              >
+                                {vol.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Test sound controls */}
+                        <div className={`space-y-2 py-2.5 border-b border-zinc-100 dark:border-[#302E29] ${deviceSound ? '' : 'opacity-40 pointer-events-none'}`}>
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3] block">
+                              Test sound
+                            </label>
+                            <span className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Preview alert tone</span>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                resumeAudioContext();
+                                playSound('emergency', { volume: alertVolume, profile: alertProfile });
+                                showFeedback('Playing alert sound.');
+                              }}
+                              className="flex-1 font-medium text-xs bg-white dark:bg-[#21211E] hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#F0EBE3] border border-zinc-200 dark:border-[#302E29] py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                            >
+                              <Volume2 className="w-3.5 h-3.5 text-[#C59B27] dark:text-amber-400" />
+                              <span>Test sound</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                try {
+                                  stopAllUrgentAlertEffects();
+                                  showFeedback('Sound stopped.');
+                                } catch (_) {}
+                              }}
+                              className="font-medium text-xs bg-zinc-100 dark:bg-[#262520] hover:bg-zinc-200 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#F0EBE3] px-3.5 py-2 rounded-xl transition-all cursor-pointer"
+                            >
+                              Stop sound
+                            </button>
+                          </div>
+                          <p className="text-[11px] text-zinc-500 dark:text-[#7A7570]">
+                            Keep your device volume turned on so urgent alerts can be heard.
+                          </p>
+                        </div>
+
+                        {/* Urgent Alerts Only Toggle */}
+                        <div className="flex items-center justify-between py-2 border-b border-zinc-100 dark:border-[#302E29]">
+                          <div className="space-y-0.5">
+                            <span className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">Urgent alerts only</span>
+                            <p className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Filter out normal/important concern alerts; only notify for absolute urgent status items.</p>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={!deviceReceiveUrgent}
+                            onClick={() => setDeviceUrgentOnly(!deviceUrgentOnly)}
+                            className="focus:outline-none cursor-pointer"
+                          >
+                            {deviceUrgentOnly ? (
+                              <ToggleRight className="w-9 h-9 text-[#C59B27] dark:text-amber-400" />
+                            ) : (
+                              <ToggleLeft className="w-9 h-9 text-zinc-300 dark:text-zinc-600" />
+                            )}
+                          </button>
+                        </div>
+
+                        {/* Vibration Preference */}
+                        <div className="flex items-center justify-between py-2 border-b border-zinc-100 dark:border-[#302E29]">
+                          <div className="space-y-0.5">
+                            <span className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">Vibration physical feedback</span>
+                            <p className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Fires the physical device vibration motor for incoming events.</p>
+                            {!(typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') && (
+                              <p className="text-[9px] text-amber-600 dark:text-amber-400 font-medium bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 rounded border border-amber-100/30 dark:border-amber-900/40 w-fit mt-1">
+                                Vibration is not supported on this device.
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            disabled={!deviceReceiveUrgent || !(typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function')}
+                            onClick={() => setDeviceVibration(!deviceVibration)}
+                            className={`focus:outline-none cursor-pointer ${!(typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') ? 'opacity-30' : ''}`}
+                          >
+                            {deviceVibration && (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') ? (
+                              <ToggleRight className="w-9 h-9 text-[#C59B27] dark:text-amber-400" />
+                            ) : (
+                              <ToggleLeft className="w-9 h-9 text-zinc-300 dark:text-zinc-600" />
+                            )}
+                          </button>
+                        </div>
+
+                        {/* Urgent overlay Preference */}
+                        <div className="flex items-center justify-between py-2 border-b border-zinc-100 dark:border-[#302E29]">
+                          <div className="space-y-0.5">
+                            <span className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">Show urgent pop-up overlay</span>
+                            <p className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Triggers a persistent critical takeover modal requiring manual clearance.</p>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={!deviceReceiveUrgent}
+                            onClick={() => setDeviceShowPopup(!deviceShowPopup)}
+                            className="focus:outline-none cursor-pointer"
+                          >
+                            {deviceShowPopup ? (
+                              <ToggleRight className="w-9 h-9 text-[#C59B27] dark:text-amber-400" />
+                            ) : (
+                              <ToggleLeft className="w-9 h-9 text-zinc-300 dark:text-zinc-600" />
+                            )}
+                          </button>
+                        </div>
+
+                        {/* Repeat urgent alarm Preference */}
+                        <div className="flex items-center justify-between py-2 border-b border-zinc-100 dark:border-[#302E29]">
+                          <div className="space-y-0.5">
+                            <span className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">Repeat urgent alert until acknowledged</span>
+                            <p className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Continuously repeats synthesized sound and pulse alerts until cleared.</p>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={!deviceReceiveUrgent}
+                            onClick={() => setDeviceRepeatUrgent(!deviceRepeatUrgent)}
+                            className="focus:outline-none cursor-pointer"
+                          >
+                            {deviceRepeatUrgent ? (
+                              <ToggleRight className="w-9 h-9 text-[#C59B27] dark:text-amber-400" />
+                            ) : (
+                              <ToggleLeft className="w-9 h-9 text-zinc-300 dark:text-zinc-600" />
+                            )}
+                          </button>
+                        </div>
+
+                        {/* Push & SMS alerts Preference */}
+                        <div className="flex items-center justify-between py-2">
+                          <div className="space-y-0.5">
+                            <span className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">Browser push notifications</span>
+                            <p className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Fires web push alerts to your background notification center.</p>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={!deviceReceiveUrgent}
+                            onClick={() => setDevicePush(!devicePush)}
+                            className="focus:outline-none cursor-pointer"
+                          >
+                            {devicePush ? (
+                              <ToggleRight className="w-9 h-9 text-[#C59B27] dark:text-amber-400" />
+                            ) : (
+                              <ToggleLeft className="w-9 h-9 text-zinc-300 dark:text-zinc-600" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-zinc-100 dark:border-[#302E29] pt-5 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="primary"
+                        onClick={handleSaveDeviceAlertPreferences}
+                        className="px-6 py-2.5 text-xs font-semibold flex items-center space-x-1.5"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>Save Device Settings</span>
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* CARD 3: DEVICE ALERT READINESS CHECK */}
+                  <div 
+                    className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-6 flex flex-col justify-between shadow-xs"
+                    data-component-version="device-alert-readiness-v2-laptop"
+                  >
+                    <div className="space-y-6">
+                      <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-4">
+                        <div className="flex items-center space-x-2.5">
+                          <div className="p-2 bg-[#C59B27]/5 dark:bg-amber-950/20 rounded-xl text-[#C59B27] dark:text-amber-400 border border-[#C59B27]/15 dark:border-amber-900/40">
+                            <Activity className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-base">Device alert status</h3>
+                            <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-0.5">Check that alert notifications can reach this device.</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Explainer with practical guidance */}
+                      <div 
+                        className="bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl p-4 text-xs text-zinc-600 dark:text-[#B8B0A5] space-y-2 leading-relaxed"
+                        data-component-version="admin-alert-delivery-explainer-v2"
+                      >
+                        <p className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">Alert delivery advice</p>
+                        <p>
+                          Keep your device volume turned on so urgent alerts can be heard. For the most reliable alert delivery, keep this application open on your duty device during active event hours.
+                        </p>
+                        <p className="text-[#C59B27] dark:text-amber-400 font-medium flex items-center gap-1">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#C59B27] dark:bg-amber-400 animate-pulse"></span>
+                          Recommended: Keep this tab open during event duty.
+                        </p>
+                      </div>
+
+                      {/* Device Readiness Grid */}
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1]/60 dark:border-[#302E29] rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-medium block">IN-APP OVERLAY</span>
+                          {deviceReceiveUrgent ? (
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                              Ready
+                            </span>
+                          ) : (
+                            <span className="font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                              Needs app open
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1]/60 dark:border-[#302E29] rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-medium block">PREMIUM SOUND</span>
+                          {!deviceSound ? (
+                            <span className="font-semibold text-zinc-400 dark:text-zinc-500">Disabled</span>
+                          ) : (
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">Enabled</span>
+                          )}
+                        </div>
+
+                        <div className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1]/60 dark:border-[#302E29] rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-medium block">VIBRATION ENGINE</span>
+                          {!(typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') ? (
+                            <span className="font-semibold text-zinc-400 dark:text-zinc-500">Vibration is not supported on this device.</span>
+                          ) : deviceVibration ? (
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">Supported & Active</span>
+                          ) : (
+                            <span className="font-semibold text-zinc-500 dark:text-[#7A7570]">Supported (Off)</span>
+                          )}
+                        </div>
+
+                        <div className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1]/60 dark:border-[#302E29] rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-medium block">BROWSER NOTIFICATIONS</span>
+                          {typeof Notification === 'undefined' ? (
+                            <span className="font-semibold text-zinc-400 dark:text-zinc-500">Not supported</span>
+                          ) : pushPermission === 'default' ? (
+                            <span className="font-semibold text-amber-600 dark:text-amber-400">Permission not requested</span>
+                          ) : pushPermission === 'denied' ? (
+                            <span className="font-semibold text-red-500 dark:text-red-400">Permission blocked</span>
+                          ) : (
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">Permission granted</span>
+                          )}
+                        </div>
+
+                        <div className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1]/60 dark:border-[#302E29] rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-medium block">PUSH SUBSCRIPTION</span>
+                          {pushConnected ? (
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">Connected</span>
+                          ) : (
+                            <span className="font-semibold text-amber-600 dark:text-amber-400">Not connected</span>
+                          )}
+                        </div>
+
+                        <div className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1]/60 dark:border-[#302E29] rounded-xl space-y-1">
+                          <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-medium block">PUSH READY</span>
+                          {isVapidConfigured === false ? (
+                            <span className="font-semibold text-amber-600 dark:text-amber-400">Push setup incomplete</span>
+                          ) : isVapidConfigured === true ? (
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">Setup complete</span>
+                          ) : (
+                            <span className="font-semibold text-zinc-400 dark:text-zinc-500">Checking...</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Enable Browser Notifications Button (Phase 3) */}
+                      <div 
+                        className="bg-zinc-50 dark:bg-[#21211E] border border-zinc-100 dark:border-[#302E29] rounded-xl p-4 space-y-3"
+                        data-component-version="browser-notification-permission-v1"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <span className="text-xs font-semibold text-zinc-800 dark:text-[#F0EBE3]">Browser notification permission</span>
+                            <p className="text-[10px] text-zinc-400 dark:text-[#7A7570]">Requested only on clicking Enable</p>
+                          </div>
+                          {!pushConnected && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={handleEnablePushNotifications}
+                              disabled={isSubscribingPush || typeof Notification === 'undefined' || (typeof Notification !== 'undefined' && Notification.permission === 'denied')}
+                              className="px-3 py-1.5 text-[11px] font-medium border-[#C59B27]/40 dark:border-amber-900/40 hover:bg-[#C59B27]/5 dark:hover:bg-amber-950/20 text-[#C59B27] dark:text-amber-400 cursor-pointer"
+                            >
+                              {isSubscribingPush ? 'Enabling...' : 'Enable browser notifications'}
+                            </Button>
+                          )}
+                        </div>
+
+                        {/* Direct detailed feedbacks */}
+                        {typeof Notification === 'undefined' && (
+                          <p className="text-[10px] text-red-500 dark:text-red-400">Browser notifications are not supported on this device.</p>
+                        )}
+                        {typeof Notification !== 'undefined' && Notification.permission === 'denied' && (
+                          <p className="text-[10px] text-red-500 dark:text-red-400">Notifications are blocked for this browser. Please allow notifications in your browser settings.</p>
+                        )}
+                        {pushFeedback && (
+                          <p className="text-[10px] text-amber-600 dark:text-amber-400">{pushFeedback}</p>
+                        )}
+                        {pushConnected && (
+                          <p className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium">
+                            <Check className="w-3.5 h-3.5" />
+                            Notifications are active and connected on this device.
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Detailed Push Alert Status Panel (Phase 4 & 5) */}
+                      <div 
+                        className="bg-zinc-50/50 dark:bg-[#21211E] border border-zinc-100 dark:border-[#302E29] rounded-xl p-4 space-y-3"
+                        data-component-version="push-alert-status-panel-v1"
+                      >
+                        <span className="text-xs font-bold text-zinc-800 dark:text-[#F0EBE3] block">Detailed Push Alert Status</span>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[11px] text-zinc-600 dark:text-[#B8B0A5]">
+                          <div className="flex justify-between border-b border-zinc-100/50 dark:border-[#302E29] pb-1">
+                            <span>Service worker support:</span>
+                            <strong className={('serviceWorker' in navigator) ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 dark:text-[#7A7570]'}>
+                              {('serviceWorker' in navigator) ? 'Supported' : 'Unsupported'}
+                            </strong>
+                          </div>
+                          <div className="flex justify-between border-b border-zinc-100/50 dark:border-[#302E29] pb-1">
+                            <span>Push manager support:</span>
+                            <strong className={('PushManager' in window) ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 dark:text-[#7A7570]'}>
+                              {('PushManager' in window) ? 'Supported' : 'Unsupported'}
+                            </strong>
+                          </div>
+                          <div className="flex justify-between border-b border-zinc-100/50 dark:border-[#302E29] pb-1">
+                            <span>Notification permission:</span>
+                            <strong className={pushPermission === 'granted' ? 'text-emerald-600 dark:text-emerald-400' : pushPermission === 'denied' ? 'text-red-500 dark:text-red-400' : 'text-amber-500 dark:text-amber-400'}>
+                              {pushPermission}
+                            </strong>
+                          </div>
+                          <div className="flex justify-between border-b border-zinc-100/50 dark:border-[#302E29] pb-1">
+                            <span>Service worker registered:</span>
+                            <strong className={isSwRegistered ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-500 dark:text-amber-400'}>
+                              {isSwRegistered ? 'Yes' : 'No'}
+                            </strong>
+                          </div>
+                          <div className="flex justify-between border-b border-zinc-100/50 dark:border-[#302E29] pb-1 col-span-2">
+                            <span>Server push subscription:</span>
+                            <strong className={pushConnected ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-500 dark:text-amber-400'}>
+                              {pushConnected ? 'Connected & Registered' : 'Not Connected'}
+                            </strong>
+                          </div>
+                          <div className="flex justify-between border-b border-zinc-100/50 dark:border-[#302E29] pb-1 col-span-2">
+                            <span>VAPID Setup Configured:</span>
+                            {isVapidConfigured === null ? (
+                              <strong className="text-zinc-400 dark:text-[#7A7570]">Checking...</strong>
+                            ) : isVapidConfigured ? (
+                              <strong className="text-emerald-600 dark:text-emerald-400">Fully Configured</strong>
+                            ) : (
+                              <div className="text-right">
+                                <strong className="text-amber-600 dark:text-amber-400 block">Push setup is not complete yet.</strong>
+                                <span className="text-[9px] text-zinc-400 dark:text-[#7A7570] block leading-tight mt-0.5 max-w-[220px]">
+                                  Please set env variables: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT on server.
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-3 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1]/60 dark:border-[#302E29] rounded-xl space-y-1">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] font-medium">LAST READINESS TEST</span>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            lastTestStatus.includes('Success') || lastTestStatus.includes('test sent') || lastTestStatus.includes('worked') ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/40' : 'bg-zinc-100 dark:bg-[#262520] text-zinc-500 dark:text-[#B8B0A5]'
+                          }`}>
+                            {lastTestStatus}
+                          </span>
+                        </div>
+                        <span className="text-zinc-600 dark:text-[#B8B0A5] font-medium block text-[11px] mt-1">
+                          Last Run: <strong className="text-zinc-800 dark:text-[#F0EBE3]">{lastTestTime}</strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-zinc-100 dark:border-[#302E29] pt-5 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleSendTestAlert}
+                        disabled={isTestingDevice}
+                        data-component-version="admin-test-device-alert-action-v1"
+                        className="px-6 py-2.5 text-xs font-semibold flex items-center space-x-1.5 border-[#C59B27]/45 dark:border-amber-900/40 hover:bg-[#C59B27]/5 dark:hover:bg-amber-950/20 text-[#C59B27] dark:text-amber-400 cursor-pointer"
+                      >
+                        {isTestingDevice ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <span>Sending Test...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-4 h-4" />
+                            <span>Send test alert to this device</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SUB-TAB: DEVICE SECURITY */}
+            {activeSubTab === 'device-security' && (
+              <div className="space-y-6">
+                <DeviceSecuritySettings 
+                  isAdmin={true}
+                  showSuccess={(t, m) => showFeedback(`${t}: ${m}`, 'success')}
+                  showError={(t, m) => showFeedback(`${t}: ${m}`, 'error')}
+                />
+              </div>
+            )}
+
+            {/* SUB-TAB: FOOTER SETTINGS */}
+            {activeSubTab === 'footer-settings' && (
+              <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-6 shadow-xs">
+                <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-4">
+                  <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-lg">Footer & copyright settings</h3>
+                  <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Configure the global copyright year and branding text displayed across all platform footers.</p>
+                </div>
+
+                <form onSubmit={handleSaveFooterSettings} className="space-y-5 max-w-2xl">
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                    <div className="space-y-1.5 sm:col-span-1">
+                      <label className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] block">
+                        Copyright year
+                      </label>
+                      <input
+                        type="number"
+                        required
+                        value={copyrightYear}
+                        onChange={(e) => setCopyrightYear(parseInt(e.target.value, 10) || new Date().getFullYear())}
+                        className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] dark:focus:border-amber-500 transition-all"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5 sm:col-span-3">
+                      <label className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] block">
+                        Copyright branding text
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={copyrightText}
+                        onChange={(e) => setCopyrightText(e.target.value)}
+                        placeholder="e.g., Koinonia Children and Teens. All rights reserved."
+                        className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] dark:focus:border-amber-500 transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-zinc-400 dark:text-[#7A7570] leading-normal">
+                    Updating these values will immediately synchronize the footer displayed on the landing page, parent access portals, and administrative views across all active user sessions.
+                  </p>
+
+                  <div className="pt-2">
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      loading={savingFooter}
+                      className="py-2 px-6 text-xs font-semibold"
+                    >
+                      Save footer settings
+                    </Button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+          </div>
+
+          {/* MAIN SETTINGS RIGHT COLUMN: PROFILE SECURITY CARD (Only visible for Parent Access and Message Channels) */}
+          {activeSubTab !== 'team-access' && activeSubTab !== 'landing-page' && activeSubTab !== 'app-media' && activeSubTab !== 'alert-delivery' && activeSubTab !== 'device-security' && activeSubTab !== 'footer-settings' && (
+            <div className="lg:col-span-5 space-y-6">
+              
+              {/* Profile Security Update Password */}
+              <div 
+                className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-6 shadow-xs"
+                data-component-version="admin-settings-profile-security-v2-refined"
+              >
+                <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-4 flex items-center space-x-3">
+                  <div className="p-2 bg-[#C59B27]/5 dark:bg-amber-950/20 rounded-xl text-[#C59B27] dark:text-amber-400 border border-[#C59B27]/15 dark:border-amber-900/40">
+                    <Lock className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] text-base">Profile security</h3>
+                    <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Change your admin password.</p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleChangePasswordSubmit} className="space-y-4">
+                  {passwordSuccess && (
+                    <div className="bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 text-[11px] p-2.5 rounded-xl border border-emerald-100 dark:border-emerald-900/40 font-medium">
+                      {passwordSuccess}
+                    </div>
+                  )}
+                  {passwordError && (
+                    <div className="bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-300 text-[11px] p-2.5 rounded-xl border border-red-100 dark:border-red-900/40 font-medium">
+                      {passwordError}
+                    </div>
+                  )}
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] block">
+                      Current password
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder="Enter your current password"
+                      className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] dark:focus:border-amber-500 transition-all"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] block">
+                      New password
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Enter new password"
+                      className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] dark:focus:border-amber-500 transition-all"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] block">
+                      Confirm new password
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      value={confirmNewPassword}
+                      onChange={(e) => setConfirmNewPassword(e.target.value)}
+                      placeholder="Verify new password"
+                      className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-900 dark:text-[#F0EBE3] placeholder-zinc-400 dark:placeholder-[#7A7570] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] dark:focus:border-amber-500 transition-all"
+                    />
+                  </div>
+
+                  <p className="text-[11px] text-zinc-400 dark:text-[#7A7570] leading-relaxed">
+                    Use at least 8 characters with a letter and a number.
+                  </p>
+
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    fullWidth
+                    loading={changingPassword}
+                    className="py-2.5 text-xs font-semibold"
+                  >
+                    Change password
+                  </Button>
+                </form>
+              </div>
+
+            </div>
+          )}
+
+        </div>
+      )}
+
+    </div>
+  );
+};
+

@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+Disallow: /#/admin
+Disallow: /#/parent
+Disallow: /#/volunteer
+Disallow: /admin
+Disallow: /parent
+Disallow: /volunteer
+Disallow: /*reset-password*
+Disallow: /*token*
+Disallow: /*pass*
+
+Sitemap: https://themandate.dontechservicesconst.com/sitemap.xml
