@@ -1,6 +1,7 @@
 import { query, queryOne } from '../../../db';
 import { normalizePhoneNumberToE164 } from '../../../utils/phone';
 import { ensureVapidKeysLoaded } from '../../push';
+import { isEmailConfigured } from '../../email';
 
 export type SupportedCommunicationChannel = 'whatsapp' | 'sms' | 'email' | 'push' | 'none';
 
@@ -35,23 +36,13 @@ export function isWhatsAppProviderAvailable(): boolean {
 
 /**
  * Checks if Email delivery provider is available.
- * Email requires RESEND_API_KEY or SMTP credentials configured on the server,
- * or explicitly enabled test mock.
+ * Supports ZeptoMail, Resend, SMTP, or explicitly enabled test mock.
  */
 export function isEmailProviderAvailable(): boolean {
   if (process.env.ENABLE_EMAIL_TEST_MOCK === 'true') {
     return true;
   }
-  const emailProvider = (process.env.EMAIL_PROVIDER || 'resend').toLowerCase();
-  if (emailProvider === 'resend') {
-    return Boolean(process.env.RESEND_API_KEY && process.env.MAIL_FROM_ADDRESS);
-  }
-  return Boolean(
-    process.env.SMTP_USER &&
-    process.env.SMTP_PASS &&
-    process.env.SMTP_HOST &&
-    process.env.MAIL_FROM_ADDRESS
-  );
+  return isEmailConfigured();
 }
 
 /**

@@ -6,7 +6,7 @@ import { query, queryOne, execute, transaction } from '../db';
 import { authMiddleware, AuthenticatedRequest, verifyPassword, hashPassword, generateToken } from '../auth';
 import { syncJobsForEvent, executeTestNotification, sendWhatsApp } from '../services/notifications';
 import { sendWebPush } from '../services/push';
-import { sendEmail, sendVolunteerApprovedEmail, sendInvitationEmail, formatInvitationExpiry } from '../services/email';
+import { sendEmail, sendVolunteerApprovedEmail, sendInvitationEmail, formatInvitationExpiry, isEmailConfigured, resolveEmailProvider } from '../services/email';
 import { issuePassForChild, revokePassForChild } from '../services/passService';
 import { uploadMedia, buildCloudinaryOptimizedVideoUrl, buildCloudinaryVideoPosterUrl } from '../services/media/cloudinary';
 import { processImage } from '../services/media/imageProcessor';
@@ -317,11 +317,40 @@ router.post('/forgot-password', async (req, res) => {
       });
     }
 
+    // Enforce 60-second database-backed cooldown per admin account
+    const lastToken = await queryOne(`
+      SELECT created_at FROM auth_tokens
+      WHERE user_id = ? AND token_type = 'password_reset' AND used_at IS NULL
+      ORDER BY created_at DESC LIMIT 1
+    `, [user.id]);
+    if (lastToken && lastToken.created_at) {
+      const elapsedMs = Date.now() - new Date(lastToken.created_at).getTime();
+      const cooldownMs = 60 * 1000;
+      if (elapsedMs < cooldownMs) {
+        const retryAfterSeconds = Math.ceil((cooldownMs - elapsedMs) / 1000);
+        return res.status(429).json({
+          success: false,
+          code: 'RESET_COOLDOWN',
+          emailSent: false,
+          retryAfterSeconds,
+          message: 'Please wait before requesting another reset link.'
+        });
+      }
+    }
+
+    const now = new Date().toISOString();
+
+    // Expire old unused password_reset tokens
+    await execute(`
+      UPDATE auth_tokens
+      SET expires_at = ?
+      WHERE user_id = ? AND token_type = 'password_reset' AND used_at IS NULL
+    `, [now, user.id]);
+
     // Generate secure reset token
     const rawResetToken = crypto.randomBytes(32).toString('hex');
     const resetTokenHash = crypto.createHash('sha256').update(rawResetToken).digest('hex');
     const tokenId = crypto.randomUUID();
-    const now = new Date().toISOString();
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
 
     await execute(`
@@ -6564,13 +6593,8 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       LIMIT 1
     `);
 
-    const emailProvider = (process.env.EMAIL_PROVIDER || 'resend').toLowerCase();
-    let emailEnabled = false;
-    if (emailProvider === 'resend') {
-      emailEnabled = !!process.env.RESEND_API_KEY && !!process.env.MAIL_FROM_ADDRESS;
-    } else {
-      emailEnabled = !!process.env.SMTP_USER && !!process.env.SMTP_PASS && !!process.env.SMTP_HOST && !!process.env.MAIL_FROM_ADDRESS;
-    }
+    const emailProvider = resolveEmailProvider();
+    const emailEnabled = isEmailConfigured();
 
     const settings = await queryOne(`
       SELECT sender_name as senderName, reply_to_email as replyToEmail
@@ -6583,7 +6607,7 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       whatsappEnabled,
       whatsappStatus,
       whatsappReadiness,
-      emailProvider: emailProvider === 'resend' ? 'resend' : emailProvider === 'smtp' ? 'smtp' : null,
+      emailProvider: ['zeptomail', 'resend', 'smtp'].includes(emailProvider) ? emailProvider : null,
       whatsappProvider: whatsappReadiness.provider,
       senderName: settings?.senderName || process.env.MAIL_FROM_NAME || 'Koinonia Global',
       fromEmail: process.env.MAIL_FROM_ADDRESS || null,
@@ -6621,13 +6645,8 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
 router.get('/messages/settings', async (req: AuthenticatedRequest, res: Response) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   try {
-    const emailProvider = (process.env.EMAIL_PROVIDER || 'resend').toLowerCase();
-    let emailEnabled = false;
-    if (emailProvider === 'resend') {
-      emailEnabled = !!process.env.RESEND_API_KEY && !!process.env.MAIL_FROM_ADDRESS;
-    } else {
-      emailEnabled = !!process.env.SMTP_USER && !!process.env.SMTP_PASS && !!process.env.SMTP_HOST && !!process.env.MAIL_FROM_ADDRESS;
-    }
+    const emailProvider = resolveEmailProvider();
+    const emailEnabled = isEmailConfigured();
 
     const whatsappProvider = (process.env.WHATSAPP_PROVIDER || 'twilio').toLowerCase();
     let whatsappEnabled = false;
@@ -6648,7 +6667,7 @@ router.get('/messages/settings', async (req: AuthenticatedRequest, res: Response
       replyToEmail: settings?.replyToEmail || process.env.MAIL_FROM_ADDRESS || null,
       emailEnabled,
       whatsappEnabled,
-      emailProvider: emailProvider === 'resend' ? 'resend' : emailProvider === 'smtp' ? 'smtp' : null,
+      emailProvider: ['zeptomail', 'resend', 'smtp'].includes(emailProvider) ? emailProvider : null,
       whatsappProvider: whatsappProvider === 'twilio' ? 'twilio' : null
     });
   } catch (err: any) {
@@ -7795,13 +7814,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     }
 
     // Provider configuration check for external channels only if selected
-    const emailProvider = (process.env.EMAIL_PROVIDER || 'resend').toLowerCase();
-    let emailEnabled = false;
-    if (emailProvider === 'resend') {
-      emailEnabled = !!process.env.RESEND_API_KEY && !!process.env.MAIL_FROM_ADDRESS;
-    } else {
-      emailEnabled = !!process.env.SMTP_USER && !!process.env.SMTP_PASS && !!process.env.SMTP_HOST && !!process.env.MAIL_FROM_ADDRESS;
-    }
+    const emailEnabled = isEmailConfigured();
 
     if (activeChannels.includes('email') && !emailEnabled) {
       return res.status(400).json({

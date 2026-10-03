@@ -600,6 +600,7 @@ async function main() {
     process.exit(1);
   } else {
     console.log('ALL 15 INVITATION HARDENING TESTS PASSED SUCCESSFULLY.\n');
+    process.exit(0);
   }
 }
 

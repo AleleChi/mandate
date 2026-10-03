@@ -416,10 +416,39 @@ router.post('/forgot-password', async (req, res) => {
     const cleanEmail = emailVal.normalizedEmail!;
     const user = await queryOne('SELECT id FROM users WHERE email = ?', [cleanEmail]);
     if (user) {
+      // Enforce 60-second database-backed cooldown per user account
+      const lastToken = await queryOne(`
+        SELECT created_at FROM auth_tokens
+        WHERE user_id = ? AND token_type = 'password_reset' AND used_at IS NULL
+        ORDER BY created_at DESC LIMIT 1
+      `, [user.id]);
+      if (lastToken && lastToken.created_at) {
+        const elapsedMs = Date.now() - new Date(lastToken.created_at).getTime();
+        const cooldownMs = 60 * 1000;
+        if (elapsedMs < cooldownMs) {
+          const retryAfterSeconds = Math.ceil((cooldownMs - elapsedMs) / 1000);
+          return res.status(429).json({
+            success: false,
+            code: 'RESET_COOLDOWN',
+            emailSent: false,
+            retryAfterSeconds,
+            message: 'Please wait before requesting another reset link.'
+          });
+        }
+      }
+
+      const now = new Date().toISOString();
+
+      // Expire old unused password_reset tokens
+      await execute(`
+        UPDATE auth_tokens
+        SET expires_at = ?
+        WHERE user_id = ? AND token_type = 'password_reset' AND used_at IS NULL
+      `, [now, user.id]);
+
       const rawResetToken = crypto.randomBytes(32).toString('hex');
       const resetTokenHash = crypto.createHash('sha256').update(rawResetToken).digest('hex');
       const tokenId = crypto.randomUUID();
-      const now = new Date().toISOString();
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
       await execute(`
         INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
@@ -446,13 +475,37 @@ router.post('/forgot-password', async (req, res) => {
   }
 });
 
-router.post('/test-email', async (req, res) => {
+router.post('/test-email', optionalAuthMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const isAdmin = req.user && (req.user.role === 'admin' || req.user.role === 'super_admin');
+
+    // In production, strictly require authenticated Admin role to prevent open relay abuse
+    if (process.env.NODE_ENV === 'production') {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+      if (!isAdmin) {
+        return res.status(403).json({ error: 'Access denied: Admin authorization required' });
+      }
+    } else {
+      // In non-production, block unauthenticated requests unless in test mode or with admin token
+      if (!isAdmin && process.env.NODE_ENV !== 'test') {
+        return res.status(403).json({ error: 'Access denied: Admin authorization required' });
+      }
+    }
+
     const { to } = req.body;
     if (!to) return res.status(400).json({ error: 'Recipient email address required' });
+
+    const emailVal = await validateEmailAddress(to, true);
+    if (!emailVal.valid) {
+      return res.status(400).json({ error: emailVal.message });
+    }
+
+    const cleanTo = emailVal.normalizedEmail!;
     const result = await sendEmailVerificationEmail({
-      parentEmail: to,
-      parentFirstName: 'Test Parent',
+      parentEmail: cleanTo,
+      parentFirstName: 'Test Recipient',
       verificationLink: buildPublicAppUrl('/parent/verify-email?token=test-token')
     });
     if (!result.success) {

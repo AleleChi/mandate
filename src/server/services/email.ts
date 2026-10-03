@@ -1,20 +1,68 @@
 import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
 import { buildPublicAppUrl } from '../utils/urlHelper';
+import { sendZeptoMailEmail, isZeptoMailConfigured } from './email/zeptomailProvider';
 
 export interface SendEmailOptions {
   to: string;
+  recipientName?: string;
   subject: string;
   html?: string;
   text?: string;
   fromName?: string;
+  fromAddress?: string;
   replyTo?: string;
 }
 
 export interface SendEmailResult {
   success: boolean;
+  provider?: string;
   id?: string;
   error?: string;
+}
+
+/**
+ * Resolves the configured email provider.
+ * When EMAIL_PROVIDER is unset or blank, safely defaults to 'resend' to maintain
+ * backwards compatibility with existing production deployment until ZeptoMail rollout is accepted.
+ */
+export function resolveEmailProvider(): string {
+  const raw = process.env.EMAIL_PROVIDER;
+  if (!raw || raw.trim().length === 0) {
+    return 'resend';
+  }
+  return raw.trim().toLowerCase();
+}
+
+/**
+ * Checks whether the active email delivery provider has valid credentials and sender configured.
+ */
+export function isEmailConfigured(): boolean {
+  if (process.env.ENABLE_EMAIL_TEST_MOCK === 'true') {
+    return true;
+  }
+  const provider = resolveEmailProvider();
+  if (provider === 'simulated' || provider === 'test' || provider === 'mock') {
+    return true;
+  }
+  const fromAddress = process.env.EMAIL_FROM_ADDRESS || process.env.MAIL_FROM_ADDRESS;
+  if (!fromAddress) {
+    return false;
+  }
+  if (provider === 'zeptomail') {
+    return isZeptoMailConfigured();
+  }
+  if (provider === 'resend') {
+    return Boolean(process.env.RESEND_API_KEY && process.env.RESEND_API_KEY.trim().length > 0);
+  }
+  if (provider === 'smtp') {
+    return Boolean(
+      process.env.SMTP_USER &&
+      process.env.SMTP_PASS &&
+      process.env.SMTP_HOST
+    );
+  }
+  return false;
 }
 
 // Helper to generate clean, human parent-facing HTML emails
@@ -73,17 +121,19 @@ function wrapHtmlTemplate(title: string, bodyHtml: string, actionButton?: { labe
 }
 
 /**
- * Reusable backend email service supporting Resend API (default/primary) or legacy fallback providers.
- * Never expose or log RESEND_API_KEY or other email credentials.
+ * Reusable backend transactional email service supporting ZeptoMail (primary),
+ * Resend API (temporary rollback), or legacy fallback providers.
+ * Never expose or log ZEPTOMAIL_SEND_TOKEN, RESEND_API_KEY, or other credentials.
  */
 export async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
   try {
-    const provider = (process.env.EMAIL_PROVIDER || 'resend').toLowerCase();
-    const fromName = options.fromName || process.env.MAIL_FROM_NAME || 'Koinonia Children and Teens';
-    const fromAddress = process.env.MAIL_FROM_ADDRESS;
-    
+    const provider = resolveEmailProvider();
+    const fromName = options.fromName || process.env.EMAIL_FROM_NAME || process.env.MAIL_FROM_NAME || 'Koinonia Children & Teens';
+    const fromAddress = options.fromAddress || process.env.EMAIL_FROM_ADDRESS || process.env.MAIL_FROM_ADDRESS;
+    const replyTo = options.replyTo || process.env.EMAIL_REPLY_TO;
+
     if (!fromAddress && provider !== 'simulated' && provider !== 'test' && provider !== 'mock') {
-      console.error('[EmailService] MAIL_FROM_ADDRESS is not configured in environment.');
+      console.error('[EmailService] Neither EMAIL_FROM_ADDRESS nor MAIL_FROM_ADDRESS is configured in environment.');
       return {
         success: false,
         error: 'We could not send the email right now. Please try again.'
@@ -95,19 +145,41 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
       const simId = `sim_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       return {
         success: true,
+        provider: 'simulated',
         id: simId
+      };
+    }
+
+    // Primary Provider: ZeptoMail
+    if (provider === 'zeptomail') {
+      const result = await sendZeptoMailEmail({
+        to: options.to,
+        recipientName: options.recipientName,
+        subject: options.subject,
+        html: options.html,
+        text: options.text,
+        fromName,
+        fromAddress,
+        replyTo
+      });
+      return {
+        success: result.success,
+        provider: 'zeptomail',
+        id: result.id,
+        error: result.error
       };
     }
 
     const fullFrom = `"${fromName}" <${fromAddress}>`;
 
-    // Primary Provider: Resend
+    // Rollback Provider: Resend
     if (provider === 'resend') {
       const apiKey = process.env.RESEND_API_KEY;
-      if (!apiKey) {
+      if (!apiKey || !apiKey.trim()) {
         console.warn(`[EmailService] Notice: RESEND_API_KEY not configured on server. Email to "${options.to}" with subject "${options.subject}" was simulated.`);
         return {
           success: false,
+          provider: 'resend',
           error: 'Email provider not configured'
         };
       }
@@ -119,13 +191,14 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
         subject: options.subject,
         html: options.html || options.text || options.subject,
         text: options.text || options.subject,
-        replyTo: options.replyTo
+        replyTo
       });
 
       if (error) {
         console.error(`Resend send failed { error: "${error.message || 'Unknown Resend API error'}" }`);
         return {
           success: false,
+          provider: 'resend',
           error: error.message || 'Email provider rejected the request'
         };
       }
@@ -134,59 +207,67 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
         console.error(`Resend API call succeeded but did not return a send id { email: "${options.to}" }`);
         return {
           success: false,
+          provider: 'resend',
           error: 'Email provider did not return a send id'
         };
       }
 
-      if (options.subject.toLowerCase().includes('verify')) {
-        console.log(`Resend verification email sent { emailId: "${data.id}", to: "${options.to}" }`);
-      } else {
-        console.log(`Resend email sent { emailId: "${data.id}", to: "${options.to}" }`);
-      }
-
+      console.log(`[EmailService] Resend dispatch success { emailId: "${data.id}", to: "${options.to}" }`);
       return {
         success: true,
+        provider: 'resend',
         id: data.id
       };
     }
 
     // Legacy Fallback Provider: SMTP (Nodemailer)
-    const host = process.env.SMTP_HOST;
-    const port = parseInt(process.env.SMTP_PORT || '587', 10);
-    const secure = process.env.SMTP_SECURE === 'true';
-    const user = process.env.SMTP_USER;
-    const pass = process.env.SMTP_PASS;
+    if (provider === 'smtp') {
+      const host = process.env.SMTP_HOST;
+      const port = parseInt(process.env.SMTP_PORT || '587', 10);
+      const secure = process.env.SMTP_SECURE === 'true';
+      const user = process.env.SMTP_USER;
+      const pass = process.env.SMTP_PASS;
 
-    if (!user || !pass || !host) {
-      console.warn(`[EmailService] Notice: Email credentials not configured on server. Email to "${options.to}" with subject "${options.subject}" was simulated.`);
+      if (!user || !pass || !host) {
+        console.warn(`[EmailService] Notice: SMTP credentials not configured on server. Email to "${options.to}" with subject "${options.subject}" was simulated.`);
+        return {
+          success: false,
+          provider: 'smtp',
+          error: 'We could not send the email right now. Please try again.'
+        };
+      }
+
+      const transporter = nodemailer.createTransport({
+        host,
+        port,
+        secure,
+        auth: { user, pass }
+      });
+
+      const info = await transporter.sendMail({
+        from: fullFrom,
+        to: options.to,
+        subject: options.subject,
+        html: options.html,
+        text: options.text || options.subject,
+        replyTo
+      });
+
       return {
-        success: false,
-        error: 'We could not send the email right now. Please try again.'
+        success: true,
+        provider: 'smtp',
+        id: info.messageId
       };
     }
 
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure,
-      auth: { user, pass }
-    });
-
-    const info = await transporter.sendMail({
-      from: fullFrom,
-      to: options.to,
-      subject: options.subject,
-      html: options.html,
-      text: options.text || options.subject,
-      replyTo: options.replyTo
-    });
-
+    // Invalid Provider Configured
+    console.error(`[EmailService] Invalid EMAIL_PROVIDER configured: "${provider}"`);
     return {
-      success: true,
-      id: info.messageId
+      success: false,
+      error: 'Invalid email provider configured'
     };
   } catch (err: any) {
-    // Log safe backend error without exposing sensitive credentials or RESEND_API_KEY
+    // Log safe backend error without exposing sensitive credentials
     console.error('[EmailService] Safe Communication Error sending email to', options.to, '-', err?.message || 'Unknown communication error');
     return {
       success: false,
