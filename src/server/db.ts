@@ -243,6 +243,8 @@ function initSqliteSchema(db: Database.Database) {
       photo_file_id TEXT,
       profile_completed_at TEXT,
       country TEXT,
+      country_iso TEXT,
+      whatsapp_country_iso TEXT,
       state_region TEXT,
       city TEXT,
       whatsapp_consent_status TEXT NOT NULL DEFAULT 'unknown' CHECK (whatsapp_consent_status IN ('unknown', 'opted_in', 'opted_out')),
@@ -542,6 +544,8 @@ function initSqliteSchema(db: Database.Database) {
       whatsapp_consent_at TEXT,
       whatsapp_opt_out_at TEXT,
       whatsapp_consent_source TEXT,
+      country TEXT,
+      country_iso TEXT,
       is_koinonia_worker INTEGER DEFAULT 0,
       department TEXT,
       preferred_team TEXT NOT NULL,
@@ -1202,6 +1206,21 @@ function initSqliteSchema(db: Database.Database) {
       db.exec(`ALTER TABLE volunteer_profiles ADD COLUMN ${col};`);
     } catch (e) {}
   }
+
+  // International WhatsApp columns for parent_profiles and volunteer_profiles in SQLite
+  try {
+    db.exec(`ALTER TABLE parent_profiles ADD COLUMN country_iso TEXT;`);
+  } catch (e) {}
+  try {
+    db.exec(`ALTER TABLE parent_profiles ADD COLUMN whatsapp_country_iso TEXT;`);
+  } catch (e) {}
+
+  try {
+    db.exec(`ALTER TABLE volunteer_profiles ADD COLUMN country TEXT;`);
+  } catch (e) {}
+  try {
+    db.exec(`ALTER TABLE volunteer_profiles ADD COLUMN country_iso TEXT;`);
+  } catch (e) {}
 
   // Idempotency and worker retry state for notification_jobs in SQLite
   const sqliteJobsCols = [

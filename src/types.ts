@@ -98,6 +98,10 @@ export interface ParentProfile {
   whatsappNumber?: string;
   homeAddress?: string;
   country?: string;
+  countryIso?: string;
+  country_iso?: string;
+  whatsappCountryIso?: string;
+  whatsapp_country_iso?: string;
   stateRegion?: string;
   city?: string;
   preferredContact?: 'WhatsApp' | 'Email' | 'Phone call' | 'Both';

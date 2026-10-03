@@ -19,11 +19,18 @@ export interface AuthenticatedRequest extends Request {
     whatsapp_number: string;
     email: string;
     home_address: string;
+    country?: string | null;
+    country_iso?: string | null;
+    whatsapp_country_iso?: string | null;
     preferred_contact: string;
     is_koinonia_worker: number;
     department: string;
     photo_file_id: string;
     profile_completed_at: string | null;
+    whatsapp_consent_status?: string | null;
+    whatsapp_consent_at?: string | null;
+    whatsapp_opt_out_at?: string | null;
+    whatsapp_consent_source?: string | null;
   };
   volunteerProfile?: {
     id: string;

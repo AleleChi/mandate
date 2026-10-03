@@ -137,10 +137,10 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
 
   return (
     <div className="space-y-4 font-sans text-left" data-component-version="device-security-v3-real">
-      <div className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-5 shadow-xs">
+      <div className="bg-[#FDFCF8] dark:bg-[#21211E] rounded-2xl border border-[#EDE6D4] dark:border-[#302E29] p-5 shadow-2xs">
         {/* Header */}
         <div className="flex items-start gap-3.5">
-          <div className="p-2.5 bg-[#FAF6EB] dark:bg-amber-950/30 text-[#9A7326] dark:text-amber-400 rounded-xl shrink-0">
+          <div className="p-2.5 bg-[#FAF6EB] dark:bg-[#262520] text-[#9A7326] dark:text-[#C59B27] rounded-xl shrink-0 border border-[#E5D5AE]/50 dark:border-[#3A3835]">
             <Fingerprint className="w-5 h-5 stroke-[1.5]" />
           </div>
           <div className="space-y-1">
@@ -154,7 +154,7 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
         </div>
 
         {/* Security Status Box */}
-        <div className="mt-4 p-3.5 rounded-xl border border-zinc-100 dark:border-[#302E29] bg-[#FAF9F6] dark:bg-[#262520]">
+        <div className="mt-4 p-3.5 rounded-xl border border-[#EDE6D4] dark:border-[#302E29] bg-[#FAF8F3] dark:bg-[#262520]">
           {checkingPlatform ? (
             <div className="flex items-center gap-2 text-xs text-zinc-400 dark:text-[#7A7570] py-1">
               <Loader2 className="w-3.5 h-3.5 animate-spin text-[#9A7326] dark:text-amber-400" />
@@ -231,7 +231,7 @@ export const DeviceSecuritySettings: React.FC<DeviceSecuritySettingsProps> = ({
                 <span>Loading devices...</span>
               </div>
             ) : (
-              <div className="divide-y divide-zinc-100 dark:divide-[#302E29] rounded-xl border border-zinc-100 dark:border-[#302E29] overflow-hidden bg-white dark:bg-[#21211E]">
+              <div className="divide-y divide-[#EDE6D4] dark:divide-[#302E29] rounded-xl border border-[#EDE6D4] dark:border-[#302E29] overflow-hidden bg-[#FAF8F3] dark:bg-[#21211E]">
                 {passkeys.map((pk) => (
                   <div key={pk.id} className="p-3.5 flex items-center justify-between">
                     <div>

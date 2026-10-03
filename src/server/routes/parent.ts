@@ -4,6 +4,7 @@ import { query, queryOne, execute, transaction } from '../db';
 import { authMiddleware, AuthenticatedRequest } from '../auth';
 import { sendChildReviewReceivedEmail } from '../services/email';
 import { validateParentProfile, validateChildDraftStep, validatePhoneNumber, validateChildName, validateDateOfBirth } from '../utils/validation';
+import { resolveCountryIso, resolveWhatsAppCountryIso, getCountryByIso } from '../../utils/countries';
 import { getPassesForParent, issuePassForChild, isChildPassAuthorized } from '../services/passService';
 import { getCurrentEvent, getCurrentEventId, getEventById } from '../services/eventService';
 import { checkEventEligibility } from '../services/eligibilityService';
@@ -83,6 +84,15 @@ async function resolveToMediaFileId(photoRef?: string | null): Promise<string> {
 async function mapProfileToFrontend(row: any) {
   if (!row) return null;
   const resolvedPhoto = await resolvePhotoUrlAsync(row.photo_file_id);
+  const resolvedIso = resolveCountryIso(row.country_iso, row.country, 'NG');
+  const countryName = row.country || getCountryByIso(resolvedIso)?.name || 'Nigeria';
+  const resolvedWaIso = resolveWhatsAppCountryIso(
+    row.whatsapp_country_iso,
+    row.whatsapp_number,
+    resolvedIso,
+    countryName,
+    'NG'
+  );
   return {
     id: row.id,
     fullName: row.full_name || '',
@@ -92,7 +102,11 @@ async function mapProfileToFrontend(row: any) {
     whatsapp: row.whatsapp_number || row.phone_number || '',
     whatsappNumber: row.whatsapp_number || row.phone_number || '',
     homeAddress: row.home_address || '',
-    country: row.country || '',
+    country: countryName,
+    countryIso: resolvedIso,
+    country_iso: resolvedIso,
+    whatsappCountryIso: resolvedWaIso,
+    whatsapp_country_iso: resolvedWaIso,
     stateRegion: row.state_region || '',
     city: row.city || '',
     preferredContact: (row.preferred_contact as any) || 'WhatsApp',
@@ -345,8 +359,12 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
     email,
     phone,
     whatsapp,
+    whatsappCountryIso,
+    whatsapp_country_iso,
     homeAddress,
     country,
+    countryIso,
+    country_iso,
     stateRegion,
     city,
     preferredContact,
@@ -355,6 +373,8 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
     photoUrl
   } = req.body;
 
+  const rawCountryIso = countryIso || country_iso;
+  const rawWaCountryIso = whatsappCountryIso || whatsapp_country_iso;
   const emailToUse = (email || req.parentProfile.email || '').trim();
 
   // Validate the parent profile data
@@ -363,8 +383,10 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
     email: emailToUse,
     phone,
     whatsapp,
+    whatsappCountryIso: rawWaCountryIso,
     homeAddress,
     country,
+    countryIso: rawCountryIso,
     stateRegion,
     city,
     preferredContact,
@@ -390,8 +412,25 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
     });
   }
 
-  const cleanPhone = validatePhoneNumber(phone, 'NG').normalizedPhone || phone.trim();
-  const cleanWhatsapp = whatsapp ? (validatePhoneNumber(whatsapp, 'NG').normalizedPhone || whatsapp.trim()) : cleanPhone;
+  // Canonical residence country & ISO
+  const targetIso = resolveCountryIso(rawCountryIso, country, 'NG');
+  const canonicalCountry = getCountryByIso(targetIso)?.name || (country ? country.trim() : 'Nigeria');
+
+  // Canonical WhatsApp country ISO
+  const targetWaIso = resolveWhatsAppCountryIso(
+    rawWaCountryIso,
+    whatsapp,
+    targetIso,
+    canonicalCountry,
+    'NG'
+  );
+
+  const phoneValidation = validatePhoneNumber(phone, targetIso, 'phone');
+  const cleanPhone = phoneValidation.normalizedPhone || phone.trim();
+
+  const cleanWhatsapp = (whatsapp && String(whatsapp).trim() !== '')
+    ? (validatePhoneNumber(whatsapp, targetWaIso, 'whatsapp').normalizedPhone || whatsapp.trim())
+    : cleanPhone;
 
   const mediaFileId = await resolveToMediaFileId(photoUrl);
 
@@ -404,7 +443,7 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
     phone && phone.trim() &&
     whatsapp && whatsapp.trim() &&
     homeAddress && homeAddress.trim() &&
-    country && country.trim() &&
+    canonicalCountry && canonicalCountry.trim() &&
     stateRegion && stateRegion.trim() &&
     city && city.trim() &&
     preferredContact && preferredContact.trim() &&
@@ -419,8 +458,10 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
       email = ?,
       phone_number = ?,
       whatsapp_number = ?,
+      whatsapp_country_iso = ?,
       home_address = ?,
       country = ?,
+      country_iso = ?,
       state_region = ?,
       city = ?,
       preferred_contact = ?,
@@ -435,8 +476,10 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
     emailToUse,
     cleanPhone,
     cleanWhatsapp,
+    targetWaIso,
     homeAddress.trim(),
-    country.trim(),
+    canonicalCountry,
+    targetIso,
     stateRegion.trim(),
     city.trim(),
     preferredContact,
@@ -472,11 +515,18 @@ router.post('/whatsapp/consent', async (req: AuthenticatedRequest, res: Response
       });
     }
 
-    const val = validatePhoneNumber(targetNumber, 'NG');
+    const parentWaIso = resolveWhatsAppCountryIso(
+      req.parentProfile.whatsapp_country_iso,
+      targetNumber,
+      req.parentProfile.country_iso,
+      req.parentProfile.country,
+      'NG'
+    );
+    const val = validatePhoneNumber(targetNumber, parentWaIso);
     if (!val.valid || !val.normalizedPhone) {
       return res.status(400).json({
         success: false,
-        error: val.message || 'Please provide a valid phone number (e.g. 08012345678).'
+        error: val.message || 'Please provide a valid phone number.'
       });
     }
 
@@ -487,9 +537,10 @@ router.post('/whatsapp/consent', async (req: AuthenticatedRequest, res: Response
         whatsapp_opt_out_at = NULL,
         whatsapp_consent_source = 'profile',
         whatsapp_number = ?,
+        whatsapp_country_iso = ?,
         updated_at = ?
       WHERE id = ?
-    `, [now, val.normalizedPhone, now, req.parentProfile.id]);
+    `, [now, val.normalizedPhone, parentWaIso, now, req.parentProfile.id]);
 
     const updated = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [req.parentProfile.id]);
     req.parentProfile = updated;

@@ -1,4 +1,16 @@
-import { parsePhoneNumberFromString, CountryCode } from 'libphonenumber-js';
+import parsePhoneNumber, { CountryCode } from 'libphonenumber-js/core';
+import meta from 'libphonenumber-js/metadata.min';
+import { validateCountryIso } from './countries';
+
+const rawMeta = meta as any;
+const phoneMetadata = rawMeta?.countries ? rawMeta : (rawMeta?.default?.countries ? rawMeta.default : rawMeta);
+const parsePhoneNumberFromString = (text: string, country?: any) => {
+  try {
+    return parsePhoneNumber(text, country, phoneMetadata);
+  } catch {
+    return undefined;
+  }
+};
 
 export const validateRequired = (val: any, message = 'This field is required.'): string | undefined => {
   if (val === undefined || val === null) return message;
@@ -19,15 +31,46 @@ export const normalizeEmail = (email: string): string => {
   return (email || '').trim().toLowerCase();
 };
 
-export const normalizePhone = (phone: string, country = 'NG'): string => {
-  const cleaned = (phone || '').replace(/[^\d+]/g, '');
+export const normalizePhone = (phone: string, country: string = 'NG'): string => {
+  if (!phone || typeof phone !== 'string') return '';
+  let cleaned = phone.trim();
+  if (cleaned.toLowerCase().startsWith('whatsapp:')) {
+    cleaned = cleaned.substring(9).trim();
+  }
+  cleaned = cleaned.replace(/[\s\-\(\)\.]/g, '');
+  if (!cleaned) return '';
+
+  const isExplicitInternational = cleaned.startsWith('+');
+  if (isExplicitInternational) {
+    try {
+      const parsed = parsePhoneNumberFromString(cleaned);
+      if (parsed && parsed.isValid()) {
+        return parsed.format('E.164');
+      }
+    } catch {}
+  }
+
+  const isoCheck = validateCountryIso(country, { allowFallback: true, fallbackIso: 'NG' });
+  const targetCountry = isoCheck.countryIso || 'NG';
+
+  if (targetCountry === 'NG' && !isExplicitInternational) {
+    if (cleaned.startsWith('0') && cleaned.length === 11) {
+      cleaned = '+234' + cleaned.substring(1);
+    } else if (cleaned.startsWith('234') && cleaned.length === 13) {
+      cleaned = '+' + cleaned;
+    } else if ((cleaned.startsWith('7') || cleaned.startsWith('8') || cleaned.startsWith('9')) && cleaned.length === 10) {
+      cleaned = '+234' + cleaned;
+    }
+  }
+
   try {
-    const parsed = parsePhoneNumberFromString(cleaned, country as CountryCode);
+    const parsed = parsePhoneNumberFromString(cleaned, targetCountry as CountryCode);
     if (parsed && parsed.isValid()) {
       return parsed.format('E.164');
     }
-  } catch (e) {}
-  return cleaned.startsWith('+') ? cleaned : cleaned ? `+234${cleaned.replace(/^0+/, '')}` : '';
+  } catch {}
+
+  return cleaned.startsWith('+') ? cleaned : targetCountry === 'NG' ? `+234${cleaned.replace(/^0+/, '')}` : '';
 };
 
 export const validateFullName = (name: string, isParentOrPickup = true): string | undefined => {
@@ -245,13 +288,39 @@ export const validatePhoneNumber = (phone: string, countryCode = 'NG'): string |
     return 'Enter your phone number.';
   }
   
-  const allowedCharsRegex = /^[+\d\s]+$/;
+  const allowedCharsRegex = /^[+\d\s\-\(\)\.]+$/;
   if (!allowedCharsRegex.test(trimmed)) {
     return 'Phone number can only contain digits, spaces, and +.';
   }
 
+  const isExplicitInternational = trimmed.startsWith('+');
+  if (isExplicitInternational) {
+    try {
+      const parsed = parsePhoneNumberFromString(trimmed);
+      if (parsed && parsed.isValid()) {
+        return undefined;
+      }
+    } catch {}
+  }
+
+  const isoCheck = validateCountryIso(countryCode, { allowFallback: true, fallbackIso: 'NG' });
+  if (!isoCheck.valid || !isoCheck.countryIso) {
+    return 'Invalid country selected.';
+  }
+
   try {
-    const parsed = parsePhoneNumberFromString(trimmed, countryCode as CountryCode);
+    let toParse = trimmed.replace(/[\s\-\(\)\.]/g, '');
+    if (isoCheck.countryIso === 'NG' && !isExplicitInternational) {
+      if (toParse.startsWith('0') && toParse.length === 11) {
+        toParse = '+234' + toParse.substring(1);
+      } else if (toParse.startsWith('234') && toParse.length === 13) {
+        toParse = '+' + toParse;
+      } else if ((toParse.startsWith('7') || toParse.startsWith('8') || toParse.startsWith('9')) && toParse.length === 10) {
+        toParse = '+234' + toParse;
+      }
+    }
+
+    const parsed = parsePhoneNumberFromString(toParse, isoCheck.countryIso as CountryCode);
     if (!parsed || !parsed.isValid()) {
       return 'Enter a valid phone number.';
     }

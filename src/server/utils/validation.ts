@@ -1,8 +1,11 @@
 import { resolveMx } from 'dns/promises';
 import parsePhoneNumber, { CountryCode } from 'libphonenumber-js/core';
 import meta from 'libphonenumber-js/metadata.min';
+import { normalizePhoneNumberToE164 } from './phone';
+import { validateCountryIso, getCountryByIso, getCountryByName, inferCountryIsoFromE164 } from '../../utils/countries';
 
-const phoneMetadata = (meta as any)?.default || meta;
+const rawMeta = meta as any;
+const phoneMetadata = rawMeta?.countries ? rawMeta : (rawMeta?.default?.countries ? rawMeta.default : rawMeta);
 const parsePhoneNumberFromString = (text: string, country?: any) => {
   try {
     return parsePhoneNumber(text, country, phoneMetadata);
@@ -60,14 +63,7 @@ export const normalizeEmail = (email: string): string => {
 };
 
 export const normalizePhone = (phone: string, country = 'NG'): string => {
-  const cleaned = (phone || '').replace(/[^\d+]/g, '');
-  try {
-    const parsed = parsePhoneNumberFromString(cleaned, country as CountryCode);
-    if (parsed && parsed.isValid()) {
-      return parsed.format('E.164');
-    }
-  } catch (e) {}
-  return cleaned.startsWith('+') ? cleaned : cleaned ? `+234${cleaned.replace(/^0+/, '')}` : '';
+  return normalizePhoneNumberToE164(phone, country) || (phone || '').replace(/[^\d+]/g, '');
 };
 
 /**
@@ -489,10 +485,14 @@ export async function validateEmailDeliverability(email: string): Promise<boolea
 }
 
 /**
- * Backend Phone Number Validator using libphonenumber-js
+ * Backend Phone Number Validator using libphonenumber-js and canonical E.164 normalization.
  */
-export function validatePhoneNumber(phone: string, defaultCountry = 'NG', fieldName = 'phone'): ValidationResult {
-  if (!phone) {
+export function validatePhoneNumber(
+  phone: string,
+  defaultCountry: string | null = 'NG',
+  fieldName = 'phone'
+): ValidationResult {
+  if (!phone || typeof phone !== 'string' || !phone.trim()) {
     return {
       valid: false,
       code: 'INVALID_PHONE_FORMAT',
@@ -503,8 +503,8 @@ export function validatePhoneNumber(phone: string, defaultCountry = 'NG', fieldN
 
   const trimmed = phone.trim();
 
-  // Accept only + digits spaces
-  const allowedCharsRegex = /^[+\d\s]+$/;
+  // Accept only + digits spaces and common phone punctuation
+  const allowedCharsRegex = /^[+\d\s\-\(\)\.]+$/;
   if (!allowedCharsRegex.test(trimmed)) {
     return {
       valid: false,
@@ -514,22 +514,8 @@ export function validatePhoneNumber(phone: string, defaultCountry = 'NG', fieldN
     };
   }
 
-  try {
-    const parsed = parsePhoneNumberFromString(trimmed, defaultCountry as CountryCode);
-    if (!parsed || !parsed.isValid()) {
-      return {
-        valid: false,
-        code: 'INVALID_PHONE_FORMAT',
-        field: fieldName,
-        message: 'Enter a valid phone number.'
-      };
-    }
-
-    return {
-      valid: true,
-      normalizedPhone: parsed.format('E.164')
-    };
-  } catch (err) {
+  const normalized = normalizePhoneNumberToE164(trimmed, defaultCountry || 'NG');
+  if (!normalized) {
     return {
       valid: false,
       code: 'INVALID_PHONE_FORMAT',
@@ -537,6 +523,11 @@ export function validatePhoneNumber(phone: string, defaultCountry = 'NG', fieldN
       message: 'Enter a valid phone number.'
     };
   }
+
+  return {
+    valid: true,
+    normalizedPhone: normalized
+  };
 }
 
 /**
@@ -843,6 +834,46 @@ export function validateImageFile(file: { type: string; size: number }, fieldNam
 export function validateParentProfile(data: any): { valid: boolean; errors: { [key: string]: ValidationResult } } {
   const errors: { [key: string]: ValidationResult } = {};
 
+  // Country & country_iso resolution
+  const rawCountryIso = data.countryIso || data.country_iso || data.countryCode;
+  let targetIso: CountryCode = 'NG';
+
+  if (rawCountryIso !== undefined && rawCountryIso !== null && String(rawCountryIso).trim() !== '') {
+    const isoRes = validateCountryIso(rawCountryIso);
+    if (!isoRes.valid || !isoRes.countryIso) {
+      errors.countryIso = {
+        valid: false,
+        code: 'INVALID_COUNTRY_ISO',
+        field: 'countryIso',
+        message: 'Enter a valid country.'
+      };
+    } else {
+      targetIso = isoRes.countryIso;
+    }
+  } else if (data.country && String(data.country).trim() !== '') {
+    const matched = getCountryByName(data.country);
+    if (matched) {
+      targetIso = matched.iso;
+    }
+  }
+
+  // Country display check & synchronization
+  const effectiveCountryName = data.country || (rawCountryIso ? getCountryByIso(targetIso)?.name : '');
+  const countryRes = validateCountry(effectiveCountryName || '', 'country');
+  if (!countryRes.valid && !errors.countryIso) {
+    errors.country = countryRes;
+  } else if (rawCountryIso && targetIso && data.country && String(data.country).trim() !== '') {
+    const matched = getCountryByName(data.country);
+    if (matched && matched.iso !== targetIso) {
+      errors.country = {
+        valid: false,
+        code: 'COUNTRY_MISMATCH',
+        field: 'country',
+        message: 'Country name does not match country code.'
+      };
+    }
+  }
+
   // Full Name
   const nameRes = validateFullName(data.fullName || data.full_name, true, 'fullName');
   if (!nameRes.valid) {
@@ -851,24 +882,47 @@ export function validateParentProfile(data: any): { valid: boolean; errors: { [k
 
   // Phone
   const phoneVal = data.phone || data.phone_number;
-  const phoneRes = validatePhoneNumber(phoneVal || '', data.countryCode || 'NG', 'phone');
+  const phoneRes = validatePhoneNumber(phoneVal || '', targetIso, 'phone');
   if (!phoneRes.valid) {
     errors.phone = phoneRes;
   }
 
-  // WhatsApp (optional but if provided must be valid)
-  const whatsappVal = data.whatsapp || data.whatsapp_number;
-  if (whatsappVal) {
-    const whatsappRes = validatePhoneNumber(whatsappVal, data.countryCode || 'NG', 'whatsapp');
-    if (!whatsappRes.valid) {
-      errors.whatsapp = { ...whatsappRes, message: 'Enter a valid WhatsApp number.' };
+  // WhatsApp country ISO resolution (separate from residence country)
+  const rawWaCountryIso = data.whatsappCountryIso || data.whatsapp_country_iso;
+  let targetWaIso: CountryCode = targetIso;
+  if (rawWaCountryIso !== undefined && rawWaCountryIso !== null && String(rawWaCountryIso).trim() !== '') {
+    const waIsoRes = validateCountryIso(rawWaCountryIso);
+    if (!waIsoRes.valid || !waIsoRes.countryIso) {
+      errors.whatsappCountryIso = {
+        valid: false,
+        code: 'INVALID_WHATSAPP_COUNTRY_ISO',
+        field: 'whatsappCountryIso',
+        message: 'Enter a valid country for WhatsApp.'
+      };
+    } else {
+      targetWaIso = waIsoRes.countryIso;
+    }
+  } else {
+    const inferred = inferCountryIsoFromE164(data.whatsapp || data.whatsapp_number);
+    if (inferred) {
+      targetWaIso = inferred;
     }
   }
 
-  // Country
-  const countryRes = validateCountry(data.country, 'country');
-  if (!countryRes.valid) {
-    errors.country = countryRes;
+  // WhatsApp (optional but if provided must be valid)
+  const whatsappVal = data.whatsapp || data.whatsapp_number;
+  if (whatsappVal && String(whatsappVal).trim() !== '') {
+    const whatsappRes = validatePhoneNumber(whatsappVal, targetWaIso, 'whatsapp');
+    if (!whatsappRes.valid) {
+      const countryObj = getCountryByIso(targetWaIso);
+      const countryName = countryObj?.name || 'selected country';
+      errors.whatsapp = {
+        valid: false,
+        code: 'INVALID_PHONE_FORMAT',
+        field: 'whatsapp',
+        message: `Enter a valid WhatsApp number for ${countryName}.`
+      };
+    }
   }
 
   // State / Region

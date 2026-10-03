@@ -16,6 +16,8 @@ export const initialParentProfile: ParentProfile = {
   whatsapp: '',
   homeAddress: '',
   country: '',
+  countryIso: '',
+  whatsappCountryIso: '',
   stateRegion: '',
   city: '',
   preferredContact: 'WhatsApp',

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { AppRoute, ParentProfile } from '../types';
 import { ArrowLeft, Info } from 'lucide-react';
 import { api, extractApiError } from '../services/api';
@@ -7,6 +7,14 @@ import { PhotoUploadBox } from '../components/common/PhotoUploadBox';
 import { validateName, validateEmailSyntax, validatePhone } from '../utils/validation';
 import { Button } from '../components/common/Button';
 import { AuthScreenShell } from '../components/common/AuthScreenShell';
+import { InternationalWhatsAppField } from '../components/common/InternationalWhatsAppField';
+import {
+  getInternationalCountries,
+  getCountryByIso,
+  resolveCountryIso,
+  resolveWhatsAppCountryIso,
+  formatToNationalDisplay
+} from '../utils/countries';
 
 interface ProfileSetupViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -29,30 +37,39 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
   const [email, setEmail] = useState<string>(initialProfile.email || '');
   const [emailSuggestion, setEmailSuggestion] = useState<string | null>(null);
   const [phone, setPhone] = useState<string>(initialProfile.phone || '');
-  const [whatsapp, setWhatsapp] = useState<string>(initialProfile.whatsapp || '');
-  const [homeAddress, setHomeAddress] = useState<string>(initialProfile.homeAddress || '');
+  const allCountries = useMemo(() => getInternationalCountries(), []);
 
-  const commonCountries = [
-    'Nigeria',
-    'United Kingdom',
-    'United States',
-    'Canada',
-    'Ghana',
-    'South Africa',
-    'Kenya',
-    'Cameroon'
-  ];
+  const [countryIso, setCountryIso] = useState<string>(() => {
+    return resolveCountryIso(initialProfile.countryIso || initialProfile.country_iso, initialProfile.country, 'NG');
+  });
 
   const [country, setCountry] = useState<string>(() => {
-    const val = initialProfile.country || '';
-    if (!val) return '';
-    return commonCountries.includes(val) ? val : 'Other';
+    const iso = resolveCountryIso(initialProfile.countryIso || initialProfile.country_iso, initialProfile.country, 'NG');
+    return getCountryByIso(iso)?.name || initialProfile.country || 'Nigeria';
   });
-  const [customCountry, setCustomCountry] = useState<string>(() => {
-    const val = initialProfile.country || '';
-    if (!val) return '';
-    return commonCountries.includes(val) ? '' : val;
+
+  const [whatsappCountryIso, setWhatsappCountryIso] = useState<string>(() => {
+    return resolveWhatsAppCountryIso(
+      initialProfile.whatsappCountryIso || initialProfile.whatsapp_country_iso,
+      initialProfile.whatsapp || initialProfile.whatsappNumber,
+      initialProfile.countryIso || initialProfile.country_iso,
+      initialProfile.country,
+      'NG'
+    );
   });
+
+  const [whatsapp, setWhatsapp] = useState<string>(() => {
+    const raw = initialProfile.whatsapp || initialProfile.whatsappNumber || '';
+    const waIso = resolveWhatsAppCountryIso(
+      initialProfile.whatsappCountryIso || initialProfile.whatsapp_country_iso,
+      raw,
+      initialProfile.countryIso || initialProfile.country_iso,
+      initialProfile.country,
+      'NG'
+    );
+    return formatToNationalDisplay(raw, waIso);
+  });
+  const [homeAddress, setHomeAddress] = useState<string>(initialProfile.homeAddress || '');
   const [stateRegion, setStateRegion] = useState<string>(initialProfile.stateRegion || '');
   const [city, setCity] = useState<string>(initialProfile.city || '');
 
@@ -71,23 +88,24 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
     setFullName(initialProfile.fullName || '');
     setEmail(initialProfile.email || '');
     setPhone(initialProfile.phone || '');
-    setWhatsapp(initialProfile.whatsapp || '');
-    setHomeAddress(initialProfile.homeAddress || '');
-    
-    const val = initialProfile.country || '';
-    if (val) {
-      if (commonCountries.includes(val)) {
-        setCountry(val);
-        setCustomCountry('');
-      } else {
-        setCountry('Other');
-        setCustomCountry(val);
-      }
-    } else {
-      setCountry('');
-      setCustomCountry('');
-    }
 
+    const iso = resolveCountryIso(initialProfile.countryIso || initialProfile.country_iso, initialProfile.country, 'NG');
+    setCountryIso(iso);
+    setCountry(getCountryByIso(iso)?.name || initialProfile.country || 'Nigeria');
+
+    const waIso = resolveWhatsAppCountryIso(
+      initialProfile.whatsappCountryIso || initialProfile.whatsapp_country_iso,
+      initialProfile.whatsapp || initialProfile.whatsappNumber,
+      iso,
+      initialProfile.country,
+      'NG'
+    );
+    setWhatsappCountryIso(waIso);
+
+    const rawWa = initialProfile.whatsapp || initialProfile.whatsappNumber || '';
+    setWhatsapp(formatToNationalDisplay(rawWa, waIso));
+
+    setHomeAddress(initialProfile.homeAddress || '');
     setStateRegion(initialProfile.stateRegion || '');
     setCity(initialProfile.city || '');
     setPreferredContact((initialProfile.preferredContact as 'Email' | 'WhatsApp' | 'Both') || 'WhatsApp');
@@ -116,14 +134,19 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
         break;
       }
       case 'phone': {
-        const err = validatePhone(phone, 'NG');
+        const err = validatePhone(phone, countryIso || 'NG');
         if (err) return err;
         break;
       }
       case 'whatsapp': {
-        const effectiveWa = whatsapp.trim() || phone.trim();
-        const err = validatePhone(effectiveWa, 'NG');
-        if (err) return 'Enter a valid WhatsApp number.';
+        if (!whatsapp || !whatsapp.trim()) {
+          break; // WhatsApp is not mandatory yet
+        }
+        const err = validatePhone(whatsapp.trim(), whatsappCountryIso || 'NG');
+        if (err) {
+          const cName = getCountryByIso(whatsappCountryIso)?.name || 'selected country';
+          return `Enter a valid WhatsApp number for ${cName}.`;
+        }
         break;
       }
       case 'homeAddress':
@@ -132,11 +155,8 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
         }
         break;
       case 'country':
-        if (!country || !country.trim()) {
+        if (!country || !country.trim() || !countryIso) {
           return 'Choose your country.';
-        }
-        if (country === 'Other' && (!customCountry || !customCountry.trim())) {
-          return 'Enter country name.';
         }
         break;
       case 'stateRegion':
@@ -176,9 +196,27 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
     setTouched((prev) => ({ ...prev, [field]: true }));
   };
 
+  const handleAddressCountryChange = (newIso: string) => {
+    const iso = resolveCountryIso(newIso, null, 'NG');
+    setCountryIso(iso);
+    const matched = getCountryByIso(iso);
+    if (matched) {
+      setCountry(matched.name);
+    }
+    if (touched.phone) setTouched((prev) => ({ ...prev, phone: true }));
+  };
+
+  const handleWhatsAppCountryChange = (newIso: string) => {
+    const iso = resolveCountryIso(newIso, null, 'NG');
+    setWhatsappCountryIso(iso);
+    if (touched.whatsapp) setTouched((prev) => ({ ...prev, whatsapp: true }));
+  };
+
   const handleSameAsPhone = () => {
     if (phone) {
-      setWhatsapp(phone);
+      setWhatsappCountryIso(countryIso);
+      const national = formatToNationalDisplay(phone, countryIso);
+      setWhatsapp(national);
       setTouched((prev) => ({ ...prev, whatsapp: true }));
     }
   };
@@ -218,17 +256,21 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
       return;
     }
 
-    const finalCountry = country === 'Other' ? customCountry.trim() : country.trim();
-    const effectiveWhatsapp = whatsapp.trim() || phone;
-    const updatedProfile = {
+    const finalCountry = getCountryByIso(countryIso)?.name || country.trim() || 'Nigeria';
+    const effectiveWhatsapp = whatsapp.trim();
+    const updatedProfile: ParentProfile = {
       ...initialProfile,
       photoUrl,
       fullName: fullName.trim(),
       email: email.trim(),
       phone: phone.trim(),
       whatsapp: effectiveWhatsapp,
+      whatsappCountryIso,
+      whatsapp_country_iso: whatsappCountryIso,
       homeAddress: homeAddress.trim(),
       country: finalCountry,
+      countryIso: countryIso,
+      country_iso: countryIso,
       stateRegion: stateRegion.trim(),
       city: city.trim(),
       preferredContact,
@@ -267,13 +309,12 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
         setErrorMsg(message);
         showError('We could not save your profile', 'Please check your connection and try again.');
       }
-    } finally {
       setSaving(false);
     }
   };
 
   const handleSaveAndFinishLater = () => {
-    const finalCountry = country === 'Other' ? customCountry.trim() : country.trim();
+    const finalCountry = getCountryByIso(countryIso)?.name || country.trim() || 'Nigeria';
     onUpdateProfile({
       ...initialProfile,
       photoUrl,
@@ -281,8 +322,12 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
       email: email.trim(),
       phone: phone.trim(),
       whatsapp: whatsapp.trim() || phone.trim(),
+      whatsappCountryIso,
+      whatsapp_country_iso: whatsappCountryIso,
       homeAddress: homeAddress.trim(),
       country: finalCountry,
+      countryIso: countryIso,
+      country_iso: countryIso,
       stateRegion: stateRegion.trim(),
       city: city.trim(),
       preferredContact,
@@ -464,7 +509,7 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
             {/* WhatsApp Number */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label htmlFor="whatsapp" className="text-xs font-bold text-[#3F3F46] tracking-wide">
+                <label htmlFor="whatsapp" className="text-xs font-bold text-[#3F3F46] dark:text-[#B8B0A5] tracking-wide">
                   WhatsApp Number
                 </label>
                 <button
@@ -475,25 +520,18 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
                   Same as phone
                 </button>
               </div>
-              <input
+              <InternationalWhatsAppField
                 id="whatsapp"
-                type="tel"
-                placeholder="Same as phone"
+                countryIso={whatsappCountryIso}
                 value={whatsapp}
-                onChange={(e) => {
-                  setWhatsapp(e.target.value);
+                onCountryChange={handleWhatsAppCountryChange}
+                onChange={(val) => {
+                  setWhatsapp(val);
                   if (touched.whatsapp) setTouched((prev) => ({ ...prev, whatsapp: true }));
                 }}
-                onBlur={() => handleBlur('whatsapp')}
-                className={`w-full bg-white border border-b-2 rounded-lg px-3.5 py-2.5 text-sm text-[#18181B] placeholder:text-[#D9D6CE] focus:outline-none transition-colors ${
-                  getError('whatsapp')
-                    ? 'border-[#C53030] border-b-[#C53030]'
-                    : 'border-[#EAE8E1] border-b-[#D9D6CE] focus:border-b-[#C59B27]'
-                }`}
+                error={getError('whatsapp')}
+                helperText="We’ll use this number for important registration and event updates."
               />
-              {getError('whatsapp') && (
-                <p className="text-xs text-[#C53030] mt-1.5 font-medium">{getError('whatsapp')}</p>
-              )}
             </div>
 
             {/* Home Address */}
@@ -524,36 +562,32 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
 
             {/* Country */}
             <div>
-              <label htmlFor="country" className="text-xs font-bold text-[#3F3F46] tracking-wide block mb-1.5">
+              <label htmlFor="country" className="text-xs font-bold text-[#3F3F46] dark:text-[#B8B0A5] tracking-wide block mb-1.5">
                 Country
               </label>
               <div className="relative">
                 <select
                   id="country"
-                  value={country}
+                  value={countryIso}
                   onChange={(e) => {
-                    setCountry(e.target.value);
+                    handleAddressCountryChange(e.target.value);
                     if (touched.country) setTouched((prev) => ({ ...prev, country: true }));
                   }}
                   onBlur={() => handleBlur('country')}
-                  className={`w-full bg-white border border-b-2 rounded-lg px-3.5 py-2.5 text-sm text-[#18181B] focus:outline-none transition-colors appearance-none cursor-pointer ${
+                  className={`w-full bg-white dark:bg-[#21211E] border border-b-2 dark:border-[#302E29] rounded-lg px-3.5 py-2.5 text-sm text-[#18181B] dark:text-[#F0EBE3] focus:outline-none transition-colors appearance-none cursor-pointer ${
                     getError('country')
                       ? 'border-[#C53030] border-b-[#C53030]'
-                      : 'border-[#EAE8E1] border-b-[#D9D6CE] focus:border-b-[#C59B27]'
+                      : 'border-[#EAE8E1] border-b-[#D9D6CE] dark:border-b-[#3A3835] focus:border-b-[#C59B27]'
                   }`}
                 >
                   <option value="" disabled className="text-[#D9D6CE]">Select country</option>
-                  <option value="Nigeria">Nigeria</option>
-                  <option value="United Kingdom">United Kingdom</option>
-                  <option value="United States">United States</option>
-                  <option value="Canada">Canada</option>
-                  <option value="Ghana">Ghana</option>
-                  <option value="South Africa">South Africa</option>
-                  <option value="Kenya">Kenya</option>
-                  <option value="Cameroon">Cameroon</option>
-                  <option value="Other">Other</option>
+                  {allCountries.map((c) => (
+                    <option key={c.iso} value={c.iso}>
+                      {c.flag} {c.name}
+                    </option>
+                  ))}
                 </select>
-                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-[#715D3A]">
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-[#715D3A] dark:text-[#B8B0A5]">
                   <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
                     <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/>
                   </svg>
@@ -563,30 +597,6 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
                 <p className="text-xs text-[#C53030] mt-1.5 font-medium">{getError('country')}</p>
               )}
             </div>
-
-            {/* Custom Country Name */}
-            {country === 'Other' && (
-              <div>
-                <label htmlFor="customCountry" className="text-xs font-bold text-[#3F3F46] tracking-wide block mb-1.5">
-                  Country Name
-                </label>
-                <input
-                  id="customCountry"
-                  type="text"
-                  placeholder="Enter country name"
-                  value={customCountry}
-                  onChange={(e) => {
-                    setCustomCountry(e.target.value);
-                    if (touched.country) setTouched((prev) => ({ ...prev, country: true }));
-                  }}
-                  className={`w-full bg-white border border-b-2 rounded-lg px-3.5 py-2.5 text-sm text-[#18181B] placeholder:text-[#D9D6CE] focus:outline-none transition-colors ${
-                    getError('country') && !customCountry.trim()
-                      ? 'border-[#C53030] border-b-[#C53030]'
-                      : 'border-[#EAE8E1] border-b-[#D9D6CE] focus:border-b-[#C59B27]'
-                  }`}
-                />
-              </div>
-            )}
 
             {/* State / Region */}
             <div>

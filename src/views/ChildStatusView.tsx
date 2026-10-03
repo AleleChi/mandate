@@ -604,39 +604,46 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
           </div>
         </div>
 
-        {/* Pickup person card */}
-        <div data-component-version="parent-child-pickup-person-card-v2" className="bg-white dark:bg-[#21211E] rounded-2xl p-4 border border-[#EAE8E1] dark:border-[#302E29] mt-6">
-          <div className="flex items-center justify-between border-b border-[#FAF9F6] dark:border-[#302E29] pb-3 mb-3">
-            <h3 className="text-sm font-serif-koinonia text-[#18181B] dark:text-[#F0EBE3] font-bold">
-              Pickup person
-            </h3>
-            {isRealUploadedPhoto(pickupPhoto) || pickupPhoto ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] text-[#9A7326] dark:text-[#C59B27] text-[9px] font-bold uppercase tracking-wider">
+        {/* Pickup authorisation record */}
+        <div
+          data-component-version="parent-child-pickup-authorisation-v3"
+          className="bg-[#FDFCF8] dark:bg-[#21211E] rounded-2xl p-4 sm:p-5 border border-[#EDE6D4] dark:border-[#302E29] mt-6 font-sans shadow-2xs"
+        >
+          {/* Header row: Eyebrow + Metadata badge */}
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.14em] text-[#9A7326] dark:text-[#C59B27]">
+              Pickup Authorisation
+            </span>
+            {(isRealUploadedPhoto(pickupPhoto) || pickupPhoto) ? (
+              <span className="inline-flex items-center px-2 py-0.5 rounded border border-[#E5D5AE] dark:border-[#3A3835] bg-[#FAF6EB] dark:bg-[#262520] text-[#8C6D23] dark:text-[#C59B27] text-[10px] font-bold tracking-wider uppercase shrink-0">
                 Photo Added
               </span>
             ) : null}
           </div>
 
-          <div className="grid grid-cols-2 gap-3 text-xs">
-            <div>
-              <span className="text-[10px] text-[#8E8B82] dark:text-[#B8B0A5] block font-medium uppercase">Name</span>
-              <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] block mt-0.5 truncate">{pickupName || 'Not specified'}</span>
-            </div>
-            <div>
-              <span className="text-[10px] text-[#8E8B82] dark:text-[#B8B0A5] block font-medium uppercase">Relationship</span>
-              <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] block mt-0.5 truncate">{pickupRelation || 'Not specified'}</span>
-            </div>
-            <div className="col-span-2">
-              <span className="text-[10px] text-[#8E8B82] dark:text-[#B8B0A5] block font-medium uppercase">Phone</span>
-              <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] block mt-0.5 font-mono">{pickupPhone || 'Not specified'}</span>
-            </div>
+          {/* Person details */}
+          <div className="mt-2.5">
+            <h4 className="text-base font-semibold text-[#18181B] dark:text-[#F0EBE3] leading-snug">
+              {pickupName || 'Primary Parent Only'}
+            </h4>
+            <p className="text-[13px] text-[#6B6860] dark:text-[#B8B0A5] mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+              <span>{pickupRelation || 'Parent'}</span>
+              {pickupPhone && pickupPhone !== 'Not provided' && pickupPhone !== 'Not specified' && (
+                <>
+                  <span className="text-[#8B867D] dark:text-[#7A7570]">·</span>
+                  <span className="font-mono text-xs sm:text-[13px]">{pickupPhone}</span>
+                </>
+              )}
+            </p>
           </div>
 
-          <div className="bg-[#FAF6EB]/40 dark:bg-[#262520] rounded-xl p-2.5 border border-[#E5D5AE]/20 dark:border-[#3A3835] mt-4 flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-[#C59B27] shrink-0" />
-            <span className="text-[10px] text-[#9A7326] dark:text-[#B8B0A5] font-medium">
-              Photo ID and pass details may be checked before pickup.
-            </span>
+          {/* Thin divider */}
+          <div className="border-t border-[#EDE6D4] dark:border-[#302E29] my-3.5" />
+
+          {/* Security note: inline row, no inner card box */}
+          <div className="flex items-start gap-2 text-xs sm:text-[13px] text-[#6B6860] dark:text-[#B8B0A5] leading-relaxed">
+            <ShieldCheck className="w-4 h-4 text-[#C59B27] shrink-0 mt-0.5" />
+            <span>Photo ID and pass details may be checked before pickup.</span>
           </div>
         </div>
 

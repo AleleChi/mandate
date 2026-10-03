@@ -16,8 +16,8 @@ import { SafeImage } from '../components/common/SafeImage';
 import { DeviceSecuritySettings } from '../components/common/DeviceSecuritySettings';
 import { DeviceSecurityModal } from '../components/common/DeviceSecurityModal';
 import { MobileNotificationCentre } from '../components/common/MobileNotificationCentre';
-import { SharedNotificationSettings } from '../components/common/SharedNotificationSettings';
 import { PwaInstallBanner, PwaInstallGuideModal } from '../components/common/PwaInstallBanner';
+import { formatReadablePhone, formatReadableCountry } from '../utils/countries';
 import { isAppInstalled, promptPwaInstall } from '../utils/pwaInstall';
 import { Download } from 'lucide-react';
 import parentHeroImg from '../assets/images/parent_hero_1783622066454.jpg';
@@ -485,6 +485,17 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
   const [showHelpDrawer, setShowHelpDrawer] = useState(false);
   const [showSafetyDrawer, setShowSafetyDrawer] = useState(false);
+
+  // Prevent background body scroll when help or safety information sheet is open
+  useEffect(() => {
+    if (showHelpDrawer || showSafetyDrawer) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [showHelpDrawer, showSafetyDrawer]);
   const [unlockedPassByChildId, setUnlockedPassByChildId] = useState<Record<string, { passReference: string; passLocked: boolean; pass?: any; child?: any }>>({});
   const [unlockedPassReferences, setUnlockedPassReferences] = useState<Record<string, string>>({});
   const [passUnlockedChildId, setPassUnlockedChildId] = useState<string | null>(null);
@@ -1648,171 +1659,198 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   };
 
   const renderProfileTab = () => (
-    <div data-view-version="parent-profile-v4-clean-header" className="space-y-4 pt-1">
-      {/* 2. Parent profile card */}
-      <div className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-5 shadow-2xs relative text-center">
-        <div className="flex justify-end mb-1">
-          <button
-            type="button"
-            onClick={() => onNavigate('/parent/profile/edit')}
-            className="text-xs font-semibold text-[#B89047] dark:text-[#C59B27] hover:underline cursor-pointer focus:outline-none"
-          >
-            Edit details
-          </button>
-        </div>
+    <div data-view-version="parent-profile-v4-clean-header" className="space-y-6 pt-1 text-left">
+      {/* 1. Profile Header / Identity Surface */}
+      <div className="bg-[#FDFCF8] dark:bg-[#21211E] rounded-2xl border border-[#EDE6D4]/80 dark:border-[#302E29]/80 px-4.5 py-4 sm:p-5 shadow-2xs">
+        <div className="flex items-start gap-3.5 sm:gap-4">
+          <div className="shrink-0">
+            <FallbackAvatar
+              src={isRealUploadedPhoto(parentProfile.photoUrl) ? parentProfile.photoUrl : undefined}
+              name={parentProfile.fullName || 'Parent Account'}
+              className="w-18 h-18 sm:w-20 sm:h-20 rounded-full border border-[#EDE6D4] dark:border-[#3A3835] bg-[#FAF8F3] dark:bg-[#262520] text-[#18181B] dark:text-[#F0EBE3] text-xl font-semibold shadow-xs"
+            />
+          </div>
 
-        <div className="flex justify-center mb-3">
-          <FallbackAvatar
-            src={isRealUploadedPhoto(parentProfile.photoUrl) ? parentProfile.photoUrl : undefined}
-            name={parentProfile.fullName || 'Parent Account'}
-            className="w-16 h-16 sm:w-18 sm:h-18 rounded-2xl border border-[#D9D6CE] dark:border-[#3A3835] dark:bg-[#262520] dark:text-[#B8B0A5] text-lg font-bold shadow-2xs"
-          />
-        </div>
-
-        <h2 className="text-lg sm:text-xl font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3] leading-tight">
-          {parentProfile.fullName || 'Parent Account'}
-        </h2>
-
-        <div className="mt-1.5 mb-2.5">
-          <span className="inline-block px-3 py-0.5 rounded-full bg-[#EFECE4] dark:bg-[#262520] border border-transparent dark:border-[#3A3835] text-[#715D3A] dark:text-[#B8B0A5] text-xs font-semibold">
-            Parent account
-          </span>
-        </div>
-
-        <p className="text-xs sm:text-sm text-[#3F3F46] dark:text-[#B8B0A5]">
-          {parentProfile.email || 'Not specified'}
-        </p>
-
-        <p className="text-xs sm:text-sm text-[#3F3F46] dark:text-[#B8B0A5] mt-0.5">
-          {parentProfile.phone || 'Not specified'}
-        </p>
-      </div>
-
-      {/* Volunteer Status / Switcher Banner */}
-      {volunteerProfile && (volunteerProfile.status === 'active' || volunteerProfile.status === 'approved') && (
-        <div className="bg-[#FAF6EB] dark:bg-[#21211E] border border-[#E5D5AE] dark:border-[#302E29] rounded-2xl p-4.5 space-y-3 shadow-2xs text-left">
-          <div className="flex items-center space-x-3">
-            <div className="p-2.5 bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] rounded-xl text-[#9A7326] dark:text-[#C59B27] shrink-0">
-              <Users className="w-5 h-5 stroke-[1.75]" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-2.5">
+              <div className="flex-1 min-w-0">
+                <h2 className="text-[19px] sm:text-[21px] font-semibold text-[#18181B] dark:text-[#F0EBE3] leading-snug break-words font-sans">
+                  {parentProfile.fullName || 'Parent Account'}
+                </h2>
+                <p className="text-[12px] font-medium text-[#8B867D] dark:text-[#7A7570] mt-0.5 font-sans">
+                  Parent account
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onNavigate('/parent/profile/edit')}
+                className="text-xs font-semibold text-[#9A7326] dark:text-[#C59B27] hover:underline cursor-pointer shrink-0 pt-0.5 focus:outline-none whitespace-nowrap"
+              >
+                Edit profile
+              </button>
             </div>
-            <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-bold text-[#18181B] dark:text-[#F0EBE3] font-serif-koinonia leading-tight">Volunteer Access Active</h3>
-              <p className="text-[11px] text-[#6B7280] dark:text-[#B8B0A5] mt-0.5 leading-tight truncate">Approved for the <span className="font-semibold text-gray-700 dark:text-[#F0EBE3]">{volunteerProfile.preferred_team || 'event-day'}</span> team.</p>
+
+            <div className="mt-2.5 space-y-0.5">
+              <p className="text-[13px] text-[#6B6860] dark:text-[#B8B0A5] truncate font-sans">
+                {parentProfile.email || 'Not specified'}
+              </p>
+              <p className="text-[13px] text-[#6B6860] dark:text-[#B8B0A5] truncate font-sans">
+                {formatReadablePhone(parentProfile.phone, parentProfile.countryIso, false) || parentProfile.phone || 'Not specified'}
+              </p>
             </div>
           </div>
-          <Button
-            variant="primary"
-            fullWidth
-            disabled={isSwitchingExperience}
-            onClick={() => {
-              if (onSwitchExperience) {
-                onSwitchExperience('volunteer');
-              } else {
-                onNavigate('/volunteer/event');
-              }
-            }}
-          >
-            {isSwitchingExperience ? 'Switching…' : 'Switch to Volunteer Access'}
-          </Button>
         </div>
-      )}
 
-      {volunteerProfile && volunteerProfile.status === 'pending_review' && (
-        <div className="bg-amber-50/40 dark:bg-[#21211E] border border-amber-200/60 dark:border-[#302E29] rounded-2xl p-4 text-left">
-          <div className="flex items-start space-x-3">
-            <div className="p-2 bg-amber-50 dark:bg-[#262520] rounded-xl text-amber-600 dark:text-[#C59B27] shrink-0 mt-0.5 border border-amber-100 dark:border-[#3A3835]">
-              <Clock className="w-4 h-4 stroke-[2]" />
+        {/* Volunteer Access Active Switcher Banner (if volunteer profile exists) */}
+        {volunteerProfile && (volunteerProfile.status === 'active' || volunteerProfile.status === 'approved') && (
+          <div className="mt-4 p-3 rounded-xl bg-[#FAF6EB]/70 dark:bg-[#262520] border border-[#E5D5AE]/80 dark:border-[#3A3835] flex items-center justify-between gap-3">
+            <div className="flex items-center space-x-2.5 min-w-0">
+              <div className="p-2 bg-[#FAF6EB] dark:bg-[#1D1D1A] rounded-lg text-[#9A7326] dark:text-[#C59B27] shrink-0 border border-[#E5D5AE]/50 dark:border-[#302E29]">
+                <Users className="w-4 h-4 stroke-[1.75]" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] leading-tight truncate">
+                  Volunteer Access Active
+                </p>
+                <p className="text-[11px] text-[#6B6860] dark:text-[#B8B0A5] leading-tight truncate mt-0.5">
+                  Approved for the <span className="font-medium text-[#18181B] dark:text-[#F0EBE3]">{volunteerProfile.preferred_team || 'event-day'}</span> team
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-xs font-bold text-amber-900 dark:text-[#F0EBE3] uppercase tracking-wide">Volunteer Status: Pending</h3>
-              <p className="text-xs text-amber-700 dark:text-[#B8B0A5] mt-1 leading-relaxed">
+            <button
+              type="button"
+              disabled={isSwitchingExperience}
+              onClick={() => {
+                if (onSwitchExperience) {
+                  onSwitchExperience('volunteer');
+                } else {
+                  onNavigate('/volunteer/event');
+                }
+              }}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#9A7326] dark:bg-[#C59B27] text-white dark:text-[#19191A] hover:opacity-95 transition-opacity cursor-pointer shrink-0 disabled:opacity-50"
+            >
+              {isSwitchingExperience ? 'Switching…' : 'Switch'}
+            </button>
+          </div>
+        )}
+
+        {volunteerProfile && volunteerProfile.status === 'pending_review' && (
+          <div className="mt-4 p-3 rounded-xl bg-amber-50/60 dark:bg-[#262520] border border-amber-200/60 dark:border-[#3A3835] flex items-start space-x-2.5">
+            <Clock className="w-4 h-4 text-amber-600 dark:text-[#C59B27] shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold text-amber-900 dark:text-[#F0EBE3] leading-tight">Volunteer Status: Pending</p>
+              <p className="text-[11px] text-amber-700 dark:text-[#B8B0A5] mt-0.5 leading-relaxed">
                 Your application to serve on the <span className="font-semibold">{volunteerProfile.preferred_team || 'event-day'}</span> team is currently under admin review.
               </p>
               <button
+                type="button"
                 onClick={() => onNavigate('/volunteer/pending-review')}
-                className="text-xs font-semibold text-[#C59B27] hover:underline mt-2 flex items-center cursor-pointer"
+                className="text-xs font-semibold text-[#9A7326] dark:text-[#C59B27] hover:underline mt-1.5 inline-flex items-center cursor-pointer"
               >
                 View onboarding status <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {volunteerProfile && volunteerProfile.status === 'rejected' && (
-        <div className="bg-red-50/40 dark:bg-[#21211E] border border-red-200/60 dark:border-[#302E29] rounded-2xl p-4 text-left">
-          <div className="flex items-start space-x-3">
-            <div className="p-2 bg-red-50 dark:bg-[#262520] rounded-xl text-red-600 dark:text-red-400 shrink-0 mt-0.5 border border-red-100 dark:border-[#3A3835]">
-              <Shield className="w-4 h-4 stroke-[2]" />
-            </div>
-            <div>
-              <h3 className="text-xs font-bold text-red-900 dark:text-[#F0EBE3] uppercase tracking-wide">Volunteer Status: Rejected</h3>
-              <p className="text-xs text-red-700 dark:text-[#B8B0A5] mt-1 leading-relaxed">
+        {volunteerProfile && volunteerProfile.status === 'rejected' && (
+          <div className="mt-4 p-3 rounded-xl bg-red-50/60 dark:bg-[#262520] border border-red-200/60 dark:border-[#3A3835] flex items-start space-x-2.5">
+            <Shield className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold text-red-900 dark:text-[#F0EBE3] leading-tight">Volunteer Status: Rejected</p>
+              <p className="text-[11px] text-red-700 dark:text-[#B8B0A5] mt-0.5 leading-relaxed">
                 Your request for volunteer access has been rejected by an administrator. Please contact support if you believe this is an error.
               </p>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {volunteerProfile && volunteerProfile.status === 'suspended' && (
-        <div className="bg-gray-100/60 dark:bg-[#21211E] border border-gray-200 dark:border-[#302E29] rounded-2xl p-4 text-left">
-          <div className="flex items-start space-x-3">
-            <div className="p-2 bg-gray-50 dark:bg-[#262520] rounded-xl text-gray-500 dark:text-[#B8B0A5] shrink-0 mt-0.5 border border-gray-150 dark:border-[#3A3835]">
-              <Shield className="w-4 h-4 stroke-[2]" />
-            </div>
-            <div>
-              <h3 className="text-xs font-bold text-gray-800 dark:text-[#F0EBE3] uppercase tracking-wide">Volunteer Status: Suspended</h3>
-              <p className="text-xs text-gray-600 dark:text-[#B8B0A5] mt-1 leading-relaxed">
+        {volunteerProfile && volunteerProfile.status === 'suspended' && (
+          <div className="mt-4 p-3 rounded-xl bg-gray-100/60 dark:bg-[#262520] border border-gray-200 dark:border-[#3A3835] flex items-start space-x-2.5">
+            <Shield className="w-4 h-4 text-gray-500 dark:text-[#B8B0A5] shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold text-gray-800 dark:text-[#F0EBE3] leading-tight">Volunteer Status: Suspended</p>
+              <p className="text-[11px] text-gray-600 dark:text-[#B8B0A5] mt-0.5 leading-relaxed">
                 Your volunteer profile has been suspended by an administrator.
               </p>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* 3. Contact preference card */}
-      <div className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-4 sm:p-5 shadow-2xs space-y-3">
-        <div className="flex items-center justify-between pb-1">
-          <span className="text-[11px] font-semibold tracking-wider text-[#3F3F46] dark:text-[#B8B0A5] uppercase">
-            CONTACT PREFERENCE
-          </span>
+      {/* Restrained Hairline Divider */}
+      <div className="border-b border-[#EDE6D4] dark:border-[#302E29]" />
+
+      {/* 2. Contact & Communication */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-[11px] font-semibold tracking-wider text-[#8B867D] dark:text-[#7A7570] uppercase">
+            CONTACT & COMMUNICATION
+          </h3>
           <button
             type="button"
             onClick={() => onNavigate('/parent/profile/edit')}
-            className="text-xs font-semibold text-[#B89047] dark:text-[#C59B27] hover:underline cursor-pointer focus:outline-none"
+            className="text-xs font-semibold text-[#9A7326] dark:text-[#C59B27] hover:underline cursor-pointer focus:outline-none"
           >
             Change
           </button>
         </div>
 
-        <div className="flex items-center space-x-3 text-sm font-medium text-[#18181B] dark:text-[#F0EBE3] py-1">
-          <MessageCircle className="w-4 h-4 text-[#B89047] dark:text-[#C59B27] stroke-[1.75] shrink-0" />
-          <span>WhatsApp</span>
+        <div className="divide-y divide-[#EDE6D4]/40 dark:divide-[#302E29]/60">
+          <div className="py-2.5 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[13px] text-[#6B6860] dark:text-[#B8B0A5]">WhatsApp</div>
+              <div className="text-[14px] font-medium text-[#18181B] dark:text-[#F0EBE3] mt-0.5">
+                {formatReadablePhone(
+                  parentProfile.whatsapp || parentProfile.phone,
+                  parentProfile.whatsappCountryIso || parentProfile.countryIso
+                ) || 'Not provided'}
+              </div>
+            </div>
+            {(parentProfile.preferredContact === 'WhatsApp' || parentProfile.preferredContact === 'Both' || !parentProfile.preferredContact) && (
+              <span className="shrink-0 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE]/60 dark:border-[#3A3835] text-[#9A7326] dark:text-[#C59B27]">
+                Preferred
+              </span>
+            )}
+          </div>
+
+          <div className="py-2.5 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[13px] text-[#6B6860] dark:text-[#B8B0A5]">Email</div>
+              <div className="text-[14px] font-medium text-[#18181B] dark:text-[#F0EBE3] mt-0.5 break-all">
+                {parentProfile.email || 'Not specified'}
+              </div>
+            </div>
+            {(parentProfile.preferredContact === 'Email' || parentProfile.preferredContact === 'Both') && (
+              <span className="shrink-0 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE]/60 dark:border-[#3A3835] text-[#9A7326] dark:text-[#C59B27]">
+                Preferred
+              </span>
+            )}
+          </div>
         </div>
 
-        <div className="flex items-center space-x-3 text-sm font-medium text-[#18181B] dark:text-[#F0EBE3] py-1">
-          <Mail className="w-4 h-4 text-[#B89047] dark:text-[#C59B27] stroke-[1.75] shrink-0" />
-          <span>Email</span>
-        </div>
-
-        <p className="text-xs italic text-[#6B7280] dark:text-[#B8B0A5] pt-1">
+        <p className="text-[12px] italic text-[#8B867D] dark:text-[#7A7570] pt-0.5">
           Important updates will be sent here.
         </p>
-      </div>
+      </section>
 
-      {/* Notification Preferences Card */}
-      <div className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-4 sm:p-5 shadow-2xs space-y-4">
-        <span className="text-[11px] font-semibold tracking-wider text-[#3F3F46] dark:text-[#B8B0A5] uppercase block">
-          Notification Preferences
-        </span>
+      {/* Restrained Hairline Divider */}
+      <div className="border-b border-[#EDE6D4] dark:border-[#302E29]" />
 
-        <div className="space-y-3.5 divide-y divide-[#EAE8E1]/30 dark:divide-[#302E29] text-xs text-[#18181B] dark:text-[#F0EBE3]">
-          {/* Sound Notification Preference */}
-          <div className="flex items-center justify-between pt-0.5">
-            <div className="flex flex-col text-left">
-              <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">Sound alerts</span>
-              <span className="text-[10px] text-[#6B7280] dark:text-[#B8B0A5]">Play a soft alert for new updates</span>
+      {/* 3. Notification Preferences */}
+      <section className="space-y-3">
+        <h3 className="text-[11px] font-semibold tracking-wider text-[#8B867D] dark:text-[#7A7570] uppercase">
+          NOTIFICATION PREFERENCES
+        </h3>
+
+        <div className="divide-y divide-[#EDE6D4]/40 dark:divide-[#302E29]/60">
+          {/* Sound alerts */}
+          <div className="py-3 flex items-center justify-between gap-3">
+            <div className="min-w-0 pr-2">
+              <div className="text-[13px] font-medium text-[#18181B] dark:text-[#F0EBE3]">Sound alerts</div>
+              <div className="text-[12px] text-[#6B6860] dark:text-[#B8B0A5] mt-0.5 leading-tight">
+                Play a soft alert for new updates
+              </div>
             </div>
             <button
               type="button"
@@ -1823,103 +1861,115 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 if (nextVal) {
                   soundUtility.playChime(true);
                 }
+                api.parent.updateNotificationPreferences({ soundEnabled: nextVal }).catch(() => {});
                 showSuccess('Sound Alerts Updated', `Sound notifications turned ${nextVal ? 'on' : 'off'}.`);
               }}
-              className={`px-3 py-1.5 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all cursor-pointer ${
+              className={`px-3 py-1 rounded-lg text-xs font-semibold tracking-wide transition-all cursor-pointer shrink-0 ${
                 isSoundOn
-                  ? 'bg-[#C59B27] text-white dark:text-[#1D1D1A]'
-                  : 'bg-[#FAF8F3] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] text-[#3F3F46] dark:text-[#B8B0A5] dark:hover:bg-[#2A2926]'
+                  ? 'bg-[#9A7326] dark:bg-[#C59B27] text-white dark:text-[#19191A]'
+                  : 'bg-[#FAF8F3] dark:bg-[#262520] border border-[#EDE6D4] dark:border-[#3A3835] text-[#6B6860] dark:text-[#B8B0A5] hover:bg-[#F4F1EA] dark:hover:bg-[#2A2926]'
               }`}
             >
               {isSoundOn ? 'On' : 'Off'}
             </button>
           </div>
 
-          {/* Appearance / Theme Preference */}
-          <div className="flex items-center justify-between pt-3.5">
-            <div className="flex flex-col text-left">
-              <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">Theme</span>
-              <span className="text-[10px] text-[#6B7280] dark:text-[#B8B0A5]">Switch between light and dark theme</span>
+          {/* Theme */}
+          <div className="py-3 flex items-center justify-between gap-3">
+            <div className="min-w-0 pr-2">
+              <div className="text-[13px] font-medium text-[#18181B] dark:text-[#F0EBE3]">Theme</div>
+              <div className="text-[12px] text-[#6B6860] dark:text-[#B8B0A5] mt-0.5 leading-tight">
+                Switch between light and dark
+              </div>
             </div>
-            <ThemeSwitcher
-              showLabel
-              className="dark:!bg-[#C59B27] dark:!text-[#1D1D1A] dark:!border-[#C59B27] dark:hover:!bg-[#B88C22]"
-            />
+            <div className="shrink-0">
+              <ThemeSwitcher
+                showLabel
+                surface="parent"
+                className="dark:!bg-[#262520] dark:!text-[#F0EBE3] dark:!border-[#3A3835] dark:hover:!bg-[#2A2926]"
+              />
+            </div>
           </div>
 
-          {/* Push Notification Preference */}
-          <div className="flex items-center justify-between pt-3.5">
-            <div className="flex flex-col text-left">
-              <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">Push notifications</span>
-              <span className="text-[10px] text-[#6B7280] dark:text-[#B8B0A5]">
-                {pushStatus === 'enabled' ? 'Receiving alerts on this device' : 'Receive updates on this device'}
-              </span>
+          {/* Push notifications */}
+          <div className="py-3 flex items-center justify-between gap-3">
+            <div className="min-w-0 pr-2">
+              <div className="text-[13px] font-medium text-[#18181B] dark:text-[#F0EBE3]">Push notifications</div>
+              <div className="text-[12px] text-[#6B6860] dark:text-[#B8B0A5] mt-0.5 leading-tight">
+                {pushStatus === 'enabled' ? 'Receiving updates on this device' : 'Receive updates on this device'}
+              </div>
               {pushStatus === 'needs_attention' && (
-                <span className="text-[10px] text-amber-600 dark:text-[#C59B27] mt-0.5">Needs attention</span>
+                <span className="text-[11px] text-amber-600 dark:text-[#C59B27] mt-0.5 block">Needs attention</span>
               )}
             </div>
-            {pushStatus === 'unsupported' ? (
-              <span className="text-[10px] font-semibold text-[#6B7280] dark:text-[#7A7570]">
-                Unavailable
-              </span>
-            ) : pushStatus === 'blocked' ? (
-              <span className="text-[10px] font-semibold text-red-500 dark:text-red-400">
-                Blocked
-              </span>
-            ) : pushStatus === 'enabled' ? (
-              <span className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-[#FAF6EB] dark:bg-[#C59B27] text-[#9A7326] dark:text-[#1D1D1A] border border-[#E5D5AE] dark:border-[#C59B27] tracking-wider uppercase">
-                On
-              </span>
-            ) : pushStatus === 'needs_attention' ? (
-              <button
-                type="button"
-                onClick={async () => {
-                  const res = await subscribeUserToPush();
-                  if (res.success) {
-                    const details = await getPushNotificationStatus();
-                    setPushStatus(details.status);
-                    if (details.status === 'enabled') {
-                      showSuccess('Push Active', 'You will now receive alerts directly on this device.');
+            <div className="shrink-0">
+              {pushStatus === 'unsupported' ? (
+                <span className="text-xs font-medium text-[#8B867D] dark:text-[#7A7570]">
+                  Unavailable
+                </span>
+              ) : pushStatus === 'blocked' ? (
+                <span className="text-xs font-semibold text-red-500 dark:text-red-400">
+                  Blocked
+                </span>
+              ) : pushStatus === 'enabled' ? (
+                <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-[#FAF6EB] dark:bg-[#262520] text-[#9A7326] dark:text-[#C59B27] border border-[#E5D5AE] dark:border-[#3A3835]">
+                  On
+                </span>
+              ) : pushStatus === 'needs_attention' ? (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const res = await subscribeUserToPush();
+                    if (res.success) {
+                      await api.parent.updateNotificationPreferences({ pushEnabled: true }).catch(() => {});
+                      const details = await getPushNotificationStatus();
+                      setPushStatus(details.status);
+                      if (details.status === 'enabled') {
+                        showSuccess('Push Active', 'You will now receive alerts directly on this device.');
+                      } else {
+                        showInfo('Setup Alert', 'Push notification setup could not be confirmed on the server.');
+                      }
                     } else {
-                      showInfo('Setup Alert', 'Push notification setup could not be confirmed on the server.');
+                      showInfo('Setup Alert', res.error || 'Could not connect push. Please try again.');
                     }
-                  } else {
-                    showInfo('Setup Alert', res.error || 'Could not connect push. Please try again.');
-                  }
-                }}
-                className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-amber-50 dark:bg-[#262520] border border-amber-300 dark:border-[#3A3835] text-amber-700 dark:text-[#B8B0A5] hover:bg-amber-100 dark:hover:bg-[#2A2926] transition-all cursor-pointer"
-              >
-                Try again
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={async () => {
-                  const res = await subscribeUserToPush();
-                  if (res.success) {
-                    const details = await getPushNotificationStatus();
-                    setPushStatus(details.status);
-                    if (details.status === 'enabled') {
-                      showSuccess('Push Active', 'You will now receive alerts directly on this device.');
+                  }}
+                  className="px-3 py-1 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-[#262520] border border-amber-300 dark:border-[#3A3835] text-amber-700 dark:text-[#B8B0A5] hover:bg-amber-100 dark:hover:bg-[#2A2926] transition-all cursor-pointer"
+                >
+                  Try again
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const res = await subscribeUserToPush();
+                    if (res.success) {
+                      await api.parent.updateNotificationPreferences({ pushEnabled: true }).catch(() => {});
+                      const details = await getPushNotificationStatus();
+                      setPushStatus(details.status);
+                      if (details.status === 'enabled') {
+                        showSuccess('Push Active', 'You will now receive alerts directly on this device.');
+                      } else {
+                        showInfo('Setup Alert', 'Push notification setup could not be confirmed on the server.');
+                      }
                     } else {
-                      showInfo('Setup Alert', 'Push notification setup could not be confirmed on the server.');
+                      showInfo('Setup Alert', res.error || 'Push notifications are not available yet.');
                     }
-                  } else {
-                    showInfo('Setup Alert', res.error || 'Push notifications are not available yet.');
-                  }
-                }}
-                className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-[#FAF8F3] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] text-[#3F3F46] dark:text-[#B8B0A5] hover:border-[#C59B27] hover:text-[#9A7326] dark:hover:bg-[#2A2926] dark:hover:text-[#F0EBE3] transition-all cursor-pointer"
-              >
-                Enable
-              </button>
-            )}
+                  }}
+                  className="px-3 py-1 rounded-lg text-xs font-semibold bg-[#9A7326] dark:bg-[#C59B27] text-white dark:text-[#19191A] hover:opacity-95 transition-opacity cursor-pointer"
+                >
+                  Enable
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* Email Notification Preference */}
-          <div className="flex items-center justify-between pt-3.5">
-            <div className="flex flex-col text-left">
-              <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">Email updates</span>
-              <span className="text-[10px] text-[#6B7280] dark:text-[#B8B0A5]">Weekly newsletters and care reminders</span>
+          {/* Email updates */}
+          <div className="py-3 flex items-center justify-between gap-3">
+            <div className="min-w-0 pr-2">
+              <div className="text-[13px] font-medium text-[#18181B] dark:text-[#F0EBE3]">Email updates</div>
+              <div className="text-[12px] text-[#6B6860] dark:text-[#B8B0A5] mt-0.5 leading-tight">
+                Weekly newsletters and care reminders
+              </div>
             </div>
             <button
               type="button"
@@ -1927,336 +1977,379 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 const storedValue = localStorage.getItem('koinonia_parent_email_notifications') === 'true';
                 const nextVal = !storedValue;
                 localStorage.setItem('koinonia_parent_email_notifications', nextVal ? 'true' : 'false');
+                api.parent.updateNotificationPreferences({ emailEnabled: nextVal }).catch(() => {});
                 showSuccess('Email Settings Saved', `Email updates turned ${nextVal ? 'on' : 'off'}.`);
-                // Simple force update for React state
                 setNotifications([...notifications]);
               }}
-              className={`px-3 py-1.5 rounded-xl text-[10px] font-bold tracking-wider uppercase transition-all cursor-pointer ${
+              className={`px-3 py-1 rounded-lg text-xs font-semibold tracking-wide transition-all cursor-pointer shrink-0 ${
                 localStorage.getItem('koinonia_parent_email_notifications') === 'true'
-                  ? 'bg-[#C59B27] text-white dark:text-[#1D1D1A]'
-                  : 'bg-[#FAF8F3] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] text-[#3F3F46] dark:text-[#B8B0A5] dark:hover:bg-[#2A2926]'
+                  ? 'bg-[#9A7326] dark:bg-[#C59B27] text-white dark:text-[#19191A]'
+                  : 'bg-[#FAF8F3] dark:bg-[#262520] border border-[#EDE6D4] dark:border-[#3A3835] text-[#6B6860] dark:text-[#B8B0A5] hover:bg-[#F4F1EA] dark:hover:bg-[#2A2926]'
               }`}
             >
               {localStorage.getItem('koinonia_parent_email_notifications') === 'true' ? 'On' : 'Off'}
             </button>
           </div>
 
-          {/* WhatsApp Notification Preference */}
-          <div className="flex items-center justify-between pt-3.5 border-t border-[#FAF8F4] dark:border-[#302E29]">
-            <div className="flex flex-col text-left">
-              <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">WhatsApp updates</span>
-              <span className="text-[10px] text-[#6B7280] dark:text-[#B8B0A5]">
+          {/* WhatsApp updates */}
+          <div className="py-3 flex items-center justify-between gap-3">
+            <div className="min-w-0 pr-2">
+              <div className="text-[13px] font-medium text-[#18181B] dark:text-[#F0EBE3]">WhatsApp updates</div>
+              <div className="text-[12px] text-[#6B6860] dark:text-[#B8B0A5] mt-0.5 leading-tight">
                 {whatsappStatus === 'opted_in'
-                  ? (whatsappNumber ? `Active for ${whatsappNumber}` : 'Active for account')
+                  ? (whatsappNumber ? `Active for ${formatReadablePhone(whatsappNumber, parentProfile.whatsappCountryIso, false)}` : 'Active for account')
                   : 'Important registration and event updates'}
-              </span>
+              </div>
             </div>
-            {whatsappStatus === 'opted_in' ? (
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-1 rounded-xl text-[10px] font-bold tracking-wider uppercase bg-[#C59B27] text-white dark:text-[#1D1D1A]">
-                  On
-                </span>
-                <button
-                  type="button"
-                  disabled={waConsentLoading}
-                  onClick={handleOptOutWhatsApp}
-                  className="px-2.5 py-1 rounded-xl text-[10px] font-semibold text-[#71717A] dark:text-[#B8B0A5] hover:text-red-600 hover:bg-red-50 dark:bg-[#262520] dark:hover:bg-[#2A2926] dark:hover:text-red-400 border border-zinc-200 dark:border-[#3A3835] transition-all cursor-pointer"
-                >
-                  Turn off
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                {whatsappStatus === 'opted_out' && (
-                  <span className="px-2.5 py-1 rounded-xl text-[10px] font-bold tracking-wider uppercase bg-zinc-200 dark:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] border border-transparent dark:border-[#3A3835]">
-                    Off
+            <div className="shrink-0 flex items-center gap-2">
+              {whatsappStatus === 'opted_in' ? (
+                <>
+                  <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#FAF6EB] dark:bg-[#262520] text-[#9A7326] dark:text-[#C59B27] border border-[#E5D5AE] dark:border-[#3A3835]">
+                    On
                   </span>
-                )}
-                <button
-                  type="button"
-                  disabled={waConsentLoading}
-                  onClick={() => {
-                    setWaModalPhone(whatsappNumber || parentProfile.phone || '');
-                    setShowWaOptInModal(true);
-                  }}
-                  className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-[#FAF8F3] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] text-[#3F3F46] dark:text-[#B8B0A5] hover:border-[#C59B27] hover:text-[#9A7326] dark:hover:bg-[#2A2926] dark:hover:text-[#F0EBE3] tracking-wider uppercase transition-all cursor-pointer"
-                >
-                  {whatsappStatus === 'opted_out' ? 'Turn on' : 'Enable'}
-                </button>
-              </div>
-            )}
+                  <button
+                    type="button"
+                    disabled={waConsentLoading}
+                    onClick={handleOptOutWhatsApp}
+                    className="px-2 py-1 rounded-lg text-xs font-medium text-[#8B867D] dark:text-[#B8B0A5] hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors cursor-pointer"
+                  >
+                    Turn off
+                  </button>
+                </>
+              ) : (
+                <>
+                  {whatsappStatus === 'opted_out' && (
+                    <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#FAF8F3] dark:bg-[#262520] text-[#8B867D] dark:text-[#7A7570] border border-[#EDE6D4] dark:border-[#3A3835]">
+                      Off
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    disabled={waConsentLoading}
+                    onClick={() => {
+                      setWaModalPhone(whatsappNumber || parentProfile.phone || '');
+                      setShowWaOptInModal(true);
+                    }}
+                    className="px-3 py-1 rounded-lg text-xs font-semibold bg-[#9A7326] dark:bg-[#C59B27] text-white dark:text-[#19191A] hover:opacity-95 transition-opacity cursor-pointer"
+                  >
+                    {whatsappStatus === 'opted_out' ? 'Turn on' : 'Enable'}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* 4. Parent details card */}
-      <div className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] p-4 sm:p-5 shadow-2xs space-y-4">
+      {/* Restrained Hairline Divider */}
+      <div className="border-b border-[#EDE6D4] dark:border-[#302E29]" />
+
+      {/* 4. Personal Details */}
+      <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-[11px] font-semibold tracking-wider text-[#3F3F46] dark:text-[#B8B0A5] uppercase">
-            PARENT DETAILS
-          </span>
+          <h3 className="text-[11px] font-semibold tracking-wider text-[#8B867D] dark:text-[#7A7570] uppercase">
+            PERSONAL DETAILS
+          </h3>
           <button
             type="button"
             onClick={() => onNavigate('/parent/profile/edit')}
-            className="text-xs font-semibold text-[#B89047] dark:text-[#C59B27] hover:underline cursor-pointer focus:outline-none"
+            className="text-xs font-semibold text-[#9A7326] dark:text-[#C59B27] hover:underline cursor-pointer focus:outline-none"
           >
             Edit details
           </button>
         </div>
 
-        <div>
-          <div className="text-xs text-[#6B7280] dark:text-[#B8B0A5]">Full name</div>
-          <div className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5">
-            {parentProfile.fullName || 'Not provided'}
+        <div className="divide-y divide-[#EDE6D4]/40 dark:divide-[#302E29]/60">
+          <div className="py-2.5 flex items-start justify-between gap-4">
+            <span className="text-[13px] text-[#6B6860] dark:text-[#B8B0A5] shrink-0">Full name</span>
+            <span className="text-[14px] font-medium text-[#18181B] dark:text-[#F0EBE3] text-right break-words font-sans">
+              {parentProfile.fullName || 'Not provided'}
+            </span>
+          </div>
+
+          <div className="py-2.5 flex items-start justify-between gap-4">
+            <span className="text-[13px] text-[#6B6860] dark:text-[#B8B0A5] shrink-0">Phone</span>
+            <span className="text-[14px] font-medium text-[#18181B] dark:text-[#F0EBE3] text-right break-words font-sans">
+              {formatReadablePhone(parentProfile.phone, parentProfile.countryIso) || parentProfile.phone || 'Not provided'}
+            </span>
+          </div>
+
+          <div className="py-2.5 flex items-start justify-between gap-4">
+            <span className="text-[13px] text-[#6B6860] dark:text-[#B8B0A5] shrink-0">WhatsApp</span>
+            <span className="text-[14px] font-medium text-[#18181B] dark:text-[#F0EBE3] text-right break-words font-sans">
+              {formatReadablePhone(
+                parentProfile.whatsapp || parentProfile.phone,
+                parentProfile.whatsappCountryIso || parentProfile.countryIso
+              ) || 'Not provided'}
+            </span>
+          </div>
+
+          <div className="py-2.5 flex items-start justify-between gap-4">
+            <span className="text-[13px] text-[#6B6860] dark:text-[#B8B0A5] shrink-0">Home address</span>
+            <span className="text-[14px] font-medium text-[#18181B] dark:text-[#F0EBE3] text-right break-words whitespace-pre-line leading-relaxed font-sans">
+              {parentProfile.homeAddress || 'Not provided'}
+            </span>
+          </div>
+
+          <div className="py-2.5 flex items-start justify-between gap-4">
+            <span className="text-[13px] text-[#6B6860] dark:text-[#B8B0A5] shrink-0">Country</span>
+            <span className="text-[14px] font-medium text-[#18181B] dark:text-[#F0EBE3] text-right break-words font-sans">
+              {formatReadableCountry(parentProfile.country, parentProfile.countryIso)}
+            </span>
+          </div>
+
+          <div className="py-2.5 flex items-start justify-between gap-4">
+            <span className="text-[13px] text-[#6B6860] dark:text-[#B8B0A5] shrink-0">State / Region</span>
+            <span className="text-[14px] font-medium text-[#18181B] dark:text-[#F0EBE3] text-right break-words font-sans">
+              {parentProfile.stateRegion || 'Not provided'}
+            </span>
+          </div>
+
+          <div className="py-2.5 flex items-start justify-between gap-4">
+            <span className="text-[13px] text-[#6B6860] dark:text-[#B8B0A5] shrink-0">City</span>
+            <span className="text-[14px] font-medium text-[#18181B] dark:text-[#F0EBE3] text-right break-words font-sans">
+              {parentProfile.city || 'Not provided'}
+            </span>
+          </div>
+
+          <div className="py-2.5 flex items-start justify-between gap-4">
+            <span className="text-[13px] text-[#6B6860] dark:text-[#B8B0A5] shrink-0">Ministry involvement</span>
+            <span className="text-[14px] font-medium text-[#18181B] dark:text-[#F0EBE3] text-right break-words font-sans">
+              {parentProfile.isWorker ? (parentProfile.department ? `Yes (${parentProfile.department})` : 'Yes') : 'No'}
+            </span>
           </div>
         </div>
+      </section>
 
-        <div>
-          <div className="text-xs text-[#6B7280] dark:text-[#B8B0A5]">Phone number</div>
-          <div className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5">
-            {parentProfile.phone || 'Not provided'}
-          </div>
-        </div>
+      {/* Restrained Hairline Divider */}
+      <div className="border-b border-[#EDE6D4] dark:border-[#302E29]" />
 
-        <div>
-          <div className="text-xs text-[#6B7280] dark:text-[#B8B0A5]">WhatsApp number</div>
-          <div className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5">
-            {parentProfile.whatsapp || parentProfile.phone || 'Not provided'}
-          </div>
-        </div>
+      {/* 5. Family & Ministry */}
+      <section className="space-y-2">
+        <h3 className="text-[11px] font-semibold tracking-wider text-[#8B867D] dark:text-[#7A7570] uppercase">
+          FAMILY & MINISTRY
+        </h3>
 
-        <div>
-          <div className="text-xs text-[#6B7280] dark:text-[#B8B0A5]">Home address</div>
-          <div className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5 leading-relaxed whitespace-pre-line">
-            {parentProfile.homeAddress || 'Not provided'}
-          </div>
-        </div>
-
-        <div>
-          <div className="text-xs text-[#6B7280] dark:text-[#B8B0A5]">Country</div>
-          <div className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5">
-            {parentProfile.country || 'Not provided'}
-          </div>
-        </div>
-
-        <div>
-          <div className="text-xs text-[#6B7280] dark:text-[#B8B0A5]">State / Region</div>
-          <div className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5">
-            {parentProfile.stateRegion || 'Not provided'}
-          </div>
-        </div>
-
-        <div>
-          <div className="text-xs text-[#6B7280] dark:text-[#B8B0A5]">City</div>
-          <div className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5">
-            {parentProfile.city || 'Not provided'}
-          </div>
-        </div>
-
-        <div className="pt-1">
-          <div className="text-xs text-[#6B7280] dark:text-[#B8B0A5] mb-2">Ministry involvement</div>
-          <div className="bg-[#FAF8F4] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3.5 space-y-2.5">
-            <div className="flex items-center justify-between text-xs sm:text-sm">
-              <span className="text-[#3F3F46] dark:text-[#B8B0A5]">Koinonia worker</span>
-              <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">{parentProfile.isWorker ? 'Yes' : 'No'}</span>
-            </div>
-            {parentProfile.isWorker && (
-              <div className="flex items-center justify-between text-xs sm:text-sm">
-                <span className="text-[#3F3F46] dark:text-[#B8B0A5]">Department</span>
-                <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">{parentProfile.department || 'Children Ministry'}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* 5. Quick links card */}
-      <div className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] shadow-2xs divide-y divide-[#FAF8F4] dark:divide-[#302E29] overflow-hidden">
-        <button
-          type="button"
-          onClick={() => handleTabChange('Children')}
-          className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] dark:hover:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none text-left"
-        >
-          <div className="flex items-center space-x-3.5">
-            <Smile className="w-4 h-4 text-[#6B7280] dark:text-[#B8B0A5] stroke-[1.75]" />
-            <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3]">My children</span>
-          </div>
-          <ChevronRight className="w-4 h-4 text-[#D9D6CE] dark:text-[#7A7570]" />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleTabChange('Passes')}
-          className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] dark:hover:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none text-left"
-        >
-          <div className="flex items-center space-x-3.5">
-            <Ticket className="w-4 h-4 text-[#6B7280] dark:text-[#B8B0A5] stroke-[1.75]" />
-            <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3]">Passes</span>
-          </div>
-          <ChevronRight className="w-4 h-4 text-[#D9D6CE] dark:text-[#7A7570]" />
-        </button>
-
-        {!volunteerProfile ? (
+        <div className="divide-y divide-[#EDE6D4]/40 dark:divide-[#302E29]/60">
+          {/* My children */}
           <button
             type="button"
-            onClick={() => onNavigate('/parent/volunteer-request')}
-            className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] dark:hover:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none text-left animate-fade-in"
+            onClick={() => handleTabChange('Children')}
+            className="w-full py-3.5 flex items-center justify-between hover:bg-[#FDFCF8] dark:hover:bg-[#262520] px-2 -mx-2 rounded-lg transition-colors cursor-pointer focus:outline-none text-left"
           >
             <div className="flex items-center space-x-3.5">
-              <Users className="w-4 h-4 text-[#C59B27] stroke-[1.75]" />
-              <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3]">Volunteer with Children & Teens</span>
+              <Users className="w-4 h-4 text-[#8B867D] dark:text-[#B8B0A5] stroke-[1.75]" />
+              <span className="text-[14px] font-medium text-[#18181B] dark:text-[#F0EBE3] font-sans">My children</span>
             </div>
-            <ChevronRight className="w-4 h-4 text-[#D9D6CE] dark:text-[#7A7570]" />
+            <div className="flex items-center space-x-2">
+              {childrenList.length > 0 && (
+                <span className="text-xs text-[#8B867D] dark:text-[#7A7570] font-medium">
+                  {childrenList.length}
+                </span>
+              )}
+              <ChevronRight className="w-4 h-4 text-[#8B867D] dark:text-[#7A7570]" />
+            </div>
           </button>
-        ) : (
+
+          {/* Passes */}
           <button
             type="button"
-            disabled={isSwitchingExperience}
-            onClick={() => {
-              if (onSwitchExperience) {
-                onSwitchExperience('volunteer');
-              } else {
-                onNavigate('/volunteer/event');
-              }
-            }}
-            className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] dark:hover:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none text-left animate-fade-in disabled:opacity-50"
+            onClick={() => handleTabChange('Passes')}
+            className="w-full py-3.5 flex items-center justify-between hover:bg-[#FDFCF8] dark:hover:bg-[#262520] px-2 -mx-2 rounded-lg transition-colors cursor-pointer focus:outline-none text-left"
           >
             <div className="flex items-center space-x-3.5">
-              <ShieldCheck className="w-4 h-4 text-[#C59B27] stroke-[1.75]" />
-              <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3]">
-                {isSwitchingExperience ? 'Switching…' : 'Switch to Volunteer Access'}
+              <Ticket className="w-4 h-4 text-[#8B867D] dark:text-[#B8B0A5] stroke-[1.75]" />
+              <span className="text-[14px] font-medium text-[#18181B] dark:text-[#F0EBE3] font-sans">Passes</span>
+            </div>
+            <ChevronRight className="w-4 h-4 text-[#8B867D] dark:text-[#7A7570]" />
+          </button>
+
+          {/* Volunteer with Children & Teens or Switch */}
+          {!volunteerProfile ? (
+            <button
+              type="button"
+              onClick={() => onNavigate('/parent/volunteer-request')}
+              className="w-full py-3.5 flex items-center justify-between hover:bg-[#FDFCF8] dark:hover:bg-[#262520] px-2 -mx-2 rounded-lg transition-colors cursor-pointer focus:outline-none text-left"
+            >
+              <div className="flex items-center space-x-3.5">
+                <ShieldCheck className="w-4 h-4 text-[#9A7326] dark:text-[#C59B27] stroke-[1.75]" />
+                <span className="text-[14px] font-medium text-[#18181B] dark:text-[#F0EBE3] font-sans">
+                  Volunteer with Children & Teens
+                </span>
+              </div>
+              <ChevronRight className="w-4 h-4 text-[#8B867D] dark:text-[#7A7570]" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={isSwitchingExperience}
+              onClick={() => {
+                if (onSwitchExperience) {
+                  onSwitchExperience('volunteer');
+                } else {
+                  onNavigate('/volunteer/event');
+                }
+              }}
+              className="w-full py-3.5 flex items-center justify-between hover:bg-[#FDFCF8] dark:hover:bg-[#262520] px-2 -mx-2 rounded-lg transition-colors cursor-pointer focus:outline-none text-left disabled:opacity-50"
+            >
+              <div className="flex items-center space-x-3.5">
+                <ShieldCheck className="w-4 h-4 text-[#9A7326] dark:text-[#C59B27] stroke-[1.75]" />
+                <span className="text-[14px] font-medium text-[#18181B] dark:text-[#F0EBE3] font-sans">
+                  {isSwitchingExperience ? 'Switching to Volunteer…' : 'Switch to Volunteer Access'}
+                </span>
+              </div>
+              {isSwitchingExperience ? (
+                <RefreshCw className="w-4 h-4 text-[#9A7326] dark:text-[#C59B27] animate-spin" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-[#8B867D] dark:text-[#7A7570]" />
+              )}
+            </button>
+          )}
+        </div>
+      </section>
+
+      {/* Restrained Hairline Divider */}
+      <div className="border-b border-[#EDE6D4] dark:border-[#302E29]" />
+
+      {/* 6. Help & Safety */}
+      <section className="space-y-2">
+        <h3 className="text-[11px] font-semibold tracking-wider text-[#8B867D] dark:text-[#7A7570] uppercase">
+          HELP & SAFETY
+        </h3>
+
+        <div className="divide-y divide-[#EDE6D4]/40 dark:divide-[#302E29]/60">
+          <button
+            type="button"
+            data-component-version="parent-profile-help-row-v1"
+            onClick={() => setShowHelpDrawer(true)}
+            className="w-full py-3.5 flex items-center justify-between hover:bg-[#FDFCF8] dark:hover:bg-[#262520] px-2 -mx-2 rounded-lg transition-colors cursor-pointer focus:outline-none text-left"
+          >
+            <div className="flex items-center space-x-3.5">
+              <HelpCircle className="w-4 h-4 text-[#8B867D] dark:text-[#B8B0A5] stroke-[1.75]" />
+              <span className="text-[14px] font-medium text-[#18181B] dark:text-[#F0EBE3] font-sans">
+                Help and questions
               </span>
             </div>
-            {isSwitchingExperience ? (
-              <RefreshCw className="w-4 h-4 text-[#C59B27] animate-spin" />
-            ) : (
-              <ChevronRight className="w-4 h-4 text-[#D9D6CE] dark:text-[#7A7570]" />
-            )}
+            <ChevronRight className="w-4 h-4 text-[#8B867D] dark:text-[#7A7570]" />
           </button>
-        )}
 
-        <button
-          type="button"
-          data-component-version="parent-profile-help-row-v1"
-          onClick={() => {
-            setShowHelpDrawer(true);
-          }}
-          className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] dark:hover:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none text-left"
-        >
-          <div className="flex items-center space-x-3.5">
-            <HelpCircle className="w-4 h-4 text-[#6B7280] dark:text-[#B8B0A5] stroke-[1.75]" />
-            <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3]">Help and questions</span>
-          </div>
-          <ChevronRight className="w-4 h-4 text-[#D9D6CE] dark:text-[#7A7570]" />
-        </button>
-
-        <button
-          type="button"
-          data-component-version="parent-profile-safety-row-v1"
-          onClick={() => {
-            setShowSafetyDrawer(true);
-          }}
-          className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] dark:hover:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none text-left"
-        >
-          <div className="flex items-center space-x-3.5">
-            <Shield className="w-4 h-4 text-[#6B7280] dark:text-[#B8B0A5] stroke-[1.75]" />
-            <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3]">Safety information</span>
-          </div>
-          <ChevronRight className="w-4 h-4 text-[#D9D6CE] dark:text-[#7A7570]" />
-        </button>
-      </div>
-
-      {/* 5b. Notification settings */}
-      <SharedNotificationSettings
-        role="parent"
-        showSuccess={showSuccess}
-        showError={showError}
-      />
-
-      {/* 5c. Device Security settings */}
-      <DeviceSecuritySettings
-        showSuccess={showSuccess}
-        showError={showError}
-      />
-
-      {/* 6. Account actions card */}
-      <div className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1] dark:border-[#302E29] shadow-2xs divide-y divide-[#FAF8F4] dark:divide-[#302E29] overflow-hidden">
-        {isAppInstalled() ? (
-          <div className="w-full p-4 flex items-center justify-between text-left">
-            <div className="flex items-center space-x-3.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-[#C59B27] stroke-[1.75]" />
-              <div>
-                <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3]">App installed</span>
-                <p className="text-[11px] text-zinc-500 dark:text-[#B8B0A5] leading-tight">Koinonia Children & Teens is already installed on this device.</p>
-              </div>
-            </div>
-          </div>
-        ) : (
           <button
             type="button"
-            onClick={async () => {
-              const outcome = await promptPwaInstall();
-              if (outcome === 'accepted') {
-                showSuccess('App installed', 'Koinonia Children & Teens has been added to your device.');
-              } else if (outcome === 'manual_ios') {
-                setPwaGuidePlatform('ios');
-              } else if (outcome === 'manual_browser') {
-                setPwaGuidePlatform('browser');
-              } else if (outcome === 'already_installed') {
-                showSuccess('Already installed', 'Koinonia Children & Teens is already installed on this device.');
-              }
-            }}
-            className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] dark:hover:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none text-left"
+            data-component-version="parent-profile-safety-row-v1"
+            onClick={() => setShowSafetyDrawer(true)}
+            className="w-full py-3.5 flex items-center justify-between hover:bg-[#FDFCF8] dark:hover:bg-[#262520] px-2 -mx-2 rounded-lg transition-colors cursor-pointer focus:outline-none text-left"
           >
             <div className="flex items-center space-x-3.5">
-              <Download className="w-4 h-4 text-[#C59B27] stroke-[1.75]" />
-              <div>
-                <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3]">Install app</span>
-                <p className="text-[11px] text-zinc-500 dark:text-[#B8B0A5] leading-tight">Add Koinonia Children & Teens to this device.</p>
+              <Shield className="w-4 h-4 text-[#8B867D] dark:text-[#B8B0A5] stroke-[1.75]" />
+              <span className="text-[14px] font-medium text-[#18181B] dark:text-[#F0EBE3] font-sans">
+                Safety information
+              </span>
+            </div>
+            <ChevronRight className="w-4 h-4 text-[#8B867D] dark:text-[#7A7570]" />
+          </button>
+        </div>
+      </section>
+
+      {/* Restrained Hairline Divider */}
+      <div className="border-b border-[#EDE6D4] dark:border-[#302E29]" />
+
+      {/* 7. Security & Account */}
+      <section className="space-y-4">
+        <h3 className="text-[11px] font-semibold tracking-wider text-[#8B867D] dark:text-[#7A7570] uppercase">
+          SECURITY & ACCOUNT
+        </h3>
+
+        {/* Device Security Settings embedded */}
+        <DeviceSecuritySettings
+          showSuccess={showSuccess}
+          showError={showError}
+        />
+
+        <div className="divide-y divide-[#EDE6D4]/40 dark:divide-[#302E29]/60">
+          {/* PWA App Install */}
+          {isAppInstalled() ? (
+            <div className="py-3.5 flex items-center justify-between px-2 -mx-2 text-left">
+              <div className="flex items-center space-x-3.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-[#C59B27] stroke-[1.75]" />
+                <div>
+                  <span className="text-[14px] font-medium text-[#18181B] dark:text-[#F0EBE3] font-sans">App installed</span>
+                  <p className="text-[11px] text-[#6B6860] dark:text-[#B8B0A5] leading-tight font-sans">
+                    Koinonia Children & Teens is installed on this device.
+                  </p>
+                </div>
               </div>
             </div>
-            <ChevronRight className="w-4 h-4 text-[#D9D6CE] dark:text-[#7A7570]" />
+          ) : (
+            <button
+              type="button"
+              onClick={async () => {
+                const outcome = await promptPwaInstall();
+                if (outcome === 'accepted') {
+                  showSuccess('App installed', 'Koinonia Children & Teens has been added to your device.');
+                } else if (outcome === 'manual_ios') {
+                  setPwaGuidePlatform('ios');
+                } else if (outcome === 'manual_browser') {
+                  setPwaGuidePlatform('browser');
+                } else if (outcome === 'already_installed') {
+                  showSuccess('Already installed', 'Koinonia Children & Teens is already installed on this device.');
+                }
+              }}
+              className="w-full py-3.5 flex items-center justify-between hover:bg-[#FDFCF8] dark:hover:bg-[#262520] px-2 -mx-2 rounded-lg transition-colors cursor-pointer focus:outline-none text-left"
+            >
+              <div className="flex items-center space-x-3.5">
+                <Download className="w-4 h-4 text-[#9A7326] dark:text-[#C59B27] stroke-[1.75]" />
+                <div>
+                  <span className="text-[14px] font-medium text-[#18181B] dark:text-[#F0EBE3] font-sans">Install app</span>
+                  <p className="text-[11px] text-[#6B6860] dark:text-[#B8B0A5] leading-tight font-sans">
+                    Add Koinonia Children & Teens to this device.
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-[#8B867D] dark:text-[#7A7570]" />
+            </button>
+          )}
+
+          {/* Change Password */}
+          <button
+            type="button"
+            onClick={() => onNavigate('/parent/new-password')}
+            className="w-full py-3.5 flex items-center justify-between hover:bg-[#FDFCF8] dark:hover:bg-[#262520] px-2 -mx-2 rounded-lg transition-colors cursor-pointer focus:outline-none text-left"
+          >
+            <div className="flex items-center space-x-3.5">
+              <Lock className="w-4 h-4 text-[#8B867D] dark:text-[#B8B0A5] stroke-[1.75]" />
+              <span className="text-[14px] font-medium text-[#18181B] dark:text-[#F0EBE3] font-sans">Change password</span>
+            </div>
+            <ChevronRight className="w-4 h-4 text-[#8B867D] dark:text-[#7A7570]" />
           </button>
-        )}
 
-        <button
-          type="button"
-          onClick={() => onNavigate('/parent/new-password')}
-          className="w-full p-4 flex items-center justify-between hover:bg-[#FAF8F4] dark:hover:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none text-left"
-        >
-          <div className="flex items-center space-x-3.5">
-            <Lock className="w-4 h-4 text-[#6B7280] dark:text-[#B8B0A5] stroke-[1.75]" />
-            <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3]">Change password</span>
-          </div>
-          <ChevronRight className="w-4 h-4 text-[#D9D6CE] dark:text-[#7A7570]" />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setUnlockedPassReferences({});
-            try {
-              if (typeof window !== 'undefined' && window.sessionStorage) {
-                Object.keys(sessionStorage).forEach((key) => {
-                  if (key.startsWith('koinonia_pass_unlocked_')) {
-                    sessionStorage.removeItem(key);
-                  }
-                });
+          {/* Sign Out */}
+          <button
+            type="button"
+            onClick={() => {
+              setUnlockedPassReferences({});
+              try {
+                if (typeof window !== 'undefined' && window.sessionStorage) {
+                  Object.keys(sessionStorage).forEach((key) => {
+                    if (key.startsWith('koinonia_pass_unlocked_')) {
+                      sessionStorage.removeItem(key);
+                    }
+                  });
+                }
+              } catch {}
+              api.request('/api/auth/sign-out', { method: 'POST' }).catch(() => {});
+              if (onSignOut) {
+                onSignOut();
+              } else {
+                onNavigate('/');
               }
-            } catch {}
-            api.request('/api/auth/sign-out', { method: 'POST' }).catch(() => {});
-            if (onSignOut) {
-              onSignOut();
-            } else {
-              onNavigate('/');
-            }
-          }}
-          className="w-full p-4 flex items-center space-x-3.5 hover:bg-[#FEF2F2]/50 dark:hover:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none text-left"
-        >
-          <LogOut className="w-4 h-4 text-[#C53030] dark:text-[#E05252] stroke-[1.75]" />
-          <span className="text-sm font-medium text-[#C53030] dark:text-[#E05252]">Sign out</span>
-        </button>
-      </div>
+            }}
+            className="w-full py-3.5 flex items-center space-x-3.5 hover:bg-red-50/50 dark:hover:bg-red-950/20 px-2 -mx-2 rounded-lg transition-colors cursor-pointer focus:outline-none text-left"
+          >
+            <LogOut className="w-4 h-4 text-[#C53030] dark:text-[#E05252] stroke-[1.75]" />
+            <span className="text-[14px] font-medium text-[#C53030] dark:text-[#E05252] font-sans">Sign out</span>
+          </button>
+        </div>
+      </section>
     </div>
   );
 
@@ -2491,40 +2584,41 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       {/* Help and questions Drawer Bottom Sheet */}
       {showHelpDrawer && (
         <div 
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end animate-fade-in"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end sm:justify-center items-center p-0 sm:p-4 animate-fade-in"
           data-view-version="parent-help-v1-brand"
           onClick={() => setShowHelpDrawer(false)}
         >
           <div 
-            className="bg-[#FAF8F3] dark:bg-[#1D1D1A] rounded-t-[32px] max-h-[85%] overflow-hidden flex flex-col border-t border-[#E5D5AE] dark:border-[#302E29] shadow-2xl animate-in slide-in-from-bottom duration-300"
+            className="w-full sm:w-[calc(100%-32px)] sm:max-w-[520px] max-h-[86dvh] sm:max-h-[min(760px,calc(100dvh-64px))] bg-[#FDFCF8] dark:bg-[#1D1D1A] rounded-t-[28px] sm:rounded-2xl flex flex-col border-t sm:border border-[#EDE6D4] dark:border-[#302E29] shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-200"
             data-component-version="parent-profile-info-sheet-v1"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="px-5 py-4.5 border-b border-[#E5D5AE]/40 dark:border-[#302E29] flex items-center justify-between shrink-0">
-              <div className="flex items-center space-x-3.5">
-                <div className="p-2.5 bg-[#FAF6EB] dark:bg-[#262520] rounded-2xl border border-[#E5D5AE]/60 dark:border-[#3A3835] text-[#C59B27]">
+            <div className="px-5 py-3.5 sm:py-4 border-b border-[#EDE6D4] dark:border-[#302E29] flex items-center justify-between shrink-0">
+              <div className="flex items-center space-x-3 min-w-0">
+                <div className="p-2 bg-[#FAF6EB] dark:bg-[#262520] rounded-xl border border-[#EDE6D4] dark:border-[#302E29] text-[#9A7326] dark:text-[#C59B27] shrink-0">
                   <HelpCircle className="w-5 h-5 stroke-[1.75]" />
                 </div>
-                <div className="text-left">
-                  <h3 className="text-lg font-sans font-bold text-[#8C6D23] dark:text-[#F0EBE3]">
+                <div className="text-left min-w-0">
+                  <h3 className="text-base font-sans font-semibold text-[#18181B] dark:text-[#F0EBE3] tracking-tight leading-snug">
                     Help and questions
                   </h3>
-                  <p className="text-[11px] text-[#6B7280] dark:text-[#B8B0A5] font-medium leading-tight mt-0.5">
+                  <p className="text-[12px] text-[#6B6860] dark:text-[#8B867D] font-normal leading-normal mt-0.5 truncate sm:whitespace-normal">
                     Common answers for parents during the event.
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setShowHelpDrawer(false)}
-                className="p-2 rounded-xl hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] text-[#6B7280] dark:text-[#7A7570] hover:text-[#18181B] dark:hover:text-[#F0EBE3] cursor-pointer transition-colors focus:outline-none"
+                className="p-2 -mr-1 rounded-xl text-[#6B6860] dark:text-[#7A7570] hover:text-[#18181B] dark:hover:text-[#F0EBE3] hover:bg-[#F4F1EA] dark:hover:bg-[#262520] transition-colors cursor-pointer shrink-0 focus:outline-none"
+                aria-label="Close"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4.5">
+            <div className="flex-1 min-h-0 overflow-y-auto px-5 sm:px-6 divide-y divide-[#EDE6D4] dark:divide-[#302E29]">
               {[
                 {
                   id: "faq-1",
@@ -2560,17 +2654,17 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 <div 
                   key={faq.id} 
                   id={faq.id}
-                  className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1]/80 dark:border-[#302E29] p-4.5 shadow-2xs space-y-2 text-left"
+                  className="py-4 sm:py-5 text-left space-y-1.5"
                 >
-                  <div className="flex items-start space-x-2.5">
-                    <span className="text-xs font-sans font-bold text-[#C59B27] mt-0.5">
-                      {idx + 1}.
+                  <div className="flex items-baseline space-x-2.5">
+                    <span className="text-[11px] font-sans font-bold text-[#9A7326] dark:text-[#C59B27] tracking-wider shrink-0 select-none">
+                      {String(idx + 1).padStart(2, '0')}
                     </span>
-                    <h4 className="text-sm font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] leading-snug">
+                    <h4 className="text-[14px] sm:text-[15px] font-sans font-semibold text-[#18181B] dark:text-[#F0EBE3] leading-snug">
                       {faq.title}
                     </h4>
                   </div>
-                  <p className="text-xs text-[#3F3F46] dark:text-[#B8B0A5] leading-relaxed pl-5">
+                  <p className="text-[13px] font-sans text-[#6B6860] dark:text-[#B8B0A5] leading-relaxed pl-6">
                     {faq.body}
                   </p>
                 </div>
@@ -2578,10 +2672,10 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             </div>
 
             {/* Footer */}
-            <div className="p-4.5 bg-white dark:bg-[#1D1D1A] border-t border-[#EAE8E1]/60 dark:border-[#302E29] flex justify-center shrink-0">
+            <div className="p-4 sm:px-6 bg-[#FDFCF8] dark:bg-[#1D1D1A] border-t border-[#EDE6D4] dark:border-[#302E29] flex justify-center shrink-0">
               <button
                 onClick={() => setShowHelpDrawer(false)}
-                className="w-full py-3 px-4 rounded-xl bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] text-[#8C6D23] dark:text-[#B8B0A5] font-bold text-sm hover:bg-[#EFECE4] dark:hover:bg-[#2A2926] transition-all duration-200 cursor-pointer text-center"
+                className="w-full sm:w-auto sm:min-w-[200px] min-h-[44px] py-2.5 px-5 rounded-xl border border-[#EDE6D4] dark:border-[#302E29] bg-[#FAF8F3] dark:bg-[#262520] hover:bg-[#F4F1EA] dark:hover:bg-[#2A2926] text-[#18181B] dark:text-[#F0EBE3] font-sans font-semibold text-xs sm:text-[13px] tracking-wide transition-colors cursor-pointer text-center focus:outline-none"
               >
                 Close help guide
               </button>
@@ -2593,40 +2687,41 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       {/* Safety information Drawer Bottom Sheet */}
       {showSafetyDrawer && (
         <div 
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end animate-fade-in"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end sm:justify-center items-center p-0 sm:p-4 animate-fade-in"
           data-view-version="parent-safety-v1-brand"
           onClick={() => setShowSafetyDrawer(false)}
         >
           <div 
-            className="bg-[#FAF8F3] dark:bg-[#1D1D1A] rounded-t-[32px] max-h-[85%] overflow-hidden flex flex-col border-t border-[#E5D5AE] dark:border-[#302E29] shadow-2xl animate-in slide-in-from-bottom duration-300"
+            className="w-full sm:w-[calc(100%-32px)] sm:max-w-[520px] max-h-[86dvh] sm:max-h-[min(760px,calc(100dvh-64px))] bg-[#FDFCF8] dark:bg-[#1D1D1A] rounded-t-[28px] sm:rounded-2xl flex flex-col border-t sm:border border-[#EDE6D4] dark:border-[#302E29] shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-200"
             data-component-version="parent-profile-info-sheet-v1"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="px-5 py-4.5 border-b border-[#E5D5AE]/40 dark:border-[#302E29] flex items-center justify-between shrink-0">
-              <div className="flex items-center space-x-3.5">
-                <div className="p-2.5 bg-[#FAF6EB] dark:bg-[#262520] rounded-2xl border border-[#E5D5AE]/60 dark:border-[#3A3835] text-[#C59B27]">
+            <div className="px-5 py-3.5 sm:py-4 border-b border-[#EDE6D4] dark:border-[#302E29] flex items-center justify-between shrink-0">
+              <div className="flex items-center space-x-3 min-w-0">
+                <div className="p-2 bg-[#FAF6EB] dark:bg-[#262520] rounded-xl border border-[#EDE6D4] dark:border-[#302E29] text-[#9A7326] dark:text-[#C59B27] shrink-0">
                   <Shield className="w-5 h-5 stroke-[1.75]" />
                 </div>
-                <div className="text-left">
-                  <h3 className="text-lg font-serif-koinonia font-bold text-[#8C6D23] dark:text-[#F0EBE3]">
+                <div className="text-left min-w-0">
+                  <h3 className="text-base font-sans font-semibold text-[#18181B] dark:text-[#F0EBE3] tracking-tight leading-snug">
                     Safety information
                   </h3>
-                  <p className="text-[11px] text-[#6B7280] dark:text-[#B8B0A5] font-medium leading-tight mt-0.5">
+                  <p className="text-[12px] text-[#6B6860] dark:text-[#8B867D] font-normal leading-normal mt-0.5 truncate sm:whitespace-normal">
                     How we help keep children safe during the event.
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setShowSafetyDrawer(false)}
-                className="p-2 rounded-xl hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] text-[#6B7280] dark:text-[#7A7570] hover:text-[#18181B] dark:hover:text-[#F0EBE3] cursor-pointer transition-colors focus:outline-none"
+                className="p-2 -mr-1 rounded-xl text-[#6B6860] dark:text-[#7A7570] hover:text-[#18181B] dark:hover:text-[#F0EBE3] hover:bg-[#F4F1EA] dark:hover:bg-[#262520] transition-colors cursor-pointer shrink-0 focus:outline-none"
+                aria-label="Close"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4.5">
+            <div className="flex-1 min-h-0 overflow-y-auto px-5 sm:px-6 divide-y divide-[#EDE6D4] dark:divide-[#302E29]">
               {[
                 {
                   id: "safety-1",
@@ -2662,17 +2757,17 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 <div 
                   key={safety.id} 
                   id={safety.id}
-                  className="bg-white dark:bg-[#21211E] rounded-2xl border border-[#EAE8E1]/80 dark:border-[#302E29] p-4.5 shadow-2xs space-y-2 text-left"
+                  className="py-4 sm:py-5 text-left space-y-1.5"
                 >
-                  <div className="flex items-start space-x-2.5">
-                    <span className="text-xs font-sans font-bold text-[#C59B27] mt-0.5">
-                      {idx + 1}.
+                  <div className="flex items-baseline space-x-2.5">
+                    <span className="text-[11px] font-sans font-bold text-[#9A7326] dark:text-[#C59B27] tracking-wider shrink-0 select-none">
+                      {String(idx + 1).padStart(2, '0')}
                     </span>
-                    <h4 className="text-sm font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] leading-snug">
+                    <h4 className="text-[14px] sm:text-[15px] font-sans font-semibold text-[#18181B] dark:text-[#F0EBE3] leading-snug">
                       {safety.title}
                     </h4>
                   </div>
-                  <p className="text-xs text-[#3F3F46] dark:text-[#B8B0A5] leading-relaxed pl-5">
+                  <p className="text-[13px] font-sans text-[#6B6860] dark:text-[#B8B0A5] leading-relaxed pl-6">
                     {safety.body}
                   </p>
                 </div>
@@ -2680,10 +2775,10 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             </div>
 
             {/* Footer */}
-            <div className="p-4.5 bg-white dark:bg-[#1D1D1A] border-t border-[#EAE8E1]/60 dark:border-[#302E29] flex justify-center shrink-0">
+            <div className="p-4 sm:px-6 bg-[#FDFCF8] dark:bg-[#1D1D1A] border-t border-[#EDE6D4] dark:border-[#302E29] flex justify-center shrink-0">
               <button
                 onClick={() => setShowSafetyDrawer(false)}
-                className="w-full py-3 px-4 rounded-xl bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] text-[#8C6D23] dark:text-[#B8B0A5] font-bold text-sm hover:bg-[#EFECE4] dark:hover:bg-[#2A2926] transition-all duration-200 cursor-pointer text-center"
+                className="w-full sm:w-auto sm:min-w-[200px] min-h-[44px] py-2.5 px-5 rounded-xl border border-[#EDE6D4] dark:border-[#302E29] bg-[#FAF8F3] dark:bg-[#262520] hover:bg-[#F4F1EA] dark:hover:bg-[#2A2926] text-[#18181B] dark:text-[#F0EBE3] font-sans font-semibold text-xs sm:text-[13px] tracking-wide transition-colors cursor-pointer text-center focus:outline-none"
               >
                 Close safety guide
               </button>
@@ -3117,82 +3212,201 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       />
 
       {/* Family Arrival Plan Modal / Sheet */}
-      {showArrivalGuideModal && selectedArrivalChild && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end sm:justify-center p-0 sm:p-4 animate-fade-in"
-          onClick={() => setShowArrivalGuideModal(false)}
-        >
-          <div 
-            className="bg-white rounded-t-[28px] sm:rounded-2xl max-h-[90%] w-full max-w-md mx-auto overflow-hidden flex flex-col border border-[#EAE8E1] shadow-2xl animate-in slide-in-from-bottom duration-300"
-            onClick={(e) => e.stopPropagation()}
+      {showArrivalGuideModal && selectedArrivalChild && (() => {
+        const arrivalAgeGrp = (selectedArrivalChild.ageGroup || selectedArrivalChild.draftData?.ageGroup || '').toLowerCase();
+        const arrivalAgeNum = typeof selectedArrivalChild.age === 'number' ? selectedArrivalChild.age : parseInt(selectedArrivalChild.age as any, 10) || 0;
+
+        let arrivalLocation = "Pre-Primary Room (Zone 2)";
+        let arrivalGate = "Children's Entrance B";
+        let gateDescription = "Follow directional signs at Koinonia Pavilion ground level.";
+        let hallDescription = "Volunteers will guide your child directly into the hall upon pass scan.";
+        let arrivalWindow = "8:30 AM – 9:00 AM";
+        let windowDescription = "Main session begins at 9:00 AM sharp.";
+
+        if (arrivalAgeGrp.includes('0') || arrivalAgeGrp.includes('1') || arrivalAgeGrp.includes('2') || arrivalAgeGrp.includes('3') || arrivalAgeNum < 4) {
+          arrivalLocation = "Infant & Toddler Care (Crèche)";
+          arrivalGate = "Children's Entrance A";
+          gateDescription = "Dedicated ground floor access for strollers and nursing parents.";
+          hallDescription = "Dedicated caregivers receive your child at the secure nursery desk.";
+          arrivalWindow = "8:15 AM – 8:45 AM";
+          windowDescription = "Early drop-off recommended for infant settling.";
+        } else if (arrivalAgeGrp.includes('7') || arrivalAgeGrp.includes('8') || arrivalAgeGrp.includes('9') || (arrivalAgeNum >= 7 && arrivalAgeNum <= 9)) {
+          arrivalLocation = "Junior Hall (Primary)";
+          arrivalGate = "Children's Entrance C";
+          gateDescription = "Follow the covered walkway directly to Entrance C.";
+          hallDescription = "Volunteers will guide your child directly into the hall upon pass scan.";
+          arrivalWindow = "8:30 AM – 9:00 AM";
+          windowDescription = "Main session begins at 9:00 AM sharp.";
+        } else if (arrivalAgeGrp.includes('10') || arrivalAgeGrp.includes('11') || arrivalAgeGrp.includes('12') || (arrivalAgeNum >= 10 && arrivalAgeNum <= 12)) {
+          arrivalLocation = "Pre-Teens Hall";
+          arrivalGate = "Children's Entrance C";
+          gateDescription = "Follow the covered walkway to Entrance C upper gallery.";
+          hallDescription = "Volunteers will guide your child directly into the hall upon pass scan.";
+          arrivalWindow = "8:30 AM – 9:00 AM";
+          windowDescription = "Main session begins at 9:00 AM sharp.";
+        } else if (arrivalAgeNum >= 13) {
+          arrivalLocation = "Teens Chapel";
+          arrivalGate = "Main Youth Entrance";
+          gateDescription = "Access via Youth Courtyard west concourse.";
+          hallDescription = "Youth leaders receive teens directly in the chapel foyer.";
+          arrivalWindow = "8:30 AM – 9:00 AM";
+          windowDescription = "Main session begins at 9:00 AM sharp.";
+        }
+
+        const arrivalAgeLabel = arrivalAgeNum < 1 ? '0 years' : arrivalAgeNum === 1 ? '1 year' : `${arrivalAgeNum} years`;
+        let cleanArrivalGroup = (selectedArrivalChild.ageGroup || '').replace(/\s*\(Review Needed\)/gi, '').trim();
+        if (!cleanArrivalGroup) {
+          cleanArrivalGroup = arrivalAgeNum < 1 ? 'Below 1' : arrivalAgeNum < 4 ? 'Under 4s' : 'Children';
+        }
+
+        return (
+          <div
+            className="fixed inset-0 z-50 bg-black/60 flex flex-col justify-end sm:justify-center p-0 sm:p-4 animate-fade-in"
+            onClick={() => setShowArrivalGuideModal(false)}
           >
-            <div className="px-5 py-4 border-b border-[#EAE8E1] flex items-center justify-between shrink-0 bg-[#FAF9F6]">
-              <div className="flex items-center space-x-3">
-                <div className="p-2 bg-[#FAF6EB] rounded-xl border border-[#E5D5AE] text-[#C59B27]">
-                  <MapPin className="w-5 h-5" />
+            <div
+              data-component-version="parent-arrival-plan-modal-v2"
+              className="bg-[#FDFCF8] dark:bg-[#1D1D1A] text-[#18181B] dark:text-[#F0EBE3] rounded-t-[24px] sm:rounded-2xl max-h-[92vh] w-full max-w-md mx-auto overflow-hidden flex flex-col border border-[#EDE6D4] dark:border-[#302E29] shadow-xl animate-in slide-in-from-bottom duration-300 font-sans"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="px-6 py-5 border-b border-[#EDE6D4] dark:border-[#302E29] flex items-center justify-between shrink-0">
+                <div className="flex items-center space-x-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] flex items-center justify-center shrink-0 text-[#C59B27]">
+                    <MapPin className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-lg font-semibold text-[#18181B] dark:text-[#F0EBE3] leading-snug truncate">
+                      Family arrival plan
+                    </h3>
+                    <p className="text-xs sm:text-[13px] text-[#6B6860] dark:text-[#B8B0A5] truncate mt-0.5">
+                      Arrival details for {selectedArrivalChild.name}
+                    </p>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setShowArrivalGuideModal(false)}
+                  className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-[#8B867D] dark:text-[#7A7570] hover:text-[#18181B] dark:hover:text-[#F0EBE3] transition-colors cursor-pointer shrink-0 ml-2"
+                  aria-label="Close arrival plan"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="px-6 py-5 space-y-6 overflow-y-auto">
+                {/* Child Identity Row */}
+                <div className="flex items-center space-x-3.5 pb-5 border-b border-[#EDE6D4] dark:border-[#302E29]">
+                  <FallbackAvatar
+                    src={selectedArrivalChild.photoUrl}
+                    name={selectedArrivalChild.name}
+                    className="w-12 h-12 rounded-full shrink-0 border border-[#D9CFB0] dark:border-[#3A3835]"
+                  />
+                  <div className="min-w-0">
+                    <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3] truncate leading-tight">
+                      {selectedArrivalChild.name}
+                    </h4>
+                    <p className="text-[13px] text-[#6B6860] dark:text-[#B8B0A5] mt-0.5">
+                      {arrivalAgeLabel} · {cleanArrivalGroup}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Arrival Journey / Timeline */}
                 <div>
-                  <h3 className="text-base font-serif-koinonia font-bold text-[#18181B]">
-                    Family arrival plan
-                  </h3>
-                  <p className="text-xs text-[#71717A]">
-                    Arrival details for {selectedArrivalChild.name}
-                  </p>
+                  <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#9A7326] dark:text-[#C59B27] block mb-5">
+                    Arrival Route
+                  </span>
+
+                  <div className="space-y-0 relative">
+                    {/* Step 01: Entry Gate */}
+                    <div className="flex items-start space-x-3.5 group relative">
+                      <div className="flex flex-col items-center shrink-0 w-7">
+                        <div className="w-7 h-7 rounded-full bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] flex items-center justify-center text-[11px] font-bold text-[#9A7326] dark:text-[#C59B27]">
+                          01
+                        </div>
+                        <div className="w-px h-12 bg-[#E5D5AE] dark:bg-[#302E29] my-1" />
+                      </div>
+                      <div className="min-w-0 pt-0.5 pb-2">
+                        <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.12em] text-[#9A7326] dark:text-[#C59B27] block">
+                          Entry Gate
+                        </span>
+                        <p className="text-[15px] sm:text-base font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5">
+                          {arrivalGate}
+                        </p>
+                        <p className="text-[13px] text-[#6B6860] dark:text-[#B8B0A5] mt-1 leading-relaxed">
+                          {gateDescription}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Step 02: Assigned Hall */}
+                    <div className="flex items-start space-x-3.5 group relative">
+                      <div className="flex flex-col items-center shrink-0 w-7">
+                        <div className="w-7 h-7 rounded-full bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] flex items-center justify-center text-[11px] font-bold text-[#9A7326] dark:text-[#C59B27]">
+                          02
+                        </div>
+                        <div className="w-px h-12 bg-[#E5D5AE] dark:bg-[#302E29] my-1" />
+                      </div>
+                      <div className="min-w-0 pt-0.5 pb-2">
+                        <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.12em] text-[#9A7326] dark:text-[#C59B27] block">
+                          Assigned Hall
+                        </span>
+                        <p className="text-[15px] sm:text-base font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5">
+                          {arrivalLocation}
+                        </p>
+                        <p className="text-[13px] text-[#6B6860] dark:text-[#B8B0A5] mt-1 leading-relaxed">
+                          {hallDescription}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Step 03: Arrive Between */}
+                    <div className="flex items-start space-x-3.5 group relative">
+                      <div className="flex flex-col items-center shrink-0 w-7">
+                        <div className="w-7 h-7 rounded-full bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] flex items-center justify-center text-[11px] font-bold text-[#9A7326] dark:text-[#C59B27]">
+                          03
+                        </div>
+                      </div>
+                      <div className="min-w-0 pt-0.5">
+                        <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.12em] text-[#9A7326] dark:text-[#C59B27] block">
+                          Arrive Between
+                        </span>
+                        <p className="text-[17px] sm:text-[18px] font-semibold text-[#18181B] dark:text-[#F0EBE3] mt-0.5">
+                          {arrivalWindow}
+                        </p>
+                        <p className="text-[13px] text-[#6B6860] dark:text-[#B8B0A5] mt-1 leading-relaxed">
+                          {windowDescription}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* CTA */}
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowArrivalGuideModal(false);
+                      setSelectedPassChild(selectedArrivalChild);
+                      handleTabChange('Passes');
+                    }}
+                    className="w-full min-h-[48px] sm:min-h-[50px] px-5 py-3 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:scale-[0.99] text-[#18181B] font-semibold text-sm transition-all shadow-xs cursor-pointer flex items-center justify-between"
+                  >
+                    <div className="flex items-center space-x-2.5">
+                      <QrCode className="w-4 h-4 shrink-0" />
+                      <span>Show event pass</span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 shrink-0" />
+                  </button>
                 </div>
               </div>
-              <button
-                onClick={() => setShowArrivalGuideModal(false)}
-                className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-500 hover:text-zinc-800 transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-4 overflow-y-auto text-xs text-[#3F3F46]">
-              <div className="flex items-start space-x-3 p-3.5 bg-[#FAF9F6] border border-[#EAE8E1] rounded-2xl">
-                <FallbackAvatar src={selectedArrivalChild.photoUrl} name={selectedArrivalChild.name} className="w-10 h-10 rounded-full shrink-0" />
-                <div>
-                  <h4 className="font-bold text-sm text-[#18181B]">{selectedArrivalChild.name}</h4>
-                  <p className="text-xs text-[#71717A]">{selectedArrivalChild.age} years • {selectedArrivalChild.ageGroup || 'Children'}</p>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="p-3.5 bg-white border border-[#EAE8E1] rounded-2xl space-y-1.5">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326]">Entry Gate</span>
-                  <p className="text-sm font-bold text-[#18181B]">Children's Entrance B</p>
-                  <p className="text-xs text-[#71717A]">Follow directional signs at Koinonia Pavilion ground level.</p>
-                </div>
-
-                <div className="p-3.5 bg-white border border-[#EAE8E1] rounded-2xl space-y-1.5">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326]">Assigned Hall</span>
-                  <p className="text-sm font-bold text-[#18181B]">Pre-Primary Room (Zone 2)</p>
-                  <p className="text-xs text-[#71717A]">Volunteers will guide your child directly into their hall upon pass scan.</p>
-                </div>
-
-                <div className="p-3.5 bg-white border border-[#EAE8E1] rounded-2xl space-y-1.5">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326]">Recommended Arrival Window</span>
-                  <p className="text-sm font-bold text-[#18181B]">8:30 AM – 9:00 AM</p>
-                  <p className="text-xs text-[#71717A]">Main session begins at 9:00 AM sharp.</p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setShowArrivalGuideModal(false);
-                  setSelectedPassChild(selectedArrivalChild);
-                  handleTabChange('Passes');
-                }}
-                className="w-full py-3 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] text-[#18181B] font-semibold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer flex items-center justify-center space-x-2"
-              >
-                <QrCode className="w-4 h-4" />
-                <span>Show Event Pass QR</span>
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Family Pickup Plan Modal / Sheet */}
       {showPickupDetailsModal && selectedPickupChild && (
