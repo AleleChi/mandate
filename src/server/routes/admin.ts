@@ -2618,6 +2618,15 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
       return res.status(404).json({ success: false, error: 'Application entry not found.' });
     }
 
+    if (app.status === 'incomplete' || app.status === 'draft') {
+      return res.status(400).json({
+        success: false,
+        code: 'APPLICATION_INCOMPLETE',
+        error: 'Cannot review an incomplete application draft.',
+        message: 'Cannot review an incomplete application draft.'
+      });
+    }
+
     const now = new Date().toISOString();
     let finalStatus = status;
     let passData = null;
@@ -2763,6 +2772,15 @@ router.post('/applications/:id/reopen-review', async (req: AuthenticatedRequest,
       return res.status(404).json({ success: false, error: 'Application entry not found.' });
     }
 
+    if (app.status === 'incomplete' || app.status === 'draft') {
+      return res.status(400).json({
+        success: false,
+        code: 'APPLICATION_INCOMPLETE',
+        error: 'Cannot reopen an incomplete application draft.',
+        message: 'Cannot reopen an incomplete application draft.'
+      });
+    }
+
     // Validate child check-in status: cannot reopen if checked in or picked up
     if (['checked_in', 'inside', 'picked_up', 'checked_out'].includes(app.status)) {
       return res.status(400).json({ 
@@ -2874,6 +2892,15 @@ router.post('/applications/bulk-review', authMiddleware, async (req: Authenticat
 
       if (!app) {
         failures.push({ id, reason: 'Application record not found' });
+        continue;
+      }
+
+      if (app.status === 'incomplete' || app.status === 'draft') {
+        failures.push({
+          id,
+          childName: app.child_name,
+          reason: 'Application is an incomplete draft and cannot be reviewed.'
+        });
         continue;
       }
 

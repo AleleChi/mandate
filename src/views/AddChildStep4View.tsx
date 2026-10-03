@@ -4,7 +4,9 @@ import { ArrowLeft, Check, ShieldCheck } from 'lucide-react';
 import { useNotification } from '../context/NotificationContext';
 import { PhotoUploadBox } from '../components/common/PhotoUploadBox';
 import { Button } from '../components/common/Button';
-import { validateFullName, validatePhone } from '../utils/validation';
+import { validateFullName, validatePhoneNumber, normalizePhone } from '../utils/validation';
+import { inferCountryIsoFromE164 } from '../utils/countries';
+import { InternationalPhoneField } from '../components/common/InternationalPhoneField';
 
 interface AddChildStep4ViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -35,6 +37,12 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
   const [pickupPersonPhone, setPickupPersonPhone] = useState<string>(
     draft?.pickup?.pickupPersonPhone || draft?.pickupPersonPhone || ''
   );
+  const [pickupPersonCountryIso, setPickupPersonCountryIso] = useState<string>(() => {
+    const rawPhone = draft?.pickup?.pickupPersonPhone || draft?.pickupPersonPhone || '';
+    const inferred = inferCountryIsoFromE164(rawPhone);
+    if (inferred) return inferred;
+    return draft?.pickup?.pickupPersonCountryIso || draft?.pickupPersonCountryIso || 'NG';
+  });
   const [pickupPersonWhatsapp, setPickupPersonWhatsapp] = useState<string>(
     draft?.pickup?.pickupPersonWhatsApp || draft?.pickupPersonWhatsapp || ''
   );
@@ -102,14 +110,19 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
       if (!pickupPersonRelationship.trim()) {
         newErrors.pickupPersonRelationship = 'Add the person’s relationship to the child.';
       }
-      const phoneErr = validatePhone(pickupPersonPhone, 'NG');
-      if (phoneErr) {
-        newErrors.pickupPersonPhone = phoneErr;
+      if (!pickupPersonPhone.trim()) {
+        newErrors.pickupPersonPhone = 'Enter a valid phone number.';
+      } else {
+        const phoneErr = validatePhoneNumber(pickupPersonPhone, pickupPersonCountryIso);
+        if (phoneErr) {
+          newErrors.pickupPersonPhone = 'Enter a valid phone number.';
+        }
       }
       if (pickupPersonWhatsapp.trim()) {
-        const waErr = validatePhone(pickupPersonWhatsapp, 'NG');
+        const waCountry = inferCountryIsoFromE164(pickupPersonWhatsapp) || pickupPersonCountryIso;
+        const waErr = validatePhoneNumber(pickupPersonWhatsapp, waCountry);
         if (waErr) {
-          newErrors.pickupPersonWhatsapp = waErr;
+          newErrors.pickupPersonWhatsapp = 'Enter a valid phone number.';
         }
       }
       if (!pickupPersonApproved) {
@@ -149,13 +162,21 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
           }
         };
       } else {
+        const normalizedPhone = normalizePhone(pickupPersonPhone.trim(), pickupPersonCountryIso) || pickupPersonPhone.trim();
+        let normalizedWa = pickupPersonWhatsapp.trim();
+        if (pickupPersonWhatsapp.trim()) {
+          const waCountry = inferCountryIsoFromE164(pickupPersonWhatsapp) || pickupPersonCountryIso;
+          normalizedWa = normalizePhone(pickupPersonWhatsapp.trim(), waCountry) || pickupPersonWhatsapp.trim();
+        }
+
         updatedDraft = {
           ...draft,
           pickupType: 'other_person',
           pickupPersonFullName: pickupPersonFullName.trim(),
           pickupPersonRelationship: pickupPersonRelationship.trim(),
-          pickupPersonPhone: pickupPersonPhone.trim(),
-          pickupPersonWhatsapp: pickupPersonWhatsapp.trim(),
+          pickupPersonPhone: normalizedPhone,
+          pickupPersonCountryIso,
+          pickupPersonWhatsapp: normalizedWa,
           pickupPersonPhotoUrl,
           pickupPersonApproved,
           pickup: {
@@ -164,8 +185,9 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
             pickupPersonPhoto: pickupPersonPhotoUrl,
             pickupPersonFullName: pickupPersonFullName.trim(),
             pickupPersonRelationship: pickupPersonRelationship.trim(),
-            pickupPersonPhone: pickupPersonPhone.trim(),
-            pickupPersonWhatsApp: pickupPersonWhatsapp.trim(),
+            pickupPersonPhone: normalizedPhone,
+            pickupPersonCountryIso,
+            pickupPersonWhatsApp: normalizedWa,
             approvedByParent: pickupPersonApproved
           }
         };
@@ -204,13 +226,22 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
           }
         };
       } else {
+        const countryForPickup = inferCountryIsoFromE164(pickupPersonPhone) || pickupPersonCountryIso;
+        const normalizedPhone = pickupPersonPhone.trim() ? (normalizePhone(pickupPersonPhone.trim(), countryForPickup) || pickupPersonPhone.trim()) : '';
+        let normalizedWa = pickupPersonWhatsapp.trim();
+        if (pickupPersonWhatsapp.trim()) {
+          const waCountry = inferCountryIsoFromE164(pickupPersonWhatsapp) || countryForPickup;
+          normalizedWa = normalizePhone(pickupPersonWhatsapp.trim(), waCountry) || pickupPersonWhatsapp.trim();
+        }
+
         updatedDraft = {
           ...draft,
           pickupType: 'other_person',
           pickupPersonFullName: pickupPersonFullName.trim(),
           pickupPersonRelationship: pickupPersonRelationship.trim(),
-          pickupPersonPhone: pickupPersonPhone.trim(),
-          pickupPersonWhatsapp: pickupPersonWhatsapp.trim(),
+          pickupPersonPhone: normalizedPhone,
+          pickupPersonCountryIso,
+          pickupPersonWhatsapp: normalizedWa,
           pickupPersonPhotoUrl,
           pickupPersonApproved,
           pickup: {
@@ -219,8 +250,9 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
             pickupPersonPhoto: pickupPersonPhotoUrl,
             pickupPersonFullName: pickupPersonFullName.trim(),
             pickupPersonRelationship: pickupPersonRelationship.trim(),
-            pickupPersonPhone: pickupPersonPhone.trim(),
-            pickupPersonWhatsApp: pickupPersonWhatsapp.trim(),
+            pickupPersonPhone: normalizedPhone,
+            pickupPersonCountryIso,
+            pickupPersonWhatsApp: normalizedWa,
             approvedByParent: pickupPersonApproved
           }
         };
@@ -457,28 +489,26 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
 
                 {/* Phone number */}
                 <div>
-                  <label className="text-[11px] font-bold tracking-wider uppercase text-[#715D3A] block mb-1.5">
-                    PHONE NUMBER
-                  </label>
-                  <input
-                    type="tel"
-                    placeholder="0800 000 0000"
+                  <InternationalPhoneField
+                    countryIso={pickupPersonCountryIso}
                     value={pickupPersonPhone}
-                    onChange={(e) => {
-                      setPickupPersonPhone(e.target.value);
+                    onCountryChange={(iso) => {
+                      setPickupPersonCountryIso(iso);
                       if (errors.pickupPersonPhone) {
                         setErrors((prev) => ({ ...prev, pickupPersonPhone: undefined }));
                       }
                     }}
-                    className={`w-full py-3 px-3.5 bg-white border ${
-                      errors.pickupPersonPhone ? 'border-red-500' : 'border-[#D9D6CE]'
-                    } rounded-xl text-sm text-[#18181B] placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#C59B27] shadow-2xs transition-colors`}
+                    onChange={(val) => {
+                      setPickupPersonPhone(val);
+                      if (errors.pickupPersonPhone) {
+                        setErrors((prev) => ({ ...prev, pickupPersonPhone: undefined }));
+                      }
+                    }}
+                    error={errors.pickupPersonPhone}
+                    label="PHONE NUMBER"
+                    required
+                    id="pickup-person-phone"
                   />
-                  {errors.pickupPersonPhone && (
-                    <p className="text-xs text-red-600 font-medium mt-1">
-                      {errors.pickupPersonPhone}
-                    </p>
-                  )}
                 </div>
 
                 {/* WhatsApp number */}
@@ -547,20 +577,7 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
           <div className="pt-4 space-y-2.5">
             <Button
               type="submit"
-              disabled={isUploadingPhoto || !(
-                pickupType === 'parent' ||
-                (
-                  pickupType === 'other_person' &&
-                  pickupPersonPhotoUrl.trim() !== '' &&
-                  pickupPersonFullName.trim() !== '' &&
-                  validateFullName(pickupPersonFullName, true) === undefined &&
-                  pickupPersonRelationship.trim() !== '' &&
-                  pickupPersonPhone.trim() !== '' &&
-                  validatePhone(pickupPersonPhone, 'NG') === undefined &&
-                  (!pickupPersonWhatsapp.trim() || validatePhone(pickupPersonWhatsapp, 'NG') === undefined) &&
-                  pickupPersonApproved
-                )
-              )}
+              disabled={isUploadingPhoto}
               fullWidth
               size="lg"
             >

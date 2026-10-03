@@ -42,6 +42,7 @@ import { AppLoadingScreen } from './components/common/AppLoadingScreen';
 import { ModuleLoadingState } from './components/common/ModuleLoadingState';
 import { safeStorage } from './utils/storage';
 import { isValidRoute, getInitialRoute } from './utils/router';
+import { isValidUploadedPhoto } from './utils/validation';
 
 const AdminSignInView = React.lazy(() => import('./views/admin/AdminSignInView').then(m => ({ default: m.AdminSignInView })));
 const AdminForgotPasswordView = React.lazy(() => import('./views/admin/AdminForgotPasswordView').then(m => ({ default: m.AdminForgotPasswordView })));
@@ -336,6 +337,17 @@ export default function App() {
     const phone = p.phone || (p as any).phone_number || (p as any).phone;
     if (!name || !name.trim()) return false;
     if (!phone || !phone.trim()) return false;
+
+    // Existing historical parents: if they already have registered children or an existing completed profile timestamp,
+    // do not lock them out of the parent dashboard/passes.
+    if (childrenList.length > 0 || (p as any).profileCompletedAt || (p as any).profile_completed_at) {
+      return true;
+    }
+
+    // For new parent registration/onboarding, a valid profile photo is required to mark profile complete.
+    const photo = p.photoUrl || (p as any).photo_file_id || (p as any).photoFileId;
+    if (!isValidUploadedPhoto(photo)) return false;
+
     return true;
   };
 
@@ -670,31 +682,32 @@ export default function App() {
   };
 
   const handleSubmitReview = async (draft: AddChildDraft): Promise<boolean> => {
-    const name = (draft.childDetails?.fullName || draft.fullName || 'Untitled Child').trim();
-    const ageVal = draft.childDetails?.calculatedAge !== undefined ? draft.childDetails.calculatedAge : draft.age;
-    const ageGroupVal = draft.childDetails?.ageGroup || draft.ageGroup || 'Not specified';
-    const photoVal = draft.childDetails?.photo || draft.photoUrl || '';
+    let childId = draft.id || safeStorage.getItem('koinonia_active_draft_id') || undefined;
 
-    safeStorage.removeItem('koinonia_active_draft_id');
-
-    if (api.getToken() && draft.id) {
+    if (api.getToken()) {
       try {
-        const response = await api.parent.submitChildReview(draft.id, draft);
+        if (!childId) {
+          const savedChild = await api.parent.saveChildDraft(draft);
+          if (savedChild && savedChild.id) {
+            childId = savedChild.id;
+            draft.id = savedChild.id;
+            safeStorage.setItem('koinonia_active_draft_id', savedChild.id);
+          } else {
+            throw new Error('Could not establish child registration record.');
+          }
+        }
+
+        const response = await api.parent.submitChildReview(childId, draft);
+        safeStorage.removeItem('koinonia_active_draft_id');
+
+        await fetchBackendData();
+
         const reviewedChild = {
           ...response,
           status: 'Under review',
-          id: response.id || response.childId || draft.id
+          id: response.id || response.childId || childId
         };
         setLastSubmittedChild(reviewedChild);
-        setChildrenList((prev) => {
-          const existingIdx = prev.findIndex((c) => c.id === reviewedChild.id);
-          if (existingIdx !== -1) {
-            const copy = [...prev];
-            copy[existingIdx] = reviewedChild;
-            return copy;
-          }
-          return [reviewedChild, ...prev];
-        });
         setAddChildDraft(null);
         showSuccess('Details sent for review', 'You can follow the child’s status from Home.');
         return true;
@@ -704,8 +717,14 @@ export default function App() {
       }
     }
 
+    const name = (draft.childDetails?.fullName || draft.fullName || 'Untitled Child').trim();
+    const ageVal = draft.childDetails?.calculatedAge !== undefined ? draft.childDetails.calculatedAge : draft.age;
+    const ageGroupVal = draft.childDetails?.ageGroup || draft.ageGroup || 'Not specified';
+    const photoVal = draft.childDetails?.photo || draft.photoUrl || '';
+    safeStorage.removeItem('koinonia_active_draft_id');
+
     const reviewedChild: ChildItem = {
-      id: draft.id || `child-${Date.now()}`,
+      id: childId || `child-${Date.now()}`,
       name: name,
       age: ageVal !== null && ageVal !== undefined ? ageVal : 0,
       ageGroup: ageGroupVal,
@@ -759,6 +778,12 @@ export default function App() {
   };
 
   const handleStartNewChild = () => {
+    const parentPhoto = parentProfile?.photoUrl || (parentProfile as any)?.photo_file_id || (parentProfile as any)?.photoFileId;
+    if (!isValidUploadedPhoto(parentPhoto)) {
+      showError('Profile photo required', 'Please add a profile photo to continue.');
+      navigate('/parent/profile/edit');
+      return;
+    }
     safeStorage.removeItem('koinonia_active_draft_id');
     setAddChildDraft(null);
     navigate('/parent/children/new');

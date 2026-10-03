@@ -54,6 +54,7 @@ export interface AddChildDraft {
     pickupPersonFullName?: string;
     pickupPersonRelationship?: string;
     pickupPersonPhone?: string;
+    pickupPersonCountryIso?: string;
     pickupPersonWhatsApp?: string;
     approvedByParent?: boolean;
   };
@@ -85,6 +86,7 @@ export interface AddChildDraft {
   pickupPersonFullName?: string;
   pickupPersonRelationship?: string;
   pickupPersonPhone?: string;
+  pickupPersonCountryIso?: string;
   pickupPersonWhatsapp?: string;
   pickupPersonApproved?: boolean;
 }

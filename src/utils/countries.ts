@@ -388,3 +388,55 @@ export function formatReadableCountry(
   const displayName = countryObj?.name || countryName || 'Nigeria';
   return flag ? `${flag} ${displayName}` : displayName;
 }
+
+/**
+ * Resolves a consistent country ISO for a canonical phone or WhatsApp number.
+ *
+ * Rules:
+ * 1. If phone is missing, empty, or not starting with '+', returns validated selectedCountryIso (or fallback).
+ * 2. If phone is a valid international +E.164 number:
+ *    - Compares calling code of the number with calling code of selectedCountryIso.
+ *    - If calling codes match (e.g. NANP +1 for US and CA, or +44 for GB), preserves selectedCountryIso.
+ *    - If calling codes differ (e.g. +44... entered while NG selected, or +234... entered while GB selected),
+ *      infers and returns the matching country code from the number to prevent contradictory metadata.
+ */
+export function resolveConsistentCountryIso(
+  selectedCountryIso: string | null | undefined,
+  phoneOrE164: string | null | undefined,
+  fallbackIso: CountryCode = 'NG'
+): CountryCode {
+  const cleanIso = validateCountryIso(selectedCountryIso, { allowFallback: true, fallbackIso }).countryIso || fallbackIso;
+  if (!phoneOrE164 || typeof phoneOrE164 !== 'string') {
+    return cleanIso;
+  }
+  const trimmed = phoneOrE164.trim();
+  if (!trimmed.startsWith('+')) {
+    return cleanIso;
+  }
+
+  try {
+    const parsed = parsePhoneNumber(trimmed, undefined, phoneMetadata);
+    if (parsed && parsed.isValid()) {
+      const numberCallingCode = parsed.countryCallingCode;
+      let selectedCallingCode: string | null = null;
+      try {
+        selectedCallingCode = getCountryCallingCode(cleanIso);
+      } catch {}
+
+      if (selectedCallingCode && selectedCallingCode === numberCallingCode) {
+        return cleanIso;
+      }
+
+      if (parsed.country && getSupportedSet().has(parsed.country)) {
+        return parsed.country as CountryCode;
+      }
+    }
+  } catch {}
+
+  const inferred = inferCountryIsoFromE164(trimmed);
+  if (inferred) {
+    return inferred;
+  }
+
+  return cleanIso;
+}

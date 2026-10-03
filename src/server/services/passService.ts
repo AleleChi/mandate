@@ -38,6 +38,10 @@ export async function issuePassForChild({
     throw new Error('Child event registration not found');
   }
 
+  if (entry.status === 'incomplete' || entry.status === 'draft') {
+    throw new Error('Cannot issue event pass for an incomplete application draft');
+  }
+
   // Check if active pass already exists
   const existingPass = await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entry.id, 'active']);
   if (existingPass) {

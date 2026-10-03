@@ -22,6 +22,7 @@ import { isAppInstalled, promptPwaInstall } from '../utils/pwaInstall';
 import { Download } from 'lucide-react';
 import parentHeroImg from '../assets/images/parent_hero_1783622066454.jpg';
 import * as QRCodeLib from 'qrcode';
+import { isValidUploadedPhoto } from '../utils/validation';
 
 interface ParentHomeViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -43,9 +44,7 @@ interface ParentHomeViewProps {
 
 // Check whether photo is a custom uploaded image vs sample default asset
 const isRealUploadedPhoto = (url?: string) => {
-  if (!url || !url.trim()) return false;
-  if (url === REAL_ASSETS.passAvatar || url === REAL_ASSETS.workerAvatar) return false;
-  return true;
+  return isValidUploadedPhoto(url);
 };
 
 // Clean fallback avatar component that guarantees no broken images or squished alt text
@@ -817,9 +816,15 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           <div data-component-version="parent-profile-reminder-v1" className="bg-[#FCF9F2] dark:bg-[#21211E] border border-[#E8DFCA] dark:border-[#302E29] rounded-2xl p-4 flex items-start gap-3">
             <Info className="w-5 h-5 text-[#9A7326] dark:text-[#C59B27] shrink-0 mt-0.5" />
             <div className="flex-1">
-              <h4 className="text-xs font-bold text-[#18181B] dark:text-[#F0EBE3]">Complete your profile</h4>
+              <h4 className="text-xs font-bold text-[#18181B] dark:text-[#F0EBE3]">
+                {!parentProfile.photoUrl || !isRealUploadedPhoto(parentProfile.photoUrl)
+                  ? 'Add your profile photo'
+                  : 'Complete your profile'}
+              </h4>
               <p className="text-[11px] text-[#6B7280] dark:text-[#B8B0A5] mt-0.5">
-                Add any missing contact details so the event team can reach you when needed.
+                {!parentProfile.photoUrl || !isRealUploadedPhoto(parentProfile.photoUrl)
+                  ? 'A clear profile photo is required to ensure child security and identification at the event.'
+                  : 'Add any missing contact details so the event team can reach you when needed.'}
               </p>
               <button
                 type="button"
@@ -828,7 +833,9 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 }}
                 className="mt-2 text-[11px] font-bold text-[#9A7326] dark:text-[#D4AF37] hover:underline focus:outline-none cursor-pointer"
               >
-                Update profile
+                {!parentProfile.photoUrl || !isRealUploadedPhoto(parentProfile.photoUrl)
+                  ? 'Add photo'
+                  : 'Update profile'}
               </button>
             </div>
           </div>

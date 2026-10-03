@@ -4,6 +4,8 @@ import { ArrowLeft, Check, Send, Info, AlertCircle } from 'lucide-react';
 import { useNotification } from '../context/NotificationContext';
 import { Button } from '../components/common/Button';
 import { extractApiError } from '../services/api';
+import { validatePhoneNumber } from '../utils/validation';
+import { inferCountryIsoFromE164 } from '../utils/countries';
 
 export function normalizeChildDraftForReview(rawDraft: any): AddChildDraft {
   if (!rawDraft) return {} as AddChildDraft;
@@ -200,6 +202,13 @@ export function normalizeChildDraftForReview(rawDraft: any): AddChildDraft {
     ''
   ).trim();
 
+  const pickupPersonCountryIso = (
+    rawDraft.pickup?.pickupPersonCountryIso ||
+    rawDraft.pickupPersonCountryIso ||
+    inferCountryIsoFromE164(pickupPersonPhone) ||
+    'NG'
+  );
+
   const pickupPersonWhatsapp = (
     rawDraft.pickup?.pickupPersonWhatsApp ||
     rawDraft.pickup?.whatsapp_number ||
@@ -241,6 +250,7 @@ export function normalizeChildDraftForReview(rawDraft: any): AddChildDraft {
     pickupPersonFullName,
     pickupPersonRelationship,
     pickupPersonPhone,
+    pickupPersonCountryIso,
     pickupPersonWhatsapp,
     pickupPersonPhotoUrl,
     pickupPersonApproved,
@@ -278,6 +288,7 @@ export function normalizeChildDraftForReview(rawDraft: any): AddChildDraft {
       pickupPersonFullName,
       pickupPersonRelationship,
       pickupPersonPhone,
+      pickupPersonCountryIso,
       pickupPersonWhatsApp: pickupPersonWhatsapp,
       approvedByParent: pickupPersonApproved
     }
@@ -554,8 +565,19 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
       if (!pPhone) {
         pickupFields.push({ field: 'pickupPersonPhone', message: 'Pickup person phone number is missing.' });
       } else {
-        if (!/^[+\d\s]+$/.test(pPhone)) {
-          pickupFields.push({ field: 'pickupPersonPhone', message: 'Pickup phone can only contain digits, spaces, and +.' });
+        const countryIso = inferCountryIsoFromE164(pPhone) || draft.pickup?.pickupPersonCountryIso || draft.pickupPersonCountryIso || 'NG';
+        const phoneErr = validatePhoneNumber(pPhone, countryIso);
+        if (phoneErr) {
+          pickupFields.push({ field: 'pickupPersonPhone', message: 'Enter a valid phone number.' });
+        }
+      }
+
+      const pWa = (draft.pickup?.pickupPersonWhatsApp || draft.pickupPersonWhatsapp || '').trim();
+      if (pWa) {
+        const waCountryIso = inferCountryIsoFromE164(pWa) || draft.pickup?.pickupPersonCountryIso || draft.pickupPersonCountryIso || 'NG';
+        const waErr = validatePhoneNumber(pWa, waCountryIso);
+        if (waErr) {
+          pickupFields.push({ field: 'pickupPersonWhatsapp', message: 'Enter a valid phone number.' });
         }
       }
 

@@ -4,7 +4,7 @@ import { ArrowLeft, Info } from 'lucide-react';
 import { api, extractApiError } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
 import { PhotoUploadBox } from '../components/common/PhotoUploadBox';
-import { validateName, validateEmailSyntax, validatePhone } from '../utils/validation';
+import { validateName, validateEmailSyntax, validatePhone, isValidUploadedPhoto } from '../utils/validation';
 import { Button } from '../components/common/Button';
 import { AuthScreenShell } from '../components/common/AuthScreenShell';
 import { InternationalWhatsAppField } from '../components/common/InternationalWhatsAppField';
@@ -117,8 +117,8 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
   const validateField = (field: string): string => {
     switch (field) {
       case 'photoUrl':
-        if (!photoUrl || !photoUrl.trim()) {
-          return 'Add your photo.';
+        if (!photoUrl || !isValidUploadedPhoto(photoUrl)) {
+          return 'Add a clear profile photo to continue.';
         }
         break;
       case 'fullName': {
@@ -188,6 +188,7 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
 
   const getError = (field: string): string => {
     if (serverErrors[field]) return serverErrors[field];
+    if (field === 'photoUrl' && serverErrors['photo']) return serverErrors['photo'];
     if (!touched[field]) return '';
     return validateField(field);
   };
@@ -253,6 +254,9 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
     setServerErrors({});
 
     if (hasError) {
+      if (validateField('photoUrl')) {
+        setErrorMsg('Add a clear profile photo to continue.');
+      }
       return;
     }
 
@@ -314,6 +318,11 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
   };
 
   const handleSaveAndFinishLater = () => {
+    if (!photoUrl || !isValidUploadedPhoto(photoUrl)) {
+      setTouched((prev) => ({ ...prev, photoUrl: true }));
+      setErrorMsg('Add a clear profile photo to continue.');
+      return;
+    }
     const finalCountry = getCountryByIso(countryIso)?.name || country.trim() || 'Nigeria';
     onUpdateProfile({
       ...initialProfile,
@@ -342,7 +351,7 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
   };
 
   const isProfileFormValid = 
-    photoUrl.trim() !== '' &&
+    isValidUploadedPhoto(photoUrl) &&
     validateField('fullName') === '' &&
     validateField('email') === '' &&
     validateField('phone') === '' &&
@@ -780,7 +789,7 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
           <div className="pt-2 space-y-2">
             <Button
               type="submit"
-              disabled={saving || isUploadingPhoto || !isProfileFormValid}
+              disabled={saving || isUploadingPhoto}
               fullWidth
               size="lg"
             >

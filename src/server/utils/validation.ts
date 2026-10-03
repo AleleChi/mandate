@@ -829,6 +829,52 @@ export function validateImageFile(file: { type: string; size: number }, fieldNam
 }
 
 /**
+ * Verifies whether a photo reference is a genuine uploaded/stored profile photo
+ * rather than an empty value, local blob URL, data URI, placeholder, or generic initials.
+ */
+export function isValidUploadedPhoto(val?: any): boolean {
+  if (!val || typeof val !== 'string') return false;
+  const trimmed = val.trim();
+  if (!trimmed) return false;
+  const lower = trimmed.toLowerCase();
+
+  // Reject local blob URLs and data URIs (not uploaded)
+  if (lower.startsWith('blob:') || lower.startsWith('data:') || lower.startsWith('javascript:')) {
+    return false;
+  }
+
+  // Reject placeholders, sample assets, default avatars, initials
+  if (
+    lower.includes('placeholder') ||
+    lower.includes('default_avatar') ||
+    lower.includes('default-avatar') ||
+    lower.includes('avatar_placeholder') ||
+    lower.includes('pass_avatar') ||
+    lower.includes('worker_avatar') ||
+    lower.includes('parent_hero') ||
+    lower.includes('volunteer_hero') ||
+    lower === 'null' ||
+    lower === 'undefined' ||
+    lower.startsWith('initials:')
+  ) {
+    return false;
+  }
+
+  // Reject short raw letters/initials (e.g. "JD", "AB")
+  if (/^[a-zA-Z]{1,3}$/.test(trimmed)) {
+    return false;
+  }
+
+  // Must be a valid media file reference: UUID, API path, media- prefix, or valid URL
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+  const isMediaApi = trimmed.startsWith('/api/media/files/') || trimmed.startsWith('api/media/files/');
+  const isMediaPrefix = /^(media|photo|file|rec|img)[-_][a-zA-Z0-9_-]+/i.test(trimmed);
+  const isHttpUrl = (lower.startsWith('https://') || lower.startsWith('http://'));
+
+  return isUuid || isMediaApi || isMediaPrefix || isHttpUrl;
+}
+
+/**
  * Validate Parent Profile fields server-side
  */
 export function validateParentProfile(data: any): { valid: boolean; errors: { [key: string]: ValidationResult } } {
@@ -945,15 +991,17 @@ export function validateParentProfile(data: any): { valid: boolean; errors: { [k
     errors.homeAddress = addressRes;
   }
 
-  // Photo check
-  const photoVal = data.photoUrl || data.photo_file_id || data.photoFileId;
-  if (!photoVal || !photoVal.trim()) {
-    errors.photo = {
+  // Photo check - Parent profile photo is COMPULSORY
+  const photoVal = data.photoUrl !== undefined ? data.photoUrl : (data.photo_file_id || data.photoFileId);
+  if (!isValidUploadedPhoto(photoVal)) {
+    const photoErr: ValidationResult = {
       valid: false,
-      code: 'PHOTO_REQUIRED',
-      field: 'photo',
-      message: 'Photo is required.'
+      code: 'PARENT_PHOTO_REQUIRED',
+      field: 'photoUrl',
+      message: 'Please add a profile photo to continue.'
     };
+    errors.photoUrl = photoErr;
+    errors.photo = { ...photoErr, field: 'photo' };
   }
 
   // Worker department check
@@ -994,9 +1042,37 @@ export function validatePickupPerson(pickup: any, defaultCountry = 'NG'): { vali
       errors.pickupPersonRelationship = relationshipRes;
     }
 
-    const phoneRes = validatePhoneNumber(pickup?.pickupPersonPhone || '', defaultCountry, 'pickupPersonPhone');
-    if (!phoneRes.valid) {
-      errors.pickupPersonPhone = phoneRes;
+    const rawPhone = (pickup?.pickupPersonPhone || pickup?.phone_number || '').trim();
+    if (!rawPhone) {
+      errors.pickupPersonPhone = {
+        valid: false,
+        code: 'INVALID_PHONE_FORMAT',
+        field: 'pickupPersonPhone',
+        message: 'Enter a valid phone number.'
+      };
+    } else {
+      const inferredCountry = inferCountryIsoFromE164(rawPhone);
+      const effectiveCountry = inferredCountry || pickup?.pickupPersonCountryIso || defaultCountry || 'NG';
+      const phoneRes = validatePhoneNumber(rawPhone, effectiveCountry, 'pickupPersonPhone');
+      if (!phoneRes.valid) {
+        errors.pickupPersonPhone = {
+          ...phoneRes,
+          message: 'Enter a valid phone number.'
+        };
+      }
+    }
+
+    const rawWa = (pickup?.pickupPersonWhatsApp || pickup?.whatsapp_number || '').trim();
+    if (rawWa) {
+      const inferredWaCountry = inferCountryIsoFromE164(rawWa);
+      const effectiveWaCountry = inferredWaCountry || pickup?.pickupPersonCountryIso || defaultCountry || 'NG';
+      const waRes = validatePhoneNumber(rawWa, effectiveWaCountry, 'pickupPersonWhatsApp');
+      if (!waRes.valid) {
+        errors.pickupPersonWhatsApp = {
+          ...waRes,
+          message: 'Enter a valid phone number.'
+        };
+      }
     }
 
     const photoVal = pickup?.pickupPersonPhoto || pickup?.pickupPersonPhotoFileId;
@@ -1208,7 +1284,7 @@ export function validateChildDraftStep(draft: any, parentProfile: any): { valid:
       };
     }
   } else if (pickupType === 'other_person') {
-    const pickupRes = validatePickupPerson(pickup, parentProfile?.country === 'Nigeria' ? 'NG' : 'NG');
+    const pickupRes = validatePickupPerson(pickup, pickup?.pickupPersonCountryIso || (parentProfile?.country === 'Nigeria' ? 'NG' : 'NG'));
     if (!pickupRes.valid) {
       Object.assign(errors, pickupRes.errors);
     }

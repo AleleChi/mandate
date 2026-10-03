@@ -497,3 +497,49 @@ export const validateEmailDeliverability = async (email: string): Promise<boolea
   // Client side fallback is simple syntax check
   return validateEmailSyntax(email).valid;
 };
+
+/**
+ * Verifies whether a photo reference is a genuine uploaded/stored profile photo
+ * rather than an empty value, local blob URL, data URI, placeholder, or generic initials.
+ */
+export const isValidUploadedPhoto = (val?: any): boolean => {
+  if (!val || typeof val !== 'string') return false;
+  const trimmed = val.trim();
+  if (!trimmed) return false;
+  const lower = trimmed.toLowerCase();
+
+  // Reject local blob URLs and data URIs (not uploaded)
+  if (lower.startsWith('blob:') || lower.startsWith('data:') || lower.startsWith('javascript:')) {
+    return false;
+  }
+
+  // Reject placeholders, sample assets, default avatars, initials
+  if (
+    lower.includes('placeholder') ||
+    lower.includes('default_avatar') ||
+    lower.includes('default-avatar') ||
+    lower.includes('avatar_placeholder') ||
+    lower.includes('pass_avatar') ||
+    lower.includes('worker_avatar') ||
+    lower.includes('parent_hero') ||
+    lower.includes('volunteer_hero') ||
+    lower === 'null' ||
+    lower === 'undefined' ||
+    lower.startsWith('initials:')
+  ) {
+    return false;
+  }
+
+  // Reject short raw letters/initials (e.g. "JD", "AB")
+  if (/^[a-zA-Z]{1,3}$/.test(trimmed)) {
+    return false;
+  }
+
+  // Must be a valid media file reference: UUID, API path, media- prefix, or valid URL
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+  const isMediaApi = trimmed.startsWith('/api/media/files/') || trimmed.startsWith('api/media/files/');
+  const isMediaPrefix = /^(media|photo|file|rec|img)[-_][a-zA-Z0-9_-]+/i.test(trimmed);
+  const isHttpUrl = (lower.startsWith('https://') || lower.startsWith('http://'));
+
+  return isUuid || isMediaApi || isMediaPrefix || isHttpUrl;
+};

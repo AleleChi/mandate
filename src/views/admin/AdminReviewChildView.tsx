@@ -539,6 +539,7 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
   // Status Presentation Strings
   const getReviewStatusLabel = () => {
     if (isRemoved) return 'Removed';
+    if (app.status === 'incomplete' || app.status === 'draft') return 'Incomplete (Draft)';
     if (app.status === 'under_review' || app.status === 'review_reopened') return 'Under review';
     if (app.status === 'selected' || app.status === 'pass_ready' || ['checked_in', 'inside', 'picked_up'].includes(app.status)) return 'Selected';
     if (app.status === 'waiting_list') return 'Waiting list';
@@ -1110,6 +1111,24 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* 2.5 INCOMPLETE / DRAFT APPLICATION */}
+            {!isRemoved && !isAttendingChild && (app.status === 'incomplete' || app.status === 'draft') && (
+              <div className="space-y-4">
+                <div className="bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-900/40 rounded-xl p-4 text-xs text-amber-900 dark:text-amber-200 leading-relaxed space-y-2">
+                  <div className="flex items-center space-x-2 font-semibold text-xs text-amber-800 dark:text-amber-300">
+                    <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span>Application Draft in Progress</span>
+                  </div>
+                  <p className="text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+                    This registration has been saved as a draft by the parent but has not yet been submitted for review.
+                  </p>
+                  <div className="pt-1 text-[11px] text-zinc-500 dark:text-[#7A7570]">
+                    Review and approval actions (Select, Admit, Waiting list) are disabled until the parent completes all mandatory registration details and submits the application.
+                  </div>
+                </div>
               </div>
             )}
 

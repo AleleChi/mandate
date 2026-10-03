@@ -3,8 +3,9 @@ import crypto from 'crypto';
 import { query, queryOne, execute, transaction } from '../db';
 import { authMiddleware, AuthenticatedRequest } from '../auth';
 import { sendChildReviewReceivedEmail } from '../services/email';
-import { validateParentProfile, validateChildDraftStep, validatePhoneNumber, validateChildName, validateDateOfBirth } from '../utils/validation';
-import { resolveCountryIso, resolveWhatsAppCountryIso, getCountryByIso } from '../../utils/countries';
+import { validateParentProfile, validateChildDraftStep, validatePhoneNumber, validateChildName, validateDateOfBirth, isValidUploadedPhoto } from '../utils/validation';
+import { resolveCountryIso, resolveWhatsAppCountryIso, getCountryByIso, inferCountryIsoFromE164 } from '../../utils/countries';
+import { normalizePhoneNumberToE164 } from '../utils/phone';
 import { getPassesForParent, issuePassForChild, isChildPassAuthorized } from '../services/passService';
 import { getCurrentEvent, getCurrentEventId, getEventById } from '../services/eventService';
 import { checkEventEligibility } from '../services/eligibilityService';
@@ -403,10 +404,12 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
       code: err.code,
       message: err.message
     }));
+    const code = validation.errors.photoUrl?.code || validation.errors.photo?.code || 'VALIDATION_FAILED';
     return res.status(400).json({
       success: false,
-      code: 'VALIDATION_FAILED',
+      code,
       error: firstErrMsg,
+      message: firstErrMsg,
       errors: errorsList,
       errorsMap: validation.errors
     });
@@ -433,6 +436,7 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
     : cleanPhone;
 
   const mediaFileId = await resolveToMediaFileId(photoUrl);
+  const hasValidPhoto = Boolean(mediaFileId && isValidUploadedPhoto(mediaFileId));
 
   const now = new Date().toISOString();
 
@@ -447,7 +451,7 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
     stateRegion && stateRegion.trim() &&
     city && city.trim() &&
     preferredContact && preferredContact.trim() &&
-    mediaFileId &&
+    hasValidPhoto &&
     (!isWorker || (department && department.trim()));
 
   const completedAtValue = isProfileComplete ? (req.parentProfile.profile_completed_at || now) : null;
@@ -890,9 +894,24 @@ async function performSaveDraftInternal(req: AuthenticatedRequest, draft: any, c
     const pickupPhoto = draft.pickup?.pickupPersonPhoto || draft.pickup?.pickupPersonPhotoUrl || draft.pickup?.photo_url || draft.pickupPersonPhotoUrl || '';
     const pickupName = draft.pickup?.pickupPersonFullName || draft.pickup?.full_name || draft.pickupPersonFullName || '';
     const pickupRel = draft.pickup?.pickupPersonRelationship || draft.pickup?.relationship_to_child || draft.pickupPersonRelationship || '';
-    const pickupPhone = draft.pickup?.pickupPersonPhone || draft.pickup?.phone_number || draft.pickupPersonPhone || '';
-    const pickupWa = draft.pickup?.pickupPersonWhatsApp || draft.pickup?.whatsapp_number || draft.pickupPersonWhatsapp || '';
+    let pickupPhone = draft.pickup?.pickupPersonPhone || draft.pickup?.phone_number || draft.pickupPersonPhone || '';
+    let pickupWa = draft.pickup?.pickupPersonWhatsApp || draft.pickup?.whatsapp_number || draft.pickupPersonWhatsapp || '';
     const pickupAppr = draft.pickup?.approvedByParent || draft.pickup?.approved_by_parent || draft.pickupPersonApproved ? 1 : 0;
+
+    if (pickupPhone && pickupPhone.trim()) {
+      const countryForPickup = inferCountryIsoFromE164(pickupPhone) || draft.pickup?.pickupPersonCountryIso || draft.pickupPersonCountryIso || 'NG';
+      const normalizedPickupPhone = normalizePhoneNumberToE164(pickupPhone.trim(), countryForPickup);
+      if (normalizedPickupPhone) {
+        pickupPhone = normalizedPickupPhone;
+      }
+    }
+    if (pickupWa && pickupWa.trim()) {
+      const countryForWa = inferCountryIsoFromE164(pickupWa) || draft.pickup?.pickupPersonCountryIso || draft.pickupPersonCountryIso || 'NG';
+      const normalizedPickupWa = normalizePhoneNumberToE164(pickupWa.trim(), countryForWa);
+      if (normalizedPickupWa) {
+        pickupWa = normalizedPickupWa;
+      }
+    }
 
     const pickupPhotoId = await resolveToMediaFileId(pickupPhoto);
 
@@ -991,6 +1010,16 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
     }
   }
 
+  // Enforce parent profile photo requirement before submitting a child registration
+  if (!isValidUploadedPhoto(req.parentProfile.photo_file_id)) {
+    return res.status(400).json({
+      success: false,
+      code: 'PARENT_PHOTO_REQUIRED',
+      error: 'Please add a profile photo to continue.',
+      message: 'Please add a profile photo to continue.'
+    });
+  }
+
   const c = await queryOne('SELECT * FROM children WHERE id = ? AND parent_profile_id = ?', [childId, req.parentProfile.id]);
   if (!c) return res.status(404).json({ error: 'Child not found' });
 
@@ -1049,6 +1078,7 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
       pickupPersonFullName: pickup.full_name,
       pickupPersonRelationship: pickup.relationship_to_child,
       pickupPersonPhone: pickup.phone_number,
+      pickupPersonCountryIso: req.body?.pickup?.pickupPersonCountryIso || req.body?.pickupPersonCountryIso || inferCountryIsoFromE164(pickup.phone_number) || 'NG',
       pickupPersonWhatsApp: pickup.whatsapp_number,
       approvedByParent: Boolean(pickup.approved_by_parent)
     },
