@@ -54,9 +54,15 @@ export const isValidRoute = (route: string): boolean => {
   return validRoutes.includes(cleanRoute);
 };
 
+// '/index.html' is the root, and trailing slashes are dropped ('/contact/' -> '/contact')
+export const normalizePathname = (pathname: string): string => {
+  if (!pathname || pathname === '/index.html') return '/';
+  return pathname.replace(/\/+$/, '') || '/';
+};
+
 export const getInitialRoute = (): AppRoute => {
   if (typeof window === 'undefined') return '/';
-  const pathname = window.location.pathname || '';
+  const pathname = normalizePathname(window.location.pathname || '');
   let hash = (window.location.hash || '').replace(/^#+/, '');
   if (hash && !hash.startsWith('/')) hash = '/' + hash;
 
@@ -73,5 +79,6 @@ export const getInitialRoute = (): AppRoute => {
     }
   }
 
-  return '/';
+  // 3. Unknown paths are kept so the app renders the not-found page
+  return pathname;
 };
