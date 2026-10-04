@@ -32,7 +32,12 @@ import { seedDefaultEscalationPolicies, runEscalationScheduler } from './src/ser
 import { getDb } from './src/server/db';
 import { processPendingNotifications } from './src/server/services/notifications';
 import { authMiddleware, AuthenticatedRequest } from './src/server/auth';
-import { validatePublicAppUrlOnStartup } from './src/server/utils/urlHelper';
+import {
+  validatePublicAppUrlOnStartup,
+  TRUSTED_FRONTEND_ORIGINS,
+  resolveTrustedRequestOrigin,
+  runWithRequestOrigin
+} from './src/server/utils/urlHelper';
 import { processQueuedWhatsAppJobs, isWhatsAppInProcessWorkerEnabled } from './src/server/services/whatsapp';
 import automationsRouter from './src/server/routes/admin/automations';
 import { initAutomationSchema } from './src/server/services/operations/automation/automationPersistence';
@@ -47,12 +52,6 @@ async function startServer() {
 
   app.use(express.json({ limit: '20mb' }));
   app.use(express.urlencoded({ extended: true, limit: '20mb' }));
-
-  // Production frontend origins, allowed in addition to CORS_ORIGIN / APP_BASE_URL
-  const TRUSTED_FRONTEND_ORIGINS = [
-    'https://www.kgachildren.koinoniageneralassembly.com',
-    'https://kgachildren.koinoniageneralassembly.com'
-  ];
 
   // CORS middleware supporting CORS_ORIGIN, APP_BASE_URL, and Netlify origins
   app.use((req, res, next) => {
@@ -106,6 +105,12 @@ async function startServer() {
       return res.sendStatus(204);
     }
     next();
+  });
+
+  // Links built while handling a request (verification, password reset, invites) point back to the
+  // trusted frontend the request came from; untrusted or missing origins fall back to env
+  app.use((req, _res, next) => {
+    runWithRequestOrigin(resolveTrustedRequestOrigin(req.headers), next);
   });
 
   // API Routes FIRST - Lightweight health check verifying server & database status

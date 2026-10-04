@@ -6,6 +6,7 @@ import { sendChildReviewReceivedEmail } from '../services/email';
 import { validateParentProfile, validateChildDraftStep, validatePhoneNumber, validateChildName, validateDateOfBirth, isValidUploadedPhoto } from '../utils/validation';
 import { resolveCountryIso, resolveWhatsAppCountryIso, getCountryByIso, inferCountryIsoFromE164 } from '../../utils/countries';
 import { normalizePhoneNumberToE164 } from '../utils/phone';
+import { buildParentStatusUrl } from '../utils/urlHelper';
 import { getPassesForParent, issuePassForChild, isChildPassAuthorized } from '../services/passService';
 import { getCurrentEvent, getCurrentEventId, getEventById } from '../services/eventService';
 import { checkEventEligibility } from '../services/eligibilityService';
@@ -1210,8 +1211,7 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
 
   const updatedEntry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [entry.id]);
   if (req.user && req.user.email) {
-    const baseUrl = process.env.APP_BASE_URL || 'https://koinonia12.netlify.app';
-    const childStatusLink = `${baseUrl}/#/parent/children/${childId}/status`;
+    const childStatusLink = buildParentStatusUrl(childId);
     sendChildReviewReceivedEmail({
       parentEmail: req.user.email,
       parentFirstName: req.parentProfile?.full_name,
