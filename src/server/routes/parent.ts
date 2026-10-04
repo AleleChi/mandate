@@ -1129,11 +1129,14 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
   // Server-authoritative event age eligibility check evaluated on event date
   const eligibility = checkEventEligibility(c.date_of_birth, currentEvent);
   if (!eligibility.eligible) {
+    const defaultReason = (currentEvent?.minimum_age && currentEvent?.maximum_age)
+      ? `This programme is currently open to children ages ${currentEvent.minimum_age}–${currentEvent.maximum_age}.`
+      : 'This programme is currently open to children ages 2–14.';
     return res.status(400).json({
       success: false,
-      code: 'CHILD_INELIGIBLE_FOR_EVENT',
-      message: eligibility.reason || 'This child does not meet the age eligibility requirements for this event.',
-      error: eligibility.reason || 'This child does not meet the age eligibility requirements for this event.',
+      code: 'AGE_NOT_ELIGIBLE',
+      message: eligibility.reason || defaultReason,
+      error: eligibility.reason || defaultReason,
       eligibility
     });
   }

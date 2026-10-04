@@ -293,7 +293,8 @@ async function startServer() {
       const mediaMap: Record<string, any> = {
         parentDashboardHero: { url: null, thumbnailUrl: null },
         volunteerDashboardHero: { url: null, thumbnailUrl: null },
-        defaultEventHero: { url: null, thumbnailUrl: null }
+        defaultEventHero: { url: null, thumbnailUrl: null },
+        heroFeatureImage: { url: null, thumbnailUrl: null }
       };
       for (const row of rows) {
         if (row.slot === 'parent_dashboard_hero') {
@@ -302,6 +303,8 @@ async function startServer() {
           mediaMap.volunteerDashboardHero = { url: row.url || null, thumbnailUrl: row.thumbnail_url || null };
         } else if (row.slot === 'default_event_hero') {
           mediaMap.defaultEventHero = { url: row.url || null, thumbnailUrl: row.thumbnail_url || null };
+        } else if (row.slot === 'hero_feature_image') {
+          mediaMap.heroFeatureImage = { url: row.url || null, thumbnailUrl: row.thumbnail_url || null };
         }
       }
       res.json({

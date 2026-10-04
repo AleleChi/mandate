@@ -143,6 +143,9 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
     // Simulation / Test Provider: No external network transmission
     if (provider === 'simulated' || provider === 'test' || provider === 'mock') {
       const simId = `sim_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[EmailService] Simulated email to ${options.to} (${options.subject}):\n${options.text}\n`);
+      }
       return {
         success: true,
         provider: 'simulated',

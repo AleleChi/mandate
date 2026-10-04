@@ -85,7 +85,7 @@ export function getPublicAppUrl(): string {
       console.error('[URL Helper] CRITICAL: Neither PUBLIC_APP_URL nor APP_BASE_URL is configured in production environment!');
       throw new Error('PUBLIC_APP_URL environment variable is required in production mode.');
     }
-    rawUrl = 'http://localhost:3000';
+    rawUrl = 'http://localhost:5173';
   }
 
   // Strip trailing slash
@@ -113,7 +113,7 @@ export function getPublicAppUrl(): string {
       console.error('[URL Helper] Invalid PUBLIC_APP_URL configuration in production:', rawUrl, err?.message);
       throw new Error(`Invalid PUBLIC_APP_URL configuration: ${err?.message || 'Malformed URL'}`);
     }
-    return 'http://localhost:3000';
+    return 'http://localhost:5173';
   }
 }
 
@@ -131,7 +131,7 @@ export function validatePublicAppUrlOnStartup(): string {
     if (process.env.NODE_ENV === 'production') {
       throw err;
     }
-    return 'http://localhost:3000';
+    return 'http://localhost:5173';
   }
 }
 

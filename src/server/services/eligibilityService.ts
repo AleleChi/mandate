@@ -52,6 +52,10 @@ function parseCalendarDateParts(dateInput?: string | Date | null): { year: numbe
   return null;
 }
 
+export const CANONICAL_GA_EVENT_DATE = '2026-11-21';
+export const CANONICAL_MIN_AGE = 2;
+export const CANONICAL_MAX_AGE = 14;
+
 /**
  * Accurately calculates child's age in completed years on a specific target date (e.g. event start date).
  * Uses strict calendar-date semantics to prevent timezone parsing from shifting birthdays by one day.
@@ -96,7 +100,7 @@ export function checkEventEligibility(
     };
   }
 
-  const eventDate = event?.starts_at || event?.event_start_at || null;
+  const eventDate = event?.starts_at || event?.event_start_at || CANONICAL_GA_EVENT_DATE;
   const childAge = calculateAgeOnDate(dob, eventDate);
 
   if (childAge === null) {
@@ -114,22 +118,32 @@ export function checkEventEligibility(
 
   const rawMin = event?.minimum_age !== undefined && event?.minimum_age !== null
     ? event.minimum_age
-    : (event?.minimumAge !== undefined && event?.minimumAge !== null ? event.minimumAge : null);
+    : (event?.minimumAge !== undefined && event?.minimumAge !== null
+        ? event.minimumAge
+        : (event === undefined || event === null ? CANONICAL_MIN_AGE : null));
 
-  const rawMax = event?.maximum_age !== undefined && event?.maximum_age !== null
+  const rawMax = event?.maximum_age !== undefined
     ? event.maximum_age
-    : (event?.maximumAge !== undefined && event?.maximumAge !== null ? event.maximumAge : null);
+    : (event?.maximumAge !== undefined
+        ? event.maximumAge
+        : (event === undefined || event === null ? CANONICAL_MAX_AGE : null));
 
   const minAge = rawMin !== null && !isNaN(Number(rawMin)) ? Number(rawMin) : null;
   const maxAge = rawMax !== null && !isNaN(Number(rawMax)) ? Number(rawMax) : null;
 
   // 1. Minimum age check
   if (minAge !== null && childAge < minAge) {
+    const reason = (minAge !== null && maxAge !== null)
+      ? `This programme is currently open to children ages ${minAge}–${maxAge}.`
+      : (minAge === CANONICAL_MIN_AGE && (maxAge === CANONICAL_MAX_AGE || maxAge === null))
+        ? 'This programme is currently open to children ages 2–14.'
+        : `Children must be at least ${minAge} years old by the event date to be eligible for this programme.`;
+
     return {
       eligible: false,
       status: 'ineligible',
       code: 'BELOW_MINIMUM_AGE',
-      reason: `Children must be at least ${minAge} years old by the event date to be eligible for this programme.`,
+      reason,
       childAgeOnEventDate: childAge,
       minimumAge: minAge,
       maximumAge: maxAge,
@@ -139,11 +153,17 @@ export function checkEventEligibility(
 
   // 2. Maximum age check (only enforced if maximum age is explicitly configured)
   if (maxAge !== null && childAge > maxAge) {
+    const reason = (minAge !== null && maxAge !== null)
+      ? `This programme is currently open to children ages ${minAge}–${maxAge}.`
+      : (minAge === CANONICAL_MIN_AGE && maxAge === CANONICAL_MAX_AGE)
+        ? 'This programme is currently open to children ages 2–14.'
+        : `This event is open to children up to ${maxAge} years old.`;
+
     return {
       eligible: false,
       status: 'ineligible',
       code: 'ABOVE_MAXIMUM_AGE',
-      reason: `This event is open to children up to ${maxAge} years old.`,
+      reason,
       childAgeOnEventDate: childAge,
       minimumAge: minAge,
       maximumAge: maxAge,

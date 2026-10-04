@@ -615,6 +615,7 @@ function initSqliteSchema(db: Database.Database) {
     CREATE TABLE IF NOT EXISTS admin_general_settings (
       id TEXT PRIMARY KEY,
       parent_registration_enabled INTEGER DEFAULT 1,
+      volunteer_registration_enabled INTEGER DEFAULT 1,
       parent_login_enabled INTEGER DEFAULT 1,
       required_child_photo INTEGER DEFAULT 1,
       required_parent_photo INTEGER DEFAULT 1,
@@ -1850,20 +1851,25 @@ function initSqliteSchema(db: Database.Database) {
   db.prepare(`
     INSERT OR IGNORE INTO events (
       id, title, section_name, theme, scripture, starts_at, ends_at,
-      daily_start_time, daily_end_time, location, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      daily_start_time, daily_end_time, location, status,
+      minimum_age, maximum_age, parent_access_closes_at,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     REAL_EVENT_ID,
     'The General Assembly',
     'Children and Teens',
     'More Than Conquerors',
     'Romans 8:37',
-    '2026-11-18',
-    '2026-11-22',
+    '2026-11-21',
+    '2026-11-21',
     '9:00 AM',
     '7:00 PM',
     'Koinonia Global Auditorium & Children Pavilion, Abuja',
     'current',
+    2,
+    14,
+    '2026-10-17T23:59:00+01:00',
     now,
     now
   );
@@ -1871,14 +1877,26 @@ function initSqliteSchema(db: Database.Database) {
   // Safely migrate existing databases for consistency
   db.prepare("UPDATE events SET title = 'The General Assembly', section_name = 'Children and Teens' WHERE id = ? AND title = 'Children and Teens'").run(REAL_EVENT_ID);
   db.prepare("UPDATE events SET status = 'current' WHERE id = ? AND status IN ('open', 'active')").run(REAL_EVENT_ID);
+  db.prepare(`
+    UPDATE events SET
+      starts_at = '2026-11-21',
+      ends_at = '2026-11-21',
+      minimum_age = 2,
+      maximum_age = 14,
+      parent_access_closes_at = '2026-10-17T23:59:00+01:00',
+      status = 'current'
+    WHERE id = ?
+  `).run(REAL_EVENT_ID);
+
 
   db.prepare(`
     INSERT OR IGNORE INTO admin_general_settings (
-      id, parent_registration_enabled, parent_login_enabled, required_child_photo, required_parent_photo,
+      id, parent_registration_enabled, volunteer_registration_enabled, parent_login_enabled, required_child_photo, required_parent_photo,
       required_medical_notes, required_pickup_person, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     'primary_general_settings',
+    1,
     1,
     1,
     1,
@@ -2451,6 +2469,7 @@ async function initPostgresSchema(pool: any) {
       CREATE TABLE IF NOT EXISTS admin_general_settings (
         id VARCHAR(64) PRIMARY KEY,
         parent_registration_enabled INTEGER DEFAULT 1,
+        volunteer_registration_enabled INTEGER DEFAULT 1,
         parent_login_enabled INTEGER DEFAULT 1,
         required_child_photo INTEGER DEFAULT 1,
         required_parent_photo INTEGER DEFAULT 1,
@@ -3630,8 +3649,10 @@ async function initPostgresSchema(pool: any) {
     await pool.query(`
       INSERT INTO events (
         id, title, section_name, theme, scripture, starts_at, ends_at,
-        daily_start_time, daily_end_time, location, status, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        daily_start_time, daily_end_time, location, status,
+        minimum_age, maximum_age, parent_access_closes_at,
+        created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       ON CONFLICT (id) DO NOTHING
     `, [
       REAL_EVENT_ID,
@@ -3639,12 +3660,15 @@ async function initPostgresSchema(pool: any) {
       'Children and Teens',
       'More Than Conquerors',
       'Romans 8:37',
-      '2026-11-18',
+      '2026-11-21',
       '2026-11-22',
       '9:00 AM',
       '7:00 PM',
       'Koinonia Global Auditorium & Children Pavilion, Abuja',
       'current',
+      2,
+      12,
+      '2026-10-17T23:59:00+01:00',
       now,
       now
     ]);

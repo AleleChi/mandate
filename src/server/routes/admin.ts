@@ -585,10 +585,11 @@ router.post('/accept-invite', async (req, res) => {
 
       // Audit log
       try {
+        const userRec = await queryOne('SELECT role FROM users WHERE id = ?', [dbToken.user_id]);
         await execute(
-          `INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [crypto.randomUUID(), dbToken.user_id, 'ACCEPT_INVITATION', 'user', dbToken.user_id, JSON.stringify({ emailVerified: true }), nowStr]
+          `INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [crypto.randomUUID(), dbToken.user_id, userRec?.role || 'admin', 'ACCEPT_INVITATION', 'user', dbToken.user_id, JSON.stringify({ emailVerified: true }), nowStr]
         );
       } catch (e) {}
     });
@@ -712,14 +713,31 @@ router.get('/public-landing-page', async (req, res) => {
       } else {
         // Canonical default cohorts for the current event
         currentEventAgeGroups = [
-          { id: 'ag-below-1', label: 'Below 1', minAge: 0, maxAge: 0, sortOrder: 1 },
-          { id: 'ag-1-3', label: 'Ages 1 to 3', minAge: 1, maxAge: 3, sortOrder: 2 },
-          { id: 'ag-4-6', label: 'Ages 4 to 6', minAge: 4, maxAge: 6, sortOrder: 3 },
-          { id: 'ag-7-9', label: 'Ages 7 to 9', minAge: 7, maxAge: 9, sortOrder: 4 },
-          { id: 'ag-10-12', label: 'Ages 10 to 12', minAge: 10, maxAge: 12, sortOrder: 5 }
+          { id: 'ag-2-3', label: 'Early Years', minAge: 2, maxAge: 3, sortOrder: 1 },
+          { id: 'ag-4-6', label: '4–6 Years', minAge: 4, maxAge: 6, sortOrder: 2 },
+          { id: 'ag-7-9', label: '7–9 Years', minAge: 7, maxAge: 9, sortOrder: 3 },
+          { id: 'ag-10-12', label: '10–12 Years', minAge: 10, maxAge: 12, sortOrder: 4 },
+          { id: 'ag-13-14', label: '13–14 Years', minAge: 13, maxAge: 14, sortOrder: 5 }
         ];
       }
     }
+
+    let genSettings: any = null;
+    try {
+      genSettings = await queryOne(`
+        SELECT *
+        FROM admin_general_settings
+        WHERE id = 'primary_general_settings'
+      `);
+    } catch (e) {}
+
+    const parentRegistrationEnabled = genSettings ? (genSettings.parent_registration_enabled === 1 || genSettings.parent_registration_enabled === true || genSettings.parent_registration_enabled === undefined) : true;
+    const volunteerRegistrationEnabled = genSettings && genSettings.volunteer_registration_enabled !== undefined && genSettings.volunteer_registration_enabled !== null
+      ? (genSettings.volunteer_registration_enabled === 1 || genSettings.volunteer_registration_enabled === true || genSettings.volunteer_registration_enabled === 'true')
+      : true;
+
+    settings.parent_registration_enabled = parentRegistrationEnabled ? 'true' : 'false';
+    settings.volunteer_registration_enabled = volunteerRegistrationEnabled ? 'true' : 'false';
 
     const currentEvent = rawEvent ? {
       id: rawEvent.id,
@@ -733,7 +751,11 @@ router.get('/public-landing-page', async (req, res) => {
       scripture: rawEvent.scripture || null,
       location: rawEvent.location || null,
       timezone: rawEvent.timezone || null,
+      minimum_age: rawEvent.minimum_age !== undefined && rawEvent.minimum_age !== null ? rawEvent.minimum_age : 2,
+      maximum_age: rawEvent.maximum_age !== undefined && rawEvent.maximum_age !== null ? rawEvent.maximum_age : 14,
       parents_can_create_account: rawEvent.parents_can_create_account ?? 1,
+      parent_registration_enabled: parentRegistrationEnabled,
+      volunteer_registration_enabled: volunteerRegistrationEnabled,
       parent_access_opens_at: rawEvent.parent_access_opens_at || null,
       parent_access_closes_at: rawEvent.parent_access_closes_at || null,
       ageGroups: currentEventAgeGroups
@@ -6708,25 +6730,35 @@ router.post('/messages/settings', async (req: AuthenticatedRequest, res: Respons
 router.get('/general-settings', async (req: AuthenticatedRequest, res: Response) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   try {
-    let settings = await queryOne(`
-      SELECT parent_registration_enabled as parentRegistrationEnabled,
-             parent_login_enabled as parentLoginEnabled,
-             required_child_photo as requiredChildPhoto,
-             required_parent_photo as requiredParentPhoto,
-             required_medical_notes as requiredMedicalNotes,
-             required_pickup_person as requiredPickupPerson
-      FROM admin_general_settings
-      WHERE id = 'primary_general_settings'
-    `);
+    let rawSettings: any = null;
+    try {
+      rawSettings = await queryOne(`
+        SELECT *
+        FROM admin_general_settings
+        WHERE id = 'primary_general_settings'
+      `);
+    } catch (e) {}
 
-    if (!settings) {
+    let settings;
+    if (!rawSettings) {
       settings = {
         parentRegistrationEnabled: 1,
+        volunteerRegistrationEnabled: 1,
         parentLoginEnabled: 1,
         requiredChildPhoto: 1,
         requiredParentPhoto: 1,
         requiredMedicalNotes: 0,
         requiredPickupPerson: 1
+      };
+    } else {
+      settings = {
+        parentRegistrationEnabled: rawSettings.parent_registration_enabled !== undefined ? (rawSettings.parent_registration_enabled === 1 ? 1 : 0) : 1,
+        volunteerRegistrationEnabled: rawSettings.volunteer_registration_enabled !== undefined && rawSettings.volunteer_registration_enabled !== null ? (rawSettings.volunteer_registration_enabled === 1 ? 1 : 0) : 1,
+        parentLoginEnabled: rawSettings.parent_login_enabled !== undefined ? (rawSettings.parent_login_enabled === 1 ? 1 : 0) : 1,
+        requiredChildPhoto: rawSettings.required_child_photo !== undefined ? (rawSettings.required_child_photo === 1 ? 1 : 0) : 1,
+        requiredParentPhoto: rawSettings.required_parent_photo !== undefined ? (rawSettings.required_parent_photo === 1 ? 1 : 0) : 1,
+        requiredMedicalNotes: rawSettings.required_medical_notes !== undefined ? (rawSettings.required_medical_notes === 1 ? 1 : 0) : 0,
+        requiredPickupPerson: rawSettings.required_pickup_person !== undefined ? (rawSettings.required_pickup_person === 1 ? 1 : 0) : 1
       };
     }
 
@@ -6743,6 +6775,7 @@ router.post('/general-settings', async (req: AuthenticatedRequest, res: Response
   try {
     const {
       parentRegistrationEnabled,
+      volunteerRegistrationEnabled,
       parentLoginEnabled,
       requiredChildPhoto,
       requiredParentPhoto,
@@ -6755,43 +6788,89 @@ router.post('/general-settings', async (req: AuthenticatedRequest, res: Response
 
     const existing = await queryOne('SELECT id FROM admin_general_settings WHERE id = ?', [id]);
     if (existing) {
-      await execute(`
-        UPDATE admin_general_settings
-        SET parent_registration_enabled = ?,
-            parent_login_enabled = ?,
-            required_child_photo = ?,
-            required_parent_photo = ?,
-            required_medical_notes = ?,
-            required_pickup_person = ?,
-            updated_at = ?
-        WHERE id = ?
-      `, [
-        parentRegistrationEnabled ? 1 : 0,
-        parentLoginEnabled ? 1 : 0,
-        requiredChildPhoto ? 1 : 0,
-        requiredParentPhoto ? 1 : 0,
-        requiredMedicalNotes ? 1 : 0,
-        requiredPickupPerson ? 1 : 0,
-        now,
-        id
-      ]);
+      try {
+        await execute(`
+          UPDATE admin_general_settings
+          SET parent_registration_enabled = ?,
+              volunteer_registration_enabled = ?,
+              parent_login_enabled = ?,
+              required_child_photo = ?,
+              required_parent_photo = ?,
+              required_medical_notes = ?,
+              required_pickup_person = ?,
+              updated_at = ?
+          WHERE id = ?
+        `, [
+          parentRegistrationEnabled ? 1 : 0,
+          volunteerRegistrationEnabled !== undefined ? (volunteerRegistrationEnabled ? 1 : 0) : 1,
+          parentLoginEnabled ? 1 : 0,
+          requiredChildPhoto ? 1 : 0,
+          requiredParentPhoto ? 1 : 0,
+          requiredMedicalNotes ? 1 : 0,
+          requiredPickupPerson ? 1 : 0,
+          now,
+          id
+        ]);
+      } catch (err: any) {
+        // Fallback for older database schemas where volunteer_registration_enabled is not yet migrated
+        await execute(`
+          UPDATE admin_general_settings
+          SET parent_registration_enabled = ?,
+              parent_login_enabled = ?,
+              required_child_photo = ?,
+              required_parent_photo = ?,
+              required_medical_notes = ?,
+              required_pickup_person = ?,
+              updated_at = ?
+          WHERE id = ?
+        `, [
+          parentRegistrationEnabled ? 1 : 0,
+          parentLoginEnabled ? 1 : 0,
+          requiredChildPhoto ? 1 : 0,
+          requiredParentPhoto ? 1 : 0,
+          requiredMedicalNotes ? 1 : 0,
+          requiredPickupPerson ? 1 : 0,
+          now,
+          id
+        ]);
+      }
     } else {
-      await execute(`
-        INSERT INTO admin_general_settings (
-          id, parent_registration_enabled, parent_login_enabled, required_child_photo, required_parent_photo,
-          required_medical_notes, required_pickup_person, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        id,
-        parentRegistrationEnabled ? 1 : 0,
-        parentLoginEnabled ? 1 : 0,
-        requiredChildPhoto ? 1 : 0,
-        requiredParentPhoto ? 1 : 0,
-        requiredMedicalNotes ? 1 : 0,
-        requiredPickupPerson ? 1 : 0,
-        now,
-        now
-      ]);
+      try {
+        await execute(`
+          INSERT INTO admin_general_settings (
+            id, parent_registration_enabled, volunteer_registration_enabled, parent_login_enabled, required_child_photo, required_parent_photo,
+            required_medical_notes, required_pickup_person, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          id,
+          parentRegistrationEnabled ? 1 : 0,
+          volunteerRegistrationEnabled !== undefined ? (volunteerRegistrationEnabled ? 1 : 0) : 1,
+          parentLoginEnabled ? 1 : 0,
+          requiredChildPhoto ? 1 : 0,
+          requiredParentPhoto ? 1 : 0,
+          requiredMedicalNotes ? 1 : 0,
+          requiredPickupPerson ? 1 : 0,
+          now,
+          now
+        ]);
+      } catch (err: any) {
+        await execute(`
+          INSERT INTO admin_general_settings (
+            id, parent_registration_enabled, parent_login_enabled, required_child_photo, required_parent_photo,
+            required_medical_notes, required_pickup_person, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          id,
+          parentRegistrationEnabled ? 1 : 0,
+          parentLoginEnabled ? 1 : 0,
+          requiredChildPhoto ? 1 : 0,
+          requiredParentPhoto ? 1 : 0,
+          requiredMedicalNotes ? 1 : 0,
+          requiredPickupPerson ? 1 : 0,
+          now,
+          now
+        ]);
+      }
     }
 
     return res.json({ success: true, message: 'General settings updated successfully.' });
@@ -7124,7 +7203,7 @@ router.post('/settings/media', upload.single('file'), async (req: AuthenticatedR
     if (!slot) {
       return res.status(400).json({ success: false, error: 'Slot key is required.' });
     }
-    const allowedSlots = ['parent_dashboard_hero', 'volunteer_dashboard_hero', 'default_event_hero', 'site_favicon'];
+    const allowedSlots = ['parent_dashboard_hero', 'volunteer_dashboard_hero', 'default_event_hero', 'site_favicon', 'hero_feature_image'];
     if (!allowedSlots.includes(slot)) {
       return res.status(400).json({ success: false, error: 'Invalid slot key.' });
     }
