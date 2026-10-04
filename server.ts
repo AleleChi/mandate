@@ -48,6 +48,12 @@ async function startServer() {
   app.use(express.json({ limit: '20mb' }));
   app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
+  // Production frontend origins, allowed in addition to CORS_ORIGIN / APP_BASE_URL
+  const TRUSTED_FRONTEND_ORIGINS = [
+    'https://www.kgachildren.koinoniageneralassembly.com',
+    'https://kgachildren.koinoniageneralassembly.com'
+  ];
+
   // CORS middleware supporting CORS_ORIGIN, APP_BASE_URL, and Netlify origins
   app.use((req, res, next) => {
     const origin = req.headers.origin;
@@ -75,6 +81,7 @@ async function startServer() {
       if (
         envOrigins.includes('*') ||
         envOrigins.includes(cleanOrigin) ||
+        TRUSTED_FRONTEND_ORIGINS.includes(cleanOrigin) ||
         cleanOrigin.endsWith('.netlify.app') ||
         cleanOrigin.endsWith('.onrender.com') ||
         cleanOrigin.includes('localhost') ||
