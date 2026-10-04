@@ -189,10 +189,10 @@ function runTests() {
   assert(appContent.includes('<ContactView onNavigate={navigate} />'), 'App.tsx renders ContactView');
 
   // SEO metadata checks
-  assert(appContent.includes("canonical: 'https://koinonia12.netlify.app/#/privacy'"), 'SEO for /privacy');
-  assert(appContent.includes("canonical: 'https://koinonia12.netlify.app/#/terms'"), 'SEO for /terms');
-  assert(appContent.includes("canonical: 'https://koinonia12.netlify.app/#/child-safety'"), 'SEO for /child-safety');
-  assert(appContent.includes("canonical: 'https://koinonia12.netlify.app/#/contact'"), 'SEO for /contact');
+  assert(appContent.includes("canonical: 'https://kgachildren.koinoniageneralassembly.com/#/privacy'"), 'SEO for /privacy');
+  assert(appContent.includes("canonical: 'https://kgachildren.koinoniageneralassembly.com/#/terms'"), 'SEO for /terms');
+  assert(appContent.includes("canonical: 'https://kgachildren.koinoniageneralassembly.com/#/child-safety'"), 'SEO for /child-safety');
+  assert(appContent.includes("canonical: 'https://kgachildren.koinoniageneralassembly.com/#/contact'"), 'SEO for /contact');
   console.log('✔ App.tsx Routing and SEO PASS');
 
   // 9. Verify LegalPagesView.tsx delegation
