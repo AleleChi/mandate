@@ -27,18 +27,25 @@ export const AdminAcceptInviteView: React.FC<AdminAcceptInviteViewProps> = ({ on
   const [assignedRole, setAssignedRole] = useState('');
 
   useEffect(() => {
-    const hash = window.location.hash;
-    const queryIdx = hash.indexOf('?');
-    if (queryIdx !== -1) {
-      const searchParams = new URLSearchParams(hash.substring(queryIdx));
-      const t = searchParams.get('token');
-      if (t) {
-        setToken(t);
-        verifyInvitationToken(t);
-      } else {
-        setInviteStatus('invalid');
-        setStatusMessage('No invitation token found in link.');
+    let t: string | null = null;
+    if (typeof window !== 'undefined') {
+      // 1. Check window.location.search (standard HTML5 pathname URLs: /admin/accept-invite?token=...)
+      if (window.location.search) {
+        const searchParams = new URLSearchParams(window.location.search);
+        t = searchParams.get('token');
       }
+      // 2. Fall back to hash query string (legacy hash routing: /#/admin/accept-invite?token=...)
+      if (!t && window.location.hash && window.location.hash.includes('?')) {
+        const hashQuery = window.location.hash.substring(window.location.hash.indexOf('?'));
+        const hashParams = new URLSearchParams(hashQuery);
+        t = hashParams.get('token');
+      }
+    }
+
+    if (t && t.trim()) {
+      const cleanToken = t.trim();
+      setToken(cleanToken);
+      verifyInvitationToken(cleanToken);
     } else {
       setInviteStatus('invalid');
       setStatusMessage('No invitation token found in link.');

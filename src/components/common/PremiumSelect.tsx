@@ -212,26 +212,26 @@ export const PremiumSelect: React.FC<PremiumSelectProps> = ({
   const getTriggerClasses = () => {
     const base = 'w-full min-h-[48px] flex items-center justify-between text-left transition-all duration-150 cursor-pointer select-none focus:outline-none';
     const stateColor = error
-      ? 'text-[#C53030]'
+      ? 'text-[#DC2626] dark:text-[#F87171]'
       : selectedOption
-      ? 'text-[#18181B]'
-      : 'text-[#9CA3AF]';
+      ? 'text-[#18181B] dark:text-[#F0EBE3]'
+      : 'text-[#9CA3AF] dark:text-[#7A7570]';
 
     if (variant === 'underline') {
       const borderStyle = error
-        ? 'border-b-2 border-[#C53030]'
+        ? 'border-b-2 border-[#DC2626] dark:border-[#F87171]'
         : isOpen
-        ? 'border-b-2 border-[#C59B27] bg-[#FDFBF7]'
-        : 'border-b border-[#D9D6CE] hover:border-[#B89047] bg-transparent';
+        ? 'border-b-2 border-[#C59B27] bg-[#FDFBF7] dark:bg-[#21211E]'
+        : 'border-b border-[#D9D6CE] dark:border-[#3A3835] hover:border-[#B89047] dark:hover:border-[#C59B27] bg-transparent';
       return `${base} py-2.5 px-0 text-sm ${stateColor} ${borderStyle} ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`;
     } else {
       // bordered variant (max 8px rounded-lg)
       const borderStyle = error
-        ? 'border border-[#C53030] bg-white ring-1 ring-[#C53030]/20'
+        ? 'border border-[#DC2626] dark:border-[#F87171] bg-white dark:bg-[#1D1D1A] ring-1 ring-[#DC2626]/20'
         : isOpen
-        ? 'border border-[#C59B27] bg-[#FDFBF7] ring-1 ring-[#C59B27]/30'
-        : 'border border-[#D9D6CE] bg-white hover:border-[#B89047] shadow-2xs';
-      return `${base} py-2.5 px-3.5 rounded-lg text-sm ${stateColor} ${borderStyle} ${disabled ? 'opacity-60 cursor-not-allowed bg-[#FAF8F4]' : ''}`;
+        ? 'border border-[#C59B27] bg-[#FDFBF7] dark:bg-[#21211E] ring-1 ring-[#C59B27]/30'
+        : 'border border-[#D9D6CE] dark:border-[#3A3835] bg-white dark:bg-[#1D1D1A] hover:border-[#B89047] dark:hover:border-[#C59B27] shadow-2xs';
+      return `${base} py-2.5 px-3.5 rounded-lg text-sm ${stateColor} ${borderStyle} ${disabled ? 'opacity-60 cursor-not-allowed bg-[#FAF8F4] dark:bg-[#21211E]' : ''}`;
     }
   };
 
@@ -240,10 +240,10 @@ export const PremiumSelect: React.FC<PremiumSelectProps> = ({
       {label && (
         <label
           htmlFor={triggerId}
-          className="text-xs font-semibold text-[#18181B] block mb-1.5 select-none"
+          className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] block mb-1.5 select-none"
         >
           {label}
-          {required && <span className="text-[#C53030] ml-0.5">*</span>}
+          {required && <span className="text-[#DC2626] dark:text-[#F87171] ml-0.5">*</span>}
         </label>
       )}
 
@@ -267,21 +267,21 @@ export const PremiumSelect: React.FC<PremiumSelectProps> = ({
         </span>
         <ChevronDown
           className={`w-4 h-4 shrink-0 transition-transform duration-200 ${
-            isOpen ? 'rotate-180 text-[#9A7326]' : 'text-[#6B7280]'
+            isOpen ? 'rotate-180 text-[#9A7326] dark:text-[#C59B27]' : 'text-[#6B7280] dark:text-[#B8B0A5]'
           }`}
         />
       </button>
 
       {/* Helper Text */}
       {!error && helperText && (
-        <p className="text-xs text-[#6B7280] mt-1 font-normal leading-relaxed">
+        <p className="text-xs text-[#6B7280] dark:text-[#B8B0A5] mt-1 font-normal leading-relaxed">
           {helperText}
         </p>
       )}
 
       {/* Human Error Message */}
       {error && (
-        <p className="text-xs text-[#C53030] mt-1 font-medium leading-normal">
+        <p className="text-xs text-[#DC2626] dark:text-[#F87171] mt-1 font-medium leading-normal">
           {error}
         </p>
       )}
@@ -293,7 +293,7 @@ export const PremiumSelect: React.FC<PremiumSelectProps> = ({
           id={listboxId}
           role="listbox"
           aria-label={label || placeholder}
-          className={`absolute z-50 left-0 right-0 w-full bg-white border border-[#E5D5AE] rounded-lg shadow-lg shadow-[#18181B]/5 py-1.5 max-h-60 overflow-y-auto focus:outline-none transition-all duration-150 ease-out ${
+          className={`absolute z-50 left-0 right-0 w-full bg-white dark:bg-[#21211E] border border-[#E5D5AE] dark:border-[#3A3835] rounded-lg shadow-xl shadow-black/20 py-1.5 max-h-60 overflow-y-auto focus:outline-none transition-all duration-150 ease-out ${
             openDirection === 'up'
               ? 'bottom-full mb-1.5 origin-bottom'
               : 'top-full mt-1.5 origin-top'
@@ -313,17 +313,17 @@ export const PremiumSelect: React.FC<PremiumSelectProps> = ({
                 onMouseEnter={() => !opt.disabled && setHighlightedIndex(index)}
                 className={`min-h-[44px] px-3.5 py-2.5 flex items-center justify-between text-sm transition-colors duration-100 cursor-pointer select-none ${
                   opt.disabled
-                    ? 'text-[#9CA3AF] opacity-60 cursor-not-allowed bg-transparent'
+                    ? 'text-[#9CA3AF] dark:text-[#7A7570] opacity-60 cursor-not-allowed bg-transparent'
                     : isSelected
-                    ? 'bg-[#FAF6EB] text-[#9A7326] font-semibold'
+                    ? 'bg-[#FAF6EB] dark:bg-[#262520] text-[#9A7326] dark:text-[#C59B27] font-semibold'
                     : isHighlighted
-                    ? 'bg-[#FAF8F4] text-[#18181B]'
-                    : 'text-[#18181B] hover:bg-[#FAF8F4] active:bg-[#F3EFE6]'
+                    ? 'bg-[#FAF8F4] dark:bg-[#2A2926] text-[#18181B] dark:text-[#F0EBE3]'
+                    : 'text-[#18181B] dark:text-[#F0EBE3] hover:bg-[#FAF8F4] dark:hover:bg-[#2A2926] active:bg-[#F3EFE6] dark:active:bg-[#262520]'
                 }`}
               >
                 <span className="truncate pr-2">{opt.label}</span>
                 {isSelected && (
-                  <Check className="w-4 h-4 text-[#9A7326] shrink-0" />
+                  <Check className="w-4 h-4 text-[#9A7326] dark:text-[#C59B27] shrink-0" />
                 )}
               </li>
             );

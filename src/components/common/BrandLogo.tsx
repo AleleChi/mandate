@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
 import { buildApiUrl } from '../../utils/urlHelper';
 import { updateDocumentFavicon } from '../../utils/faviconHelper';
+import koinoniaLogoPng from '../../assets/images/koinonia-logo.png';
 
 interface BrandLogoProps {
   context?: 'landing' | 'admin' | 'parent' | 'volunteer' | 'auth' | 'compact';
@@ -103,26 +104,16 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
     sizeClasses = 'h-8 w-auto max-w-[120px]';
   }
 
-  // Handle fallback if site_logo is missing
+  // Handle fallback if site_logo is missing — use bundled koinonia-logo.png
+  // with the SAME img tag, sizing classes, and attributes as the admin site_logo path
   const renderFallback = () => {
-    // Elegant CSS drawn fallback mimicking a premium brand mark
-    // It says "K" inside a gold-gradient badge
     return (
-      <div className="flex items-center space-x-2.5">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#C59B27] to-[#A67C2E] flex items-center justify-center text-white font-serif font-black text-xl shadow-md transition-transform duration-300">
-          K
-        </div>
-        {context !== 'compact' && (
-          <div className="flex flex-col text-left">
-            <span className="font-serif font-black text-[#18181B] dark:text-[#F7F4ED] tracking-widest text-sm leading-none uppercase">
-              KOINONIA
-            </span>
-            <span className="text-[9px] text-[#C59B27] dark:text-[#D4AF37] tracking-wider uppercase font-bold mt-1">
-              Children & Teens
-            </span>
-          </div>
-        )}
-      </div>
+      <img
+        src={koinoniaLogoPng}
+        alt="Koinonia"
+        className={`${sizeClasses} object-contain`}
+        draggable={false}
+      />
     );
   };
 

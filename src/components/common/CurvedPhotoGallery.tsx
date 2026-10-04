@@ -635,7 +635,7 @@ export const CurvedPhotoGallery: React.FC<CurvedPhotoGalleryProps> = ({
                         hideText={true}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
                         loading="lazy"
-                        fetchpriority="low"
+                        fetchPriority="low"
                       />
 
                       {/* Soft vignette gradient */}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, ArrowRight, Mail } from 'lucide-react';
+import { X } from 'lucide-react';
 import { AppRoute } from '../types';
 import { api } from '../services/api';
 import { Seo } from '../components/common/Seo';
@@ -43,6 +43,36 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   const [landingSettings, setLandingSettings] = useState<Record<string, string>>({});
   const [currentEvent, setCurrentEvent] = useState<any>(null);
   const [regStatus, setRegStatus] = useState<any>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    api.gallery.getPublicItems()
+      .then((res) => {
+        if (!isMounted || !res?.success || !Array.isArray(res.items) || res.items.length === 0) return;
+        const galleryItems = res.items
+          .map((item) => item.image_url)
+          .filter((url): url is string => typeof url === 'string' && url.trim() !== '')
+          .slice(0, 5);
+        if (galleryItems.length > 0) {
+          setAssets((prev: any) => ({ ...prev, galleryItems }));
+        }
+      })
+      .catch(() => {});
+
+    api.getPublicAppMedia()
+      .then((res) => {
+        if (!isMounted || !res?.success) return;
+        const heroFeatureImage = res.media?.heroFeatureImage?.url;
+        if (heroFeatureImage) {
+          setAssets((prev: any) => ({ ...prev, heroFeatureImage }));
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Registration state modal dialog
   const [infoModal, setInfoModal] = useState<{
@@ -94,6 +124,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               heroMain: s.heroMain || REAL_ASSETS.heroMain || parentHeroImg,
               heroUpper: s.heroUpper || REAL_ASSETS.heroUpper,
               heroRight: s.heroRight || REAL_ASSETS.heroRight,
+              heroFeatureImage: assets.heroFeatureImage || '',
               heroVideo: (res as any).landingVideo?.url || s.heroVideo || REAL_ASSETS.heroVideo,
               heroVideoPoster: (res as any).landingVideo?.posterUrl || s.heroVideoPoster || '',
               passAvatar: s.passAvatar || REAL_ASSETS.passAvatar,
@@ -255,6 +286,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           assets={assets}
           currentEvent={currentEvent}
           regStatus={regStatus}
+          landingSettings={landingSettings}
           onParentRegisterClick={handleParentRegisterClick}
           onVolunteerRegisterClick={handleVolunteerRegisterClick}
           onNavigate={onNavigate}
@@ -318,28 +350,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         scrollToSection={scrollToSection}
       />
 
-      {/* Mobile Sticky Quick Action Bar */}
-      <div
-        className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#FAF9F6]/95 backdrop-blur-md border-t border-[#EAE8E1] p-3 px-4 flex items-center space-x-3 shadow-2xl"
-        data-component-version="landing-mobile-bottom-bar-v4"
-      >
-        <button
-          type="button"
-          onClick={handleParentRegisterClick}
-          className="flex-1 bg-[#C59B27] hover:bg-[#B89047] active:bg-[#AA8220] text-white font-semibold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center space-x-1.5 shadow-xs cursor-pointer"
-        >
-          <span>{isRegistrationClosed ? 'Sign in to account' : 'Register child'}</span>
-          <ArrowRight className="w-3.5 h-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={() => scrollToSection('footer')}
-          className="bg-white hover:bg-[#FAF6EB] text-[#262626] border border-[#D9D6CE] font-semibold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-1.5 shrink-0 cursor-pointer"
-        >
-          <Mail className="w-3.5 h-3.5 text-[#71717A]" />
-          <span>CONTACT</span>
-        </button>
-      </div>
 
       {/* Registration Status Info Modal */}
       {infoModal && (

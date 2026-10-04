@@ -169,6 +169,7 @@ export const api = {
         parentDashboardHero: { url: string | null; thumbnailUrl: string | null };
         volunteerDashboardHero: { url: string | null; thumbnailUrl: string | null };
         defaultEventHero: { url: string | null; thumbnailUrl: string | null };
+        heroFeatureImage?: { url: string | null; thumbnailUrl: string | null };
       };
     }>('/api/public/app-media');
   },
@@ -1566,6 +1567,7 @@ export const api = {
         success: boolean;
         settings: {
           parentRegistrationEnabled: number;
+          volunteerRegistrationEnabled?: number;
           parentLoginEnabled: number;
           requiredChildPhoto: number;
           requiredParentPhoto: number;
@@ -1576,6 +1578,7 @@ export const api = {
     },
     async updateGeneralSettings(payload: {
       parentRegistrationEnabled: boolean;
+      volunteerRegistrationEnabled?: boolean;
       parentLoginEnabled: boolean;
       requiredChildPhoto: boolean;
       requiredParentPhoto: boolean;

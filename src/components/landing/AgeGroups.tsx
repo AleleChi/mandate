@@ -15,12 +15,12 @@ export interface AgeGroupsProps {
   ageGroups?: CanonicalAgeGroup[];
 }
 
-const DEFAULT_CANONICAL_GROUPS: CanonicalAgeGroup[] = [
-  { id: 'ag-below-1', label: 'Below 1', minAge: 0, maxAge: 0 },
-  { id: 'ag-1-3', label: 'Ages 1 to 3', minAge: 1, maxAge: 3 },
-  { id: 'ag-4-6', label: 'Ages 4 to 6', minAge: 4, maxAge: 6 },
-  { id: 'ag-7-9', label: 'Ages 7 to 9', minAge: 7, maxAge: 9 },
-  { id: 'ag-10-12', label: 'Ages 10 to 12', minAge: 10, maxAge: 12 },
+export const DEFAULT_CANONICAL_GROUPS: CanonicalAgeGroup[] = [
+  { id: 'ag-2-3', label: 'EARLY YEARS', minAge: 2, maxAge: 3 },
+  { id: 'ag-4-6', label: '4–6 YEARS', minAge: 4, maxAge: 6 },
+  { id: 'ag-7-9', label: '7–9 YEARS', minAge: 7, maxAge: 9 },
+  { id: 'ag-10-12', label: '10–12 YEARS', minAge: 10, maxAge: 12 },
+  { id: 'ag-13-14', label: '13–14 YEARS', minAge: 13, maxAge: 14 },
 ];
 
 function formatAgeGroup(g: CanonicalAgeGroup) {
@@ -28,47 +28,47 @@ function formatAgeGroup(g: CanonicalAgeGroup) {
   const max = g.maxAge !== undefined ? g.maxAge : (g.max_age !== undefined ? g.max_age : 0);
   const label = (g.label || '').trim();
 
-  if ((min === 0 && max <= 0) || label.toLowerCase().includes('below 1') || label.toLowerCase() === 'infants') {
+  if ((min === 2 && max === 3) || label.includes('2-3') || label.includes('2 to 3') || label.toLowerCase().includes('early years')) {
     return {
-      key: g.id || 'below-1',
-      displayRange: 'Below 1',
-      displayLabel: 'Infants',
-    };
-  }
-  if ((min === 1 && max === 3) || label.includes('1-3') || label.includes('1 to 3')) {
-    return {
-      key: g.id || '1-3',
-      displayRange: '1–3',
-      displayLabel: '1–3 years',
+      key: g.id || '2-3',
+      displayRange: '2–3',
+      displayLabel: 'EARLY YEARS',
     };
   }
   if ((min === 4 && max === 6) || label.includes('4-6') || label.includes('4 to 6')) {
     return {
       key: g.id || '4-6',
       displayRange: '4–6',
-      displayLabel: '4–6 years',
+      displayLabel: '4–6 YEARS',
     };
   }
   if ((min === 7 && max === 9) || label.includes('7-9') || label.includes('7 to 9')) {
     return {
       key: g.id || '7-9',
       displayRange: '7–9',
-      displayLabel: '7–9 years',
+      displayLabel: '7–9 YEARS',
     };
   }
   if ((min === 10 && max === 12) || label.includes('10-12') || label.includes('10 to 12')) {
     return {
       key: g.id || '10-12',
       displayRange: '10–12',
-      displayLabel: '10–12 years',
+      displayLabel: '10–12 YEARS',
     };
   }
-  // Generic fallback for custom events
+  if ((min === 13 && max === 14) || label.includes('13-14') || label.includes('13 to 14')) {
+    return {
+      key: g.id || '13-14',
+      displayRange: '13–14',
+      displayLabel: '13–14 YEARS',
+    };
+  }
+  // Fallback for custom ranges
   const rangeStr = max > min ? `${min}–${max}` : (min > 0 ? `${min}+` : label);
   return {
     key: g.id || label || rangeStr,
     displayRange: rangeStr,
-    displayLabel: label || `${rangeStr} years`,
+    displayLabel: label || `${rangeStr} YEARS`,
   };
 }
 
@@ -88,10 +88,20 @@ export const AgeGroups: React.FC<AgeGroupsProps> = ({ ageGroups }) => {
 
   const shouldReduceMotion = Boolean(systemReducedMotion || prefersReducedMotion);
 
-  const resolvedGroups = (ageGroups && ageGroups.length > 0)
-    ? ageGroups
+  // Filter out any obsolete 'below 1' or '1-3' groups
+  const filteredGroups = (ageGroups && ageGroups.length > 0)
+    ? ageGroups.filter(g => {
+        const min = g.minAge !== undefined ? g.minAge : (g.min_age !== undefined ? g.min_age : 0);
+        const max = g.maxAge !== undefined ? g.maxAge : (g.max_age !== undefined ? g.max_age : 0);
+        const label = (g.label || '').toLowerCase();
+        if (min < 2 && max < 2) return false;
+        if (label.includes('below 1') || label.includes('infant')) return false;
+        if ((min === 1 && max === 3) || label.includes('1-3') || label.includes('1 to 3')) return false;
+        return true;
+      })
     : DEFAULT_CANONICAL_GROUPS;
 
+  const resolvedGroups = filteredGroups.length >= 5 ? filteredGroups : DEFAULT_CANONICAL_GROUPS;
   const items = resolvedGroups.map(formatAgeGroup);
 
   return (
@@ -116,12 +126,12 @@ export const AgeGroups: React.FC<AgeGroupsProps> = ({ ageGroups }) => {
             Age groups
           </h2>
           <p className="text-sm sm:text-base text-[#52525B] dark:text-[#C8C2B6] leading-relaxed font-normal">
-            Children are grouped by age for the programme.
+            Children ages 2–14 are grouped by age for the programme.
           </p>
         </motion.div>
 
-        {/* Clean Five-Item Editorial Row / Grid (5 Columns Desktop, Responsive Wrap) */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-6 sm:gap-8 lg:gap-8 text-left">
+        {/* Clean Five-Item Editorial Row / Grid (5 Columns Desktop, 2 Columns Tablet, Stacked/2-Col Mobile) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 sm:gap-6 lg:gap-6 text-left">
           {items.map((item, idx) => {
             const sequenceStr = String(idx + 1).padStart(2, '0');
 

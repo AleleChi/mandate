@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchLogoUrl, getSafePublicAssetUrl } from './BrandLogo';
+import koinoniaLogoPng from '../../assets/images/koinonia-logo.png';
 
 interface AppPreloaderProps {
   isAppReady: boolean;
@@ -12,8 +12,6 @@ export const AppPreloader: React.FC<AppPreloaderProps> = ({ isAppReady, onComple
   const [phase, setPhase] = useState<PreloaderPhase>('init');
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [messageSubPhase, setMessageSubPhase] = useState<'fadein' | 'hold' | 'fadeout'>('fadein');
-  const [preloaderLogoSrc, setPreloaderLogoSrc] = useState<string | null>(null);
-  const [isLogoReady, setIsLogoReady] = useState<boolean>(false);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -23,66 +21,8 @@ export const AppPreloader: React.FC<AppPreloaderProps> = ({ isAppReady, onComple
     return () => mediaQuery.removeEventListener('change', handler);
   }, []);
 
-  // Fetch the official logo and preload the image to prevent fallback flash/flicker
+  // Initialize immediately using bundled assets - no network delay required
   useEffect(() => {
-    let isMounted = true;
-
-    const loadAndPreloadLogo = async () => {
-      try {
-        const url = await fetchLogoUrl();
-        if (!isMounted) return;
-
-        if (url) {
-          const resolvedUrl = getSafePublicAssetUrl(url);
-          if (resolvedUrl) {
-            // Validate and handle standard URL/data formats
-            if (
-              resolvedUrl.startsWith('http://') || 
-              resolvedUrl.startsWith('https://') || 
-              resolvedUrl.startsWith('data:') || 
-              resolvedUrl.includes('/api/media/') || 
-              resolvedUrl.includes('/media/')
-            ) {
-              const img = new Image();
-              img.src = resolvedUrl;
-              img.onload = () => {
-                if (isMounted) {
-                  setPreloaderLogoSrc(resolvedUrl);
-                  setIsLogoReady(true);
-                }
-              };
-              img.onerror = () => {
-                console.error('Failed to preload logo image, using official main logo fallback');
-                if (isMounted) {
-                  setPreloaderLogoSrc(null);
-                  setIsLogoReady(true);
-                }
-              };
-              return;
-            }
-          }
-        }
-      } catch (err) {
-        console.error('Error preloading logo in AppPreloader:', err);
-      }
-
-      // No custom logo found or failed to load, mark ready and use official fallback
-      if (isMounted) {
-        setPreloaderLogoSrc(null);
-        setIsLogoReady(true);
-      }
-    };
-
-    loadAndPreloadLogo();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isLogoReady) return;
-
     // Stage 1: Init to Logo Entrance
     setPhase('logo-entrance');
 
@@ -101,7 +41,7 @@ export const AppPreloader: React.FC<AppPreloaderProps> = ({ isAppReady, onComple
       clearTimeout(t1);
       clearTimeout(t2);
     };
-  }, [isLogoReady, prefersReducedMotion]);
+  }, [prefersReducedMotion]);
 
   // Handle Revealed internal phase timings (Fade in -> Hold -> Fade out)
   useEffect(() => {
@@ -171,11 +111,11 @@ export const AppPreloader: React.FC<AppPreloaderProps> = ({ isAppReady, onComple
 
   return (
     <div 
-      className={`fixed inset-0 z-[9999] bg-[#FAF9F6] flex flex-col items-center justify-center p-6 select-none ${transitionClass} ${containerFadeClass}`}
+      className={`fixed inset-0 z-[9999] bg-[#FAF9F6] dark:bg-[#19191A] flex flex-col items-center justify-center p-6 select-none ${transitionClass} ${containerFadeClass}`}
       data-view-version="app-preloader-screen-v3-koinonia-handover"
     >
       <div 
-        className="w-full max-w-sm flex flex-col items-center text-center space-y-12"
+        className="w-full max-w-sm flex flex-col items-center text-center space-y-10"
         data-component-version="app-preloader-v3-logo-message-sequence"
       >
         {/* Stage 1 & 2: Logo Stage */}
@@ -187,39 +127,28 @@ export const AppPreloader: React.FC<AppPreloaderProps> = ({ isAppReady, onComple
           }`}
           data-component-version="app-preloader-logo-stage-v3"
         >
-          <div className="flex justify-center items-center">
-            {preloaderLogoSrc ? (
+          <div className="flex flex-col justify-center items-center">
+            <div
+              className="inline-flex items-center select-none pointer-events-none filter drop-shadow-xs transition-transform duration-700"
+              data-component-version="app-preloader-official-logo-v1"
+            >
+              <img
+                src={koinoniaLogoPng}
+                alt="Koinonia"
+                className="h-14 sm:h-16 w-auto max-w-[240px] object-contain mx-auto"
+                draggable={false}
+              />
+            </div>
+
+            {/* Subtle restrained loading indicator */}
+            <div
+              aria-hidden="true"
+              className="w-16 h-[2px] bg-[#EAE8E1] dark:bg-[#302E29] rounded-full overflow-hidden mt-6 relative"
+            >
               <div 
-                className="inline-flex items-center select-none cursor-pointer scale-120 select-none pointer-events-none filter drop-shadow-sm transition-transform duration-700"
-                data-component-version="app-preloader-official-logo-v1"
-              >
-                <img
-                  src={preloaderLogoSrc}
-                  alt="Koinonia"
-                  className="h-16 w-auto max-w-[240px] object-contain"
-                  referrerPolicy="no-referrer"
-                />
-              </div>
-            ) : (
-              <div 
-                className="scale-120 select-none pointer-events-none filter drop-shadow-sm transition-transform duration-700"
-                data-component-version="app-preloader-official-logo-v1"
-              >
-                <div className="flex items-center space-x-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#C59B27] to-[#A67C2E] flex items-center justify-center text-white font-serif font-black text-xl shadow-md transition-transform duration-300">
-                    K
-                  </div>
-                  <div className="flex flex-col text-left">
-                    <span className="font-serif font-black text-[#18181B] tracking-widest text-sm leading-none uppercase">
-                      KOINONIA
-                    </span>
-                    <span className="text-[9px] text-[#C59B27] tracking-wider uppercase font-bold mt-1">
-                      Children & Teens
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
+                className="h-full w-1/2 bg-[#C59B27] rounded-full animate-pulse"
+              />
+            </div>
           </div>
         </div>
 
@@ -243,10 +172,10 @@ export const AppPreloader: React.FC<AppPreloaderProps> = ({ isAppReady, onComple
                 'opacity-0 -translate-y-4 scale-95 pointer-events-none'
               }`}
             >
-              <span className="font-serif-koinonia text-3xl sm:text-4xl font-medium text-[#8C6D23] tracking-wider select-none pointer-events-none">
+              <span className="font-serif-koinonia text-3xl sm:text-4xl font-medium text-[#8C6D23] dark:text-[#D4AF37] tracking-wider select-none pointer-events-none">
                 Jesus Revealed
               </span>
-              <span className="w-16 h-px bg-gradient-to-r from-transparent via-[#C59B27]/40 to-transparent mt-3" />
+              <span className="w-16 h-px bg-gradient-to-r from-transparent via-[#C59B27]/40 dark:via-[#D4AF37]/40 to-transparent mt-3" />
             </div>
           )}
 
@@ -263,10 +192,10 @@ export const AppPreloader: React.FC<AppPreloaderProps> = ({ isAppReady, onComple
                 'opacity-0 -translate-y-4 scale-95 pointer-events-none'
               }`}
             >
-              <span className="font-serif-koinonia text-3xl sm:text-4xl font-medium text-[#C59B27] tracking-wider select-none pointer-events-none">
+              <span className="font-serif-koinonia text-3xl sm:text-4xl font-medium text-[#C59B27] dark:text-[#E5B834] tracking-wider select-none pointer-events-none">
                 Jesus Glorified
               </span>
-              <span className="w-16 h-px bg-gradient-to-r from-transparent via-[#C59B27]/60 to-transparent mt-3" />
+              <span className="w-16 h-px bg-gradient-to-r from-transparent via-[#C59B27]/60 dark:via-[#E5B834]/60 to-transparent mt-3" />
             </div>
           )}
         </div>

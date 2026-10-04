@@ -7,6 +7,7 @@ import { PhotoUploadBox } from '../components/common/PhotoUploadBox';
 import { KoinoniaDatePicker } from '../components/common/KoinoniaDatePicker';
 import { Button } from '../components/common/Button';
 import { validateChildName } from '../utils/validation';
+import { checkChildEventEligibility } from '../utils/age';
 
 interface AddChildStep1ViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -64,17 +65,17 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
 
     if (ageYears < 0) ageYears = 0;
 
-    let ageGroup = 'Ages 4 to 6';
-    if (ageYears < 1) {
-      ageGroup = 'Under 1 year';
+    let ageGroup = '4–6 Years';
+    if (ageYears < 2) {
+      ageGroup = 'Under 2';
     } else if (ageYears <= 3) {
-      ageGroup = 'Ages 1 to 3';
+      ageGroup = 'Early Years (2–3)';
     } else if (ageYears <= 6) {
-      ageGroup = 'Ages 4 to 6';
+      ageGroup = '4–6 Years';
     } else if (ageYears <= 9) {
-      ageGroup = 'Ages 7 to 9';
+      ageGroup = '7–9 Years';
     } else if (ageYears <= 12) {
-      ageGroup = 'Ages 10 to 12';
+      ageGroup = '10–12 Years';
     } else {
       ageGroup = 'Teens';
     }
@@ -85,6 +86,7 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
   };
 
   const ageData = calculateAgeAndGroup(dob);
+  const eligibility = checkChildEventEligibility(dob);
 
   const formatDobDisplay = (dobString: string) => {
     if (!dobString) return '';
@@ -127,6 +129,8 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
       today.setHours(23, 59, 59, 999);
       if (parsed > today) {
         newErrors.dob = 'Date of birth cannot be in the future.';
+      } else if (!eligibility.isEligible) {
+        newErrors.dob = eligibility.message || 'This programme is currently open to children ages 2–14.';
       }
     }
 
@@ -260,19 +264,19 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
   };
 
   return (
-    <div className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF8F3] text-[#18181B] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50 px-5 pb-10">
+    <div className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF8F3] dark:bg-[#19191A] text-[#18181B] dark:text-[#F0EBE3] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50 dark:border-[#302E29] px-5 pb-10">
       <div className="space-y-6">
         {/* Top bar */}
         <div className="pt-5 pb-1 flex items-center justify-between relative">
           <button
             type="button"
             onClick={() => onNavigate('/parent/home')}
-            className="p-1 -ml-1 text-[#18181B] hover:text-[#715D3A] transition-colors cursor-pointer focus:outline-none"
+            className="p-1 -ml-1 text-[#18181B] dark:text-[#F0EBE3] hover:text-[#715D3A] dark:hover:text-[#C59B27] transition-colors cursor-pointer focus:outline-none"
             aria-label="Back"
           >
             <ArrowLeft className="w-5 h-5 stroke-[2]" />
           </button>
-          <span className="text-lg sm:text-xl font-serif-koinonia font-bold text-[#18181B] tracking-tight">
+          <span className="text-lg sm:text-xl font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3] tracking-tight">
             Add a child
           </span>
           <div className="w-5" />
@@ -280,22 +284,22 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
 
         {/* Progress */}
         <div className="flex flex-col items-center mt-1 mb-2">
-          <span className="text-xs font-medium text-[#715D3A] mb-1.5">Step 1 of 5</span>
+          <span className="text-xs font-medium text-[#715D3A] dark:text-[#D4AF37] mb-1.5">Step 1 of 5</span>
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full bg-[#C59B27]" />
-            <div className="w-2 h-2 rounded-full bg-[#D9D6CE]" />
-            <div className="w-2 h-2 rounded-full bg-[#D9D6CE]" />
-            <div className="w-2 h-2 rounded-full bg-[#D9D6CE]" />
-            <div className="w-2 h-2 rounded-full bg-[#D9D6CE]" />
+            <div className="w-2 h-2 rounded-full bg-[#D9D6CE] dark:bg-[#3A3835]" />
+            <div className="w-2 h-2 rounded-full bg-[#D9D6CE] dark:bg-[#3A3835]" />
+            <div className="w-2 h-2 rounded-full bg-[#D9D6CE] dark:bg-[#3A3835]" />
+            <div className="w-2 h-2 rounded-full bg-[#D9D6CE] dark:bg-[#3A3835]" />
           </div>
         </div>
 
         {/* Main section heading */}
         <div className="text-center space-y-1">
-          <h1 className="text-xl sm:text-2xl font-serif-koinonia font-bold text-[#18181B]">
+          <h1 className="text-xl sm:text-2xl font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3]">
             Child details
           </h1>
-          <p className="text-xs sm:text-sm text-[#3F3F46]">
+          <p className="text-xs sm:text-sm text-[#3F3F46] dark:text-[#B8B0A5]">
             Start with your child’s basic information.
           </p>
         </div>
@@ -322,7 +326,7 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
 
           {/* 1. Child's full name */}
           <div>
-            <label htmlFor="child-full-name" className="text-xs font-semibold text-[#18181B] block mb-1">
+            <label htmlFor="child-full-name" className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] block mb-1">
               Child’s full name
             </label>
             <input
@@ -338,11 +342,11 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
                 if (errors.fullName) setErrors((prev) => ({ ...prev, fullName: undefined }));
               }}
               className={`w-full py-2 px-0 bg-transparent border-0 border-b ${
-                errors.fullName ? 'border-red-500' : 'border-[#D9D6CE]'
-              } text-sm text-[#18181B] placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#C59B27] focus:ring-0 rounded-none transition-colors`}
+                errors.fullName ? 'border-red-500 dark:border-red-400' : 'border-[#D9D6CE] dark:border-[#3A3835]'
+              } text-sm text-[#18181B] dark:text-[#F0EBE3] placeholder:text-[#9CA3AF] dark:placeholder:text-[#7A7570] focus:outline-none focus:border-[#C59B27] focus:ring-0 rounded-none transition-colors`}
             />
             {errors.fullName && (
-              <p id="child-full-name-error" role="alert" className="text-xs text-red-600 mt-1 font-medium">
+              <p id="child-full-name-error" role="alert" className="text-xs text-red-600 dark:text-red-400 mt-1 font-medium">
                 {errors.fullName}
               </p>
             )}
@@ -380,7 +384,7 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
 
             {/* 4. Age helper text */}
             {ageData.ageText && ageData.ageGroup ? (
-              <div className="mt-2 text-xs text-[#18181B] space-y-0.5">
+              <div className="mt-2 text-xs text-[#18181B] dark:text-[#F0EBE3] space-y-0.5">
                 <div>
                   <span className="font-semibold">Age:</span> {ageData.ageText}
                 </div>
@@ -389,9 +393,17 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
                 </div>
               </div>
             ) : (
-              <p className="mt-1.5 text-xs italic text-[#6B7280]">
+              <p className="mt-1.5 text-xs italic text-[#6B7280] dark:text-[#7A7570]">
                 Age will appear after date of birth is added
               </p>
+            )}
+
+            {/* Early Eligibility Notice */}
+            {dob && !eligibility.isEligible && (
+              <div className="mt-2.5 p-3 rounded-xl bg-[#FAF6EC] dark:bg-[#201F1C] border border-[#E8DFC8] dark:border-[#383733] text-xs text-[#8A6517] dark:text-[#D4AF37] flex items-start gap-2.5">
+                <Info className="w-4 h-4 shrink-0 mt-0.5 text-[#C59B27]" />
+                <span>{eligibility.message || 'This programme is currently open to children ages 2–14.'}</span>
+              </div>
             )}
           </div>
 
@@ -411,14 +423,6 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
             />
           </div>
 
-          {/* Information note */}
-          {ageData.ageYears !== null && ageData.ageYears < 2 && (
-            <div className="mt-4 bg-[#FAF8F4] border border-[#EAE8E1] p-3.5 rounded-xl flex items-start space-x-2.5 text-xs text-[#3F3F46]">
-              <Info className="w-4 h-4 text-[#9A7326] shrink-0 mt-0.5" />
-              <span>Some age groups may need team review before passes are prepared.</span>
-            </div>
-          )}
-
           {/* Actions */}
           <div className="pt-2 space-y-2.5">
             <Button
@@ -433,7 +437,7 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
               type="button"
               disabled={isUploadingPhoto || isSaving}
               onClick={handleSaveAndFinishLater}
-              className="w-full py-2.5 text-xs sm:text-sm font-medium text-[#3F3F46] hover:text-[#9A7326] hover:underline active:opacity-80 transition-all duration-200 cursor-pointer focus:outline-none text-center block disabled:opacity-55"
+              className="w-full py-2.5 text-xs sm:text-sm font-medium text-[#3F3F46] dark:text-[#B8B0A5] hover:text-[#9A7326] dark:hover:text-[#D4AF37] hover:underline active:opacity-80 transition-all duration-200 cursor-pointer focus:outline-none text-center block disabled:opacity-55"
             >
               {isSaving ? 'Saving...' : 'Save and finish later'}
             </button>

@@ -6,6 +6,7 @@ import { Button } from '../components/common/Button';
 import { extractApiError } from '../services/api';
 import { validatePhoneNumber } from '../utils/validation';
 import { inferCountryIsoFromE164 } from '../utils/countries';
+import { checkChildEventEligibility } from '../utils/age';
 
 export function normalizeChildDraftForReview(rawDraft: any): AddChildDraft {
   if (!rawDraft) return {} as AddChildDraft;
@@ -443,10 +444,12 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
       if (dobDate > now) {
         childFields.push({ field: 'dob', message: 'Date of birth cannot be in the future.' });
       } else {
-        const ageInMs = now.getTime() - dobDate.getTime();
-        const ageInYears = ageInMs / (1000 * 60 * 60 * 24 * 365.25);
-        if (ageInYears > 18) {
-          childFields.push({ field: 'dob', message: 'Child must be under 18 years old.' });
+        const eligibility = checkChildEventEligibility(cDob);
+        if (!eligibility.isEligible) {
+          childFields.push({
+            field: 'dob',
+            message: eligibility.message || 'This programme is currently open to children ages 2–14.'
+          });
         }
       }
     }
@@ -653,22 +656,22 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
       >
         <div className="flex items-center gap-1.5" data-component-version="parent-review-validation-normalized-v2">
           {hasErrors ? (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 tracking-wide">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 tracking-wide">
               Needs update
             </span>
           ) : (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 tracking-wide">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/60 tracking-wide">
               Completed
             </span>
           )}
           {(!hasErrors && hasOptionalEmpty && isOptionalEmpty) && (
-            <span className="text-[10px] text-zinc-400 italic">Optional details empty</span>
+            <span className="text-[10px] text-zinc-400 dark:text-zinc-500 italic">Optional details empty</span>
           )}
         </div>
         {hasErrors && (
           <div className="space-y-1 mt-1 pl-1">
             {group.fields.map((f, idx) => (
-              <p key={idx} className="text-[11px] text-rose-600 font-medium flex items-center gap-1">
+              <p key={idx} className="text-[11px] text-rose-600 dark:text-rose-300 font-medium flex items-center gap-1">
                 <span className="w-1 h-1 rounded-full bg-rose-500 shrink-0" />
                 {f.message}
               </p>
@@ -711,6 +714,13 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
       }
 
       showError('Review Checklist Incomplete', 'Please check and complete all required fields listed at the top.');
+      return;
+    }
+
+    const cDob = draft.childDetails?.dateOfBirth || draft.dob;
+    const eligibility = checkChildEventEligibility(cDob);
+    if (!eligibility.isEligible) {
+      showError('Age Eligibility', eligibility.message || 'This programme is currently open to children ages 2–14.');
       return;
     }
 
@@ -779,7 +789,7 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
   return (
     <div 
       data-view-version="parent-add-child-review-v3-premium-validation"
-      className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF8F3] text-[#18181B] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50 px-5 pb-10"
+      className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF8F3] dark:bg-[#19191A] text-[#18181B] dark:text-[#F0EBE3] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50 dark:border-[#302E29]/50 px-5 pb-10"
     >
       <div className="space-y-6">
         {/* Top bar */}
@@ -787,12 +797,12 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
           <button
             type="button"
             onClick={() => onNavigate('/parent/children/new/pickup-person')}
-            className="p-1 -ml-1 text-[#18181B] hover:text-[#715D3A] active:opacity-75 transition-all cursor-pointer focus:outline-none shrink-0"
+            className="p-1 -ml-1 text-[#18181B] dark:text-[#F0EBE3] hover:text-[#715D3A] dark:hover:text-[#D4AF37] active:opacity-75 transition-all cursor-pointer focus:outline-none shrink-0"
             aria-label="Back"
           >
             <ArrowLeft className="w-5 h-5 stroke-[2]" />
           </button>
-          <span className="text-base sm:text-lg font-serif-koinonia font-bold text-[#18181B] tracking-tight">
+          <span className="text-base sm:text-lg font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3] tracking-tight">
             Add a child
           </span>
           <div className="w-5" />
@@ -801,23 +811,23 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
         {/* Progress bar */}
         <div className="flex items-center justify-center gap-2 pt-0.5">
           <div className="flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE]" />
-            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE]" />
-            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE]" />
-            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE]" />
+            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE] dark:bg-[#3A3835]" />
+            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE] dark:bg-[#3A3835]" />
+            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE] dark:bg-[#3A3835]" />
+            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE] dark:bg-[#3A3835]" />
             <div className="w-1.5 h-1.5 rounded-full bg-[#C59B27]" />
           </div>
-          <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-widest text-[#715D3A]">
+          <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-widest text-[#715D3A] dark:text-[#D4AF37]">
             STEP 5 OF 5
           </span>
         </div>
 
         {/* Main section heading */}
         <div className="text-center space-y-1.5 pt-1">
-          <h1 className="text-xl sm:text-2xl font-serif-koinonia font-bold text-[#18181B]">
+          <h1 className="text-xl sm:text-2xl font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3]">
             Review details
           </h1>
-          <p className="text-xs sm:text-sm text-[#3F3F46] leading-relaxed font-normal">
+          <p className="text-xs sm:text-sm text-[#3F3F46] dark:text-[#B8B0A5] leading-relaxed font-normal">
             Please check the information before sending it to the team.
           </p>
         </div>
@@ -827,37 +837,37 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
           <div 
             id="validation-summary-panel"
             data-component-version="parent-child-review-validation-v2-specific"
-            className="bg-[#FEF2F2] border border-red-200/80 rounded-2xl p-4 space-y-3.5 transition-all duration-300"
+            className="bg-[#FEF2F2] dark:bg-red-950/30 border border-red-200/80 dark:border-red-900/50 rounded-2xl p-4 space-y-3.5 transition-all duration-300"
           >
             <div className="flex items-start space-x-2.5">
-              <AlertCircle className="w-4.5 h-4.5 text-red-600 shrink-0 mt-0.5" />
+              <AlertCircle className="w-4.5 h-4.5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
               <div className="space-y-0.5">
-                <h3 className="font-serif-koinonia text-base font-bold text-red-950">
+                <h3 className="font-serif-koinonia text-base font-bold text-red-950 dark:text-red-200">
                   Please complete these details
                 </h3>
-                <p className="text-xs text-red-700 leading-relaxed font-normal">
+                <p className="text-xs text-red-700 dark:text-red-300 leading-relaxed font-normal">
                   Review the items below before sending this child for review.
                 </p>
               </div>
             </div>
 
-            <div className="divide-y divide-red-100 pt-1">
+            <div className="divide-y divide-red-100 dark:divide-red-900/40 pt-1">
               {missingGroups.map((group, groupIdx) => (
                 <div key={groupIdx} className="py-2.5 first:pt-0 last:pb-0 space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-semibold tracking-wider uppercase text-red-800">
+                    <span className="text-[10px] font-semibold tracking-wider uppercase text-red-800 dark:text-red-300">
                       {group.section}
                     </span>
                     <button
                       type="button"
                       data-component-version="parent-review-fix-action-v1"
                       onClick={() => onNavigate(group.stepRoute)}
-                      className="text-[11px] font-bold text-red-700 hover:text-red-900 transition-colors cursor-pointer hover:underline focus:outline-none"
+                      className="text-[11px] font-bold text-red-700 dark:text-red-400 hover:text-red-900 dark:hover:text-red-200 transition-colors cursor-pointer hover:underline focus:outline-none"
                     >
                       {group.editLabel}
                     </button>
                   </div>
-                  <ul className="space-y-1 pl-3.5 list-disc list-outside text-xs text-red-700">
+                  <ul className="space-y-1 pl-3.5 list-disc list-outside text-xs text-red-700 dark:text-red-300">
                     {group.fields.map((field, fieldIdx) => (
                       <li key={fieldIdx} className="font-normal">
                         {field.message}
@@ -872,7 +882,7 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
 
         {/* Child photo & basic summary */}
         <div className="flex flex-col items-center pt-2 pb-1">
-          <div className="w-32 h-32 rounded-[24px] border border-[#C59B27] p-0.5 bg-white shadow-xs overflow-hidden flex-none">
+          <div className="w-32 h-32 rounded-[24px] border border-[#C59B27] p-0.5 bg-white dark:bg-[#21211E] shadow-xs overflow-hidden flex-none">
             {draft.photoUrl ? (
               <img
                 src={draft.photoUrl}
@@ -880,20 +890,20 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
                 className="w-full h-full rounded-[20px] object-cover object-center block"
               />
             ) : (
-              <div className="w-full h-full rounded-[20px] bg-[#FAF8F4] text-[#715D3A] flex items-center justify-center font-serif-koinonia font-bold text-3xl">
+              <div className="w-full h-full rounded-[20px] bg-[#FAF8F4] dark:bg-[#262520] text-[#715D3A] dark:text-[#D4AF37] flex items-center justify-center font-serif-koinonia font-bold text-3xl">
                 {draft.fullName.charAt(0).toUpperCase()}
               </div>
             )}
           </div>
-          <h2 className="text-[#18181B] font-serif-koinonia text-xl font-bold tracking-tight mt-4 text-center">
+          <h2 className="text-[#18181B] dark:text-[#F0EBE3] font-serif-koinonia text-xl font-bold tracking-tight mt-4 text-center">
             {draft.fullName}
           </h2>
-          <p className="text-xs text-[#3F3F46] mt-1 font-normal text-center flex items-center justify-center gap-1.5 flex-wrap">
+          <p className="text-xs text-[#3F3F46] dark:text-[#B8B0A5] mt-1 font-normal text-center flex items-center justify-center gap-1.5 flex-wrap">
             <span>{ageText}</span>
-            <span className="text-[#D9D6CE]">•</span>
-            <span className="text-[#3F3F46]">{groupRaw}</span>
+            <span className="text-[#D9D6CE] dark:text-[#3A3835]">•</span>
+            <span>{groupRaw}</span>
             {needsAgeReview && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-amber-50 text-[#92400E] border border-amber-200 tracking-wider">
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-amber-50 dark:bg-amber-950/40 text-[#92400E] dark:text-amber-300 border border-amber-200 dark:border-amber-900/60 tracking-wider">
                 Review Needed
               </span>
             )}
@@ -902,16 +912,16 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
 
         {/* Review Cards Stack */}
         <div className="space-y-4">
-                   {/* 1. CHILD DETAILS CARD */}
-          <div className="bg-[#FAF8F4] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] transition-all duration-200 space-y-3.5">
+          {/* 1. CHILD DETAILS CARD */}
+          <div className="bg-[#FAF8F4] dark:bg-[#1D1D1A] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] dark:border-[#302E29] transition-all duration-200 space-y-3.5">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] sm:text-[11px] font-semibold tracking-wider text-[#52525B]">
+              <span className="text-[10px] sm:text-[11px] font-semibold tracking-wider text-[#52525B] dark:text-[#B8B0A5]">
                 CHILD DETAILS
               </span>
               <button
                 type="button"
                 onClick={() => onNavigate('/parent/children/new')}
-                className="text-xs font-semibold text-[#C59B27] hover:text-[#9A7326] transition-colors cursor-pointer focus:outline-none hover:underline"
+                className="text-xs font-semibold text-[#C59B27] dark:text-[#E5B834] hover:text-[#9A7326] dark:hover:text-[#F3CE5E] transition-colors cursor-pointer focus:outline-none hover:underline"
               >
                 Edit
               </button>
@@ -921,35 +931,35 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
 
             <div className="grid grid-cols-2 gap-y-3.5 gap-x-4 text-xs sm:text-sm">
               <div>
-                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 dark:text-[#7A7570] block">
                   Full Name
                 </span>
-                <span className="font-normal text-[#18181B] block mt-1">
-                  {draft.fullName || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required</span>}
+                <span className="font-normal text-[#18181B] dark:text-[#F0EBE3] block mt-1">
+                  {draft.fullName || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-100 dark:border-red-900/50">Required</span>}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 dark:text-[#7A7570] block">
                   Gender
                 </span>
-                <span className="font-normal text-[#18181B] block mt-1">
-                  {draft.gender || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required</span>}
+                <span className="font-normal text-[#18181B] dark:text-[#F0EBE3] block mt-1">
+                  {draft.gender || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-100 dark:border-red-900/50">Required</span>}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 dark:text-[#7A7570] block">
                   Date of Birth
                 </span>
-                <span className="font-normal text-[#18181B] block mt-1">
-                  {draft.dob ? formatDobToWords(draft.dob) : <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required</span>}
+                <span className="font-normal text-[#18181B] dark:text-[#F0EBE3] block mt-1">
+                  {draft.dob ? formatDobToWords(draft.dob) : <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-100 dark:border-red-900/50">Required</span>}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 dark:text-[#7A7570] block">
                   Relationship
                 </span>
-                <span className="font-normal text-[#18181B] block mt-1">
-                  {draft.relationship || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required</span>}
+                <span className="font-normal text-[#18181B] dark:text-[#F0EBE3] block mt-1">
+                  {draft.relationship || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-100 dark:border-red-900/50">Required</span>}
                 </span>
               </div>
             </div>
@@ -958,16 +968,16 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
           {/* 2. SCHOOL & AGE GROUP CARD */}
           <div 
             data-component-version="parent-review-school-age-card-v2-mapped"
-            className="bg-[#FAF8F4] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] transition-all duration-200 space-y-3.5"
+            className="bg-[#FAF8F4] dark:bg-[#1D1D1A] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] dark:border-[#302E29] transition-all duration-200 space-y-3.5"
           >
             <div data-component-version="parent-child-school-field-mapping-v1" className="flex items-center justify-between">
-              <span className="text-[10px] sm:text-[11px] font-semibold tracking-wider text-[#52525B]">
+              <span className="text-[10px] sm:text-[11px] font-semibold tracking-wider text-[#52525B] dark:text-[#B8B0A5]">
                 SCHOOL & AGE GROUP
               </span>
               <button
                 type="button"
                 onClick={() => onNavigate('/parent/children/new/care-details')}
-                className="text-xs font-semibold text-[#C59B27] hover:text-[#9A7326] transition-colors cursor-pointer focus:outline-none hover:underline"
+                className="text-xs font-semibold text-[#C59B27] dark:text-[#E5B834] hover:text-[#9A7326] dark:hover:text-[#F3CE5E] transition-colors cursor-pointer focus:outline-none hover:underline"
               >
                 Edit
               </button>
@@ -977,27 +987,27 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
 
             <div className="space-y-3.5 text-xs sm:text-sm">
               <div>
-                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 dark:text-[#7A7570] block">
                   Class / Grade
                 </span>
-                <span className="font-normal text-[#18181B] block mt-1">
-                  {draft.schoolClass || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required</span>}
+                <span className="font-normal text-[#18181B] dark:text-[#F0EBE3] block mt-1">
+                  {draft.schoolClass || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-100 dark:border-red-900/50">Required</span>}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 dark:text-[#7A7570] block">
                   Previous Attendance
                 </span>
-                <span className="font-normal text-[#18181B] block mt-1">
-                  {draft.attendedBefore ? (draft.attendedBefore === 'Yes' ? 'Yes' : 'No, first time') : <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required</span>}
+                <span className="font-normal text-[#18181B] dark:text-[#F0EBE3] block mt-1">
+                  {draft.attendedBefore ? (draft.attendedBefore === 'Yes' ? 'Yes' : 'No, first time') : <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-100 dark:border-red-900/50">Required</span>}
                 </span>
               </div>
               {draft.careNote ? (
                 <div data-component-version="parent-review-team-note-v1">
-                  <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
+                  <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 dark:text-[#7A7570] block">
                     Additional note for team
                   </span>
-                  <span className="font-normal text-[#18181B] block mt-1 leading-relaxed whitespace-pre-line">
+                  <span className="font-normal text-[#18181B] dark:text-[#F0EBE3] block mt-1 leading-relaxed whitespace-pre-line">
                     {draft.careNote}
                   </span>
                 </div>
@@ -1006,15 +1016,15 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
           </div>
 
           {/* 3. HEALTH & SUPPORT CARD */}
-          <div className="bg-[#FAF8F4] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] transition-all duration-200 space-y-3.5">
+          <div className="bg-[#FAF8F4] dark:bg-[#1D1D1A] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] dark:border-[#302E29] transition-all duration-200 space-y-3.5">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] sm:text-[11px] font-semibold tracking-wider text-[#52525B]">
+              <span className="text-[10px] sm:text-[11px] font-semibold tracking-wider text-[#52525B] dark:text-[#B8B0A5]">
                 HEALTH & SUPPORT
               </span>
               <button
                 type="button"
                 onClick={() => onNavigate('/parent/children/new/health-and-support')}
-                className="text-xs font-semibold text-[#C59B27] hover:text-[#9A7326] transition-colors cursor-pointer focus:outline-none hover:underline"
+                className="text-xs font-semibold text-[#C59B27] dark:text-[#E5B834] hover:text-[#9A7326] dark:hover:text-[#F3CE5E] transition-colors cursor-pointer focus:outline-none hover:underline"
               >
                 Edit
               </button>
@@ -1024,26 +1034,26 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
 
             <div className="space-y-3.5 text-xs sm:text-sm">
               <div>
-                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 dark:text-[#7A7570] block">
                   Allergies / Medical Notes
                 </span>
-                <span className="font-normal text-[#18181B] block mt-1 leading-relaxed">
-                  {draft.hasAllergies === 'Yes' ? (draft.medicalNote || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required details empty</span>) : 'None'}
+                <span className="font-normal text-[#18181B] dark:text-[#F0EBE3] block mt-1 leading-relaxed">
+                  {draft.hasAllergies === 'Yes' ? (draft.medicalNote || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-100 dark:border-red-900/50">Required details empty</span>) : 'None'}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 dark:text-[#7A7570] block">
                   Extra Support Needed
                 </span>
-                <span className="font-normal text-[#18181B] block mt-1 leading-relaxed">
-                  {draft.needsExtraSupport === 'Yes' ? (draft.supportNote || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required details empty</span>) : 'None'}
+                <span className="font-normal text-[#18181B] dark:text-[#F0EBE3] block mt-1 leading-relaxed">
+                  {draft.needsExtraSupport === 'Yes' ? (draft.supportNote || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-100 dark:border-red-900/50">Required details empty</span>) : 'None'}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 dark:text-[#7A7570] block">
                   Emergency Care Consent
                 </span>
-                <span className="font-normal text-[#18181B] block mt-1">
+                <span className="font-normal text-[#18181B] dark:text-[#F0EBE3] block mt-1">
                   Granted
                 </span>
               </div>
@@ -1051,15 +1061,15 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
           </div>
 
           {/* 4. PICKUP PERSON CARD */}
-          <div className="bg-[#FAF8F4] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] transition-all duration-200 space-y-4">
+          <div className="bg-[#FAF8F4] dark:bg-[#1D1D1A] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] dark:border-[#302E29] transition-all duration-200 space-y-4">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] sm:text-[11px] font-semibold tracking-wider text-[#52525B]">
+              <span className="text-[10px] sm:text-[11px] font-semibold tracking-wider text-[#52525B] dark:text-[#B8B0A5]">
                 PICKUP PERSON
               </span>
               <button
                 type="button"
                 onClick={() => onNavigate('/parent/children/new/pickup-person')}
-                className="text-xs font-semibold text-[#C59B27] hover:text-[#9A7326] transition-colors cursor-pointer focus:outline-none hover:underline"
+                className="text-xs font-semibold text-[#C59B27] dark:text-[#E5B834] hover:text-[#9A7326] dark:hover:text-[#F3CE5E] transition-colors cursor-pointer focus:outline-none hover:underline"
               >
                 Edit
               </button>
@@ -1070,17 +1080,17 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
             {!isPickupIncomplete && (
               <div className="space-y-4 pt-1">
                 <div className="flex items-center space-x-3.5">
-                  <div className="w-14 h-14 rounded-xl bg-[#FAF8F4] border border-[#EAE8E1] flex items-center justify-center overflow-hidden shrink-0">
+                  <div className="w-14 h-14 rounded-xl bg-[#FAF8F4] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] flex items-center justify-center overflow-hidden shrink-0">
                     {pickupDetails.photoUrl ? (
                       <img src={pickupDetails.photoUrl} alt={pickupDetails.fullName} className="w-full h-full object-cover" />
                     ) : (
-                      <span className="font-serif-koinonia font-bold text-lg text-[#715D3A]">
+                      <span className="font-serif-koinonia font-bold text-lg text-[#715D3A] dark:text-[#D4AF37]">
                         {pickupDetails.initials}
                       </span>
                     )}
                   </div>
                   {pickupDetails.photoUrl && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[#FAF6EB] text-[#9A7326] border border-[#EAE8E1] tracking-wider uppercase">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[#FAF6EB] dark:bg-[#262520] text-[#9A7326] dark:text-[#D4AF37] border border-[#EAE8E1] dark:border-[#302E29] tracking-wider uppercase">
                       Photo added
                     </span>
                   )}
@@ -1088,26 +1098,26 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
 
                 <div className="grid grid-cols-1 min-[560px]:grid-cols-2 gap-y-3.5 gap-x-8 min-w-0 text-xs sm:text-sm">
                   <div className="min-w-0">
-                    <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
+                    <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 dark:text-[#7A7570] block">
                       Name
                     </span>
-                    <span className="font-normal text-[#18181B] block mt-1 leading-[1.35] line-clamp-2 [word-break:break-word] overflow-wrap-anywhere">
+                    <span className="font-normal text-[#18181B] dark:text-[#F0EBE3] block mt-1 leading-[1.35] line-clamp-2 [word-break:break-word] overflow-wrap-anywhere">
                       {pickupDetails.fullName || 'Not specified'}
                     </span>
                   </div>
                   <div className="min-w-0">
-                    <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
+                    <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 dark:text-[#7A7570] block">
                       Relation
                     </span>
-                    <span className="font-normal text-[#18181B] block mt-1 leading-[1.35] line-clamp-2 [word-break:break-word] overflow-wrap-anywhere">
+                    <span className="font-normal text-[#18181B] dark:text-[#F0EBE3] block mt-1 leading-[1.35] line-clamp-2 [word-break:break-word] overflow-wrap-anywhere">
                       {pickupDetails.relationship || 'Not specified'}
                     </span>
                   </div>
                   <div className="min-w-0 min-[560px]:col-span-2">
-                    <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
+                    <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 dark:text-[#7A7570] block">
                       Phone
                     </span>
-                    <span className="font-normal text-[#18181B] block mt-1 leading-[1.35] [word-break:break-word] overflow-wrap-anywhere">
+                    <span className="font-normal text-[#18181B] dark:text-[#F0EBE3] block mt-1 leading-[1.35] [word-break:break-word] overflow-wrap-anywhere">
                       {pickupDetails.phone || 'Not specified'}
                     </span>
                   </div>
@@ -1117,15 +1127,15 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
           </div>
 
           {/* 5. PARENT DETAILS CARD */}
-          <div className="bg-[#FAF8F4] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] transition-all duration-200 space-y-3.5">
+          <div className="bg-[#FAF8F4] dark:bg-[#1D1D1A] rounded-2xl p-4 sm:p-5 border border-[#EAE8E1] dark:border-[#302E29] transition-all duration-200 space-y-3.5">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] sm:text-[11px] font-semibold tracking-wider text-[#52525B]">
+              <span className="text-[10px] sm:text-[11px] font-semibold tracking-wider text-[#52525B] dark:text-[#B8B0A5]">
                 PARENT DETAILS
               </span>
               <button
                 type="button"
                 onClick={() => onNavigate('/parent/profile/edit')}
-                className="text-xs font-semibold text-[#C59B27] hover:text-[#9A7326] transition-colors cursor-pointer focus:outline-none hover:underline"
+                className="text-xs font-semibold text-[#C59B27] dark:text-[#E5B834] hover:text-[#9A7326] dark:hover:text-[#F3CE5E] transition-colors cursor-pointer focus:outline-none hover:underline"
               >
                 Edit
               </button>
@@ -1135,27 +1145,27 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
 
             <div className="space-y-3.5 text-xs sm:text-sm">
               <div>
-                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 dark:text-[#7A7570] block">
                   Primary Contact
                 </span>
-                <span className="font-normal text-[#18181B] block mt-1">
+                <span className="font-normal text-[#18181B] dark:text-[#F0EBE3] block mt-1">
                   {parentProfile?.fullName || 'Parent'}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
+                  <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 dark:text-[#7A7570] block">
                     Phone
                   </span>
-                  <span className="font-normal text-[#18181B] block mt-1">
-                    {parentProfile?.phone || parentProfile?.phoneNumber || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required</span>}
+                  <span className="font-normal text-[#18181B] dark:text-[#F0EBE3] block mt-1">
+                    {parentProfile?.phone || parentProfile?.phoneNumber || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-100 dark:border-red-900/50">Required</span>}
                   </span>
                 </div>
                 <div>
-                  <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
+                  <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 dark:text-[#7A7570] block">
                     WhatsApp
                   </span>
-                  <span className="font-normal text-[#18181B] block mt-1">
+                  <span className="font-normal text-[#18181B] dark:text-[#F0EBE3] block mt-1">
                     {parentProfile?.whatsapp && parentProfile.whatsapp !== parentProfile.phone
                       ? parentProfile.whatsapp
                       : 'Same as phone'}
@@ -1163,11 +1173,11 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
                 </div>
               </div>
               <div>
-                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 block">
+                <span className="text-[10px] font-medium tracking-wider uppercase text-zinc-500 dark:text-[#7A7570] block">
                   Email
                 </span>
-                <span className="font-normal text-[#18181B] block mt-1 break-all">
-                  {parentProfile?.email || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-100">Required</span>}
+                <span className="font-normal text-[#18181B] dark:text-[#F0EBE3] block mt-1 break-all">
+                  {parentProfile?.email || <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-100 dark:border-red-900/50">Required</span>}
                 </span>
               </div>
             </div>
@@ -1178,7 +1188,7 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
         <form onSubmit={handleSendForReview} className="space-y-5 pt-2" noValidate>
           <label 
             className={`block p-4 rounded-xl border transition-all duration-200 cursor-pointer select-none ${
-              errors.confirmed && showValidationErrors ? 'bg-red-50/40 border-red-500' : 'bg-[#FAF8F4] border-[#EAE8E1] hover:border-[#C59B27]'
+              errors.confirmed && showValidationErrors ? 'bg-red-50/40 dark:bg-red-950/20 border-red-500' : 'bg-[#FAF8F4] dark:bg-[#1D1D1A] border-[#EAE8E1] dark:border-[#302E29] hover:border-[#C59B27] dark:hover:border-[#C59B27]'
             }`}
           >
             <div className="flex items-start space-x-3">
@@ -1192,14 +1202,14 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
                     setErrors((prev) => ({ ...prev, confirmed: undefined }));
                   }
                 }}
-                className="w-4 h-4 rounded border-[#D9D6CE] text-[#C59B27] focus:ring-[#C59B27] mt-0.5 shrink-0 accent-[#C59B27] cursor-pointer"
+                className="w-4 h-4 rounded border-[#D9D6CE] dark:border-[#3A3835] text-[#C59B27] focus:ring-[#C59B27] mt-0.5 shrink-0 accent-[#C59B27] cursor-pointer"
               />
-              <span className="text-xs sm:text-sm text-[#18181B] leading-relaxed font-medium">
+              <span className="text-xs sm:text-sm text-[#18181B] dark:text-[#F0EBE3] leading-relaxed font-medium">
                 I confirm that these details are correct and up to date.
               </span>
             </div>
             {errors.confirmed && showValidationErrors && (
-              <p className="text-xs text-red-600 font-medium mt-2 pl-7" onClick={(e) => e.stopPropagation()}>{errors.confirmed}</p>
+              <p className="text-xs text-red-600 dark:text-red-400 font-medium mt-2 pl-7" onClick={(e) => e.stopPropagation()}>{errors.confirmed}</p>
             )}
           </label>
 
@@ -1233,21 +1243,21 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
                 type="button"
                 disabled={isSubmitting}
                 onClick={handleSaveAndFinishLater}
-                className={`w-full py-3.5 px-4 bg-white hover:bg-[#FAF8F4] active:bg-[#F3EFE6] active:scale-[0.99] border border-[#D9D6CE] hover:border-[#C59B27] text-[#18181B] hover:text-[#9A7326] font-semibold text-sm rounded-xl transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27] text-center block ${
+                className={`w-full py-3.5 px-4 bg-white dark:bg-[#21211E] hover:bg-[#FAF8F4] dark:hover:bg-[#262520] active:bg-[#F3EFE6] dark:active:bg-[#2A2926] active:scale-[0.99] border border-[#D9D6CE] dark:border-[#302E29] hover:border-[#C59B27] dark:hover:border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3] hover:text-[#9A7326] dark:hover:text-[#D4AF37] font-semibold text-sm rounded-xl transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27] text-center block ${
                   isSubmitting ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
               >
                 Save for later
               </button>
-              <p className="text-center text-[11px] text-zinc-500 font-normal leading-relaxed">
+              <p className="text-center text-[11px] text-zinc-500 dark:text-[#7A7570] font-normal leading-relaxed">
                 You can finish this child’s details later.
               </p>
             </div>
           </div>
 
           {/* Small note */}
-          <div className="flex items-center justify-center gap-1.5 text-xs text-[#6B7280] pt-1">
-            <Info className="w-4 h-4 text-[#9A7326] shrink-0" />
+          <div className="flex items-center justify-center gap-1.5 text-xs text-[#6B7280] dark:text-[#B8B0A5] pt-1">
+            <Info className="w-4 h-4 text-[#9A7326] dark:text-[#D4AF37] shrink-0" />
             <span>You can follow {childFirstName}’s status from Home.</span>
           </div>
         </form>

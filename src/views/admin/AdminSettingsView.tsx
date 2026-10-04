@@ -270,6 +270,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
   // General Settings State
   const [parentRegistrationEnabled, setParentRegistrationEnabled] = useState(true);
+  const [volunteerRegistrationEnabled, setVolunteerRegistrationEnabled] = useState(true);
   const [parentLoginEnabled, setParentLoginEnabled] = useState(true);
   const [requiredChildPhoto, setRequiredChildPhoto] = useState(true);
   const [requiredParentPhoto, setRequiredParentPhoto] = useState(true);
@@ -349,6 +350,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
       const genRes = await api.admin.getGeneralSettings();
       if (genRes.success && genRes.settings) {
         setParentRegistrationEnabled(genRes.settings.parentRegistrationEnabled === 1);
+        setVolunteerRegistrationEnabled(genRes.settings.volunteerRegistrationEnabled !== 0);
         setParentLoginEnabled(genRes.settings.parentLoginEnabled === 1);
         setRequiredChildPhoto(genRes.settings.requiredChildPhoto === 1);
         setRequiredParentPhoto(genRes.settings.requiredParentPhoto === 1);
@@ -507,6 +509,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
     try {
       const res = await api.admin.updateGeneralSettings({
         parentRegistrationEnabled,
+        volunteerRegistrationEnabled,
         parentLoginEnabled,
         requiredChildPhoto,
         requiredParentPhoto,
@@ -976,17 +979,17 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                   data-component-version="admin-settings-parent-access-v2-refined"
                 >
                   <div className="border-b border-[#EAE8E1] dark:border-[#302E29] pb-3">
-                    <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] text-lg">Parent access</h3>
-                    <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Choose how parents can register, sign in, and update child details.</p>
+                    <h3 className="font-sans font-bold text-[#18181B] dark:text-[#F0EBE3] text-lg">Registration access</h3>
+                    <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">Control registration availability and access controls for the public landing page.</p>
                   </div>
 
                   <div className="space-y-4">
-                    {/* Toggle: New Registrations */}
+                    {/* Toggle: Parent registration */}
                     <div className="flex items-center justify-between py-2">
                       <div className="space-y-1 pr-4">
-                        <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3] block">New parent registration</span>
+                        <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3] block">Parent registration</span>
                         <p className="text-xs text-zinc-400 dark:text-[#7A7570] leading-normal max-w-md">
-                          Allow new parents to create accounts from the landing page.
+                          Allow parents to register children from the landing page.
                         </p>
                       </div>
                       <button 
@@ -999,6 +1002,29 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         <span
                           className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-[#F0EBE3] shadow-md ring-0 transition duration-200 ease-in-out ${
                             parentRegistrationEnabled ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Toggle: Volunteer registration */}
+                    <div className="flex items-center justify-between py-4 border-t border-zinc-100 dark:border-[#302E29]">
+                      <div className="space-y-1 pr-4">
+                        <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3] block">Volunteer registration</span>
+                        <p className="text-xs text-zinc-400 dark:text-[#7A7570] leading-normal max-w-md">
+                          Allow volunteers to sign in and register from the landing page.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setVolunteerRegistrationEnabled(!volunteerRegistrationEnabled)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          volunteerRegistrationEnabled ? 'bg-[#C59B27]' : 'bg-zinc-200 dark:bg-[#3A3835]'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-[#F0EBE3] shadow-md ring-0 transition duration-200 ease-in-out ${
+                            volunteerRegistrationEnabled ? 'translate-x-5' : 'translate-x-0'
                           }`}
                         />
                       </button>

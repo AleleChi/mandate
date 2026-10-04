@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Image as ImageIcon, Camera, Sparkles, Shield, Users, Heart } from 'lucide-react';
-import { resolveMediaUrl, getOptimizedThumbnailUrl } from '../../utils/mediaUrl';
+import { resolveMediaUrl, getOptimizedThumbnailUrl, isStaticBundledAsset } from '../../utils/mediaUrl';
 
 interface AssetImageProps {
   src?: string;
@@ -10,7 +10,7 @@ interface AssetImageProps {
   label?: string;
   hideText?: boolean;
   loading?: 'lazy' | 'eager';
-  fetchpriority?: 'high' | 'low' | 'auto';
+  fetchPriority?: 'high' | 'low' | 'auto';
   thumbnailWidth?: number;
 }
 
@@ -22,7 +22,7 @@ export const AssetImage: React.FC<AssetImageProps> = ({
   label,
   hideText = false,
   loading = 'lazy',
-  fetchpriority,
+  fetchPriority,
   thumbnailWidth
 }) => {
   const [hasError, setHasError] = useState(false);
@@ -39,15 +39,17 @@ export const AssetImage: React.FC<AssetImageProps> = ({
   };
 
   if (src && src.trim() !== '' && !hasError) {
-    const resolved = thumbnailWidth ? getOptimizedThumbnailUrl(src, thumbnailWidth) : resolveMediaUrl(src);
+    const isStatic = isStaticBundledAsset(src);
+    const resolved = isStatic
+      ? (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('blob:') || src.startsWith('data:') || src.startsWith('/') ? src : `/${src}`)
+      : (thumbnailWidth ? getOptimizedThumbnailUrl(src, thumbnailWidth) : resolveMediaUrl(src));
     return (
       <img
         src={resolved}
         alt={alt}
         className={className}
         loading={loading}
-        // @ts-ignore - fetchpriority is valid in modern browsers but sometimes missing in React types
-        fetchpriority={fetchpriority}
+        fetchPriority={fetchPriority}
         onError={() => setHasError(true)}
         referrerPolicy="no-referrer"
       />

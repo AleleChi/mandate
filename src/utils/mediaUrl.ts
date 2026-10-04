@@ -1,4 +1,3 @@
-import { REAL_ASSETS } from '../config/assets';
 import { getApiBaseUrl } from './urlHelper';
 
 // Proof string as required by Phase 3 rules
@@ -13,6 +12,54 @@ export const SAFE_MEDIA_URL_RESOLVER_VERSION = "safe-media-url-resolver-v3-secur
  * @param fallback Optional custom fallback URL to return if the input is empty.
  * @returns The resolved absolute URL or relative path.
  */
+/**
+ * Detects whether a URL or path is a static bundled frontend asset
+ * (e.g. Vite dev or build imported asset, public folder asset, data/blob URI).
+ * Static bundled assets must NEVER be passed through backend API prefixing.
+ */
+export function isStaticBundledAsset(url?: string | null): boolean {
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  if (trimmed === '') return false;
+  if (trimmed.startsWith('blob:') || trimmed.startsWith('data:')) return true;
+
+  const clean = trimmed.replace(/^\/+/, '');
+  const lower = clean.toLowerCase();
+
+  return (
+    lower.startsWith('src/') ||
+    lower.startsWith('assets/') ||
+    lower.startsWith('@fs/') ||
+    lower.startsWith('@id/') ||
+    lower.startsWith('@vite/') ||
+    lower.startsWith('node_modules/') ||
+    lower.startsWith('images/') ||
+    lower.startsWith('public/') ||
+    lower.startsWith('favicon') ||
+    lower.startsWith('social_share') ||
+    lower.startsWith('apple-touch-icon') ||
+    lower.startsWith('android-chrome') ||
+    lower.startsWith('icon-') ||
+    lower.startsWith('site.webmanifest') ||
+    lower.startsWith('koinonia-logo') ||
+    lower.startsWith('parent_hero') ||
+    lower.startsWith('volunteer_hero') ||
+    lower.includes('parent_hero_') ||
+    lower.includes('volunteer_hero_') ||
+    lower.includes('koinonia-logo') ||
+    lower.includes('social_share')
+  );
+}
+
+/**
+ * Resolves a media path or database reference to a reliable, optimized absolute URL
+ * for frontend rendering. Handles local assets, raw absolute URLs, temporary blobs,
+ * and uploaded server media paths.
+ *
+ * @param input The relative path, absolute URL, blob URI, or empty value to resolve.
+ * @param fallback Optional custom fallback URL to return if the input is empty.
+ * @returns The resolved absolute URL or relative path.
+ */
 export function resolveMediaUrl(input?: string | null, fallback?: string): string {
   // Rule 1: If input is empty/null/undefined: return fallback
   if (!input || input.trim() === '') {
@@ -20,6 +67,14 @@ export function resolveMediaUrl(input?: string | null, fallback?: string): strin
   }
 
   const trimmed = input.trim();
+
+  // A. STATIC BUNDLED ASSETS: Return directly as frontend asset path without backend URL manipulation
+  if (isStaticBundledAsset(trimmed)) {
+    return trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('blob:') || trimmed.startsWith('data:') || trimmed.startsWith('/')
+      ? trimmed
+      : `/${trimmed}`;
+  }
+
   const lower = trimmed.toLowerCase();
 
   // Rule 7: Prevent path traversal
@@ -34,10 +89,10 @@ export function resolveMediaUrl(input?: string | null, fallback?: string): strin
     return fallback || '';
   }
 
-  // Rule 6: Never render or persist dangerous protocols, localhost in production, or raw server filesystem paths
+  // Dangerous protocols, localhost in production, or raw server filesystem paths
+  // Note: blob: and data: are legitimate frontend media URIs and allowed.
   if (
     lower.startsWith('javascript:') ||
-    lower.startsWith('data:') ||
     lower.startsWith('file:') ||
     lower.includes('/tmp') ||
     lower.includes('c:\\') ||
@@ -48,15 +103,17 @@ export function resolveMediaUrl(input?: string | null, fallback?: string): strin
     return fallback || '';
   }
 
-  // Rule 2: If input starts with https:// or http://: allow only safe http/https URL and return as-is
+  // B. ABSOLUTE REMOTE URLS: Leave unchanged (http://, https://, including Cloudinary)
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     return trimmed;
   }
 
-  // Temporary blob URIs are returned as-is
-  if (trimmed.startsWith('blob:')) {
+  // Temporary blob URIs and data URIs are returned as-is
+  if (trimmed.startsWith('blob:') || trimmed.startsWith('data:')) {
     return trimmed;
   }
+
+  const cleanInput = trimmed.replace(/^\/+/, '');
 
   // Determine the API base URL from Vite environment variables or urlHelper
   let apiBaseUrl = getApiBaseUrl();
@@ -78,29 +135,27 @@ export function resolveMediaUrl(input?: string | null, fallback?: string): strin
   }
 
   const cleanBase = apiBaseUrl ? apiBaseUrl.replace(/\/+$/, '') : '';
-  const cleanInput = trimmed.replace(/^\/+/, '');
 
-  // Rule 3 & 4: If input starts with /uploads, uploads/, api/, or media/: prefix backend API origin
-  if (
-    cleanInput.startsWith('uploads/') || 
-    cleanInput.startsWith('media/') || 
-    cleanInput.startsWith('api/')
-  ) {
-    if (cleanBase) {
-      return `${cleanBase}/${cleanInput}`;
-    }
-    return `/${cleanInput}`;
+  // C. BACKEND MEDIA PATHS: Only backend-owned media paths receive API base
+  const isBackendMedia =
+    cleanInput.startsWith('api/media/') ||
+    cleanInput.startsWith('media/') ||
+    cleanInput.startsWith('uploads/') ||
+    cleanInput.startsWith('api/');
+
+  if (isBackendMedia) {
+    return cleanBase ? `${cleanBase}/${cleanInput}` : `/${cleanInput}`;
   }
 
-  // Rule 5: If input is a committed public/static frontend asset (assets/, images/, public/)
-  if (cleanInput.startsWith('assets/') || cleanInput.startsWith('images/') || cleanInput.startsWith('public/')) {
-    return `/${cleanInput}`;
+  // UUID or media prefix reference (e.g. child/parent photo ID saved without full path)
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanInput);
+  const isMediaPrefix = /^(media|photo|file)[-_][a-zA-Z0-9_-]+/i.test(cleanInput);
+  if (!cleanInput.includes('/') && (isUuid || isMediaPrefix)) {
+    const apiPath = `api/media/files/${cleanInput}`;
+    return cleanBase ? `${cleanBase}/${apiPath}` : `/${apiPath}`;
   }
 
-  // Default to appending to backend base if available, otherwise return relative path
-  if (cleanBase) {
-    return `${cleanBase}/${cleanInput}`;
-  }
+  // Default: Frontend-local relative path (never prefix API base to unknown local paths)
   return `/${cleanInput}`;
 }
 

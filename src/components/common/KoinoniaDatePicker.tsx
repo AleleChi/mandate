@@ -224,7 +224,7 @@ export const KoinoniaDatePicker: React.FC<KoinoniaDatePickerProps> = ({
   return (
     <div className="relative w-full" ref={containerRef}>
       {label && (
-        <label className="text-xs font-semibold text-[#18181B] block mb-1">
+        <label className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] block mb-1">
           {label} {required && <span className="text-red-500">*</span>}
         </label>
       )}
@@ -241,26 +241,26 @@ export const KoinoniaDatePicker: React.FC<KoinoniaDatePickerProps> = ({
         }}
         onKeyDown={handleTriggerKeyDown}
         className={`w-full py-2 px-0 bg-transparent border-0 border-b ${
-          error ? 'border-red-600' : 'border-[#D9D6CE] focus-within:border-[#C59B27]'
+          error ? 'border-red-600 dark:border-red-400' : 'border-[#D9D6CE] dark:border-[#3A3835] focus-within:border-[#C59B27]'
         } text-sm flex items-center justify-between cursor-pointer transition-colors focus:outline-none ${
           disabled ? 'opacity-50 cursor-not-allowed' : ''
-        } ${!value ? 'text-[#9CA3AF]' : 'text-[#18181B]'}`}
+        } ${!value ? 'text-[#9CA3AF] dark:text-[#7A7570]' : 'text-[#18181B] dark:text-[#F0EBE3]'}`}
       >
         <span className="font-medium select-none">
           {value ? formatToReadable(value) : placeholder}
         </span>
-        <Calendar className="w-4 h-4 text-[#715D3A] shrink-0 pointer-events-none" />
+        <Calendar className="w-4 h-4 text-[#715D3A] dark:text-[#C59B27] shrink-0 pointer-events-none" />
       </div>
 
-      {error && <p className="text-xs text-red-600 mt-1 font-medium">{error}</p>}
-      {!error && helperText && <p className="text-xs text-[#6B7280] mt-1">{helperText}</p>}
+      {error && <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-medium">{error}</p>}
+      {!error && helperText && <p className="text-xs text-[#6B7280] dark:text-[#B8B0A5] mt-1">{helperText}</p>}
 
       {/* Overlays / Panels */}
       {isOpen && (
         <>
           {/* Mobile Bottom Sheet Modal Overlay */}
           {isMobile ? (
-            <div className="fixed inset-0 bg-black/50 z-50 flex flex-col justify-end">
+            <div className="fixed inset-0 bg-black/60 z-50 flex flex-col justify-end backdrop-blur-xs">
               {/* Tap backdrop to close */}
               <div className="absolute inset-0" onClick={() => setIsOpen(false)} />
               
@@ -269,15 +269,15 @@ export const KoinoniaDatePicker: React.FC<KoinoniaDatePickerProps> = ({
                 role="dialog"
                 aria-modal="true"
                 onKeyDown={handleCalendarKeyDown}
-                className="bg-[#FAF8F4] w-full max-w-[390px] mx-auto rounded-t-2xl p-4 shadow-xl z-10 border-t border-[#EAE8E1] transition-transform duration-300 transform translate-y-0"
+                className="bg-[#FAF8F4] dark:bg-[#21211E] w-full max-w-[390px] mx-auto rounded-t-2xl p-4 shadow-2xl z-10 border-t border-[#EAE8E1] dark:border-[#302E29] transition-transform duration-300 transform translate-y-0"
               >
                 {/* Drag Handle / Header */}
-                <div className="flex items-center justify-between border-b border-[#EAE8E1] pb-3 mb-3">
-                  <span className="text-sm font-bold text-[#18181B]">Select Date</span>
+                <div className="flex items-center justify-between border-b border-[#EAE8E1] dark:border-[#302E29] pb-3 mb-3">
+                  <span className="text-sm font-bold text-[#18181B] dark:text-[#F0EBE3]">Select Date</span>
                   <button
                     type="button"
                     onClick={() => setIsOpen(false)}
-                    className="p-1 text-[#715D3A] hover:text-[#18181B]"
+                    className="p-1 text-[#715D3A] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] transition-colors cursor-pointer"
                     aria-label="Close date picker"
                   >
                     <X className="w-5 h-5" />
@@ -293,7 +293,7 @@ export const KoinoniaDatePicker: React.FC<KoinoniaDatePickerProps> = ({
                     <button
                       type="button"
                       onClick={() => setIsOpen(false)}
-                      className="flex-1 py-2.5 border border-[#D9D6CE] hover:bg-[#FAF8F4] active:bg-[#F3EFE6] text-sm text-[#3F3F46] font-semibold rounded-xl transition-all cursor-pointer text-center"
+                      className="flex-1 py-2.5 border border-[#D9D6CE] dark:border-[#3A3835] hover:bg-[#FAF8F4] dark:hover:bg-[#262520] active:bg-[#F3EFE6] dark:active:bg-[#2A2926] text-sm text-[#3F3F46] dark:text-[#F0EBE3] font-semibold rounded-xl transition-all cursor-pointer text-center"
                     >
                       Cancel
                     </button>
@@ -315,7 +315,7 @@ export const KoinoniaDatePicker: React.FC<KoinoniaDatePickerProps> = ({
               role="dialog"
               aria-modal="false"
               onKeyDown={handleCalendarKeyDown}
-              className="absolute left-0 mt-2 bg-[#FAF8F4] border border-[#EAE8E1] rounded-xl p-4 shadow-lg z-50 w-[320px] transition-all duration-150 origin-top"
+              className="absolute left-0 mt-2 bg-[#FAF8F4] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl p-4 shadow-xl z-50 w-[320px] transition-all duration-150 origin-top"
             >
               {renderCalendarGrid()}
             </div>
@@ -335,7 +335,7 @@ export const KoinoniaDatePicker: React.FC<KoinoniaDatePickerProps> = ({
       dayCells.push(
         <div
           key={`prev-${dayNum}`}
-          className="w-10 h-10 flex items-center justify-center text-xs text-[#D9D6CE] font-medium opacity-40 select-none cursor-not-allowed"
+          className="w-10 h-10 flex items-center justify-center text-xs text-[#D9D6CE] dark:text-[#52504B] font-medium opacity-40 select-none cursor-not-allowed"
         >
           {dayNum}
         </div>
@@ -351,11 +351,11 @@ export const KoinoniaDatePicker: React.FC<KoinoniaDatePickerProps> = ({
       let dayClasses = 'w-10 h-10 flex items-center justify-center text-xs font-semibold rounded-full transition-all relative cursor-pointer select-none';
       
       if (disabledDay) {
-        dayClasses += ' text-[#D9D6CE] opacity-30 cursor-not-allowed';
+        dayClasses += ' text-[#D9D6CE] dark:text-[#52504B] cursor-not-allowed opacity-50 line-through decoration-zinc-400/50';
       } else if (isSelected) {
-        dayClasses += ' bg-[#C59B27] text-[#18181B] shadow-2xs font-bold ring-2 ring-[#C59B27]/20';
+        dayClasses += ' bg-[#C59B27] dark:bg-[#C59B27] text-[#18181B] dark:text-[#18181B] shadow-2xs font-bold ring-2 ring-[#C59B27]/40';
       } else {
-        dayClasses += ' text-[#18181B] hover:bg-[#F3EFE6] active:bg-[#FAF8F4]';
+        dayClasses += ' text-[#18181B] dark:text-[#F0EBE3] hover:bg-[#F3EFE6] dark:hover:bg-[#2A2926] active:bg-[#FAF8F4] dark:active:bg-[#262520]';
         if (isCurrentToday) {
           dayClasses += ' border-2 border-[#C59B27]';
         }
@@ -383,7 +383,7 @@ export const KoinoniaDatePicker: React.FC<KoinoniaDatePickerProps> = ({
       dayCells.push(
         <div
           key={`next-${d}`}
-          className="w-10 h-10 flex items-center justify-center text-xs text-[#D9D6CE] font-medium opacity-40 select-none cursor-not-allowed"
+          className="w-10 h-10 flex items-center justify-center text-xs text-[#D9D6CE] dark:text-[#52504B] font-medium opacity-40 select-none cursor-not-allowed"
         >
           {d}
         </div>
@@ -398,7 +398,7 @@ export const KoinoniaDatePicker: React.FC<KoinoniaDatePickerProps> = ({
           <button
             type="button"
             onClick={handlePrevMonth}
-            className="p-1.5 rounded-full hover:bg-[#F3EFE6] text-[#715D3A] active:scale-95 transition-all focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+            className="p-1.5 rounded-full hover:bg-[#F3EFE6] dark:hover:bg-[#2A2926] text-[#715D3A] dark:text-[#C59B27] active:scale-95 transition-all focus:outline-none focus:ring-1 focus:ring-[#C59B27] cursor-pointer"
             aria-label="Previous month"
           >
             <ChevronLeft className="w-4 h-4 stroke-[2.5]" />
@@ -411,16 +411,16 @@ export const KoinoniaDatePicker: React.FC<KoinoniaDatePickerProps> = ({
               <select
                 value={month}
                 onChange={handleMonthChange}
-                className="appearance-none bg-transparent hover:bg-[#F3EFE6] pl-2 pr-5 py-1 text-xs font-bold text-[#18181B] rounded-lg border-0 focus:outline-none focus:ring-1 focus:ring-[#C59B27] cursor-pointer"
+                className="appearance-none bg-transparent hover:bg-[#F3EFE6] dark:hover:bg-[#2A2926] pl-2 pr-5 py-1 text-xs font-bold text-[#18181B] dark:text-[#F0EBE3] rounded-lg border-0 focus:outline-none focus:ring-1 focus:ring-[#C59B27] cursor-pointer"
                 aria-label="Select month"
               >
                 {MONTHS.map((m, idx) => (
-                  <option key={m} value={idx} className="bg-[#FAF8F4]">
+                  <option key={m} value={idx} className="bg-[#FAF8F4] dark:bg-[#21211E] text-[#18181B] dark:text-[#F0EBE3]">
                     {m.substring(0, 3)}
                   </option>
                 ))}
               </select>
-              <div className="pointer-events-none absolute inset-y-0 right-1 flex items-center text-[#715D3A]">
+              <div className="pointer-events-none absolute inset-y-0 right-1 flex items-center text-[#715D3A] dark:text-[#C59B27]">
                 <svg className="fill-current h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
                   <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/>
                 </svg>
@@ -432,16 +432,16 @@ export const KoinoniaDatePicker: React.FC<KoinoniaDatePickerProps> = ({
               <select
                 value={year}
                 onChange={handleYearChange}
-                className="appearance-none bg-transparent hover:bg-[#F3EFE6] pl-2 pr-5 py-1 text-xs font-bold text-[#18181B] rounded-lg border-0 focus:outline-none focus:ring-1 focus:ring-[#C59B27] cursor-pointer"
+                className="appearance-none bg-transparent hover:bg-[#F3EFE6] dark:hover:bg-[#2A2926] pl-2 pr-5 py-1 text-xs font-bold text-[#18181B] dark:text-[#F0EBE3] rounded-lg border-0 focus:outline-none focus:ring-1 focus:ring-[#C59B27] cursor-pointer"
                 aria-label="Select year"
               >
                 {yearOptions.map(y => (
-                  <option key={y} value={y} className="bg-[#FAF8F4]">
+                  <option key={y} value={y} className="bg-[#FAF8F4] dark:bg-[#21211E] text-[#18181B] dark:text-[#F0EBE3]">
                     {y}
                   </option>
                 ))}
               </select>
-              <div className="pointer-events-none absolute inset-y-0 right-1 flex items-center text-[#715D3A]">
+              <div className="pointer-events-none absolute inset-y-0 right-1 flex items-center text-[#715D3A] dark:text-[#C59B27]">
                 <svg className="fill-current h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
                   <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/>
                 </svg>
@@ -452,7 +452,7 @@ export const KoinoniaDatePicker: React.FC<KoinoniaDatePickerProps> = ({
           <button
             type="button"
             onClick={handleNextMonth}
-            className="p-1.5 rounded-full hover:bg-[#F3EFE6] text-[#715D3A] active:scale-95 transition-all focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+            className="p-1.5 rounded-full hover:bg-[#F3EFE6] dark:hover:bg-[#2A2926] text-[#715D3A] dark:text-[#C59B27] active:scale-95 transition-all focus:outline-none focus:ring-1 focus:ring-[#C59B27] cursor-pointer"
             aria-label="Next month"
           >
             <ChevronRight className="w-4 h-4 stroke-[2.5]" />
@@ -463,7 +463,7 @@ export const KoinoniaDatePicker: React.FC<KoinoniaDatePickerProps> = ({
         <div className="grid grid-cols-7 gap-y-1.5 text-center justify-items-center">
           {/* Weekday Labels */}
           {WEEKDAYS.map(day => (
-            <div key={day} className="text-[10px] font-bold text-[#715D3A] select-none tracking-wider w-10">
+            <div key={day} className="text-[10px] font-bold text-[#715D3A] dark:text-[#C59B27] select-none tracking-wider w-10">
               {day.substring(0, 1)}
             </div>
           ))}

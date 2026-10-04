@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { resolveMediaUrl } from '../../utils/mediaUrl';
+import { resolveMediaUrl, isStaticBundledAsset } from '../../utils/mediaUrl';
 import { ImageOff, Loader2 } from 'lucide-react';
 
 export interface SafeImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
@@ -7,6 +7,17 @@ export interface SafeImageProps extends React.ImgHTMLAttributes<HTMLImageElement
   fallbackSrc?: string | null;
   fallbackComponent?: React.ReactNode;
   containerClassName?: string;
+}
+
+function getEffectiveImageUrl(url?: string | null): string {
+  if (!url || typeof url !== 'string' || url.trim() === '') return '';
+  const trimmed = url.trim();
+  if (isStaticBundledAsset(trimmed)) {
+    return trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('blob:') || trimmed.startsWith('data:') || trimmed.startsWith('/')
+      ? trimmed
+      : `/${trimmed}`;
+  }
+  return resolveMediaUrl(trimmed);
 }
 
 export const SafeImage: React.FC<SafeImageProps> = ({
@@ -23,8 +34,8 @@ export const SafeImage: React.FC<SafeImageProps> = ({
 
   useEffect(() => {
     // Determine the resolved primary and fallback URLs
-    const resolvedMain = resolveMediaUrl(src);
-    const resolvedFallback = resolveMediaUrl(fallbackSrc);
+    const resolvedMain = getEffectiveImageUrl(src);
+    const resolvedFallback = getEffectiveImageUrl(fallbackSrc);
 
     if (!resolvedMain || resolvedMain.trim() === '') {
       if (resolvedFallback && resolvedFallback.trim() !== '') {
@@ -44,8 +55,8 @@ export const SafeImage: React.FC<SafeImageProps> = ({
   };
 
   const handleError = () => {
-    const resolvedMain = resolveMediaUrl(src);
-    const resolvedFallback = resolveMediaUrl(fallbackSrc);
+    const resolvedMain = getEffectiveImageUrl(src);
+    const resolvedFallback = getEffectiveImageUrl(fallbackSrc);
 
     // If we were trying to load the main image and we have a valid fallback, try the fallback
     if (currentSrc === resolvedMain && resolvedFallback && resolvedFallback.trim() !== '' && resolvedMain !== resolvedFallback) {

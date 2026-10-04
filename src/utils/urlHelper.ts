@@ -3,6 +3,18 @@
  * Reads VITE_API_BASE_URL safely from import.meta.env.
  */
 export function getApiBaseUrl(): string {
+  let url = '';
+
+  try {
+    url = (import.meta.env.VITE_API_BASE_URL || '').trim();
+  } catch {
+    url = ((import.meta as any).env?.VITE_API_BASE_URL || '').trim();
+  }
+
+  if (url) {
+    return url.replace(/\/+$/, '');
+  }
+
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
     const isLocalOrPreview =
@@ -17,13 +29,7 @@ export function getApiBaseUrl(): string {
     }
   }
 
-  let url = '';
-  try {
-    url = (import.meta.env.VITE_API_BASE_URL || '').trim();
-  } catch {
-    url = ((import.meta as any).env?.VITE_API_BASE_URL || '').trim();
-  }
-  return url.replace(/\/+$/, '');
+  return '';
 }
 
 /**
