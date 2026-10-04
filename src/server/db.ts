@@ -1883,7 +1883,7 @@ function initSqliteSchema(db: Database.Database) {
       ends_at = '2026-11-21',
       minimum_age = 2,
       maximum_age = 14,
-      parent_access_closes_at = '2026-10-17T23:59:00+01:00',
+      parent_access_closes_at = '2026-10-25T23:59:00+01:00',
       status = 'current'
     WHERE id = ?
   `).run(REAL_EVENT_ID);
@@ -3661,14 +3661,14 @@ async function initPostgresSchema(pool: any) {
       'More Than Conquerors',
       'Romans 8:37',
       '2026-11-21',
-      '2026-11-22',
+      '2026-11-21',
       '9:00 AM',
       '7:00 PM',
       'Koinonia Global Auditorium & Children Pavilion, Abuja',
       'current',
       2,
-      12,
-      '2026-10-17T23:59:00+01:00',
+      14,
+      '2026-10-25T23:59:00+01:00',
       now,
       now
     ]);
