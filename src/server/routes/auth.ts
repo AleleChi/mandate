@@ -4,7 +4,7 @@ import { queryOne, execute, transaction, query } from '../db';
 import { hashPassword, verifyPassword, generateToken, authMiddleware, optionalAuthMiddleware, AuthenticatedRequest, resolveParentProfileForUser } from '../auth';
 import { sendEmailVerificationEmail, sendPasswordResetEmail, sendVolunteerUnderReviewEmail } from '../services/email';
 import { validateEmailAddress, validatePhoneNumber, validateName } from '../utils/validation';
-import { buildPublicAppUrl } from '../utils/urlHelper';
+import { buildPublicAppUrl, TRUSTED_FRONTEND_ORIGINS } from '../utils/urlHelper';
 import { authorizeChildPass, revokeChildPassAuthorizations, isChildPassAuthorized } from '../services/passService';
 import { enqueueWhatsAppJob } from '../services/whatsapp/queue';
 import { getCurrentEventId, getEventById } from '../services/eventService';
@@ -788,8 +788,7 @@ router.delete('/passkeys/:passkeyId', authMiddleware, async (req: AuthenticatedR
 const TRUSTED_PRODUCTION_HOSTNAMES = [
   'koinonia12.netlify.app',
   'themandate.dontechservicesconst.com',
-  'www.kgachildren.koinoniageneralassembly.com',
-  'kgachildren.koinoniageneralassembly.com'
+  ...TRUSTED_FRONTEND_ORIGINS.map((origin) => new URL(origin).hostname)
 ];
 
 function getConfiguredEnvHostnames(): string[] {
