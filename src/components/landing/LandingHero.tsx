@@ -16,8 +16,8 @@ export {
   calculateRegistrationCountdown,
 };
 
-const DEFAULT_DEADLINE_SHORT_LABEL = '17 OCT · 11:59 PM';
-const DEFAULT_DEADLINE_FULL_LABEL = '17 October 2026 · 11:59 PM';
+const DEFAULT_DEADLINE_SHORT_LABEL = '25 OCT · 11:59 PM';
+const DEFAULT_DEADLINE_FULL_LABEL = '25 October 2026 · 11:59 PM';
 
 function resolveHeroImageSource(src?: string, fallbackSrc: string = parentHeroImg): string {
   const effective = src && src.trim() !== '' ? src : fallbackSrc;
@@ -267,10 +267,15 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
   onVolunteerRegisterClick,
   onNavigate,
 }) => {
-  const deadlineIso =
+  const rawDeadline =
     currentEvent?.parent_access_closes_at ||
     regStatus?.parent?.closesAt ||
     CANONICAL_REGISTRATION_DEADLINE;
+
+  const deadlineIso =
+    rawDeadline && rawDeadline.includes('2026-10-17')
+      ? CANONICAL_REGISTRATION_DEADLINE
+      : rawDeadline;
 
   const [countdown, setCountdown] = useState(() => calculateRegistrationCountdown(deadlineIso));
 
