@@ -4,7 +4,7 @@ import { ArrowLeft, Check, Send, Info, AlertCircle } from 'lucide-react';
 import { useNotification } from '../context/NotificationContext';
 import { Button } from '../components/common/Button';
 import { extractApiError } from '../services/api';
-import { validatePhoneNumber } from '../utils/validation';
+import { validatePhoneNumber, isValidUploadedPhoto } from '../utils/validation';
 import { inferCountryIsoFromE164 } from '../utils/countries';
 import { checkChildEventEligibility } from '../utils/age';
 
@@ -460,7 +460,7 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
     }
 
     const cPhoto = draft.childDetails?.photo || draft.photoUrl;
-    if (!cPhoto) {
+    if (!cPhoto || !isValidUploadedPhoto(cPhoto)) {
       childFields.push({ field: 'childPhoto', message: 'Child photo is required.' });
     }
 
@@ -543,7 +543,8 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
       if (!pPhone || !pPhone.trim()) {
         pickupFields.push({ field: 'pickupParentPhone', message: 'Parent profile phone number is missing.' });
       }
-      if (!parentProfile?.photoUrl) {
+      const parentPhoto = parentProfile?.photoUrl || (parentProfile as any)?.photoFileId || (parentProfile as any)?.photo_file_id;
+      if (!parentPhoto || !isValidUploadedPhoto(parentPhoto)) {
         pickupFields.push({ field: 'pickupParentPhoto', message: 'Parent profile photo is required for parent pickup.' });
       }
     } else if (pType === 'other_person') {
@@ -585,7 +586,7 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
       }
 
       const pPhoto = draft.pickup?.pickupPersonPhoto || draft.pickupPersonPhotoUrl;
-      if (!pPhoto) {
+      if (!pPhoto || !isValidUploadedPhoto(pPhoto)) {
         pickupFields.push({ field: 'pickupPersonPhoto', message: 'Pickup person photo is required.' });
       }
 
@@ -1217,7 +1218,7 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
           <div className="space-y-3 pt-1" data-component-version="parent-review-submit-validation-v1">
             <Button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || !isConfirmed || validationGroups.length > 0}
               aria-busy={isSubmitting ? "true" : "false"}
               fullWidth
               size="lg"

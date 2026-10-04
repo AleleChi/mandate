@@ -522,6 +522,7 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
               formData.fullName.trim() !== '' && !errors.fullName &&
               formData.email.trim() !== '' && !errors.email &&
               formData.phone.trim() !== '' && !errors.phone &&
+              (!formData.whatsapp.trim() || !errors.whatsapp) &&
               formData.password.trim() !== '' && !errors.password &&
               formData.confirmPassword.trim() !== '' && !errors.confirmPassword &&
               agreedToUpdates

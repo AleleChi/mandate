@@ -318,27 +318,22 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
   };
 
   const handleSaveAndFinishLater = () => {
-    if (!photoUrl || !isValidUploadedPhoto(photoUrl)) {
-      setTouched((prev) => ({ ...prev, photoUrl: true }));
-      setErrorMsg('Add a clear profile photo to continue.');
-      return;
-    }
     const finalCountry = getCountryByIso(countryIso)?.name || country.trim() || 'Nigeria';
     onUpdateProfile({
       ...initialProfile,
-      photoUrl,
-      fullName: fullName.trim(),
-      email: email.trim(),
-      phone: phone.trim(),
-      whatsapp: whatsapp.trim() || phone.trim(),
+      photoUrl: photoUrl || initialProfile.photoUrl || '',
+      fullName: fullName.trim() || initialProfile.fullName || '',
+      email: email.trim() || initialProfile.email || '',
+      phone: phone.trim() || initialProfile.phone || '',
+      whatsapp: whatsapp.trim() || phone.trim() || initialProfile.whatsapp || '',
       whatsappCountryIso,
       whatsapp_country_iso: whatsappCountryIso,
-      homeAddress: homeAddress.trim(),
+      homeAddress: homeAddress.trim() || initialProfile.homeAddress || '',
       country: finalCountry,
       countryIso: countryIso,
       country_iso: countryIso,
-      stateRegion: stateRegion.trim(),
-      city: city.trim(),
+      stateRegion: stateRegion.trim() || initialProfile.stateRegion || '',
+      city: city.trim() || initialProfile.city || '',
       preferredContact,
       isWorker,
       department: isWorker ? department.trim() : ''
@@ -362,7 +357,8 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
     validateField('city') === '' &&
     preferredContact !== undefined &&
     isWorker !== null &&
-    (!isWorker || validateField('department') === '');
+    (!isWorker || validateField('department') === '') &&
+    !Object.values(serverErrors).some(Boolean);
 
   return (
     <AuthScreenShell
@@ -789,7 +785,7 @@ export const ProfileSetupView: React.FC<ProfileSetupViewProps> = ({
           <div className="pt-2 space-y-2">
             <Button
               type="submit"
-              disabled={saving || isUploadingPhoto}
+              disabled={saving || isUploadingPhoto || !isProfileFormValid}
               fullWidth
               size="lg"
             >

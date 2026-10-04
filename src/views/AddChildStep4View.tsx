@@ -4,7 +4,7 @@ import { ArrowLeft, Check, ShieldCheck } from 'lucide-react';
 import { useNotification } from '../context/NotificationContext';
 import { PhotoUploadBox } from '../components/common/PhotoUploadBox';
 import { Button } from '../components/common/Button';
-import { validateFullName, validatePhoneNumber, normalizePhone } from '../utils/validation';
+import { validateFullName, validatePhoneNumber, normalizePhone, isValidUploadedPhoto } from '../utils/validation';
 import { inferCountryIsoFromE164 } from '../utils/countries';
 import { InternationalPhoneField } from '../components/common/InternationalPhoneField';
 
@@ -92,6 +92,37 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
   };
 
   const { ageText, groupFormatted } = calculateAgeDetails();
+
+  const parentHasPhoto = Boolean(
+    isValidUploadedPhoto(parentProfile?.photoUrl) ||
+    isValidUploadedPhoto((parentProfile as any)?.photoFileId) ||
+    isValidUploadedPhoto((parentProfile as any)?.photo_file_id)
+  );
+  const parentHasPhone = Boolean(
+    parentProfile?.phone?.trim() ||
+    parentProfile?.phoneNumber?.trim() ||
+    (parentProfile as any)?.phone_number?.trim()
+  );
+  const parentHasName = Boolean(
+    parentProfile?.fullName?.trim() ||
+    (parentProfile as any)?.full_name?.trim()
+  );
+
+  const isParentPickupComplete = Boolean(
+    pickupType === 'parent' && parentHasName && parentHasPhone && parentHasPhoto
+  );
+
+  const isOtherPickupComplete = Boolean(
+    pickupType === 'other_person' &&
+    pickupPersonPhotoUrl && pickupPersonPhotoUrl.trim() !== '' && isValidUploadedPhoto(pickupPersonPhotoUrl) &&
+    pickupPersonFullName && pickupPersonFullName.trim() !== '' && !validateFullName(pickupPersonFullName.trim(), true) &&
+    pickupPersonRelationship && pickupPersonRelationship.trim() !== '' &&
+    pickupPersonPhone && pickupPersonPhone.trim() !== '' && !validatePhoneNumber(pickupPersonPhone.trim(), pickupPersonCountryIso) &&
+    (!pickupPersonWhatsapp.trim() || !validatePhoneNumber(pickupPersonWhatsapp.trim(), inferCountryIsoFromE164(pickupPersonWhatsapp.trim()) || pickupPersonCountryIso)) &&
+    pickupPersonApproved
+  );
+
+  const isStep4Complete = isParentPickupComplete || isOtherPickupComplete;
 
   const handleContinue = (e: React.FormEvent) => {
     e.preventDefault();
@@ -401,6 +432,18 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
                 )}
               </div>
             </div>
+            {pickupType === 'parent' && !parentHasPhoto && (
+              <div className="mt-2 text-xs text-[#C53030] bg-red-50 p-2.5 rounded-lg flex items-center justify-between">
+                <span>Your parent profile photo is missing. Please add a profile photo first.</span>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('/parent/profile/edit')}
+                  className="ml-2 text-[#9A7326] underline font-semibold cursor-pointer shrink-0"
+                >
+                  Edit profile
+                </button>
+              </div>
+            )}
             {errors.pickupType && (
               <p className="text-xs text-red-600 font-medium">{errors.pickupType}</p>
             )}
@@ -577,7 +620,7 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
           <div className="pt-4 space-y-2.5">
             <Button
               type="submit"
-              disabled={isUploadingPhoto}
+              disabled={isUploadingPhoto || !isStep4Complete}
               fullWidth
               size="lg"
             >

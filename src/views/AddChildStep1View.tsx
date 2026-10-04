@@ -6,7 +6,7 @@ import { useNotification } from '../context/NotificationContext';
 import { PhotoUploadBox } from '../components/common/PhotoUploadBox';
 import { KoinoniaDatePicker } from '../components/common/KoinoniaDatePicker';
 import { Button } from '../components/common/Button';
-import { validateChildName } from '../utils/validation';
+import { validateChildName, isValidUploadedPhoto } from '../utils/validation';
 import { checkChildEventEligibility } from '../utils/age';
 
 interface AddChildStep1ViewProps {
@@ -96,6 +96,20 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
     }
     return dobString;
   };
+
+  const isDobValid = Boolean(
+    dob &&
+    new Date(dob) <= new Date() &&
+    eligibility.isEligible
+  );
+
+  const isStep1Complete = Boolean(
+    photoUrl && photoUrl.trim() !== '' && isValidUploadedPhoto(photoUrl) &&
+    fullName && fullName.trim() !== '' && !validateChildName(fullName.trim()) &&
+    gender && (gender === 'Male' || gender === 'Female') &&
+    isDobValid &&
+    relationship && relationship.trim() !== ''
+  );
 
   const handleContinue = (e: React.FormEvent) => {
     e.preventDefault();
@@ -427,11 +441,11 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
           <div className="pt-2 space-y-2.5">
             <Button
               type="submit"
-              disabled={isUploadingPhoto || isSaving}
+              disabled={isUploadingPhoto || isSaving || !isStep1Complete}
               fullWidth
               size="lg"
             >
-              {isUploadingPhoto ? 'Uploading photo...' : 'Continue'}
+              {isUploadingPhoto ? 'Uploading photo...' : (isSaving ? 'Saving...' : 'Continue')}
             </Button>
             <button
               type="button"
