@@ -34,7 +34,7 @@ export const ContactView: React.FC<ContactViewProps> = ({ onNavigate }) => {
       <Seo
         title="Contact Us | Koinonia Children and Teens"
         description="Contact information and support for The Koinonia General Assembly Children & Teens event portal."
-        canonical="https://koinonia12.netlify.app/#/contact"
+        canonical="https://kgachildren.koinoniageneralassembly.com/#/contact"
         robots="index, follow"
         ogTitle="Contact Us | Koinonia Children and Teens"
         ogDescription="Questions about registration or the Children & Teens programme can be sent to our official contact email."

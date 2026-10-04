@@ -86,7 +86,7 @@ const getSeoPropsForRoute = (route: string) => {
     return {
       title: 'Privacy Notice | Koinonia Children and Teens',
       description: "Privacy Notice for The Koinonia General Assembly Children & Teens services and events.",
-      canonical: 'https://koinonia12.netlify.app/#/privacy',
+      canonical: 'https://kgachildren.koinoniageneralassembly.com/#/privacy',
       robots: 'index, follow',
       ogTitle: 'Privacy Notice | Koinonia Children and Teens',
       ogDescription: "How we access, collect, store, and process personal information for Children's Session.",
@@ -96,7 +96,7 @@ const getSeoPropsForRoute = (route: string) => {
     return {
       title: 'Terms of Service | Koinonia Children and Teens',
       description: "Terms of Service governing registration, attendance, and child safety for The Koinonia General Assembly.",
-      canonical: 'https://koinonia12.netlify.app/#/terms',
+      canonical: 'https://kgachildren.koinoniageneralassembly.com/#/terms',
       robots: 'index, follow',
       ogTitle: 'Terms of Service | Koinonia Children and Teens',
       ogDescription: "Operational protocols for child registration, exclusive pickup release, and care safety.",
@@ -106,7 +106,7 @@ const getSeoPropsForRoute = (route: string) => {
     return {
       title: 'Child Safety | Koinonia Children and Teens',
       description: "How check-in, care information, supervision ratios, and pickup verification are handled during Koinonia events.",
-      canonical: 'https://koinonia12.netlify.app/#/child-safety',
+      canonical: 'https://kgachildren.koinoniageneralassembly.com/#/child-safety',
       robots: 'index, follow',
       ogTitle: 'Child Safety | Koinonia Children and Teens',
       ogDescription: "Clear operational guidance on how children are registered, protected, supervised, and safely released.",
@@ -116,7 +116,7 @@ const getSeoPropsForRoute = (route: string) => {
     return {
       title: 'Contact Us | Koinonia Children and Teens',
       description: "Contact information and support for The Koinonia General Assembly Children & Teens event portal.",
-      canonical: 'https://koinonia12.netlify.app/#/contact',
+      canonical: 'https://kgachildren.koinoniageneralassembly.com/#/contact',
       robots: 'index, follow',
       ogTitle: 'Contact Us | Koinonia Children and Teens',
       ogDescription: "Reach out directly via email, telephone, WhatsApp, or the on-site Protocol Desk.",

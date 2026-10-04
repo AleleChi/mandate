@@ -39,7 +39,7 @@ export const ChildSafetyView: React.FC<ChildSafetyViewProps> = ({ onNavigate }) 
       <Seo
         title="Child Safety | Koinonia Children and Teens"
         description="How check-in, care information, supervision ratios, and pickup verification are handled during Koinonia events."
-        canonical="https://koinonia12.netlify.app/#/child-safety"
+        canonical="https://kgachildren.koinoniageneralassembly.com/#/child-safety"
         robots="index, follow"
         ogTitle="Child Safety | Koinonia Children and Teens"
         ogDescription="Clear operational guidance on how children are registered, protected, supervised, and safely released."

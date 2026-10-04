@@ -138,7 +138,7 @@ export default function AdminEventLocationsTab({
   // Generate real QR code matrix image whenever qrToken updates
   useEffect(() => {
     if (qrToken) {
-      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://koinonia12.netlify.app';
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://kgachildren.koinoniageneralassembly.com';
       // Use hash route so mobile phone scans route directly inside the SPA without server rewrites
       const accessUrl = `${origin}/#/duty/location/${qrToken}`;
       QRCode.toDataURL(accessUrl, {
@@ -555,7 +555,7 @@ export default function AdminEventLocationsTab({
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://koinonia12.netlify.app';
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://kgachildren.koinoniageneralassembly.com';
       const map: Record<string, string> = {};
 
       for (const loc of locations.filter(l => l.isActive)) {

@@ -29,7 +29,7 @@ export const TermsOfServiceView: React.FC<TermsOfServiceViewProps> = ({ onNaviga
       <Seo
         title="Terms of Service | Koinonia Children and Teens"
         description="Terms of Service governing registration, attendance, and child safety for The Koinonia General Assembly."
-        canonical="https://koinonia12.netlify.app/#/terms"
+        canonical="https://kgachildren.koinoniageneralassembly.com/#/terms"
         robots="index, follow"
         ogTitle="Terms of Service | Koinonia Children and Teens"
         ogDescription="Operational protocols for child registration, exclusive pickup release, and care safety."
