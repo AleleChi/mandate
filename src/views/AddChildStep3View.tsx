@@ -156,19 +156,19 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
             <ArrowLeft className="w-5 h-5 stroke-[2]" />
           </button>
           <div className="flex flex-col items-center">
-            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-widest text-[#6B7280] dark:text-[#A19D95]">
+            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-widest text-[#6B7280] dark:text-[#7A7570]">
               ADD A CHILD
             </span>
-            <span className="text-base sm:text-lg font-serif-koinonia font-bold text-[#9A7326] dark:text-[#D4AF37] tracking-tight">
+            <span className="text-base sm:text-lg font-serif-koinonia font-bold text-[#9A7326] dark:text-[#C59B27] tracking-tight">
               Step 3 of 5
             </span>
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE] dark:bg-[#3A3835]" />
-            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE] dark:bg-[#3A3835]" />
+            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE] dark:bg-[#302E29]" />
+            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE] dark:bg-[#302E29]" />
             <div className="w-1.5 h-1.5 rounded-full bg-[#C59B27]" />
-            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE] dark:bg-[#3A3835]" />
-            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE] dark:bg-[#3A3835]" />
+            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE] dark:bg-[#302E29]" />
+            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE] dark:bg-[#302E29]" />
           </div>
         </div>
 
@@ -191,7 +191,7 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
               className="w-11 h-11 rounded-xl object-cover shrink-0 border border-[#EAE8E1] dark:border-[#302E29]"
             />
           ) : (
-            <div className="w-11 h-11 rounded-xl bg-[#F3EFE6] dark:bg-[#262520] text-[#715D3A] dark:text-[#D4AF37] flex items-center justify-center font-bold text-base shrink-0 border border-[#D9D6CE]/50 dark:border-[#3A3835]">
+            <div className="w-11 h-11 rounded-xl bg-[#F3EFE6] dark:bg-[#262520] text-[#715D3A] dark:text-[#C59B27] flex items-center justify-center font-bold text-base shrink-0 border border-[#D9D6CE]/50 dark:border-[#302E29]">
               {draft.fullName ? draft.fullName.charAt(0).toUpperCase() : 'C'}
             </div>
           )}
@@ -214,17 +214,17 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
             <label className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] block mb-2.5">
               Does your child have any allergies or medical notes?
             </label>
-            <div className="bg-[#FAF8F4] dark:bg-[#21211E] p-1 rounded-xl flex items-center gap-1.5 border border-[#EAE8E1]/80 dark:border-[#302E29]">
+            <div className="bg-[#FAF8F4] dark:bg-[#262520] p-1 rounded-xl flex items-center gap-1.5 border border-[#EAE8E1]/80 dark:border-[#302E29] transition-colors">
               <button
                 type="button"
                 onClick={() => {
                   setHasAllergies('No');
                   if (errors.hasAllergies) setErrors((prev) => ({ ...prev, hasAllergies: undefined }));
                 }}
-                className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer focus:outline-none ${
+                className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C59B27]/50 ${
                   hasAllergies === 'No'
-                    ? 'bg-white dark:bg-[#2A2925] text-[#9A7326] dark:text-[#D4AF37] shadow-2xs border border-[#D9D6CE]/80 dark:border-[#4A4740]'
-                    : 'text-[#3F3F46] dark:text-[#A19D95] hover:text-[#18181B] dark:hover:text-[#F0EBE3]'
+                    ? 'bg-white dark:bg-[#21211E] text-[#9A7326] dark:text-[#D4AF37] shadow-2xs border border-[#D9D6CE]/80 dark:border-[#3A3835]'
+                    : 'text-[#3F3F46] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] border border-transparent'
                 }`}
               >
                 No
@@ -235,10 +235,10 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
                   setHasAllergies('Yes');
                   if (errors.hasAllergies) setErrors((prev) => ({ ...prev, hasAllergies: undefined }));
                 }}
-                className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer focus:outline-none ${
+                className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C59B27]/50 ${
                   hasAllergies === 'Yes'
-                    ? 'bg-white dark:bg-[#2A2925] text-[#9A7326] dark:text-[#D4AF37] shadow-2xs border border-[#D9D6CE]/80 dark:border-[#4A4740]'
-                    : 'text-[#3F3F46] dark:text-[#A19D95] hover:text-[#18181B] dark:hover:text-[#F0EBE3]'
+                    ? 'bg-white dark:bg-[#21211E] text-[#9A7326] dark:text-[#D4AF37] shadow-2xs border border-[#D9D6CE]/80 dark:border-[#3A3835]'
+                    : 'text-[#3F3F46] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] border border-transparent'
                 }`}
               >
                 Yes
@@ -258,9 +258,11 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
                   setMedicalNote(e.target.value);
                   if (errors.medicalNote) setErrors((prev) => ({ ...prev, medicalNote: undefined }));
                 }}
-                className={`w-full py-3 px-3.5 bg-white dark:bg-[#1D1D1A] border ${
-                  errors.medicalNote ? 'border-red-500' : 'border-[#D9D6CE] dark:border-[#3A3835]'
-                } text-sm text-[#18181B] dark:text-[#F0EBE3] placeholder:text-[#9CA3AF] dark:placeholder:text-[#7A7570] rounded-xl focus:outline-none focus:border-[#C59B27] dark:focus:border-[#C59B27] shadow-2xs transition-colors resize-none`}
+                className={`w-full py-3 px-3.5 bg-white dark:bg-[#21211E] border ${
+                  errors.medicalNote
+                    ? 'border-red-500 dark:border-red-500'
+                    : 'border-[#D9D6CE] dark:border-[#3A3835] focus:border-[#C59B27] dark:focus:border-[#C59B27]'
+                } text-sm text-[#18181B] dark:text-[#F0EBE3] placeholder:text-[#9CA3AF] dark:placeholder:text-[#7A7570] rounded-xl focus:outline-none shadow-2xs transition-colors resize-none`}
               />
               {errors.medicalNote && (
                 <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-medium">{errors.medicalNote}</p>
@@ -273,17 +275,17 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
             <label className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] block mb-2.5">
               Does your child need any extra support?
             </label>
-            <div className="bg-[#FAF8F4] dark:bg-[#21211E] p-1 rounded-xl flex items-center gap-1.5 border border-[#EAE8E1]/80 dark:border-[#302E29]">
+            <div className="bg-[#FAF8F4] dark:bg-[#262520] p-1 rounded-xl flex items-center gap-1.5 border border-[#EAE8E1]/80 dark:border-[#302E29] transition-colors">
               <button
                 type="button"
                 onClick={() => {
                   setNeedsExtraSupport('No');
                   if (errors.needsExtraSupport) setErrors((prev) => ({ ...prev, needsExtraSupport: undefined }));
                 }}
-                className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer focus:outline-none ${
+                className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C59B27]/50 ${
                   needsExtraSupport === 'No'
-                    ? 'bg-white dark:bg-[#2A2925] text-[#9A7326] dark:text-[#D4AF37] shadow-2xs border border-[#D9D6CE]/80 dark:border-[#4A4740]'
-                    : 'text-[#3F3F46] dark:text-[#A19D95] hover:text-[#18181B] dark:hover:text-[#F0EBE3]'
+                    ? 'bg-white dark:bg-[#21211E] text-[#9A7326] dark:text-[#D4AF37] shadow-2xs border border-[#D9D6CE]/80 dark:border-[#3A3835]'
+                    : 'text-[#3F3F46] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] border border-transparent'
                 }`}
               >
                 No
@@ -294,10 +296,10 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
                   setNeedsExtraSupport('Yes');
                   if (errors.needsExtraSupport) setErrors((prev) => ({ ...prev, needsExtraSupport: undefined }));
                 }}
-                className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer focus:outline-none ${
+                className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C59B27]/50 ${
                   needsExtraSupport === 'Yes'
-                    ? 'bg-white dark:bg-[#2A2925] text-[#9A7326] dark:text-[#D4AF37] shadow-2xs border border-[#D9D6CE]/80 dark:border-[#4A4740]'
-                    : 'text-[#3F3F46] dark:text-[#A19D95] hover:text-[#18181B] dark:hover:text-[#F0EBE3]'
+                    ? 'bg-white dark:bg-[#21211E] text-[#9A7326] dark:text-[#D4AF37] shadow-2xs border border-[#D9D6CE]/80 dark:border-[#3A3835]'
+                    : 'text-[#3F3F46] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] border border-transparent'
                 }`}
               >
                 Yes
@@ -318,9 +320,11 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
                     setSupportNote(e.target.value);
                     if (errors.supportNote) setErrors((prev) => ({ ...prev, supportNote: undefined }));
                   }}
-                  className={`w-full py-3 px-3.5 bg-white dark:bg-[#1D1D1A] border ${
-                    errors.supportNote ? 'border-red-500' : 'border-[#D9D6CE] dark:border-[#3A3835]'
-                  } text-sm text-[#18181B] dark:text-[#F0EBE3] placeholder:text-[#9CA3AF] dark:placeholder:text-[#7A7570] rounded-xl focus:outline-none focus:border-[#C59B27] dark:focus:border-[#C59B27] shadow-2xs transition-colors resize-none`}
+                  className={`w-full py-3 px-3.5 bg-white dark:bg-[#21211E] border ${
+                    errors.supportNote
+                      ? 'border-red-500 dark:border-red-500'
+                      : 'border-[#D9D6CE] dark:border-[#3A3835] focus:border-[#C59B27] dark:focus:border-[#C59B27]'
+                  } text-sm text-[#18181B] dark:text-[#F0EBE3] placeholder:text-[#9CA3AF] dark:placeholder:text-[#7A7570] rounded-xl focus:outline-none shadow-2xs transition-colors resize-none`}
                 />
                 {errors.supportNote && (
                   <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-medium">{errors.supportNote}</p>
@@ -330,7 +334,13 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
           </div>
 
           {/* Confirmation card */}
-          <div className={`bg-[#FAF8F4] dark:bg-[#1D1D1A] border ${errors.infoConfirmed ? 'border-red-500 bg-red-50/40 dark:bg-red-950/20' : 'border-[#EAE8E1] dark:border-[#302E29]'} p-4 rounded-xl`}>
+          <div
+            className={`p-4 rounded-xl border transition-colors ${
+              errors.infoConfirmed
+                ? 'border-red-500 bg-red-50/40 dark:bg-red-950/20 dark:border-red-500/50'
+                : 'bg-[#FAF8F4] dark:bg-[#21211E] border-[#EAE8E1] dark:border-[#302E29]'
+            }`}
+          >
             <label className="flex items-start space-x-3 cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -341,9 +351,9 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
                     setErrors((prev) => ({ ...prev, infoConfirmed: undefined }));
                   }
                 }}
-                className="w-4 h-4 rounded border-[#D9D6CE] dark:border-[#3A3835] dark:bg-[#21211E] text-[#C59B27] focus:ring-[#C59B27] mt-0.5 shrink-0 accent-[#C59B27] cursor-pointer"
+                className="w-4 h-4 rounded border-[#D9D6CE] dark:border-[#3A3835] bg-white dark:bg-[#1D1D1A] text-[#C59B27] focus:ring-[#C59B27] focus:ring-offset-0 dark:focus:ring-offset-[#21211E] mt-0.5 shrink-0 accent-[#C59B27] cursor-pointer transition-colors"
               />
-              <span className="text-xs sm:text-sm text-[#3F3F46] dark:text-[#D4CEBF] leading-relaxed font-normal">
+              <span className="text-xs sm:text-sm text-[#3F3F46] dark:text-[#B8B0A5] leading-relaxed font-normal">
                 I confirm that the information provided is correct and may be used by the care team during the event.
               </span>
             </label>
@@ -363,6 +373,7 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
               )}
               fullWidth
               size="lg"
+              className="disabled:dark:bg-[#262520] disabled:dark:text-[#7A7570] disabled:dark:border disabled:dark:border-[#302E29] disabled:dark:opacity-90 disabled:dark:shadow-none"
             >
               <span className="flex items-center justify-center gap-1.5">
                 <span>Continue</span>
@@ -372,7 +383,7 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
             <button
               type="button"
               onClick={handleSaveAndFinishLater}
-              className="w-full py-2.5 text-xs sm:text-sm font-medium text-[#3F3F46] dark:text-[#A19D95] hover:text-[#9A7326] dark:hover:text-[#D4AF37] hover:underline active:opacity-80 transition-all duration-200 cursor-pointer focus:outline-none text-center block"
+              className="w-full py-2.5 text-xs sm:text-sm font-medium text-[#3F3F46] dark:text-[#B8B0A5] hover:text-[#9A7326] dark:hover:text-[#C59B27] hover:underline active:opacity-80 transition-all duration-200 cursor-pointer focus:outline-none text-center block"
             >
               Save and finish later
             </button>
