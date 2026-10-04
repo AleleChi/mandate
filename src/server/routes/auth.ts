@@ -787,7 +787,9 @@ router.delete('/passkeys/:passkeyId', authMiddleware, async (req: AuthenticatedR
 
 const TRUSTED_PRODUCTION_HOSTNAMES = [
   'koinonia12.netlify.app',
-  'themandate.dontechservicesconst.com'
+  'themandate.dontechservicesconst.com',
+  'www.kgachildren.koinoniageneralassembly.com',
+  'kgachildren.koinoniageneralassembly.com'
 ];
 
 function getConfiguredEnvHostnames(): string[] {
