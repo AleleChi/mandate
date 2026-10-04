@@ -16,8 +16,8 @@ export {
   calculateRegistrationCountdown,
 };
 
-const DEFAULT_DEADLINE_SHORT_LABEL = '17 OCT · 11:59 PM';
-const DEFAULT_DEADLINE_FULL_LABEL = '17 October 2026 · 11:59 PM';
+const DEFAULT_DEADLINE_SHORT_LABEL = '25 OCT · 11:59 PM';
+const DEFAULT_DEADLINE_FULL_LABEL = '25 October 2026 · 11:59 PM';
 
 function resolveHeroImageSource(src?: string, fallbackSrc: string = parentHeroImg): string {
   const effective = src && src.trim() !== '' ? src : fallbackSrc;
@@ -267,10 +267,15 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
   onVolunteerRegisterClick,
   onNavigate,
 }) => {
-  const deadlineIso =
+  const rawDeadline =
     currentEvent?.parent_access_closes_at ||
     regStatus?.parent?.closesAt ||
     CANONICAL_REGISTRATION_DEADLINE;
+
+  const deadlineIso =
+    rawDeadline && rawDeadline.includes('2026-10-17')
+      ? CANONICAL_REGISTRATION_DEADLINE
+      : rawDeadline;
 
   const [countdown, setCountdown] = useState(() => calculateRegistrationCountdown(deadlineIso));
 
@@ -651,13 +656,13 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
 
           {/* Headline - Strong sans-serif */}
           <h1 className="text-[36px] sm:text-[42px] md:text-[48px] lg:text-[54px] xl:text-[58px] font-sans font-extrabold text-[#18181B] dark:text-[#F7F4ED] tracking-normal leading-[1.04] mb-3.5 sm:mb-4 max-w-[620px]">
-            Welcome to the Children &amp; Teens Session
+            Welcome to the Koinonia General Assembly Children and Teen’s Session 2026!
           </h1>
 
           {/* Body copy - ONE concise paragraph */}
           <div className="max-w-[540px] mb-5 sm:mb-6">
             <p className="text-sm sm:text-[15px] lg:text-base text-[#52525B] dark:text-[#C8C2B6] leading-[1.65] font-normal">
-              Registration is open for children ages {minAge}–{maxAge} attending {eventTitle} on {eventDateLabel}. Applications are reviewed before acceptance, and successful applicants will be notified by email.
+              Registration is now open for children between the ages of 2-14 years of old. Please note that all applications will be reviewed, and successful applicants will be notified via the email provided.
             </p>
           </div>
 

@@ -116,13 +116,13 @@ test('birthday boundary: born 2011-11-21 is 15 on event date -> ineligible', () 
 // 2. COUNTDOWN
 console.log('\n2. FRONTEND COUNTDOWN');
 
-test('canonical deadline matches 2026-10-17T23:59:00+01:00', () => {
-  assert.strictEqual(CANONICAL_REGISTRATION_DEADLINE, '2026-10-17T23:59:00+01:00');
+test('canonical deadline matches 2026-10-25T23:59:00+01:00', () => {
+  assert.strictEqual(CANONICAL_REGISTRATION_DEADLINE, '2026-10-25T23:59:00+01:00');
 });
 
 test('before deadline returns positive values and isClosed false', () => {
   const res = calculateRegistrationCountdown(CANONICAL_REGISTRATION_DEADLINE);
-  // Current time is before 2026-10-17
+  // Current time is before 2026-10-25
   assert.strictEqual(res.isClosed, false);
   assert(res.days >= 10, `Expected days >= 10, got ${res.days}`);
   assert(res.hours >= 0 && res.hours < 24);
@@ -395,6 +395,20 @@ test('LandingEventDetailsSection displays Theme instead of MINISTRY THEME and re
   assert(detailsContent.includes("days: '21'"), 'Must return days 21');
   assert(detailsContent.includes("month: 'NOVEMBER'"), 'Must return month NOVEMBER');
   assert(detailsContent.includes("year: '2026'"), 'Must return year 2026');
+});
+
+// 13. HERO COPY & LANDING SECTION REMOVAL
+console.log('\n13. HERO COPY & LANDING SECTION REMOVAL');
+
+test('LandingHero has updated headline and body copy', () => {
+  const heroContent = fs.readFileSync(path.resolve('src/components/landing/LandingHero.tsx'), 'utf-8');
+  assert(heroContent.includes('Welcome to the Koinonia General Assembly Children and Teen’s Session 2026!'), 'Must contain updated headline');
+  assert(heroContent.includes('Registration is now open for children between the ages of 2-14 years of old'), 'Must contain updated body copy');
+});
+
+test('LandingPage removes EditorialStatement experience section', () => {
+  const landingContent = fs.readFileSync(path.resolve('src/views/LandingPage.tsx'), 'utf-8');
+  assert(!landingContent.includes('<EditorialStatement'), 'Must NOT contain EditorialStatement');
 });
 
 console.log('\n================================================================');
