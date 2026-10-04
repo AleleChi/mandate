@@ -32,14 +32,28 @@ export interface LandingEventDetailsSectionProps {
 
 /**
  * Parses event dates into visual elements for the editorial date composition.
- * Example: days: "18—22", month: "NOVEMBER", year: "2026"
+ * Example: days: "21", month: "NOVEMBER", year: "2026"
  */
-function parseEventDateDisplay(startsAt?: string | null, endsAt?: string | null): {
+function parseEventDateDisplay(startsAt?: string | null, endsAt?: string | null, eventId?: string | null): {
   days: string;
   month: string;
   year: string;
   fullText: string;
 } | null {
+  // Canonical rule: General Assembly 2026 is single-day on 21 November 2026.
+  // There is NO public 21–22 range.
+  if (
+    eventId === 'event-ga-2026' ||
+    (startsAt && startsAt.trim().startsWith('2026-11-21'))
+  ) {
+    return {
+      days: '21',
+      month: 'NOVEMBER',
+      year: '2026',
+      fullText: '21 November 2026'
+    };
+  }
+
   if (!startsAt || startsAt.trim() === '') {
     return null;
   }
@@ -49,8 +63,28 @@ function parseEventDateDisplay(startsAt?: string | null, endsAt?: string | null)
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
 
-  const sDate = new Date(startsAt);
-  if (isNaN(sDate.getTime())) {
+  const parseParts = (str: string) => {
+    const match = str.trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (match) {
+      return {
+        year: parseInt(match[1], 10),
+        month: parseInt(match[2], 10) - 1,
+        day: parseInt(match[3], 10)
+      };
+    }
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      return {
+        year: d.getUTCFullYear(),
+        month: d.getUTCMonth(),
+        day: d.getUTCDate()
+      };
+    }
+    return null;
+  };
+
+  const sParts = parseParts(startsAt);
+  if (!sParts) {
     return {
       days: startsAt.trim(),
       month: '',
@@ -59,9 +93,9 @@ function parseEventDateDisplay(startsAt?: string | null, endsAt?: string | null)
     };
   }
 
-  const sDay = sDate.getDate();
-  const sMonth = months[sDate.getMonth()];
-  const sYear = sDate.getFullYear();
+  const sDay = sParts.day;
+  const sMonth = months[sParts.month];
+  const sYear = sParts.year;
 
   if (!endsAt || endsAt.trim() === '') {
     return {
@@ -72,8 +106,8 @@ function parseEventDateDisplay(startsAt?: string | null, endsAt?: string | null)
     };
   }
 
-  const eDate = new Date(endsAt);
-  if (isNaN(eDate.getTime())) {
+  const eParts = parseParts(endsAt);
+  if (!eParts) {
     return {
       days: String(sDay),
       month: sMonth.toUpperCase(),
@@ -82,9 +116,9 @@ function parseEventDateDisplay(startsAt?: string | null, endsAt?: string | null)
     };
   }
 
-  const eDay = eDate.getDate();
-  const eMonth = months[eDate.getMonth()];
-  const eYear = eDate.getFullYear();
+  const eDay = eParts.day;
+  const eMonth = months[eParts.month];
+  const eYear = eParts.year;
 
   if (sYear === eYear && sMonth === eMonth) {
     return {
@@ -156,7 +190,7 @@ export const LandingEventDetailsSection: React.FC<LandingEventDetailsSectionProp
   const sectionSubtitle = event?.section_name?.trim() || null;
   const locationText = event?.location?.trim() || null;
 
-  const dateDisplay = parseEventDateDisplay(event?.starts_at, event?.ends_at);
+  const dateDisplay = parseEventDateDisplay(event?.starts_at, event?.ends_at, event?.id);
   const timeText = formatDailyTime(event?.daily_start_time, event?.daily_end_time);
   const cleanTimezone = event?.timezone ? event.timezone.replace('_', ' ') : null;
   const themeText = event?.theme?.trim() || null;
@@ -255,7 +289,7 @@ export const LandingEventDetailsSection: React.FC<LandingEventDetailsSectionProp
           )}
         </div>
 
-        {/* Middle Block: Daily Schedule and Ministry Theme */}
+        {/* Middle Block: Daily Schedule and Theme */}
         {(hasSchedule || hasTheme) && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 sm:gap-12 items-start py-8 sm:py-10">
             {/* Schedule Block */}
@@ -281,7 +315,7 @@ export const LandingEventDetailsSection: React.FC<LandingEventDetailsSectionProp
             {hasTheme && (
               <div className="space-y-1.5">
                 <span className="text-[10.5px] sm:text-[11px] font-bold tracking-widest text-[#9A7326] dark:text-[#D4AF37] uppercase font-sans block">
-                  MINISTRY THEME
+                  Theme
                 </span>
                 <div className="text-2xl sm:text-3xl lg:text-[32px] font-semibold text-[#18181B] dark:text-[#F7F4ED] font-serif-koinonia leading-snug">
                   &ldquo;{themeText}&rdquo;

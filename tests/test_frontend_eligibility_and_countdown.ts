@@ -384,6 +384,19 @@ test('AdminAcceptInviteView extracts token from window.location.search and hash'
   assert(inviteContent.includes("searchParams.get('token')"), 'Must extract token query param');
 });
 
+// 12. LANDING EVENT DETAILS SECTION (EDITORIAL EVENT CARD)
+console.log('\n12. LANDING EVENT DETAILS SECTION (EDITORIAL EVENT CARD)');
+
+test('LandingEventDetailsSection displays Theme instead of MINISTRY THEME and resolves single day 21 November 2026', () => {
+  const detailsContent = fs.readFileSync(path.resolve('src/components/common/LandingEventDetailsSection.tsx'), 'utf-8');
+  assert(!detailsContent.includes('MINISTRY THEME'), 'Must NOT contain MINISTRY THEME');
+  assert(detailsContent.includes('Theme'), 'Must contain Theme heading');
+  assert(detailsContent.includes("eventId === 'event-ga-2026'"), 'Must enforce event-ga-2026 canonical date');
+  assert(detailsContent.includes("days: '21'"), 'Must return days 21');
+  assert(detailsContent.includes("month: 'NOVEMBER'"), 'Must return month NOVEMBER');
+  assert(detailsContent.includes("year: '2026'"), 'Must return year 2026');
+});
+
 console.log('\n================================================================');
 console.log(`FRONTEND TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
 console.log('================================================================');
@@ -391,3 +404,4 @@ console.log('================================================================');
 if (failed > 0) {
   process.exit(1);
 }
+
