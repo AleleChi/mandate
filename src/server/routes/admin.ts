@@ -739,6 +739,9 @@ router.get('/public-landing-page', async (req, res) => {
     settings.parent_registration_enabled = parentRegistrationEnabled ? 'true' : 'false';
     settings.volunteer_registration_enabled = volunteerRegistrationEnabled ? 'true' : 'false';
 
+    const showVenueOnLanding = settings.show_venue_on_landing !== undefined ? settings.show_venue_on_landing !== 'false' : true;
+    settings.show_venue_on_landing = showVenueOnLanding ? 'true' : 'false';
+
     const currentEvent = rawEvent ? {
       id: rawEvent.id,
       title: rawEvent.title,
@@ -749,7 +752,8 @@ router.get('/public-landing-page', async (req, res) => {
       daily_end_time: rawEvent.daily_end_time || null,
       theme: rawEvent.theme || null,
       scripture: rawEvent.scripture || null,
-      location: rawEvent.location || null,
+      location: showVenueOnLanding ? (rawEvent.location || null) : null,
+      show_venue_on_landing: showVenueOnLanding,
       timezone: rawEvent.timezone || null,
       minimum_age: rawEvent.minimum_age !== undefined && rawEvent.minimum_age !== null ? rawEvent.minimum_age : 2,
       maximum_age: rawEvent.maximum_age !== undefined && rawEvent.maximum_age !== null ? rawEvent.maximum_age : 14,
@@ -6740,6 +6744,14 @@ router.get('/general-settings', async (req: AuthenticatedRequest, res: Response)
     } catch (e) {}
 
     let settings;
+    let showVenueOnLanding = 1;
+    try {
+      const landingVenueRow = await queryOne("SELECT setting_value FROM admin_landing_settings WHERE setting_key = 'show_venue_on_landing'");
+      if (landingVenueRow) {
+        showVenueOnLanding = landingVenueRow.setting_value !== 'false' ? 1 : 0;
+      }
+    } catch (e) {}
+
     if (!rawSettings) {
       settings = {
         parentRegistrationEnabled: 1,
@@ -6748,7 +6760,8 @@ router.get('/general-settings', async (req: AuthenticatedRequest, res: Response)
         requiredChildPhoto: 1,
         requiredParentPhoto: 1,
         requiredMedicalNotes: 0,
-        requiredPickupPerson: 1
+        requiredPickupPerson: 1,
+        showVenueOnLanding
       };
     } else {
       settings = {
@@ -6758,7 +6771,8 @@ router.get('/general-settings', async (req: AuthenticatedRequest, res: Response)
         requiredChildPhoto: rawSettings.required_child_photo !== undefined ? (rawSettings.required_child_photo === 1 ? 1 : 0) : 1,
         requiredParentPhoto: rawSettings.required_parent_photo !== undefined ? (rawSettings.required_parent_photo === 1 ? 1 : 0) : 1,
         requiredMedicalNotes: rawSettings.required_medical_notes !== undefined ? (rawSettings.required_medical_notes === 1 ? 1 : 0) : 0,
-        requiredPickupPerson: rawSettings.required_pickup_person !== undefined ? (rawSettings.required_pickup_person === 1 ? 1 : 0) : 1
+        requiredPickupPerson: rawSettings.required_pickup_person !== undefined ? (rawSettings.required_pickup_person === 1 ? 1 : 0) : 1,
+        showVenueOnLanding
       };
     }
 
@@ -6780,7 +6794,8 @@ router.post('/general-settings', async (req: AuthenticatedRequest, res: Response
       requiredChildPhoto,
       requiredParentPhoto,
       requiredMedicalNotes,
-      requiredPickupPerson
+      requiredPickupPerson,
+      showVenueOnLanding
     } = req.body;
 
     const id = 'primary_general_settings';
@@ -6870,6 +6885,20 @@ router.post('/general-settings', async (req: AuthenticatedRequest, res: Response
           now,
           now
         ]);
+      }
+    }
+
+    if (showVenueOnLanding !== undefined) {
+      try {
+        const venueVal = (showVenueOnLanding === 1 || showVenueOnLanding === true || showVenueOnLanding === 'true') ? 'true' : 'false';
+        const existVenue = await queryOne("SELECT setting_key FROM admin_landing_settings WHERE setting_key = 'show_venue_on_landing'");
+        if (existVenue) {
+          await execute("UPDATE admin_landing_settings SET setting_value = ?, updated_at = ? WHERE setting_key = 'show_venue_on_landing'", [venueVal, now]);
+        } else {
+          await execute("INSERT INTO admin_landing_settings (setting_key, setting_value, value_type, updated_at) VALUES ('show_venue_on_landing', ?, 'boolean', ?)", [venueVal, now]);
+        }
+      } catch (syncVenueErr) {
+        console.warn('Could not sync show_venue_on_landing to admin_landing_settings:', syncVenueErr);
       }
     }
 
@@ -6985,6 +7014,10 @@ router.get('/landing-settings', async (req: AuthenticatedRequest, res: Response)
     const settings: Record<string, string> = {};
     for (const row of rows) {
       settings[row.setting_key] = row.setting_value || '';
+    }
+
+    if (settings.show_venue_on_landing === undefined) {
+      settings.show_venue_on_landing = 'true';
     }
 
     // Resolve canonical media record for heroVideo if configured
@@ -7131,6 +7164,8 @@ router.post('/landing-settings', async (req: AuthenticatedRequest, res: Response
           valueType = 'video';
         } else if (key.startsWith('contact') || key.startsWith('footer')) {
           valueType = 'string';
+        } else if (key.startsWith('show_')) {
+          valueType = 'boolean';
         }
 
         const existing = await queryOne('SELECT setting_key FROM admin_landing_settings WHERE setting_key = ?', [key]);
