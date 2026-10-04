@@ -143,78 +143,78 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
   }
 
   return (
-    <div className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF8F3] text-[#18181B] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50 px-5 pb-10">
+    <div className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF8F3] dark:bg-[#19191A] text-[#18181B] dark:text-[#F0EBE3] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50 dark:border-[#302E29] px-5 pb-10">
       <div className="space-y-5">
         {/* Top bar */}
         <div className="pt-5 pb-1 flex items-center justify-between relative">
           <button
             type="button"
             onClick={() => onNavigate('/parent/children/new/care-details')}
-            className="p-1 -ml-1 text-[#18181B] hover:text-[#715D3A] transition-colors cursor-pointer focus:outline-none shrink-0"
+            className="p-1 -ml-1 text-[#18181B] dark:text-[#F0EBE3] hover:text-[#715D3A] dark:hover:text-[#C59B27] transition-colors cursor-pointer focus:outline-none shrink-0"
             aria-label="Back"
           >
             <ArrowLeft className="w-5 h-5 stroke-[2]" />
           </button>
           <div className="flex flex-col items-center">
-            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-widest text-[#6B7280]">
+            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-widest text-[#6B7280] dark:text-[#A19D95]">
               ADD A CHILD
             </span>
-            <span className="text-base sm:text-lg font-serif-koinonia font-bold text-[#9A7326] tracking-tight">
+            <span className="text-base sm:text-lg font-serif-koinonia font-bold text-[#9A7326] dark:text-[#D4AF37] tracking-tight">
               Step 3 of 5
             </span>
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE]" />
-            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE]" />
+            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE] dark:bg-[#3A3835]" />
+            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE] dark:bg-[#3A3835]" />
             <div className="w-1.5 h-1.5 rounded-full bg-[#C59B27]" />
-            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE]" />
-            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE]" />
+            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE] dark:bg-[#3A3835]" />
+            <div className="w-1.5 h-1.5 rounded-full bg-[#D9D6CE] dark:bg-[#3A3835]" />
           </div>
         </div>
 
         {/* Main section heading */}
         <div className="text-center space-y-1 pt-1">
-          <h1 className="text-xl sm:text-2xl font-serif-koinonia font-bold text-[#18181B]">
+          <h1 className="text-xl sm:text-2xl font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3]">
             Health and support
           </h1>
-          <p className="text-xs sm:text-sm text-[#3F3F46]">
+          <p className="text-xs sm:text-sm text-[#3F3F46] dark:text-[#B8B0A5]">
             Share anything the care team should know.
           </p>
         </div>
 
         {/* Child summary card */}
-        <div className="bg-white border border-[#EAE8E1] border-l-4 border-l-[#C59B27] rounded-xl p-3.5 shadow-2xs flex items-center space-x-3.5">
+        <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] border-l-4 border-l-[#C59B27] rounded-xl p-3.5 shadow-2xs flex items-center space-x-3.5">
           {draft.photoUrl ? (
             <img
               src={draft.photoUrl}
               alt={draft.fullName}
-              className="w-11 h-11 rounded-xl object-cover shrink-0 border border-[#EAE8E1]"
+              className="w-11 h-11 rounded-xl object-cover shrink-0 border border-[#EAE8E1] dark:border-[#302E29]"
             />
           ) : (
-            <div className="w-11 h-11 rounded-xl bg-[#F3EFE6] text-[#715D3A] flex items-center justify-center font-bold text-base shrink-0 border border-[#D9D6CE]/50">
+            <div className="w-11 h-11 rounded-xl bg-[#F3EFE6] dark:bg-[#262520] text-[#715D3A] dark:text-[#D4AF37] flex items-center justify-center font-bold text-base shrink-0 border border-[#D9D6CE]/50 dark:border-[#3A3835]">
               {draft.fullName ? draft.fullName.charAt(0).toUpperCase() : 'C'}
             </div>
           )}
           <div>
-            <h3 className="text-base font-serif-koinonia font-bold text-[#18181B] leading-tight">
+            <h3 className="text-base font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3] leading-tight">
               {draft.fullName}
             </h3>
-            <p className="text-xs text-[#3F3F46] mt-0.5">
+            <p className="text-xs text-[#3F3F46] dark:text-[#B8B0A5] mt-0.5">
               {ageText} • {group}
             </p>
           </div>
         </div>
 
-        <div className="border-b border-[#EAE8E1]/80 my-1" />
+        <div className="border-b border-[#EAE8E1]/80 dark:border-[#302E29] my-1" />
 
         {/* Form */}
         <form onSubmit={handleContinue} className="space-y-6" noValidate>
           {/* Question 1: Allergies or medical notes */}
           <div>
-            <label className="text-sm font-semibold text-[#18181B] block mb-2.5">
+            <label className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] block mb-2.5">
               Does your child have any allergies or medical notes?
             </label>
-            <div className="bg-[#FAF8F4] p-1 rounded-xl flex items-center gap-1.5 border border-[#EAE8E1]/80">
+            <div className="bg-[#FAF8F4] dark:bg-[#21211E] p-1 rounded-xl flex items-center gap-1.5 border border-[#EAE8E1]/80 dark:border-[#302E29]">
               <button
                 type="button"
                 onClick={() => {
@@ -223,8 +223,8 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
                 }}
                 className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer focus:outline-none ${
                   hasAllergies === 'No'
-                    ? 'bg-white text-[#9A7326] shadow-2xs border border-[#D9D6CE]/80'
-                    : 'text-[#3F3F46] hover:text-[#18181B]'
+                    ? 'bg-white dark:bg-[#2A2925] text-[#9A7326] dark:text-[#D4AF37] shadow-2xs border border-[#D9D6CE]/80 dark:border-[#4A4740]'
+                    : 'text-[#3F3F46] dark:text-[#A19D95] hover:text-[#18181B] dark:hover:text-[#F0EBE3]'
                 }`}
               >
                 No
@@ -237,15 +237,15 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
                 }}
                 className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer focus:outline-none ${
                   hasAllergies === 'Yes'
-                    ? 'bg-white text-[#9A7326] shadow-2xs border border-[#D9D6CE]/80'
-                    : 'text-[#3F3F46] hover:text-[#18181B]'
+                    ? 'bg-white dark:bg-[#2A2925] text-[#9A7326] dark:text-[#D4AF37] shadow-2xs border border-[#D9D6CE]/80 dark:border-[#4A4740]'
+                    : 'text-[#3F3F46] dark:text-[#A19D95] hover:text-[#18181B] dark:hover:text-[#F0EBE3]'
                 }`}
               >
                 Yes
               </button>
             </div>
             {errors.hasAllergies && (
-              <p className="text-xs text-red-600 mt-1 font-medium">{errors.hasAllergies}</p>
+              <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-medium">{errors.hasAllergies}</p>
             )}
 
             {/* Textarea for Question 1 */}
@@ -258,22 +258,22 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
                   setMedicalNote(e.target.value);
                   if (errors.medicalNote) setErrors((prev) => ({ ...prev, medicalNote: undefined }));
                 }}
-                className={`w-full py-3 px-3.5 bg-white border ${
-                  errors.medicalNote ? 'border-red-500' : 'border-[#D9D6CE]'
-                } text-sm text-[#18181B] placeholder:text-[#9CA3AF] rounded-xl focus:outline-none focus:border-[#C59B27] shadow-2xs transition-colors resize-none`}
+                className={`w-full py-3 px-3.5 bg-white dark:bg-[#1D1D1A] border ${
+                  errors.medicalNote ? 'border-red-500' : 'border-[#D9D6CE] dark:border-[#3A3835]'
+                } text-sm text-[#18181B] dark:text-[#F0EBE3] placeholder:text-[#9CA3AF] dark:placeholder:text-[#7A7570] rounded-xl focus:outline-none focus:border-[#C59B27] dark:focus:border-[#C59B27] shadow-2xs transition-colors resize-none`}
               />
               {errors.medicalNote && (
-                <p className="text-xs text-red-600 mt-1 font-medium">{errors.medicalNote}</p>
+                <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-medium">{errors.medicalNote}</p>
               )}
             </div>
           </div>
 
           {/* Question 2: Extra support */}
           <div>
-            <label className="text-sm font-semibold text-[#18181B] block mb-2.5">
+            <label className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] block mb-2.5">
               Does your child need any extra support?
             </label>
-            <div className="bg-[#FAF8F4] p-1 rounded-xl flex items-center gap-1.5 border border-[#EAE8E1]/80">
+            <div className="bg-[#FAF8F4] dark:bg-[#21211E] p-1 rounded-xl flex items-center gap-1.5 border border-[#EAE8E1]/80 dark:border-[#302E29]">
               <button
                 type="button"
                 onClick={() => {
@@ -282,8 +282,8 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
                 }}
                 className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer focus:outline-none ${
                   needsExtraSupport === 'No'
-                    ? 'bg-white text-[#9A7326] shadow-2xs border border-[#D9D6CE]/80'
-                    : 'text-[#3F3F46] hover:text-[#18181B]'
+                    ? 'bg-white dark:bg-[#2A2925] text-[#9A7326] dark:text-[#D4AF37] shadow-2xs border border-[#D9D6CE]/80 dark:border-[#4A4740]'
+                    : 'text-[#3F3F46] dark:text-[#A19D95] hover:text-[#18181B] dark:hover:text-[#F0EBE3]'
                 }`}
               >
                 No
@@ -296,15 +296,15 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
                 }}
                 className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer focus:outline-none ${
                   needsExtraSupport === 'Yes'
-                    ? 'bg-white text-[#9A7326] shadow-2xs border border-[#D9D6CE]/80'
-                    : 'text-[#3F3F46] hover:text-[#18181B]'
+                    ? 'bg-white dark:bg-[#2A2925] text-[#9A7326] dark:text-[#D4AF37] shadow-2xs border border-[#D9D6CE]/80 dark:border-[#4A4740]'
+                    : 'text-[#3F3F46] dark:text-[#A19D95] hover:text-[#18181B] dark:hover:text-[#F0EBE3]'
                 }`}
               >
                 Yes
               </button>
             </div>
             {errors.needsExtraSupport && (
-              <p className="text-xs text-red-600 mt-1 font-medium">{errors.needsExtraSupport}</p>
+              <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-medium">{errors.needsExtraSupport}</p>
             )}
 
             {/* Textarea for Question 2 when Yes */}
@@ -318,19 +318,19 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
                     setSupportNote(e.target.value);
                     if (errors.supportNote) setErrors((prev) => ({ ...prev, supportNote: undefined }));
                   }}
-                  className={`w-full py-3 px-3.5 bg-white border ${
-                    errors.supportNote ? 'border-red-500' : 'border-[#D9D6CE]'
-                  } text-sm text-[#18181B] placeholder:text-[#9CA3AF] rounded-xl focus:outline-none focus:border-[#C59B27] shadow-2xs transition-colors resize-none`}
+                  className={`w-full py-3 px-3.5 bg-white dark:bg-[#1D1D1A] border ${
+                    errors.supportNote ? 'border-red-500' : 'border-[#D9D6CE] dark:border-[#3A3835]'
+                  } text-sm text-[#18181B] dark:text-[#F0EBE3] placeholder:text-[#9CA3AF] dark:placeholder:text-[#7A7570] rounded-xl focus:outline-none focus:border-[#C59B27] dark:focus:border-[#C59B27] shadow-2xs transition-colors resize-none`}
                 />
                 {errors.supportNote && (
-                  <p className="text-xs text-red-600 mt-1 font-medium">{errors.supportNote}</p>
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-medium">{errors.supportNote}</p>
                 )}
               </div>
             )}
           </div>
 
           {/* Confirmation card */}
-          <div className={`bg-[#FAF8F4] border ${errors.infoConfirmed ? 'border-red-500 bg-red-50/40' : 'border-[#EAE8E1]'} p-4 rounded-xl`}>
+          <div className={`bg-[#FAF8F4] dark:bg-[#1D1D1A] border ${errors.infoConfirmed ? 'border-red-500 bg-red-50/40 dark:bg-red-950/20' : 'border-[#EAE8E1] dark:border-[#302E29]'} p-4 rounded-xl`}>
             <label className="flex items-start space-x-3 cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -341,14 +341,14 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
                     setErrors((prev) => ({ ...prev, infoConfirmed: undefined }));
                   }
                 }}
-                className="w-4 h-4 rounded border-[#D9D6CE] text-[#C59B27] focus:ring-[#C59B27] mt-0.5 shrink-0 accent-[#C59B27] cursor-pointer"
+                className="w-4 h-4 rounded border-[#D9D6CE] dark:border-[#3A3835] dark:bg-[#21211E] text-[#C59B27] focus:ring-[#C59B27] mt-0.5 shrink-0 accent-[#C59B27] cursor-pointer"
               />
-              <span className="text-xs sm:text-sm text-[#3F3F46] leading-relaxed font-normal">
+              <span className="text-xs sm:text-sm text-[#3F3F46] dark:text-[#D4CEBF] leading-relaxed font-normal">
                 I confirm that the information provided is correct and may be used by the care team during the event.
               </span>
             </label>
             {errors.infoConfirmed && (
-              <p className="text-xs text-red-600 mt-2 font-medium pl-7">{errors.infoConfirmed}</p>
+              <p className="text-xs text-red-600 dark:text-red-400 mt-2 font-medium pl-7">{errors.infoConfirmed}</p>
             )}
           </div>
 
@@ -372,7 +372,7 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
             <button
               type="button"
               onClick={handleSaveAndFinishLater}
-              className="w-full py-2.5 text-xs sm:text-sm font-medium text-[#3F3F46] hover:text-[#9A7326] hover:underline active:opacity-80 transition-all duration-200 cursor-pointer focus:outline-none text-center block"
+              className="w-full py-2.5 text-xs sm:text-sm font-medium text-[#3F3F46] dark:text-[#A19D95] hover:text-[#9A7326] dark:hover:text-[#D4AF37] hover:underline active:opacity-80 transition-all duration-200 cursor-pointer focus:outline-none text-center block"
             >
               Save and finish later
             </button>

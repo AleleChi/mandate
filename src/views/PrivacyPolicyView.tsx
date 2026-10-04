@@ -48,7 +48,7 @@ export const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onNavigate
 
         <ul className="list-disc pl-5 space-y-2 text-stone-700">
           <li>
-            Register a child for, or otherwise engage with, our children&apos;s ministry programme, in person or through our web application (<a href="https://kgachildren.koinoniageneralassembly.com/#/" target="_blank" rel="noopener noreferrer" className="text-stone-900 underline underline-offset-4 hover:text-[#9A7326] transition-colors">https://kgachildren.koinoniageneralassembly.com/#/</a>)
+            Register a child for, or otherwise engage with, our children&apos;s ministry programme, in person or through our web application (<a href="https://kgachildren.koinoniageneralassembly.com/" target="_blank" rel="noopener noreferrer" className="text-stone-900 underline underline-offset-4 hover:text-[#9A7326] transition-colors">https://kgachildren.koinoniageneralassembly.com/</a>)
           </li>
           <li>
             Engage with us in other related ways, including communications about the children&apos;s programme
@@ -109,7 +109,7 @@ export const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onNavigate
 
           <div>
             <h3 className="font-semibold text-stone-900 pb-2 text-base">
-              Application data. <span className="font-normal text-stone-700">If you use our web application at <a href="https://kgachildren.koinoniageneralassembly.com/#/" target="_blank" rel="noopener noreferrer" className="text-stone-900 underline underline-offset-4 hover:text-[#9A7326] transition-colors">https://kgachildren.koinoniageneralassembly.com/#/</a>, we may also collect:</span>
+              Application data. <span className="font-normal text-stone-700">If you use our web application at <a href="https://kgachildren.koinoniageneralassembly.com/" target="_blank" rel="noopener noreferrer" className="text-stone-900 underline underline-offset-4 hover:text-[#9A7326] transition-colors">https://kgachildren.koinoniageneralassembly.com/</a>, we may also collect:</span>
             </h3>
             <ul className="list-disc pl-5 space-y-1.5">
               <li>Login/account information, if you create an account</li>

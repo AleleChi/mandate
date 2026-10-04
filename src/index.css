@@ -225,6 +225,11 @@
 [data-theme="dark"] .bg-\[\#FAF8F3\],
 [data-theme="dark"] .bg-\[\#FAF8F3\]\/95,
 [data-theme="dark"] .bg-\[\#FAF8F3\]\/90,
+[data-theme="dark"] .bg-\[\#FAF8F4\],
+[data-theme="dark"] .bg-\[\#FAF8F4\]\/95,
+[data-theme="dark"] .bg-\[\#FAF8F4\]\/90,
+[data-theme="dark"] .bg-\[\#FAF8F4\]\/80,
+[data-theme="dark"] .bg-\[\#FAF8F4\]\/70,
 [data-theme="dark"] .bg-\[\#FAF6EB\],
 [data-theme="dark"] .bg-\[\#FAF6EC\] {
   background-color: var(--bg-surface-secondary);
