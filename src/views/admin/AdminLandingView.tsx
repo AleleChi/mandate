@@ -244,6 +244,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
   const [contactAddress, setContactAddress] = useState('');
   const [footerYear, setFooterYear] = useState('');
   const [footerCopyrightName, setFooterCopyrightName] = useState('');
+  const [showVenueOnLanding, setShowVenueOnLanding] = useState(true);
   const [isSavingContactFooter, setIsSavingContactFooter] = useState(false);
   const [contactFooterFeedback, setContactFooterFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -305,6 +306,7 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
         setContactAddress(s.contactAddress || '');
         setFooterYear(s.footerYear || String(new Date().getFullYear()));
         setFooterCopyrightName(s.footerCopyrightName || 'The Koinonia General Assembly');
+        setShowVenueOnLanding(s.show_venue_on_landing !== 'false');
       }
     } catch (err: any) {
       console.error('Failed to load landing settings:', err);
@@ -324,7 +326,8 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
         contactWhatsApp: contactWhatsApp.trim(),
         contactAddress: contactAddress.trim(),
         footerYear: footerYear.trim() || String(new Date().getFullYear()),
-        footerCopyrightName: footerCopyrightName.trim() || 'The Koinonia General Assembly'
+        footerCopyrightName: footerCopyrightName.trim() || 'The Koinonia General Assembly',
+        show_venue_on_landing: showVenueOnLanding ? 'true' : 'false'
       };
       const res = await api.admin.updateLandingSettings(payload);
       if (res.success) {
@@ -1787,6 +1790,37 @@ export const AdminLandingView: React.FC<AdminLandingViewProps> = ({ isSuperAdmin
           )}
 
           <form onSubmit={handleSaveContactFooter} className="space-y-6">
+            {/* Landing Page Venue Visibility */}
+            <div className="space-y-3 pb-6 border-b border-[#EAE8E1] dark:border-[#302E29]">
+              <h4 className="text-xs font-semibold text-stone-900 dark:text-[#F0EBE3] uppercase tracking-wider font-sans">
+                Event Venue Visibility
+              </h4>
+              <div className="flex items-center justify-between p-4 rounded-xl border border-[#EAE8E1] dark:border-[#302E29] bg-stone-50/40 dark:bg-[#21211E]">
+                <div className="space-y-1 pr-4">
+                  <span className="text-xs sm:text-sm font-semibold text-stone-900 dark:text-[#F0EBE3] block">
+                    Show venue on landing page
+                  </span>
+                  <p className="text-[11px] text-stone-500 dark:text-[#7A7570] leading-normal max-w-md">
+                    Display the event venue/location on the public landing page. Turn off if you wish to keep the venue private while leaving it visible to signed-in parents.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowVenueOnLanding(!showVenueOnLanding)}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    showVenueOnLanding ? 'bg-[#C59B27]' : 'bg-stone-200 dark:bg-[#3A3835]'
+                  }`}
+                  aria-label="Toggle venue visibility on landing page"
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-[#F0EBE3] shadow-md ring-0 transition duration-200 ease-in-out ${
+                      showVenueOnLanding ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+
             <div className="space-y-4">
               <h4 className="text-xs font-semibold text-stone-900 dark:text-[#F0EBE3] uppercase tracking-wider font-sans">
                 Public Contact Information

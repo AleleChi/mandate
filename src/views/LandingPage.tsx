@@ -313,6 +313,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         <CurrentEventSection
           event={currentEvent}
           regStatus={regStatus}
+          showVenue={landingSettings?.show_venue_on_landing !== 'false'}
         />
 
         <LandingVideoSection

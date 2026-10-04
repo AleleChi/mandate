@@ -13,6 +13,7 @@ export interface LandingEventDetailsSectionProps {
     daily_start_time?: string | null;
     daily_end_time?: string | null;
     location?: string | null;
+    show_venue_on_landing?: boolean | null;
     timezone?: string | null;
     parents_can_create_account?: number | boolean | null;
     parent_access_opens_at?: string | null;
@@ -27,6 +28,7 @@ export interface LandingEventDetailsSectionProps {
       closesAtFormatted?: string | null;
     };
   } | null;
+  showVenue?: boolean;
   className?: string;
 }
 
@@ -169,6 +171,7 @@ function formatDailyTime(startTime?: string | null, endTime?: string | null): st
 export const LandingEventDetailsSection: React.FC<LandingEventDetailsSectionProps> = ({
   event,
   regStatus,
+  showVenue,
   className = ''
 }) => {
   const systemReducedMotion = useReducedMotion();
@@ -188,7 +191,8 @@ export const LandingEventDetailsSection: React.FC<LandingEventDetailsSectionProp
 
   const eventTitle = event?.title?.trim() || regStatus?.eventName?.trim() || null;
   const sectionSubtitle = event?.section_name?.trim() || null;
-  const locationText = event?.location?.trim() || null;
+  const showLocation = showVenue !== undefined ? showVenue : (event?.show_venue_on_landing !== false);
+  const locationText = (showLocation && event?.location?.trim()) ? event.location.trim() : null;
 
   const dateDisplay = parseEventDateDisplay(event?.starts_at, event?.ends_at, event?.id);
   const timeText = formatDailyTime(event?.daily_start_time, event?.daily_end_time);

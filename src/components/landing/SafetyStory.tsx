@@ -84,7 +84,7 @@ export const SafetyStory: React.FC<SafetyStoryProps> = ({
               Attendance tracking
             </h3>
             <p className="text-xs sm:text-sm text-[#9CA3AF] leading-relaxed">
-              Attendance status is logged by the event team so coordinators know which children are currently inside the halls.
+              Attendance status is logged by the event team so coordinators know which children are currently inside the hall, during the session.
             </p>
           </div>
 

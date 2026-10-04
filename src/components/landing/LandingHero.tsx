@@ -662,13 +662,13 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
 
           {/* Headline - Strong sans-serif */}
           <h1 className="text-[36px] sm:text-[42px] md:text-[48px] lg:text-[54px] xl:text-[58px] font-sans font-extrabold text-[#18181B] dark:text-[#F7F4ED] tracking-normal leading-[1.04] mb-3.5 sm:mb-4 max-w-[620px]">
-            Welcome to the Children &amp; Teens Session
+            Welcome to the Children &amp; Teens’ Session
           </h1>
 
           {/* Body copy - ONE concise paragraph */}
           <div className="max-w-[540px] mb-5 sm:mb-6">
             <p className="text-sm sm:text-[15px] lg:text-base text-[#52525B] dark:text-[#C8C2B6] leading-[1.65] font-normal">
-              Registration is open for children ages {minAge}–{maxAge} attending {eventTitle} on {eventDateLabel}. Applications are reviewed before acceptance, and successful applicants will be notified by email.
+              Registration is open for children between the ages of {minAge}–{maxAge} years of age attending {eventTitle} on {eventDateLabel}. Applications are reviewed before acceptance, and successful applicants will be notified by email.
             </p>
           </div>
 

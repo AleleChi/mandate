@@ -402,8 +402,8 @@ console.log('\n13. HERO COPY & PRODUCTION PARITY');
 
 test('LandingHero matches Netlify production headline and body copy', () => {
   const heroContent = fs.readFileSync(path.resolve('src/components/landing/LandingHero.tsx'), 'utf-8');
-  assert(heroContent.includes('Welcome to the Children &amp; Teens Session'), 'Must contain production headline');
-  assert(heroContent.includes('Registration is open for children ages {minAge}–{maxAge} attending {eventTitle} on {eventDateLabel}'), 'Must contain production body copy');
+  assert(heroContent.includes('Welcome to the Children &amp; Teens’ Session'), 'Must contain production headline');
+  assert(heroContent.includes('Registration is open for children between the ages of {minAge}–{maxAge} years of age attending {eventTitle} on {eventDateLabel}'), 'Must contain production body copy');
 });
 
 test('LandingPage removes EditorialStatement experience section', () => {

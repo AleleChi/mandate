@@ -1573,6 +1573,7 @@ export const api = {
           requiredParentPhoto: number;
           requiredMedicalNotes: number;
           requiredPickupPerson: number;
+          showVenueOnLanding?: number;
         };
       }>('/api/admin/general-settings');
     },
@@ -1584,6 +1585,7 @@ export const api = {
       requiredParentPhoto: boolean;
       requiredMedicalNotes: boolean;
       requiredPickupPerson: boolean;
+      showVenueOnLanding?: boolean | number;
     }) {
       return api.request<{ success: boolean; message: string }>('/api/admin/general-settings', {
         method: 'POST',

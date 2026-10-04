@@ -272,6 +272,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
   const [parentRegistrationEnabled, setParentRegistrationEnabled] = useState(true);
   const [volunteerRegistrationEnabled, setVolunteerRegistrationEnabled] = useState(true);
   const [parentLoginEnabled, setParentLoginEnabled] = useState(true);
+  const [showVenueOnLanding, setShowVenueOnLanding] = useState(true);
   const [requiredChildPhoto, setRequiredChildPhoto] = useState(true);
   const [requiredParentPhoto, setRequiredParentPhoto] = useState(true);
   const [requiredMedicalNotes, setRequiredMedicalNotes] = useState(false);
@@ -352,6 +353,9 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
         setParentRegistrationEnabled(genRes.settings.parentRegistrationEnabled === 1);
         setVolunteerRegistrationEnabled(genRes.settings.volunteerRegistrationEnabled !== 0);
         setParentLoginEnabled(genRes.settings.parentLoginEnabled === 1);
+        if (genRes.settings.showVenueOnLanding !== undefined) {
+          setShowVenueOnLanding(genRes.settings.showVenueOnLanding === 1);
+        }
         setRequiredChildPhoto(genRes.settings.requiredChildPhoto === 1);
         setRequiredParentPhoto(genRes.settings.requiredParentPhoto === 1);
         setRequiredMedicalNotes(genRes.settings.requiredMedicalNotes === 1);
@@ -511,6 +515,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
         parentRegistrationEnabled,
         volunteerRegistrationEnabled,
         parentLoginEnabled,
+        showVenueOnLanding,
         requiredChildPhoto,
         requiredParentPhoto,
         requiredMedicalNotes,
@@ -1048,6 +1053,30 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                         <span
                           className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-[#F0EBE3] shadow-md ring-0 transition duration-200 ease-in-out ${
                             parentLoginEnabled ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Toggle: Show Venue on Landing Page */}
+                    <div className="flex items-center justify-between py-4 border-t border-zinc-100 dark:border-[#302E29]">
+                      <div className="space-y-1 pr-4">
+                        <span className="text-sm font-medium text-[#18181B] dark:text-[#F0EBE3] block">Show venue on landing page</span>
+                        <p className="text-xs text-zinc-400 dark:text-[#7A7570] leading-normal max-w-md">
+                          Display the event venue/location on the public landing page. Turn off to keep the venue visible only to signed-in parents.
+                        </p>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => setShowVenueOnLanding(!showVenueOnLanding)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          showVenueOnLanding ? 'bg-[#C59B27]' : 'bg-zinc-200 dark:bg-[#3A3835]'
+                        }`}
+                        aria-label="Toggle venue visibility on landing page"
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-[#F0EBE3] shadow-md ring-0 transition duration-200 ease-in-out ${
+                            showVenueOnLanding ? 'translate-x-5' : 'translate-x-0'
                           }`}
                         />
                       </button>
