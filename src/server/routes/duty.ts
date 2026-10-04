@@ -1,0 +1,3203 @@
+import { Router, Response } from 'express';
+import crypto from 'crypto';
+import { query, queryOne, execute } from '../db';
+import { getCurrentEvent, getCurrentEventId } from '../services/eventService';
+import { authMiddleware, optionalAuthMiddleware, AuthenticatedRequest } from '../auth';
+import { sendWebPush } from '../services/push';
+import { broadcastSSEEvent } from '../services/sse';
+
+const dutyRouter = Router();
+
+// Verify a scanned QR token (supporting both unauthenticated and authenticated flows)
+const handleVerifyLocationToken = async (rawToken: string, userId: string | undefined, res: Response) => {
+  try {
+    if (!rawToken) {
+      return res.status(400).json({ success: false, error: 'Location token is required.' });
+    }
+
+    // Extract token if full URL was scanned
+    let token = rawToken.trim();
+    if (token.includes('/location-access/')) {
+      token = token.split('/location-access/').pop()?.split('?')[0] || token;
+    } else if (token.includes('/location/')) {
+      token = token.split('/location/').pop()?.split('?')[0] || token;
+    } else if (token.includes('/scan/')) {
+      token = token.split('/scan/').pop()?.split('?')[0] || token;
+    } else if (token.includes('loc_code_')) {
+      const match = token.match(/loc_code_[a-zA-Z0-9_-]+/i);
+      if (match) token = match[0];
+    }
+
+    // Lookup token in DB
+    const code = await queryOne('SELECT * FROM event_location_codes WHERE token_hash = ?', [token]);
+    if (!code) {
+      return res.status(404).json({
+        success: false,
+        error: 'code_not_found',
+        message: "We couldn't recognize this location code. Please ask your team lead or try scanning again."
+      });
+    }
+    if (!code.is_active) {
+      return res.status(403).json({
+        success: false,
+        error: 'location_paused',
+        message: 'This location is currently paused from active duty. Please contact your team lead.'
+      });
+    }
+
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({
+        success: false,
+        error: 'no_current_event',
+        message: 'No current event is available.'
+      });
+    }
+
+    const loc = await queryOne('SELECT * FROM event_locations WHERE id = ? AND event_id = ? AND is_active = 1 AND archived_at IS NULL', [code.event_location_id, currentEventId]);
+    if (!loc) {
+      const existingLoc = await queryOne('SELECT * FROM event_locations WHERE id = ? AND event_id = ?', [code.event_location_id, currentEventId]);
+      if (existingLoc && (!existingLoc.is_active || existingLoc.archived_at)) {
+        return res.status(403).json({
+          success: false,
+          error: 'location_paused',
+          message: 'This location is currently paused from active duty. Please contact your team lead.'
+        });
+      }
+      return res.status(404).json({
+        success: false,
+        error: 'location_inactive',
+        message: "We couldn't recognize this location code. Please ask your team lead or try scanning again."
+      });
+    }
+
+    // Hierarchy path
+    const allLocations = await query('SELECT * FROM event_locations WHERE event_id = ?', [currentEventId]);
+    const locMap = new Map<string, any>();
+    for (const l of allLocations) {
+      locMap.set(l.id, l);
+    }
+
+    const getFullPath = (locId: string): string => {
+      const pathParts: string[] = [];
+      let currentId: string | null = locId;
+      const visited = new Set<string>();
+      while (currentId) {
+        if (visited.has(currentId)) break;
+        visited.add(currentId);
+        const current = locMap.get(currentId);
+        if (current) {
+          pathParts.unshift(current.name);
+          currentId = current.parent_location_id;
+        } else {
+          break;
+        }
+      }
+      return pathParts.join(' › ');
+    };
+
+    // Unauthenticated state (State E)
+    if (!userId) {
+      return res.json({
+        success: true,
+        authenticated: false,
+        requiresAuth: true,
+        state: 'unauthenticated',
+        token,
+        location: {
+          id: loc.id,
+          name: loc.name,
+          type: loc.location_type,
+          shortName: loc.short_name,
+          description: loc.description,
+          instructions: loc.instructions,
+          emergencyLabel: loc.emergency_label,
+          capacity: loc.capacity || 0,
+          ageGroupKey: loc.age_group_key,
+          teamKey: loc.team_key,
+          pathLabel: getFullPath(loc.id),
+          status: 'Open for duty'
+        }
+      });
+    }
+
+    // Authenticated state
+    const userAssignments = await query(`
+      SELECT a.*, el.name as assigned_location_name, el.id as assigned_location_id
+      FROM event_duty_assignments a
+      JOIN event_locations el ON a.assigned_location_id = el.id
+      WHERE a.user_id = ? AND a.event_id = ? AND a.status NOT IN ('cancelled', 'ended') AND a.assigned_location_id IS NOT NULL AND a.assigned_location_id != ''
+      ORDER BY CASE WHEN a.status = 'on_duty' THEN 1 WHEN a.status = 'available' THEN 2 WHEN a.status = 'scheduled' THEN 3 ELSE 4 END, a.updated_at DESC
+    `, [userId, currentEventId]);
+
+    const activePresence = await queryOne(`
+      SELECT * FROM event_duty_location_presence
+      WHERE user_id = ? AND event_location_id = ? AND ended_at IS NULL AND event_id = ?
+      ORDER BY started_at DESC
+      LIMIT 1
+    `, [userId, loc.id, currentEventId]);
+
+    let state = 'no_assignment';
+    let assignedLocationName: string | null = null;
+    let assignedLocationId: string | null = null;
+
+    if (!userAssignments || userAssignments.length === 0) {
+      state = 'no_assignment';
+    } else {
+      const isAssignedHere = userAssignments.some((a: any) => a.assigned_location_id === loc.id);
+      if (isAssignedHere) {
+        state = activePresence ? 'assigned_here_present' : 'assigned_here_not_present';
+        assignedLocationName = loc.name;
+        assignedLocationId = loc.id;
+      } else {
+        state = 'assigned_elsewhere';
+        assignedLocationName = userAssignments[0].assigned_location_name || 'Another location';
+        assignedLocationId = userAssignments[0].assigned_location_id;
+      }
+    }
+
+    // Audit log scan event
+    try {
+      const auditId = 'audit-' + crypto.randomBytes(8).toString('hex');
+      const now = new Date().toISOString();
+      await execute(`
+        INSERT INTO event_audit_logs (id, event_id, user_id, action, entity_type, entity_id, details, created_at)
+        VALUES (?, ?, ?, 'LOCATION_QR_SCANNED', 'LOCATION', ?, ?, ?)
+      `, [auditId, currentEventId, userId, loc.id, JSON.stringify({ locationName: loc.name, state }), now]);
+    } catch (auditErr) {}
+
+    return res.json({
+      success: true,
+      authenticated: true,
+      state,
+      token,
+      location: {
+        id: loc.id,
+        name: loc.name,
+        type: loc.location_type,
+        shortName: loc.short_name,
+        description: loc.description,
+        instructions: loc.instructions,
+        emergencyLabel: loc.emergency_label,
+        capacity: loc.capacity || 0,
+        ageGroupKey: loc.age_group_key,
+        teamKey: loc.team_key,
+        pathLabel: getFullPath(loc.id),
+        status: 'Open for duty'
+      },
+      assignedLocationName,
+      assignedLocationId,
+      canConfirmPresence: state === 'assigned_here_not_present',
+      isPresent: !!activePresence,
+      presentSince: activePresence ? activePresence.started_at : null
+    });
+  } catch (err: any) {
+    console.error('Error in location token verification:', err);
+    return res.status(500).json({ success: false, error: 'Internal error verifying location code.' });
+  }
+};
+
+// Public / Optional-Auth Location Code routes
+dutyRouter.get('/location-code/:token', optionalAuthMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  return handleVerifyLocationToken(req.params.token, req.user?.id, res);
+});
+
+dutyRouter.post('/location-code/verify', optionalAuthMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const token = req.body.token || req.body.code || req.body.scannedToken;
+  return handleVerifyLocationToken(token, req.user?.id, res);
+});
+
+dutyRouter.get('/location-access/:token', optionalAuthMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  return handleVerifyLocationToken(req.params.token, req.user?.id, res);
+});
+
+dutyRouter.post('/location-access/verify', optionalAuthMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const token = req.body.token || req.body.code || req.body.scannedToken;
+  return handleVerifyLocationToken(token, req.user?.id, res);
+});
+
+// Protect remaining duty routes
+dutyRouter.use(authMiddleware);
+
+// GET /api/duty/readiness
+dutyRouter.get('/readiness', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const currentEventId = await getCurrentEventId();
+    const dutyStatus = await queryOne('SELECT * FROM user_duty_status WHERE user_id = ?', [userId]);
+    const devices = currentEventId
+      ? await query('SELECT * FROM event_duty_devices WHERE user_id = ? AND event_id = ?', [userId, currentEventId])
+      : [];
+
+    return res.json({
+      success: true,
+      dutyStatus: dutyStatus || { on_duty: 0, active: 1, approved: 1 },
+      devices: devices || []
+    });
+  } catch (err: any) {
+    console.error('Error in GET /api/duty/readiness:', err);
+    return res.status(500).json({ error: 'An unexpected error occurred while fetching readiness details' });
+  }
+});
+
+// POST /api/duty/readiness/check
+dutyRouter.post('/readiness/check', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const {
+      appGeneratedDeviceId,
+      deviceLabel,
+      pushSubscriptionId,
+      soundEnabled,
+      voiceEnabled,
+      vibrationEnabled,
+      liveConnectionStatus,
+      readinessStatus,
+      criticalPassed,
+      soundReady,
+      pushReady,
+      voiceReady,
+      vibrationSupported,
+      eventSyncAge
+    } = req.body;
+
+    if (!appGeneratedDeviceId) {
+      return res.status(400).json({ error: 'Device identifier is required' });
+    }
+
+    const currentEventId = await getCurrentEventId();
+    const eventIdForDevice = currentEventId;
+    if (!eventIdForDevice) {
+      return res.status(400).json({ error: 'No active or current event found for device registration' });
+    }
+
+    const now = new Date().toISOString();
+    const cleanLabel = (deviceLabel || 'Unnamed Device').trim().substring(0, 50);
+
+    let device = await queryOne('SELECT * FROM event_duty_devices WHERE app_generated_device_id = ?', [appGeneratedDeviceId]);
+    let deviceId = device?.id;
+
+    if (device) {
+      if (device.user_id !== userId) {
+        return res.status(403).json({ error: 'Access denied for this device' });
+      }
+
+      await execute(`
+        UPDATE event_duty_devices
+        SET device_label = ?, role = ?, push_subscription_id = ?, sound_enabled = ?, voice_enabled = ?,
+            vibration_enabled = ?, live_connection_status = ?, readiness_status = ?,
+            readiness_checked_at = ?, last_seen_at = ?, updated_at = ?
+        WHERE app_generated_device_id = ?
+      `, [
+        cleanLabel, req.user.role, pushSubscriptionId || null, soundEnabled ? 1 : 0, voiceEnabled ? 1 : 0, vibrationEnabled ? 1 : 0,
+        liveConnectionStatus || 'disconnected', readinessStatus || 'unknown', now, now, now, appGeneratedDeviceId
+      ]);
+    } else {
+      deviceId = `device-${crypto.randomBytes(8).toString('hex')}`;
+      await execute(`
+        INSERT INTO event_duty_devices (
+          id, user_id, role, event_id, device_label, app_generated_device_id, push_subscription_id,
+          sound_enabled, voice_enabled, vibration_enabled, live_connection_status, readiness_status,
+          readiness_checked_at, last_seen_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        deviceId, userId, req.user.role, eventIdForDevice, cleanLabel, appGeneratedDeviceId, pushSubscriptionId || null,
+        soundEnabled ? 1 : 0, voiceEnabled ? 1 : 0, vibrationEnabled ? 1 : 0,
+        liveConnectionStatus || 'disconnected', readinessStatus || 'unknown',
+        now, now, now, now
+      ]);
+    }
+
+    // Insert log entry for reporting (Section 19)
+    const logId = `log-${crypto.randomBytes(8).toString('hex')}`;
+    await execute(`
+      INSERT INTO device_readiness_logs (
+        id, event_id, user_id, role, device_id, readiness_status,
+        critical_passed, sound_ready, push_ready, voice_ready, vibration_supported,
+        live_connection_state, event_sync_age, check_timestamp, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      logId, eventIdForDevice, userId, req.user.role, deviceId, readinessStatus || 'unknown',
+      criticalPassed ? 1 : 0, soundReady ? 1 : 0, pushReady ? 1 : 0, voiceReady ? 1 : 0, vibrationSupported ? 1 : 0,
+      liveConnectionStatus || 'disconnected', eventSyncAge || 0, now, now
+    ]);
+
+    return res.json({
+      success: true,
+      deviceId,
+      message: 'Readiness check logged successfully'
+    });
+  } catch (err: any) {
+    console.error('Error in POST /api/duty/readiness/check:', err);
+    return res.status(500).json({ error: 'An unexpected error occurred while logging readiness check' });
+  }
+});
+
+// POST /api/duty/start
+dutyRouter.post('/start', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { appGeneratedDeviceId } = req.body;
+    if (!appGeneratedDeviceId) {
+      return res.status(400).json({ error: 'Device identifier is required' });
+    }
+
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({ error: 'No current event is available.' });
+    }
+
+    const now = new Date().toISOString();
+
+    // 1. Update user_duty_status
+    const existingStatus = await queryOne('SELECT * FROM user_duty_status WHERE user_id = ?', [userId]);
+    if (existingStatus) {
+      await execute(`
+        UPDATE user_duty_status
+        SET on_duty = 1, shift_start = ?, updated_at = ?
+        WHERE user_id = ?
+      `, [now, now, userId]);
+    } else {
+      const id = `duty-${crypto.randomBytes(8).toString('hex')}`;
+      await execute(`
+        INSERT INTO user_duty_status (
+          id, user_id, active, approved, on_duty, alert_enabled, assigned_event_id, created_at, updated_at
+        ) VALUES (?, ?, 1, 1, 1, 1, ?, ?, ?)
+      `, [id, userId, currentEventId, now, now]);
+    }
+
+    // 2. Update event_duty_devices
+    await execute(`
+      UPDATE event_duty_devices
+      SET duty_started_at = ?, duty_ended_at = NULL, last_seen_at = ?, updated_at = ?
+      WHERE app_generated_device_id = ? AND user_id = ?
+    `, [now, now, now, appGeneratedDeviceId, userId]);
+
+    // Update matching event_duty_assignments to 'on_duty'
+    await execute(`
+      UPDATE event_duty_assignments
+      SET status = 'on_duty', updated_at = ?
+      WHERE user_id = ? AND event_id = ? AND status IN ('scheduled', 'available', 'temporarily_unavailable')
+    `, [now, userId, currentEventId]);
+
+    // Send Realtime SSE Update
+    broadcastSSEEvent('duty_status_changed', { userId, onDuty: true });
+
+    return res.json({
+      success: true,
+      message: 'Event duty started successfully'
+    });
+  } catch (err: any) {
+    console.error('Error in POST /api/duty/start:', err);
+    return res.status(500).json({ error: 'An unexpected error occurred while starting event duty' });
+  }
+});
+
+// POST /api/duty/end
+dutyRouter.post('/end', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { appGeneratedDeviceId } = req.body;
+    if (!appGeneratedDeviceId) {
+      return res.status(400).json({ error: 'Device identifier is required' });
+    }
+
+    const currentEventId = await getCurrentEventId();
+    const targetEventId = currentEventId;
+
+    const now = new Date().toISOString();
+
+    // 1. Update user_duty_status
+    await execute(`
+      UPDATE user_duty_status
+      SET on_duty = 0, shift_end = ?, updated_at = ?
+      WHERE user_id = ?
+    `, [now, now, userId]);
+
+    // 2. Update event_duty_devices
+    await execute(`
+      UPDATE event_duty_devices
+      SET duty_ended_at = ?, last_seen_at = ?, updated_at = ?
+      WHERE app_generated_device_id = ? AND user_id = ?
+    `, [now, now, now, appGeneratedDeviceId, userId]);
+
+    // Update matching event_duty_assignments to 'ended'
+    if (targetEventId) {
+      await execute(`
+        UPDATE event_duty_assignments
+        SET status = 'ended', updated_at = ?
+        WHERE user_id = ? AND event_id = ? AND status = 'on_duty'
+      `, [now, userId, targetEventId]);
+    } else {
+      await execute(`
+        UPDATE event_duty_assignments
+        SET status = 'ended', updated_at = ?
+        WHERE user_id = ? AND status = 'on_duty'
+      `, [now, userId]);
+    }
+
+    // Send Realtime SSE Update
+    broadcastSSEEvent('duty_status_changed', { userId, onDuty: false });
+
+    return res.json({
+      success: true,
+      message: 'Event duty ended successfully'
+    });
+  } catch (err: any) {
+    console.error('Error in POST /api/duty/end:', err);
+    return res.status(500).json({ error: 'An unexpected error occurred while ending event duty' });
+  }
+});
+
+// GET /api/duty/devices
+dutyRouter.get('/devices', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const devices = await query('SELECT * FROM event_duty_devices WHERE user_id = ?', [userId]);
+    return res.json({
+      success: true,
+      devices: devices || []
+    });
+  } catch (err: any) {
+    console.error('Error in GET /api/duty/devices:', err);
+    return res.status(500).json({ error: 'An unexpected error occurred while fetching duty devices' });
+  }
+});
+
+// PATCH /api/duty/devices/:deviceId/preferences
+dutyRouter.patch('/devices/:deviceId/preferences', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { deviceId } = req.params;
+    const { soundEnabled, voiceEnabled, vibrationEnabled, deviceLabel } = req.body;
+
+    const device = await queryOne('SELECT * FROM event_duty_devices WHERE id = ?', [deviceId]);
+    if (!device) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+
+    if (device.user_id !== userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const now = new Date().toISOString();
+    const cleanLabel = deviceLabel !== undefined ? deviceLabel.trim().substring(0, 50) : device.device_label;
+
+    await execute(`
+      UPDATE event_duty_devices
+      SET sound_enabled = ?, voice_enabled = ?, vibration_enabled = ?, device_label = ?, updated_at = ?
+      WHERE id = ?
+    `, [
+      soundEnabled !== undefined ? (soundEnabled ? 1 : 0) : device.sound_enabled,
+      voiceEnabled !== undefined ? (voiceEnabled ? 1 : 0) : device.voice_enabled,
+      vibrationEnabled !== undefined ? (vibrationEnabled ? 1 : 0) : device.vibration_enabled,
+      cleanLabel,
+      now,
+      deviceId
+    ]);
+
+    const updatedDevice = await queryOne('SELECT * FROM event_duty_devices WHERE id = ?', [deviceId]);
+    return res.json({
+      success: true,
+      device: updatedDevice,
+      message: 'Preferences updated successfully'
+    });
+  } catch (err: any) {
+    console.error('Error in PATCH /api/duty/devices/:deviceId/preferences:', err);
+    return res.status(500).json({ error: 'An unexpected error occurred while updating device preferences' });
+  }
+});
+
+// DELETE /api/duty/devices/:deviceId
+dutyRouter.delete('/devices/:deviceId', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    const role = req.user?.role;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { deviceId } = req.params;
+    const device = await queryOne('SELECT * FROM event_duty_devices WHERE id = ?', [deviceId]);
+    if (!device) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+
+    if (device.user_id !== userId && role !== 'admin' && role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    await execute('DELETE FROM event_duty_devices WHERE id = ?', [deviceId]);
+    return res.json({
+      success: true,
+      message: 'Device deleted successfully'
+    });
+  } catch (err: any) {
+    console.error('Error in DELETE /api/duty/devices/:deviceId:', err);
+    return res.status(500).json({ error: 'An unexpected error occurred while deleting device' });
+  }
+});
+
+// GET /api/duty/current-assignment
+dutyRouter.get('/current-assignment', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const currentEventId = await getCurrentEventId();
+    const volunteerProfile = await queryOne('SELECT * FROM volunteer_profiles WHERE user_id = ?', [userId]);
+
+    if (!currentEventId) {
+      return res.json({
+        success: true,
+        assignment: null,
+        volunteerProfile: volunteerProfile || null
+      });
+    }
+
+    const assignment = await queryOne(`
+      SELECT a.*, e.title as event_title
+      FROM event_duty_assignments a
+      JOIN events e ON a.event_id = e.id
+      WHERE a.user_id = ? AND a.event_id = ? AND a.status != 'cancelled'
+      ORDER BY a.starts_at DESC
+      LIMIT 1
+    `, [userId, currentEventId]);
+
+    return res.json({
+      success: true,
+      assignment: assignment || null,
+      volunteerProfile: volunteerProfile || null
+    });
+  } catch (err: any) {
+    console.error('Error in GET /api/duty/current-assignment:', err);
+    return res.status(500).json({ error: 'An unexpected error occurred while fetching current assignment' });
+  }
+});
+
+// POST /api/duty/assignments/:assignmentId/temporarily-unavailable
+dutyRouter.post('/assignments/:assignmentId/temporarily-unavailable', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { assignmentId } = req.params;
+    const { reason, expectedReturnTime } = req.body;
+
+    const assignment = await queryOne('SELECT * FROM event_duty_assignments WHERE id = ?', [assignmentId]);
+    if (!assignment) {
+      return res.status(404).json({ error: 'Assignment not found' });
+    }
+
+    // Users can only change their own assignment unless they are admin
+    if (assignment.user_id !== userId && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE event_duty_assignments
+      SET status = 'temporarily_unavailable', temporarily_unavailable_at = ?, expected_return_at = ?, note = ?
+      WHERE id = ?
+    `, [now, expectedReturnTime || null, reason || 'On break', assignmentId]);
+
+    // Set user_duty_status temporarily inactive/un-ready
+    await execute('UPDATE user_duty_status SET on_duty = 0, updated_at = ? WHERE user_id = ?', [now, assignment.user_id]);
+
+    // Record change history
+    const historyId = `history-${crypto.randomBytes(8).toString('hex')}`;
+    const targetEventId = assignment.event_id || (await getCurrentEventId());
+    await execute(`
+      INSERT INTO event_routing_change_history (id, event_id, user_id, action, target_type, target_id, details, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [historyId, targetEventId, userId, 'assignment_unavailable', 'assignment', assignmentId, `Marked temporarily unavailable: ${reason || 'No reason specified'}`, now]);
+
+    broadcastSSEEvent('assignment_updated', { assignmentId, status: 'temporarily_unavailable' });
+
+    return res.json({
+      success: true,
+      message: 'Status updated to temporarily unavailable'
+    });
+  } catch (err: any) {
+    console.error('Error in temporarily-unavailable:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/duty/assignments/:assignmentId/return
+dutyRouter.post('/assignments/:assignmentId/return', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { assignmentId } = req.params;
+    const assignment = await queryOne('SELECT * FROM event_duty_assignments WHERE id = ?', [assignmentId]);
+    if (!assignment) {
+      return res.status(404).json({ error: 'Assignment not found' });
+    }
+
+    if (assignment.user_id !== userId && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE event_duty_assignments
+      SET status = 'on_duty', temporarily_unavailable_at = NULL, expected_return_at = NULL
+      WHERE id = ?
+    `, [assignmentId]);
+
+    await execute('UPDATE user_duty_status SET on_duty = 1, updated_at = ? WHERE user_id = ?', [now, assignment.user_id]);
+
+    // Record change history
+    const historyId = `history-${crypto.randomBytes(8).toString('hex')}`;
+    const targetEventId = assignment.event_id || (await getCurrentEventId());
+    await execute(`
+      INSERT INTO event_routing_change_history (id, event_id, user_id, action, target_type, target_id, details, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [historyId, targetEventId, userId, 'assignment_return', 'assignment', assignmentId, 'Returned to event duty', now]);
+
+    broadcastSSEEvent('assignment_updated', { assignmentId, status: 'on_duty' });
+
+    return res.json({
+      success: true,
+      message: 'Returned to event duty successfully'
+    });
+  } catch (err: any) {
+    console.error('Error in return to duty:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
+const adminDutyRouter = Router();
+adminDutyRouter.use(authMiddleware);
+
+// Helper to format human role labels
+function formatDutyRoleLabel(role: string): string {
+  if (!role) return 'Volunteer';
+  const lower = role.toLowerCase().trim();
+  switch (lower) {
+    case 'super_admin':
+      return 'Super Admin';
+    case 'admin':
+    case 'administrator':
+      return 'Administrator';
+    case 'safeguarding_lead':
+      return 'Safeguarding Lead';
+    case 'attendance_lead':
+      return 'Attendance Lead';
+    case 'pickup_lead':
+      return 'Pickup Lead';
+    case 'volunteer_lead':
+      return 'Volunteer Lead';
+    case 'location_lead':
+      return 'Location Lead';
+    case 'volunteer':
+      return 'Volunteer';
+    case 'parent':
+      return 'Parent / Guardian';
+    default:
+      return role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+}
+
+// GET /api/admin/duty/devices
+adminDutyRouter.get('/devices', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const role = req.user?.role;
+    if (role !== 'admin' && role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 25;
+    const offset = (page - 1) * limit;
+
+    const filterRole = req.query.role as string;
+    const filterDuty = req.query.dutyStatus as string;
+    const filterReadiness = req.query.readiness as string;
+    const filterConnection = req.query.connection as string;
+    const search = ((req.query.search || req.query.q || '') as string).trim().toLowerCase();
+
+    const currentEventId = await getCurrentEventId();
+    const eventIdParam = (req.query.eventId as string) || currentEventId;
+    if (!eventIdParam) {
+      return res.json({
+        devices: [],
+        total: 0,
+        page,
+        limit,
+        totalPages: 0,
+        summary: { total: 0, onDuty: 0, offDuty: 0, checkedIn: 0, connected: 0, batteryLow: 0 }
+      });
+    }
+    let whereClause = 'WHERE d.event_id = ?';
+    const params: any[] = [eventIdParam];
+
+    if (filterRole) {
+      whereClause += ' AND (d.role = ? OR u.role = ?)';
+      params.push(filterRole, filterRole);
+    }
+    if (filterDuty) {
+      if (filterDuty === 'on_duty') {
+        whereClause += ' AND d.duty_started_at IS NOT NULL AND d.duty_ended_at IS NULL';
+      } else if (filterDuty === 'shift_ended') {
+        whereClause += ' AND d.duty_ended_at IS NOT NULL';
+      } else {
+        whereClause += ' AND (d.duty_started_at IS NULL OR d.duty_ended_at IS NOT NULL)';
+      }
+    }
+    if (filterReadiness) {
+      if (filterReadiness === 'action_needed' || filterReadiness === 'attention') {
+        whereClause += " AND (d.readiness_status = 'action_needed' OR d.readiness_status = 'attention' OR d.push_subscription_id IS NULL)";
+      } else {
+        whereClause += ' AND d.readiness_status = ?';
+        params.push(filterReadiness);
+      }
+    }
+    if (filterConnection) {
+      if (filterConnection === 'connected' || filterConnection === 'online') {
+        whereClause += " AND (d.live_connection_status = 'connected' OR d.live_connection_status = 'online')";
+      } else {
+        whereClause += " AND (d.live_connection_status != 'connected' AND d.live_connection_status != 'online')";
+      }
+    }
+    if (search) {
+      whereClause += " AND (LOWER(COALESCE(v.full_name, p.full_name, u.email, '')) LIKE ? OR LOWER(u.email) LIKE ? OR LOWER(d.device_label) LIKE ? OR LOWER(d.role) LIKE ? OR LOWER(COALESCE(loc.name, a.team_key, '')) LIKE ?)";
+      const searchPattern = `%${search}%`;
+      params.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
+    }
+
+    const countQuery = `
+      SELECT COUNT(DISTINCT d.id) as total 
+      FROM event_duty_devices d
+      JOIN users u ON d.user_id = u.id
+      LEFT JOIN volunteer_profiles v ON v.user_id = u.id
+      LEFT JOIN parent_profiles p ON p.user_id = u.id
+      LEFT JOIN event_duty_assignments a ON a.user_id = d.user_id AND a.event_id = d.event_id AND a.status != 'cancelled'
+      LEFT JOIN event_locations loc ON loc.id = a.assigned_location_id
+      ${whereClause}
+    `;
+    const countResult = await queryOne(countQuery, params);
+    const total = countResult?.total || 0;
+    const totalPages = Math.ceil(total / limit);
+
+    const itemsQuery = `
+      SELECT d.id,
+             d.user_id,
+             d.event_id,
+             d.device_label,
+             d.readiness_status,
+             d.sound_enabled,
+             d.voice_enabled,
+             d.vibration_enabled,
+             d.push_subscription_id,
+             d.live_connection_status,
+             d.role,
+             d.duty_started_at,
+             d.duty_ended_at,
+             d.last_seen_at,
+             d.readiness_checked_at,
+             d.created_at,
+             d.updated_at,
+             u.email as user_email,
+             MAX(v.full_name) as volunteer_name,
+             MAX(p.full_name) as parent_name,
+             COALESCE(MAX(v.full_name), MAX(p.full_name)) as profile_name,
+             COALESCE(MAX(loc.name), MAX(a.team_key), '') as assigned_area_name
+      FROM event_duty_devices d
+      JOIN users u ON d.user_id = u.id
+      LEFT JOIN volunteer_profiles v ON v.user_id = u.id
+      LEFT JOIN parent_profiles p ON p.user_id = u.id
+      LEFT JOIN event_duty_assignments a ON a.user_id = d.user_id AND a.event_id = d.event_id AND a.status != 'cancelled'
+      LEFT JOIN event_locations loc ON loc.id = a.assigned_location_id
+      ${whereClause}
+      GROUP BY d.id, d.user_id, d.event_id, d.device_label, d.readiness_status, d.sound_enabled, d.voice_enabled, d.vibration_enabled, d.push_subscription_id, d.live_connection_status, d.role, d.duty_started_at, d.duty_ended_at, d.last_seen_at, d.readiness_checked_at, d.created_at, d.updated_at, u.email
+      ORDER BY d.updated_at DESC
+      LIMIT ? OFFSET ?
+    `;
+    const queryParams = [...params, limit, offset];
+    const rows = await query(itemsQuery, queryParams);
+
+    const mappedItems = (rows || []).map((row: any) => {
+      const displayName = row.profile_name || (row.user_email ? row.user_email.split('@')[0] : 'Administrator');
+      const roleLabel = formatDutyRoleLabel(row.role);
+      const isOnDuty = row.duty_started_at && !row.duty_ended_at;
+      const isShiftEnded = Boolean(row.duty_ended_at);
+      const dutyStatus = isOnDuty ? 'on_duty' : (isShiftEnded ? 'shift_ended' : 'off_duty');
+      const dutyStatusLabel = isOnDuty ? 'On duty' : (isShiftEnded ? 'Shift ended' : 'Off duty');
+
+      const readinessCode = row.readiness_status === 'action_needed' || row.readiness_status === 'attention' || !row.push_subscription_id 
+        ? 'action_needed' 
+        : (row.readiness_status === 'limited' ? 'limited' : 'ready');
+
+      const readinessLabel = readinessCode === 'ready' ? 'Ready' : (readinessCode === 'limited' ? 'Limited' : 'Needs attention');
+      const readinessDescription = readinessCode === 'ready' 
+        ? 'Sound, voice and vibration available' 
+        : (readinessCode === 'limited' ? 'Voice alerts are unavailable' : 'Push alerts are not enabled');
+
+      const isOnline = row.live_connection_status === 'connected' || row.live_connection_status === 'online';
+      const connectionStatus = isOnline ? 'online' : (row.live_connection_status === 'recently_active' ? 'recently_active' : 'offline');
+      const connectionStatusLabel = isOnline ? 'Online' : (connectionStatus === 'recently_active' ? 'Recently active' : 'Offline');
+
+      // Resolve robust canonical lastActiveAt timestamp
+      const lastActiveAt = row.last_seen_at || row.readiness_checked_at || row.duty_started_at || row.updated_at || row.created_at || new Date().toISOString();
+
+      return {
+        id: row.id,
+        userId: row.user_id,
+        displayName,
+        email: row.user_email || '',
+        role: row.role,
+        roleLabel,
+        deviceLabel: row.device_label || 'Duty Device',
+        deviceType: row.device_label?.toLowerCase().includes('tablet') ? 'Shared duty tablet' : (row.device_label?.toLowerCase().includes('station') ? 'Coordinator station' : 'Mobile device'),
+        assignedArea: row.assigned_area_name || 'Central Command',
+        dutyStatus,
+        dutyStatusLabel,
+        notificationReadiness: readinessCode,
+        notificationReadinessLabel: readinessLabel,
+        notificationReadinessDescription: readinessDescription,
+        capabilities: {
+          alertSound: Boolean(row.sound_enabled),
+          spokenAlerts: Boolean(row.voice_enabled),
+          pushAlerts: Boolean(row.push_subscription_id),
+          vibration: Boolean(row.vibration_enabled)
+        },
+        connectionStatus,
+        connectionStatusLabel,
+        lastActiveAt,
+        allowedActions: ['test_alert', 'view_readiness', 'remove_device'],
+        // Legacy fields for backwards compatibility
+        user_name: displayName,
+        device_label: row.device_label || 'Duty Device',
+        readiness_status: readinessCode,
+        sound_enabled: row.sound_enabled,
+        voice_enabled: row.voice_enabled,
+        vibration_enabled: row.vibration_enabled,
+        last_seen_at: lastActiveAt,
+        duty_started_at: row.duty_started_at,
+        duty_ended_at: row.duty_ended_at
+      };
+    });
+
+    return res.json({
+      success: true,
+      items: mappedItems,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1
+      }
+    });
+  } catch (err: any) {
+    console.error('Error in GET /api/admin/duty/devices:', err);
+    return res.status(500).json({ error: 'An unexpected error occurred while fetching admin duty devices' });
+  }
+});
+
+// POST /api/admin/duty/devices/:deviceId/remind
+adminDutyRouter.post('/devices/:deviceId/remind', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const role = req.user?.role;
+    if (role !== 'admin' && role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { deviceId } = req.params;
+    const device = await queryOne('SELECT * FROM event_duty_devices WHERE id = ?', [deviceId]);
+    if (!device) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+
+    const now = new Date().toISOString();
+    const notifId = `notif-${crypto.randomBytes(8).toString('hex')}`;
+    const targetEventId = device.event_id || (await getCurrentEventId());
+
+    await execute(`
+      INSERT INTO notifications (
+        id, title, message, type, audience_role, audience_scope, event_id, created_by_user_id, created_at, priority
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      notifId,
+      'Device readiness check required',
+      'Please complete your device readiness check before starting event duty.',
+      'info',
+      device.role,
+      'user',
+      targetEventId,
+      req.user.id,
+      now,
+      'high'
+    ]);
+
+    // Send push notification
+    const pushRes = await sendWebPush(device.user_id, {
+      title: 'Koinonia Duty Readiness Alert',
+      body: `Test alert sent to ${device.device_label || 'Duty Device'}. All alert channels active.`,
+      metadata: {
+        deviceId: device.id,
+        timestamp: now
+      }
+    });
+
+    if (!pushRes.success && pushRes.sentCount === 0) {
+      return res.status(400).json({
+        success: false,
+        error: `The device (${device.device_label || 'Device'}) could not receive the test alert. Push subscription is missing or expired.`
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: `Test alert sent to ${device.device_label || 'device'}.`,
+      deviceLabel: device.device_label
+    });
+  } catch (err: any) {
+    console.error('Error in POST /api/admin/duty/devices/:deviceId/remind:', err);
+    return res.status(500).json({ error: 'An unexpected error occurred while sending test alert' });
+  }
+});
+
+// DELETE /api/admin/duty/devices/:deviceId
+adminDutyRouter.delete('/devices/:deviceId', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const role = req.user?.role;
+    if (role !== 'admin' && role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { deviceId } = req.params;
+    const device = await queryOne('SELECT * FROM event_duty_devices WHERE id = ?', [deviceId]);
+    if (!device) {
+      return res.status(404).json({ error: 'Device registration not found or already removed' });
+    }
+
+    await execute('DELETE FROM event_duty_devices WHERE id = ?', [deviceId]);
+
+    return res.json({
+      success: true,
+      message: `Device removed.`,
+      deviceId,
+      deviceLabel: device.device_label
+    });
+  } catch (err: any) {
+    console.error('Error in DELETE /api/admin/duty/devices/:deviceId:', err);
+    return res.status(500).json({ error: 'An unexpected error occurred while removing device' });
+  }
+});
+
+
+// ==========================================
+// PHASE 3 PREMIUM ON-DUTY TEAM ENDPOINTS
+// ==========================================
+
+async function ensureDefaultRules(targetEventId?: string) {
+  try {
+    const eventId = targetEventId || (await getCurrentEventId());
+    if (!eventId) {
+      return; // No active event to seed rules for
+    }
+    const existing = await queryOne('SELECT id FROM alert_routing_rules WHERE event_id = ? LIMIT 1', [eventId]);
+    if (existing) {
+      return; // Already initialized
+    }
+    console.log(`[Routing Rules Seeder] Seeding default premium routing rules for event ${eventId}...`);
+    
+    const now = new Date().toISOString();
+    const rules = [
+      {
+        id: 'rule-medical',
+        category: 'medical_support',
+        requires_ack: 1,
+        escalation: 30,
+        recipients: [
+          { type: 'role', key: 'First Aid Team', tier: 'primary' },
+          { type: 'role', key: 'Care Lead', tier: 'primary' },
+          { type: 'role', key: 'Event Admin', tier: 'supervisory' },
+          { type: 'role', key: 'General Response', tier: 'backup' },
+          { type: 'role', key: 'Super Admin', tier: 'backup' }
+        ]
+      },
+      {
+        id: 'rule-security',
+        category: 'security_concern',
+        requires_ack: 1,
+        escalation: 30,
+        recipients: [
+          { type: 'role', key: 'Security Lead', tier: 'primary' },
+          { type: 'role', key: 'Event Admin', tier: 'primary' },
+          { type: 'role', key: 'Gate/Check-in Lead', tier: 'primary' },
+          { type: 'role', key: 'Care Lead', tier: 'primary' },
+          { type: 'role', key: 'Super Admin', tier: 'backup' },
+          { type: 'role', key: 'General Response', tier: 'backup' }
+        ]
+      },
+      {
+        id: 'rule-pickup',
+        category: 'pickup_issue',
+        requires_ack: 1,
+        escalation: 45,
+        recipients: [
+          { type: 'role', key: 'Pickup Lead', tier: 'primary' },
+          { type: 'role', key: 'Event Admin', tier: 'primary' },
+          { type: 'role', key: 'Care Lead', tier: 'backup' }
+        ]
+      },
+      {
+        id: 'rule-pass',
+        category: 'pass_issue',
+        requires_ack: 1,
+        escalation: 45,
+        recipients: [
+          { type: 'role', key: 'Gate/Check-in Lead', tier: 'primary' },
+          { type: 'role', key: 'Event Admin', tier: 'primary' }
+        ]
+      },
+      {
+        id: 'rule-location',
+        category: 'location_support',
+        requires_ack: 1,
+        escalation: 30,
+        recipients: [
+          { type: 'role', key: 'Room/Group Lead', tier: 'primary' },
+          { type: 'role', key: 'Care Lead', tier: 'primary' },
+          { type: 'role', key: 'General Response', tier: 'backup' }
+        ]
+      },
+      {
+        id: 'rule-care',
+        category: 'child_care',
+        requires_ack: 1,
+        escalation: 30,
+        recipients: [
+          { type: 'role', key: 'Care Lead', tier: 'primary' },
+          { type: 'role', key: 'General Response', tier: 'backup' }
+        ]
+      },
+      {
+        id: 'rule-other',
+        category: 'other',
+        requires_ack: 0,
+        escalation: 60,
+        recipients: [
+          { type: 'role', key: 'General Response', tier: 'primary' }
+        ]
+      }
+    ];
+
+    for (const rule of rules) {
+      const ruleId = `rule-${eventId}-${rule.category}`;
+      await execute(`
+        INSERT INTO alert_routing_rules (
+          id, event_id, category_key, severity_key, requires_acknowledgement, escalation_delay_seconds, is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, 'all', ?, ?, 1, ?, ?)
+      `, [ruleId, eventId, rule.category, rule.requires_ack, rule.escalation, now, now]);
+
+      for (let i = 0; i < rule.recipients.length; i++) {
+        const recip = rule.recipients[i];
+        const recipId = `rule-recip-${eventId}-${rule.category}-${i}`;
+        await execute(`
+          INSERT INTO alert_routing_recipients (
+            id, routing_rule_id, recipient_type, responsibility_key, delivery_tier, sort_order, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [recipId, ruleId, recip.type, recip.key, recip.tier, i, now]);
+      }
+    }
+  } catch (err) {
+    console.error('[Routing Rules Seeder] Seeding failed:', err);
+  }
+}
+
+// Seed default rules automatically if none exist for current event
+ensureDefaultRules();
+
+// GET /api/admin/events/:eventId/duty-assignments
+adminDutyRouter.get('/events/:eventId/duty-assignments', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const role = req.user?.role;
+    if (role !== 'admin' && role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { eventId } = req.params;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 25;
+    const offset = (page - 1) * limit;
+
+    const responsibility = req.query.responsibility as string;
+    const status = req.query.status as string;
+    const level = req.query.level as string;
+    const queryStr = req.query.query as string;
+
+    let whereClause = 'WHERE a.event_id = ?';
+    const params: any[] = [eventId];
+
+    if (responsibility) {
+      whereClause += ' AND a.responsibility_key = ?';
+      params.push(responsibility);
+    }
+    if (status) {
+      whereClause += ' AND a.status = ?';
+      params.push(status);
+    }
+    if (level) {
+      whereClause += ' AND a.assignment_level = ?';
+      params.push(level);
+    }
+    if (queryStr) {
+      whereClause += ' AND (COALESCE(v.full_name, p.full_name, u.email) LIKE ? OR u.email LIKE ? OR a.responsibility_key LIKE ? OR el.name LIKE ?)';
+      params.push(`%${queryStr}%`, `%${queryStr}%`, `%${queryStr}%`, `%${queryStr}%`);
+    }
+
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM event_duty_assignments a
+      JOIN users u ON a.user_id = u.id
+      LEFT JOIN volunteer_profiles v ON v.user_id = u.id
+      LEFT JOIN parent_profiles p ON p.user_id = u.id
+      LEFT JOIN event_locations el ON a.assigned_location_id = el.id
+      ${whereClause}
+    `;
+    const countResult = await queryOne(countQuery, params);
+    const total = countResult?.total || 0;
+    const totalPages = Math.ceil(total / limit);
+
+    const itemsQuery = `
+      SELECT a.*, COALESCE(v.full_name, p.full_name, u.email) as user_name, u.email as user_email, u.role as user_role,
+             (SELECT COUNT(*) FROM event_duty_devices d WHERE d.user_id = a.user_id AND d.readiness_status = 'ready') as ready_devices,
+             (SELECT COUNT(*) FROM event_duty_devices d WHERE d.user_id = a.user_id) as total_devices,
+             el.name as assigned_location_name, el.location_type as assigned_location_type
+      FROM event_duty_assignments a
+      JOIN users u ON a.user_id = u.id
+      LEFT JOIN volunteer_profiles v ON v.user_id = u.id
+      LEFT JOIN parent_profiles p ON p.user_id = u.id
+      LEFT JOIN event_locations el ON a.assigned_location_id = el.id
+      ${whereClause}
+      ORDER BY 
+        CASE WHEN a.status = 'on_duty' THEN 1 
+             WHEN a.status = 'available' THEN 2 
+             WHEN a.status = 'scheduled' THEN 3 
+             ELSE 4 END,
+        a.starts_at ASC
+      LIMIT ? OFFSET ?
+    `;
+    const queryParams = [...params, limit, offset];
+    const items = await query(itemsQuery, queryParams);
+
+    return res.json({
+      success: true,
+      items: items || [],
+      assignments: items || [],
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching assignments:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/admin/events/:eventId/duty-assignments
+adminDutyRouter.post('/events/:eventId/duty-assignments', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const role = req.user?.role;
+    if (role !== 'admin' && role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { eventId } = req.params;
+    const { userId, responsibilityKey, teamKey, assignmentLevel, status, startsAt, endsAt, note, assignedLocationId } = req.body;
+
+    if (!userId || !responsibilityKey || !startsAt || !endsAt) {
+      return res.status(400).json({ error: 'Missing required assignment fields' });
+    }
+
+    if (new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
+      return res.status(400).json({ error: 'Shift end time must be later than start time.' });
+    }
+
+    const targetUser = await queryOne(`
+      SELECT u.id, u.role, u.status as user_status, vp.id as volunteer_profile_id, vp.status as volunteer_status
+      FROM users u
+      LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
+      WHERE u.id = ?
+    `, [userId]);
+
+    if (!targetUser || targetUser.user_status === 'inactive' || targetUser.user_status === 'suspended') {
+      return res.status(400).json({ error: 'Selected user is inactive or does not exist' });
+    }
+
+    if (!targetUser.volunteer_profile_id || !['approved', 'active'].includes(targetUser.volunteer_status)) {
+      return res.status(400).json({ error: 'Selected user does not have an approved volunteer profile' });
+    }
+
+    if (assignedLocationId) {
+      const loc = await queryOne('SELECT id, name, capacity, volunteer_capacity FROM event_locations WHERE id = ? AND event_id = ?', [assignedLocationId, eventId]);
+      if (loc) {
+        const effectiveCap = loc.volunteer_capacity !== null && loc.volunteer_capacity !== undefined
+          ? Number(loc.volunteer_capacity)
+          : null;
+        if (effectiveCap !== null && effectiveCap >= 0) {
+          const countRow = await queryOne(`
+            SELECT COUNT(DISTINCT user_id) as count
+            FROM event_duty_assignments
+            WHERE event_id = ? AND assigned_location_id = ? AND status NOT IN ('cancelled', 'ended') AND user_id != ?
+          `, [eventId, assignedLocationId, userId]);
+          const currentCount = Number(countRow?.count || 0);
+          if (currentCount + 1 > effectiveCap) {
+            return res.status(400).json({
+              error: `Location capacity reached for ${loc.name}. Maximum volunteer capacity is ${effectiveCap}.`
+            });
+          }
+        }
+      }
+    }
+
+    const now = new Date().toISOString();
+
+    // Check for existing active or scheduled assignment for this user in this event (duplicate protection)
+    const existingAssignment = await queryOne(`
+      SELECT id FROM event_duty_assignments
+      WHERE event_id = ? AND user_id = ? AND status NOT IN ('cancelled', 'ended')
+      LIMIT 1
+    `, [eventId, userId]);
+
+    let assignmentId: string;
+
+    if (existingAssignment) {
+      assignmentId = existingAssignment.id;
+      await execute(`
+        UPDATE event_duty_assignments
+        SET responsibility_key = ?,
+            team_key = ?,
+            assignment_level = ?,
+            status = ?,
+            starts_at = ?,
+            ends_at = ?,
+            note = ?,
+            assigned_by = ?,
+            assigned_location_id = ?,
+            updated_at = ?
+        WHERE id = ?
+      `, [
+        responsibilityKey,
+        teamKey || null,
+        assignmentLevel || 'primary',
+        status || 'scheduled',
+        startsAt,
+        endsAt,
+        note || null,
+        req.user.id,
+        assignedLocationId || null,
+        now,
+        assignmentId
+      ]);
+    } else {
+      assignmentId = `assign-${crypto.randomBytes(8).toString('hex')}`;
+      await execute(`
+        INSERT INTO event_duty_assignments (
+          id, event_id, user_id, responsibility_key, team_key, assignment_level, status, starts_at, ends_at, note, assigned_by, assigned_location_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        assignmentId, eventId, userId, responsibilityKey, teamKey || null, assignmentLevel || 'primary', status || 'scheduled', startsAt, endsAt, note || null, req.user.id, assignedLocationId || null, now, now
+      ]);
+    }
+
+    // Send notification to volunteer
+    try {
+      const notifId = `notif-${crypto.randomBytes(8).toString('hex')}`;
+      const friendlyResponsibility = responsibilityKey.replace('_', ' ');
+      await execute(`
+        INSERT INTO notifications (
+          id, title, message, type, audience_role, audience_scope, event_id, created_by_user_id, created_at, priority
+        ) VALUES (?, ?, ?, 'info', 'volunteer', 'user', ?, ?, ?, 'high')
+      `, [
+        notifId,
+        'New Event Duty Assignment',
+        `You have been assigned as "${friendlyResponsibility}" for the upcoming event. Please review and start duty when shift starts.`,
+        eventId,
+        req.user.id,
+        now
+      ]);
+    } catch (notifErr) {
+      console.error('[Duty Assignment] Non-blocking notification insert failed:', notifErr);
+    }
+
+    // Async push notification
+    sendWebPush(userId, {
+      title: 'New Duty Assignment',
+      body: `You are assigned as ${responsibilityKey.replace('_', ' ')}. Please complete your device readiness check.`
+    }).catch(err => console.error('[Duty Assignment] Failed to send assignment push:', err));
+
+    // Change history log
+    try {
+      const historyId = `history-${crypto.randomBytes(8).toString('hex')}`;
+      await execute(`
+        INSERT INTO event_routing_change_history (id, event_id, user_id, action, target_type, target_id, details, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [historyId, eventId, req.user.id, existingAssignment ? 'assignment_updated' : 'assignment_created', 'assignment', assignmentId, `Assigned user ${userId} to responsibility ${responsibilityKey}`, now]);
+    } catch (historyErr) {
+      console.error('[Duty Assignment] Non-blocking change history log failed:', historyErr);
+    }
+
+    // SSE update
+    broadcastSSEEvent('assignment_updated', { assignmentId, action: existingAssignment ? 'update' : 'create' });
+
+    return res.json({
+      success: true,
+      assignmentId,
+      message: existingAssignment ? 'Event duty assignment updated successfully' : 'Event duty assignment created successfully'
+    });
+  } catch (err: any) {
+    console.error('Error creating assignment:', err);
+    return res.status(500).json({ error: "We couldn't assign the selected team member. Please try again." });
+  }
+});
+
+// PATCH /api/admin/events/:eventId/duty-assignments/:assignmentId
+adminDutyRouter.patch('/events/:eventId/duty-assignments/:assignmentId', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const role = req.user?.role;
+    if (role !== 'admin' && role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { assignmentId } = req.params;
+    const { responsibilityKey, teamKey, assignmentLevel, status, startsAt, endsAt, note, assignedLocationId } = req.body;
+
+    const assignment = await queryOne('SELECT * FROM event_duty_assignments WHERE id = ?', [assignmentId]);
+    if (!assignment) {
+      return res.status(404).json({ error: 'Assignment not found' });
+    }
+
+    const effectiveStart = startsAt || assignment.starts_at;
+    const effectiveEnd = endsAt || assignment.ends_at;
+    if (effectiveStart && effectiveEnd && new Date(effectiveEnd).getTime() <= new Date(effectiveStart).getTime()) {
+      return res.status(400).json({ error: 'Shift end time must be later than start time.' });
+    }
+
+    const effectiveLocId = assignedLocationId !== undefined ? (assignedLocationId === '' ? null : assignedLocationId) : assignment.assigned_location_id;
+    if (effectiveLocId && (assignedLocationId !== undefined || (status && status !== 'cancelled' && status !== 'ended'))) {
+      const loc = await queryOne('SELECT id, name, capacity, volunteer_capacity FROM event_locations WHERE id = ? AND event_id = ?', [effectiveLocId, assignment.event_id]);
+      if (loc) {
+        const effectiveCap = loc.volunteer_capacity !== null && loc.volunteer_capacity !== undefined
+          ? Number(loc.volunteer_capacity)
+          : null;
+        if (effectiveCap !== null && effectiveCap >= 0) {
+          const countRow = await queryOne(`
+            SELECT COUNT(DISTINCT user_id) as count
+            FROM event_duty_assignments
+            WHERE event_id = ? AND assigned_location_id = ? AND status NOT IN ('cancelled', 'ended') AND id != ?
+          `, [assignment.event_id, effectiveLocId, assignmentId]);
+          const currentCount = Number(countRow?.count || 0);
+          if (currentCount + 1 > effectiveCap) {
+            return res.status(400).json({
+              error: `Location capacity reached for ${loc.name}. Maximum volunteer capacity is ${effectiveCap}.`
+            });
+          }
+        }
+      }
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE event_duty_assignments
+      SET responsibility_key = COALESCE(?, responsibility_key),
+          team_key = COALESCE(?, team_key),
+          assignment_level = COALESCE(?, assignment_level),
+          status = COALESCE(?, status),
+          starts_at = COALESCE(?, starts_at),
+          ends_at = COALESCE(?, ends_at),
+          note = COALESCE(?, note),
+          assigned_location_id = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [
+      responsibilityKey || null, teamKey || null, assignmentLevel || null, status || null, startsAt || null, endsAt || null, note || null, assignedLocationId === '' ? null : (assignedLocationId || assignment.assigned_location_id), now, assignmentId
+    ]);
+
+    // Audit change
+    const historyId = `history-${crypto.randomBytes(8).toString('hex')}`;
+    await execute(`
+      INSERT INTO event_routing_change_history (id, event_id, user_id, action, target_type, target_id, details, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [historyId, assignment.event_id, req.user.id, 'assignment_updated', 'assignment', assignmentId, `Updated assignment details for ${assignment.user_id}`, now]);
+
+    broadcastSSEEvent('assignment_updated', { assignmentId, action: 'update' });
+
+    return res.json({
+      success: true,
+      message: 'Assignment updated successfully'
+    });
+  } catch (err: any) {
+    console.error('Error updating assignment:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/admin/events/:eventId/duty-assignments/:assignmentId
+adminDutyRouter.delete('/events/:eventId/duty-assignments/:assignmentId', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const role = req.user?.role;
+    if (role !== 'admin' && role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { assignmentId } = req.params;
+    const assignment = await queryOne('SELECT * FROM event_duty_assignments WHERE id = ?', [assignmentId]);
+    if (!assignment) {
+      return res.status(404).json({ error: 'Assignment not found' });
+    }
+
+    const now = new Date().toISOString();
+    await execute(`UPDATE event_duty_assignments SET status = 'cancelled', updated_at = ? WHERE id = ?`, [now, assignmentId]);
+
+    // Audit change
+    const historyId = `history-${crypto.randomBytes(8).toString('hex')}`;
+    await execute(`
+      INSERT INTO event_routing_change_history (id, event_id, user_id, action, target_type, target_id, details, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [historyId, assignment.event_id, req.user.id, 'assignment_cancelled', 'assignment', assignmentId, `Cancelled assignment for ${assignment.user_id}`, now]);
+
+    broadcastSSEEvent('assignment_updated', { assignmentId, action: 'cancel' });
+
+    return res.json({
+      success: true,
+      message: 'Assignment cancelled successfully'
+    });
+  } catch (err: any) {
+    console.error('Error deleting assignment:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/admin/duty/events/:eventId/locations
+adminDutyRouter.get('/events/:eventId/locations', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const role = req.user?.role;
+    if (role !== 'admin' && role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const { eventId } = req.params;
+    const locations = await query('SELECT id, name, location_type, parent_location_id FROM event_locations WHERE event_id = ? AND is_active = 1 ORDER BY name ASC', [eventId]);
+    return res.json({
+      success: true,
+      items: locations || []
+    });
+  } catch (err: any) {
+    console.error('Error fetching event locations for admin:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
+// GET /api/admin/events/:eventId/alert-routing
+adminDutyRouter.get('/events/:eventId/alert-routing', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const role = req.user?.role;
+    if (role !== 'admin' && role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { eventId } = req.params;
+    const rules = await query('SELECT * FROM alert_routing_rules WHERE event_id = ? ORDER BY category_key ASC', [eventId]);
+    
+    // Populate rule recipients
+    const hydratedRules = [];
+    for (const rule of rules) {
+      const recs = await query('SELECT * FROM alert_routing_recipients WHERE routing_rule_id = ? ORDER BY sort_order ASC', [rule.id]);
+      hydratedRules.push({
+        ...rule,
+        recipients: recs || []
+      });
+    }
+
+    const changeHistory = await query(`
+      SELECT h.*, COALESCE(v.full_name, p.full_name, u.email) as user_name
+      FROM event_routing_change_history h
+      JOIN users u ON h.user_id = u.id
+      LEFT JOIN volunteer_profiles v ON v.user_id = u.id
+      LEFT JOIN parent_profiles p ON p.user_id = u.id
+      WHERE h.event_id = ?
+      ORDER BY h.created_at DESC
+      LIMIT 25
+    `, [eventId]);
+
+    return res.json({
+      success: true,
+      rules: hydratedRules,
+      history: changeHistory || []
+    });
+  } catch (err: any) {
+    console.error('Error fetching rules:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/admin/events/:eventId/alert-routing
+adminDutyRouter.post('/events/:eventId/alert-routing', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const role = req.user?.role;
+    if (role !== 'admin' && role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { eventId } = req.params;
+    const { categoryKey, severityKey, requiresAcknowledgement, escalationDelaySeconds, recipients } = req.body;
+
+    if (!categoryKey || !severityKey) {
+      return res.status(400).json({ error: 'Missing required routing rule fields' });
+    }
+
+    const now = new Date().toISOString();
+    const ruleId = `rule-${crypto.randomBytes(8).toString('hex')}`;
+
+    // Insert main rule
+    await execute(`
+      INSERT INTO alert_routing_rules (
+        id, event_id, category_key, severity_key, requires_acknowledgement, escalation_delay_seconds, is_active, created_by, updated_by, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+    `, [
+      ruleId, eventId, categoryKey, severityKey, requiresAcknowledgement ? 1 : 0, escalationDelaySeconds || 30, req.user.id, req.user.id, now, now
+    ]);
+
+    // Insert recipients
+    if (Array.isArray(recipients)) {
+      for (let i = 0; i < recipients.length; i++) {
+        const recip = recipients[i];
+        const recipId = `recip-${crypto.randomBytes(8).toString('hex')}`;
+        await execute(`
+          INSERT INTO alert_routing_recipients (
+            id, routing_rule_id, recipient_type, responsibility_key, team_key, user_id, delivery_tier, sort_order, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          recipId, ruleId, recip.recipient_type || 'role', recip.responsibility_key || null, recip.team_key || null, recip.user_id || null, recip.delivery_tier || 'primary', i, now
+        ]);
+      }
+    }
+
+    // Audit change
+    const historyId = `history-${crypto.randomBytes(8).toString('hex')}`;
+    await execute(`
+      INSERT INTO event_routing_change_history (id, event_id, user_id, action, target_type, target_id, details, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [historyId, eventId, req.user.id, 'rule_created', 'rule', ruleId, `Created routing rule for category: ${categoryKey}`, now]);
+
+    broadcastSSEEvent('routing_updated', { ruleId });
+
+    return res.json({
+      success: true,
+      ruleId,
+      message: 'Alert routing rule created successfully'
+    });
+  } catch (err: any) {
+    console.error('Error creating routing rule:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PATCH /api/admin/events/:eventId/alert-routing/:ruleId
+adminDutyRouter.patch('/events/:eventId/alert-routing/:ruleId', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const role = req.user?.role;
+    if (role !== 'admin' && role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { ruleId } = req.params;
+    const { requiresAcknowledgement, escalationDelaySeconds, is_active, recipients } = req.body;
+
+    const rule = await queryOne('SELECT * FROM alert_routing_rules WHERE id = ?', [ruleId]);
+    if (!rule) {
+      return res.status(404).json({ error: 'Routing rule not found' });
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE alert_routing_rules
+      SET requires_acknowledgement = COALESCE(?, requires_acknowledgement),
+          escalation_delay_seconds = COALESCE(?, escalation_delay_seconds),
+          is_active = COALESCE(?, is_active),
+          updated_by = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [
+      requiresAcknowledgement !== undefined ? (requiresAcknowledgement ? 1 : 0) : null,
+      escalationDelaySeconds || null,
+      is_active !== undefined ? (is_active ? 1 : 0) : null,
+      req.user.id,
+      now,
+      ruleId
+    ]);
+
+    // If recipients list was passed, overwrite existing recipients
+    if (Array.isArray(recipients)) {
+      await execute('DELETE FROM alert_routing_recipients WHERE routing_rule_id = ?', [ruleId]);
+      for (let i = 0; i < recipients.length; i++) {
+        const recip = recipients[i];
+        const recipId = `recip-${crypto.randomBytes(8).toString('hex')}`;
+        await execute(`
+          INSERT INTO alert_routing_recipients (
+            id, routing_rule_id, recipient_type, responsibility_key, team_key, user_id, delivery_tier, sort_order, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          recipId, ruleId, recip.recipient_type || 'role', recip.responsibility_key || null, recip.team_key || null, recip.user_id || null, recip.delivery_tier || 'primary', i, now
+        ]);
+      }
+    }
+
+    // Audit change
+    const historyId = `history-${crypto.randomBytes(8).toString('hex')}`;
+    await execute(`
+      INSERT INTO event_routing_change_history (id, event_id, user_id, action, target_type, target_id, details, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [historyId, rule.event_id, req.user.id, 'rule_updated', 'rule', ruleId, `Updated routing rule for category: ${rule.category_key}`, now]);
+
+    broadcastSSEEvent('routing_updated', { ruleId });
+
+    return res.json({
+      success: true,
+      message: 'Routing rule updated successfully'
+    });
+  } catch (err: any) {
+    console.error('Error updating routing rule:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/admin/events/:eventId/alert-routing/:ruleId
+adminDutyRouter.delete('/events/:eventId/alert-routing/:ruleId', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const role = req.user?.role;
+    if (role !== 'admin' && role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { ruleId } = req.params;
+    const rule = await queryOne('SELECT * FROM alert_routing_rules WHERE id = ?', [ruleId]);
+    if (!rule) {
+      return res.status(404).json({ error: 'Routing rule not found' });
+    }
+
+    await execute('DELETE FROM alert_routing_rules WHERE id = ?', [ruleId]);
+
+    // Audit change
+    const now = new Date().toISOString();
+    const historyId = `history-${crypto.randomBytes(8).toString('hex')}`;
+    await execute(`
+      INSERT INTO event_routing_change_history (id, event_id, user_id, action, target_type, target_id, details, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [historyId, rule.event_id, req.user.id, 'rule_deleted', 'rule', ruleId, `Deleted routing rule for category: ${rule.category_key}`, now]);
+
+    broadcastSSEEvent('routing_updated', { ruleId });
+
+    return res.json({
+      success: true,
+      message: 'Routing rule deleted successfully'
+    });
+  } catch (err: any) {
+    console.error('Error deleting routing rule:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
+// GET /api/admin/events/:eventId/eligible-team-members
+adminDutyRouter.get('/events/:eventId/eligible-team-members', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const role = req.user?.role;
+    if (role !== 'admin' && role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { eventId } = req.params;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 25;
+    const offset = (page - 1) * limit;
+    const queryStr = ((req.query.query as string) || '').trim();
+
+    let whereClause = "WHERE (u.status = 'active' OR u.status IS NULL) AND vp.id IS NOT NULL AND vp.status IN ('approved', 'active') AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)";
+    const params: any[] = [];
+
+    if (queryStr) {
+      whereClause += ' AND (COALESCE(vp.full_name, u.email) LIKE ? OR u.email LIKE ?)';
+      params.push(`%${queryStr}%`, `%${queryStr}%`);
+    }
+
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM users u
+      JOIN volunteer_profiles vp ON u.id = vp.user_id
+      ${whereClause}
+    `;
+    const countResult = await queryOne(countQuery, params);
+    const total = countResult?.total || 0;
+    const totalPages = Math.ceil(total / limit);
+
+    const itemsQuery = `
+      SELECT u.id, vp.full_name, u.email, u.role, u.created_at,
+             vp.status as volunteer_status,
+             (SELECT COUNT(*) FROM event_duty_devices d WHERE d.user_id = u.id AND d.event_id = ?) as device_count,
+             (SELECT COUNT(*) FROM event_duty_assignments a WHERE a.user_id = u.id AND a.event_id = ? AND a.status NOT IN ('cancelled', 'ended')) as active_assignments_count
+      FROM users u
+      JOIN volunteer_profiles vp ON u.id = vp.user_id
+      ${whereClause}
+      ORDER BY vp.full_name ASC
+      LIMIT ? OFFSET ?
+    `;
+    const queryParams = [eventId, eventId, ...params, limit, offset];
+    const items = await query(itemsQuery, queryParams);
+
+    return res.json({
+      success: true,
+      items: items || [],
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1
+      }
+    });
+  } catch (err: any) {
+    console.error('Error searching eligible members:', err);
+    return res.status(500).json({ error: "We couldn't load eligible team members. Please try again." });
+  }
+});
+
+
+// ==========================================
+// BACKEND RECIPIENT RESOLUTION IMPLEMENTATION
+// ==========================================
+
+export async function resolveAlertRecipients(alertId: string, category: string, severity: string, raisedByUserId: string): Promise<any[]> {
+  const now = new Date().toISOString();
+  console.log(`[Recipient Resolution] Resolving for Alert: ${alertId}, Category: ${category}, Severity: ${severity}`);
+
+  // Fetch alert info to find location_id and event_id
+  const alert = await queryOne('SELECT location_id, event_id FROM event_safety_alerts WHERE id = ?', [alertId]);
+  const alertLocationId = alert ? alert.location_id : null;
+  const targetEventId = alert?.event_id || (await getCurrentEventId());
+
+  // Load all event locations for hierarchy lookup
+  const allLocations = targetEventId ? await query('SELECT * FROM event_locations WHERE event_id = ?', [targetEventId]) : [];
+  const locMap = new Map<string, any>();
+  for (const loc of allLocations) {
+    locMap.set(loc.id, loc);
+  }
+
+  // Trace hierarchy path of the alert's location
+  const locationPathIds: string[] = [];
+  let currentLocId = alertLocationId;
+  const visited = new Set<string>();
+  while (currentLocId) {
+    if (visited.has(currentLocId)) break;
+    visited.add(currentLocId);
+    locationPathIds.push(currentLocId);
+    const loc = locMap.get(currentLocId);
+    currentLocId = loc ? loc.parent_location_id : null;
+  }
+
+  // 1. Fetch matching rule using location-aware specificity ranking
+  const rules = targetEventId ? await query(`
+    SELECT * FROM alert_routing_rules
+    WHERE event_id = ? AND category_key = ? AND (severity_key = ? OR severity_key = 'all') AND is_active = 1
+  `, [targetEventId, category, severity]) : [];
+
+  let rule = null;
+
+  // Match 1: Exact location match
+  if (alertLocationId) {
+    rule = rules.find((r: any) => r.location_id === alertLocationId);
+  }
+
+  // Match 2: Parent match (if rule matches a parent and include_sub_locations = 1, or simply matches a parent)
+  if (!rule && locationPathIds.length > 1) {
+    for (let i = 1; i < locationPathIds.length; i++) {
+      const parentId = locationPathIds[i];
+      const match = rules.find((r: any) => r.location_id === parentId && r.include_sub_locations === 1);
+      if (match) {
+        rule = match;
+        break;
+      }
+    }
+  }
+
+  // Match 3: Location type scope match
+  if (!rule && alertLocationId) {
+    const alertLoc = locMap.get(alertLocationId);
+    if (alertLoc) {
+      rule = rules.find((r: any) => r.location_type_scope === alertLoc.location_type);
+    }
+  }
+
+  // Match 4: Global rule fallback
+  if (!rule) {
+    rule = rules.find((r: any) => !r.location_id && !r.location_type_scope);
+  }
+
+  const ruleId = rule ? rule.id : null;
+  let ruleRecipients: any[] = [];
+
+  if (ruleId) {
+    ruleRecipients = await query('SELECT * FROM alert_routing_recipients WHERE routing_rule_id = ?', [ruleId]);
+  } else {
+    // If no custom rule defined, prepare fallback from premium default templates
+    console.log('[Recipient Resolution] No saved rule found. Generating from fallback template.');
+    const defaults: Record<string, string[]> = {
+      medical_support: ['First Aid Team', 'Care Lead'],
+      security_concern: ['Security Lead', 'Event Admin'],
+      pickup_issue: ['Pickup Lead'],
+      pass_issue: ['Gate/Check-in Lead'],
+      location_support: ['Room/Group Lead', 'Care Lead'],
+      child_care: ['Care Lead'],
+      other: ['General Response']
+    };
+    const backupDefaults: Record<string, string[]> = {
+      medical_support: ['General Response'],
+      security_concern: ['General Response'],
+      pickup_issue: ['Care Lead'],
+      location_support: ['General Response']
+    };
+
+    const roles = defaults[category] || ['General Response'];
+    const backupRoles = backupDefaults[category] || [];
+
+    ruleRecipients = [
+      ...roles.map((r, idx) => ({ recipient_type: 'role', responsibility_key: r, delivery_tier: 'primary', sort_order: idx })),
+      ...backupRoles.map((r, idx) => ({ recipient_type: 'role', responsibility_key: r, delivery_tier: 'backup', sort_order: idx + 10 }))
+    ];
+  }
+
+  // 2. Fetch all on-duty users / assignments for current event
+  const assignments = targetEventId ? await query(`
+    SELECT a.*, COALESCE(vp.full_name, pp.full_name, u.email) as full_name, u.email, COALESCE(vp.is_deleted, pp.is_deleted, 0) as is_deleted, u.role as user_role
+    FROM event_duty_assignments a
+    JOIN users u ON a.user_id = u.id
+    LEFT JOIN volunteer_profiles vp ON vp.user_id = u.id
+    LEFT JOIN parent_profiles pp ON pp.user_id = u.id
+    WHERE a.event_id = ? AND a.status != 'cancelled'
+  `, [targetEventId]) : [];
+
+  // Fetch all users' duty status
+  const dutyStatuses = await query('SELECT * FROM user_duty_status');
+  const dutyStatusMap = new Map(dutyStatuses.map((d: any) => [d.user_id, d]));
+
+  // Fetch active duty presences
+  const activePresences = targetEventId ? await query('SELECT * FROM event_duty_location_presence WHERE event_id = ? AND ended_at IS NULL', [targetEventId]) : [];
+  const userPresenceMap = new Map(activePresences.map((p: any) => [p.user_id, p]));
+
+  // Fetch devices
+  const devices = targetEventId ? await query('SELECT * FROM event_duty_devices WHERE event_id = ?', [targetEventId]) : [];
+  const userDevicesMap = new Map<string, any[]>();
+  for (const d of devices) {
+    if (!userDevicesMap.has(d.user_id)) {
+      userDevicesMap.set(d.user_id, []);
+    }
+    userDevicesMap.get(d.user_id)!.push(d);
+  }
+
+  const resolvedUsers: any[] = [];
+  const snapshotLogs: any[] = [];
+
+  // Match assignments and direct rules to build snapshots
+  for (const req of ruleRecipients) {
+    if (req.recipient_type === 'user' && req.user_id) {
+      // Direct user target
+      const user = await queryOne('SELECT id, full_name, email, role, is_deleted FROM users WHERE id = ?', [req.user_id]);
+      if (user && user.is_deleted === 0) {
+        const duty = dutyStatusMap.get(user.id);
+        const userDevices = userDevicesMap.get(user.id) || [];
+        const isUnavailable = duty && duty.on_duty === 0;
+        const hasNoDevice = userDevices.length === 0;
+
+        let status = 'eligible';
+        let reason = null;
+
+        if (isUnavailable) {
+          status = 'excluded';
+          reason = 'Not on duty';
+        } else if (hasNoDevice) {
+          status = 'excluded';
+          reason = 'No active duty device';
+        }
+
+        snapshotLogs.push({
+          id: `snap-${crypto.randomBytes(8).toString('hex')}`,
+          alert_id: alertId,
+          user_id: user.id,
+          assignment_id: null,
+          routing_rule_id: ruleId,
+          tier: req.delivery_tier,
+          eligibility_status: status,
+          exclusion_reason: reason
+        });
+
+        if (status === 'eligible') {
+          resolvedUsers.push({
+            id: user.id,
+            role: user.role,
+            tier: req.delivery_tier,
+            devices: userDevices
+          });
+        }
+      }
+    } else if (req.recipient_type === 'role' && req.responsibility_key) {
+      // Find assignments with matching responsibility_key
+      const matchingAssigns = assignments.filter((a: any) => a.responsibility_key === req.responsibility_key);
+      
+      if (matchingAssigns.length === 0) {
+        // Nobody assigned to this role at all
+        continue;
+      }
+
+      for (const assign of matchingAssigns) {
+        const duty = dutyStatusMap.get(assign.user_id);
+        const userDevices = userDevicesMap.get(assign.user_id) || [];
+        const isUnavailable = assign.status === 'temporarily_unavailable';
+        const isEnded = assign.status === 'ended';
+        const notStarted = duty && duty.on_duty === 0;
+        const hasNoDevice = userDevices.length === 0;
+
+        let status = 'eligible';
+        let reason = null;
+
+        if (isUnavailable) {
+          status = 'excluded';
+          reason = 'Temporarily unavailable';
+        } else if (isEnded) {
+          status = 'excluded';
+          reason = 'Assignment ended';
+        } else if (notStarted) {
+          status = 'excluded';
+          reason = 'Not on duty';
+        } else if (hasNoDevice) {
+          status = 'excluded';
+          reason = 'No active duty device';
+        }
+
+        // Location-Aware Assignment & Presence Matching
+        const assignLocId = assign.assigned_location_id;
+        const presence = userPresenceMap.get(assign.user_id);
+        const presenceLocId = presence ? presence.event_location_id : null;
+
+        const hasLocationConstraint = !!assignLocId || !!presenceLocId;
+        if (status === 'eligible' && alertLocationId && hasLocationConstraint) {
+          const matchAssign = !assignLocId || assignLocId === alertLocationId || locationPathIds.includes(assignLocId);
+          const matchPresence = !presenceLocId || presenceLocId === alertLocationId || locationPathIds.includes(presenceLocId);
+          if (!matchAssign || !matchPresence) {
+            status = 'excluded';
+            reason = 'Location routing exclusion (assigned elsewhere)';
+          }
+        }
+
+        snapshotLogs.push({
+          id: `snap-${crypto.randomBytes(8).toString('hex')}`,
+          alert_id: alertId,
+          user_id: assign.user_id,
+          assignment_id: assign.id,
+          routing_rule_id: ruleId,
+          tier: req.delivery_tier,
+          eligibility_status: status,
+          exclusion_reason: reason
+        });
+
+        if (status === 'eligible') {
+          resolvedUsers.push({
+            id: assign.user_id,
+            role: assign.user_role,
+            tier: req.delivery_tier,
+            devices: userDevices
+          });
+        }
+      }
+    }
+  }
+
+  // 3. Fallback check (Section 14)
+  let eligiblePrimary = resolvedUsers.filter(u => u.tier === 'primary');
+  let eligibleBackup = resolvedUsers.filter(u => u.tier === 'backup');
+  let eligibleSupervisory = resolvedUsers.filter(u => u.tier === 'supervisory');
+
+  let finalRecipients: any[] = [];
+
+  if (eligiblePrimary.length > 0) {
+    // Route to Primary, and supervisory
+    finalRecipients = [...eligiblePrimary, ...eligibleSupervisory];
+  } else if (eligibleBackup.length > 0) {
+    // No primary available, fall back to Backup immediately!
+    console.log('[Recipient Resolution] No primary available, routing to backup.');
+    finalRecipients = [...eligibleBackup, ...eligibleSupervisory];
+    
+    // Log fallback reasons
+    snapshotLogs.push({
+      id: `snap-fallback-${crypto.randomBytes(8).toString('hex')}`,
+      alert_id: alertId,
+      user_id: raisedByUserId, // System log referenced to raisedByUser
+      assignment_id: null,
+      routing_rule_id: ruleId,
+      tier: 'primary',
+      eligibility_status: 'excluded',
+      exclusion_reason: 'Primary unavailable fallback triggered'
+    });
+  } else {
+    // Absolute No-Primary-Or-Backup Emergency Fallback
+    console.log('[Recipient Resolution] CRITICAL: No active primary or backup responders available!');
+    
+    // Always preserve Super Admin emergency visibility for Urgent alerts (Section 14)
+    if (severity === 'urgent') {
+      const superAdmins = await query("SELECT id, role, full_name FROM users WHERE role = 'super_admin' AND is_deleted = 0");
+      for (const sa of superAdmins) {
+        const saDevices = userDevicesMap.get(sa.id) || [];
+        finalRecipients.push({
+          id: sa.id,
+          role: sa.role,
+          tier: 'supervisory',
+          devices: saDevices
+        });
+        
+        snapshotLogs.push({
+          id: `snap-sa-fallback-${crypto.randomBytes(8).toString('hex')}`,
+          alert_id: alertId,
+          user_id: sa.id,
+          assignment_id: null,
+          routing_rule_id: ruleId,
+          tier: 'supervisory',
+          eligibility_status: 'eligible',
+          exclusion_reason: 'Super Admin Emergency Fallback'
+        });
+      }
+    }
+
+    // Insert fallback failure log
+    snapshotLogs.push({
+      id: `snap-fallback-fail-${crypto.randomBytes(8).toString('hex')}`,
+      alert_id: alertId,
+      user_id: raisedByUserId,
+      assignment_id: null,
+      routing_rule_id: ruleId,
+      tier: 'primary',
+      eligibility_status: 'excluded',
+      exclusion_reason: 'No eligible primary or backup coverage'
+    });
+  }
+
+  // 4. Save snapshots to database (Section 13, 32)
+  for (const log of snapshotLogs) {
+    await execute(`
+      INSERT INTO alert_recipient_snapshots (
+        id, alert_id, user_id, assignment_id, routing_rule_id, tier, eligibility_status, exclusion_reason, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [log.id, log.alert_id, log.user_id, log.assignment_id, log.routing_rule_id, log.tier, log.eligibility_status, log.exclusion_reason, now]);
+  }
+
+  // 5. Populate safety_alert_recipients and alert_device_deliveries for finalRecipients
+  const finalUsersWithDevices: any[] = [];
+  const uniqueUserIds = Array.from(new Set(finalRecipients.map(u => u.id)));
+
+  for (const uid of uniqueUserIds) {
+    const userMatch = finalRecipients.find(u => u.id === uid);
+    if (!userMatch) continue;
+
+    // Create safety_alert_recipients record (Section 24)
+    const recipientId = `recip-${crypto.randomBytes(8).toString('hex')}`;
+    await execute(`
+      INSERT INTO safety_alert_recipients (
+        id, alert_id, recipient_user_id, recipient_role, sound_started_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(alert_id, recipient_user_id) DO NOTHING
+    `, [recipientId, alertId, uid, userMatch.role, severity === 'urgent' ? now : null, now, now]);
+
+    // Create per-device deliveries
+    const userDevices = userMatch.devices || [];
+    for (const d of userDevices) {
+      const deliveryId = `deliv-${crypto.randomBytes(8).toString('hex')}`;
+      await execute(`
+        INSERT INTO alert_device_deliveries (
+          id, alert_id, recipient_user_id, duty_device_id, channel, delivery_status, attempted_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, 'sent', ?, ?, ?)
+      `, [deliveryId, alertId, uid, d.id, 'in_app', now, now, now]);
+
+      if (d.push_subscription_id) {
+        const pushDeliveryId = `deliv-${crypto.randomBytes(8).toString('hex')}`;
+        await execute(`
+          INSERT INTO alert_device_deliveries (
+            id, alert_id, recipient_user_id, duty_device_id, channel, delivery_status, attempted_at, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+        `, [pushDeliveryId, alertId, uid, d.id, 'push', now, now, now]);
+      }
+    }
+
+    finalUsersWithDevices.push(userMatch);
+
+    // Asynchronous Web Push fallback (Section 12)
+    const pushTitle = severity === 'urgent' ? '🔴 Urgent alert' : '⚠️ Important alert';
+    const pushBody = `New safety alert raised for category ${category.replace('_', ' ')}. Check duty panel.`;
+    sendWebPush(uid, {
+      title: pushTitle,
+      body: pushBody,
+      metadata: { alertId, severity, category }
+    }).then(async (pushRes) => {
+      if (pushRes.success) {
+        await execute(`
+          UPDATE alert_device_deliveries
+          SET delivery_status = 'delivered', updated_at = ?
+          WHERE alert_id = ? AND recipient_user_id = ? AND channel = 'push'
+        `, [new Date().toISOString(), alertId, uid]);
+      } else {
+        await execute(`
+          UPDATE alert_device_deliveries
+          SET delivery_status = 'failed', failure_code = ?, updated_at = ?
+          WHERE alert_id = ? AND recipient_user_id = ? AND channel = 'push'
+        `, [pushRes.error || 'unknown_push_error', new Date().toISOString(), alertId, uid]);
+      }
+    }).catch(err => console.error('[Push Notification Fallback] Failed:', err));
+  }
+
+  // 6. Instantly Broadcast SSE delivery event (Section 12, 20)
+  try {
+    const alertInfo = await queryOne(`
+      SELECT a.*,
+             COALESCE(p_raised.full_name, v_raised.full_name, 'Volunteer') as raised_by_name,
+             COALESCE(v_raised.phone, p_raised.phone_number) as volunteer_phone,
+             v_raised.preferred_team as volunteer_team,
+             c.full_name as child_name,
+             c.photo_file_id as child_photo_file_id,
+             c.age_group as child_age_group,
+             c.calculated_age as child_calculated_age,
+             COALESCE(c.relationship_to_child, pk_pickup.relationship_to_child) as relationship_to_child,
+             COALESCE(p_parent.full_name, pk_pickup.full_name) as parent_name,
+             COALESCE(p_parent.phone_number, pk_pickup.phone_number) as parent_phone,
+             COALESCE(p_parent.photo_file_id, pk_pickup.photo_file_id) as parent_photo_file_id
+      FROM event_safety_alerts a
+      LEFT JOIN children c ON a.child_id = c.id
+      LEFT JOIN parent_profiles p_parent ON c.parent_profile_id = p_parent.id
+      LEFT JOIN pickup_people pk_pickup ON pk_pickup.id = (
+        SELECT id FROM pickup_people
+        WHERE child_event_entry_id = a.child_event_entry_id AND approved_by_parent = 1
+        LIMIT 1
+      )
+      LEFT JOIN parent_profiles p_raised ON a.raised_by_user_id = p_raised.user_id
+      LEFT JOIN volunteer_profiles v_raised ON a.raised_by_user_id = v_raised.user_id
+      WHERE a.id = ?
+    `, [alertId]);
+
+    const childPhoto = alertInfo?.child_photo_file_id ? (String(alertInfo.child_photo_file_id).startsWith('http') || String(alertInfo.child_photo_file_id).startsWith('/') ? String(alertInfo.child_photo_file_id) : `/api/media/files/${alertInfo.child_photo_file_id}`) : '';
+    const parentPhoto = alertInfo?.parent_photo_file_id ? (String(alertInfo.parent_photo_file_id).startsWith('http') || String(alertInfo.parent_photo_file_id).startsWith('/') ? String(alertInfo.parent_photo_file_id) : `/api/media/files/${alertInfo.parent_photo_file_id}`) : '';
+
+    broadcastSSEEvent('safety_alert_created', {
+      alertId,
+      severity: alertInfo?.severity || severity,
+      category: alertInfo?.category || category,
+      title: alertInfo?.title || 'Emergency care alert',
+      message: alertInfo?.message || '',
+      locationLabel: alertInfo?.location_label || null,
+      raisedByName: alertInfo?.raised_by_name || 'Volunteer',
+      volunteerPhone: alertInfo?.volunteer_phone || null,
+      volunteerTeam: alertInfo?.volunteer_team || null,
+      childName: alertInfo?.child_name || null,
+      childPhotoUrl: childPhoto,
+      childPhotoFileId: childPhoto,
+      childAgeGroup: alertInfo?.child_age_group || null,
+      childCalculatedAge: alertInfo?.child_calculated_age != null ? alertInfo.child_calculated_age : null,
+      relationshipToChild: alertInfo?.relationship_to_child || null,
+      parentName: alertInfo?.parent_name || null,
+      parentPhone: alertInfo?.parent_phone || null,
+      parentPhotoUrl: parentPhoto,
+      parentPhotoFileId: parentPhoto,
+      status: 'open',
+      timestamp: alertInfo?.created_at || now,
+      recipientsCount: uniqueUserIds.length
+    });
+  } catch (sseErr) {
+    console.error('[SSE Broadcast] Failed to send sse alert created:', sseErr);
+  }
+
+  return finalUsersWithDevices;
+}
+
+
+// POST /api/admin/events/:eventId/alert-routing/preview
+adminDutyRouter.post('/events/:eventId/alert-routing/preview', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const role = req.user?.role;
+    if (role !== 'admin' && role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { category, severity } = req.body;
+    if (!category || !severity) {
+      return res.status(400).json({ error: 'Category and severity are required for routing preview' });
+    }
+
+    const targetEventId = req.params.eventId || (await getCurrentEventId());
+    if (!targetEventId) {
+      return res.status(400).json({ error: 'Event not found' });
+    }
+
+    // Preview mode: Run resolution algorithm using a fake temporary alert ID, without committing real notifications
+    console.log(`[Preview Alert Routing] Previewing Category: ${category}, Severity: ${severity}`);
+
+    // Fetch active routing rule
+    let rule = await queryOne(`
+      SELECT * FROM alert_routing_rules
+      WHERE event_id = ? AND category_key = ? AND (severity_key = ? OR severity_key = 'all') AND is_active = 1
+      ORDER BY CASE WHEN severity_key = ? THEN 1 ELSE 2 END ASC
+      LIMIT 1
+    `, [targetEventId, category, severity, severity]);
+
+    let ruleRecipients = [];
+    if (rule) {
+      ruleRecipients = await query('SELECT * FROM alert_routing_recipients WHERE routing_rule_id = ?', [rule.id]);
+    } else {
+      const defaults: Record<string, string[]> = {
+        medical_support: ['First Aid Team', 'Care Lead'],
+        security_concern: ['Security Lead', 'Event Admin'],
+        pickup_issue: ['Pickup Lead'],
+        pass_issue: ['Gate/Check-in Lead'],
+        location_support: ['Room/Group Lead', 'Care Lead'],
+        child_care: ['Care Lead'],
+        other: ['General Response']
+      };
+      const backVars = { medical_support: ['General Response'], security_concern: ['General Response'], pickup_issue: ['Care Lead'] } as any;
+      const roles = defaults[category] || ['General Response'];
+      const backupRoles = backVars[category] || [];
+
+      ruleRecipients = [
+        ...roles.map((r, i) => ({ recipient_type: 'role', responsibility_key: r, delivery_tier: 'primary', sort_order: i })),
+        ...backupRoles.map((r, i) => ({ recipient_type: 'role', responsibility_key: r, delivery_tier: 'backup', sort_order: i + 10 }))
+      ];
+    }
+
+    const assignments = await query(`
+      SELECT a.*, COALESCE(vp.full_name, pp.full_name, u.email) as full_name, u.email, u.role as user_role
+      FROM event_duty_assignments a
+      JOIN users u ON a.user_id = u.id
+      LEFT JOIN volunteer_profiles vp ON vp.user_id = u.id
+      LEFT JOIN parent_profiles pp ON pp.user_id = u.id
+      WHERE a.event_id = ? AND a.status != 'cancelled'
+    `, [targetEventId]);
+
+    const dutyStatuses = await query('SELECT * FROM user_duty_status');
+    const dutyMap = new Map(dutyStatuses.map((d: any) => [d.user_id, d]));
+
+    const devices = await query('SELECT * FROM event_duty_devices WHERE event_id = ?', [targetEventId]);
+    const userDevicesMap = new Map<string, any[]>();
+    for (const d of devices) {
+      if (!userDevicesMap.has(d.user_id)) {
+        userDevicesMap.set(d.user_id, []);
+      }
+      userDevicesMap.get(d.user_id)!.push(d);
+    }
+
+    const primaryRecipients: any[] = [];
+    const backupRecipients: any[] = [];
+    const supervisoryRecipients: any[] = [];
+    const excludedRecipients: any[] = [];
+
+    for (const reqRec of ruleRecipients) {
+      if (reqRec.recipient_type === 'role' && reqRec.responsibility_key) {
+        const matches = assignments.filter((a: any) => a.responsibility_key === reqRec.responsibility_key);
+        for (const assign of matches) {
+          const duty = dutyMap.get(assign.user_id);
+          const userDevices = userDevicesMap.get(assign.user_id) || [];
+          const isUnavailable = assign.status === 'temporarily_unavailable';
+          const notOnDuty = duty && duty.on_duty === 0;
+          const hasNoDevices = userDevices.length === 0;
+
+          let isEligible = true;
+          let exclusionReason = null;
+
+          if (isUnavailable) {
+            isEligible = false;
+            exclusionReason = 'Temporarily unavailable';
+          } else if (notOnDuty) {
+            isEligible = false;
+            exclusionReason = 'Not on duty';
+          } else if (hasNoDevices) {
+            isEligible = false;
+            exclusionReason = 'No active duty device';
+          }
+
+          const record = {
+            userId: assign.user_id,
+            name: assign.full_name,
+            role: assign.user_role,
+            responsibility: assign.responsibility_key,
+            devices: userDevices.map((d: any) => ({ label: d.device_label, status: d.readiness_status }))
+          };
+
+          if (isEligible) {
+            if (reqRec.delivery_tier === 'primary') primaryRecipients.push(record);
+            else if (reqRec.delivery_tier === 'backup') backupRecipients.push(record);
+            else supervisoryRecipients.push(record);
+          } else {
+            excludedRecipients.push({
+              ...record,
+              exclusionReason
+            });
+          }
+        }
+      }
+    }
+
+    // Fallback logic inside preview
+    let coverageStatus = 'covered';
+    if (primaryRecipients.length === 0) {
+      if (backupRecipients.length > 0) {
+        coverageStatus = 'covered_with_backup_only';
+      } else {
+        coverageStatus = 'not_covered';
+      }
+    }
+
+    return res.json({
+      success: true,
+      preview: true,
+      coverageStatus,
+      primaryRecipients,
+      backupRecipients,
+      supervisoryRecipients,
+      excludedRecipients,
+      channels: ['in_app', 'push_fallback']
+    });
+  } catch (err: any) {
+    console.error('Error previewing rule:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/admin/events/:eventId/alert-routing/test
+adminDutyRouter.post('/events/:eventId/alert-routing/test', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const role = req.user?.role;
+    if (role !== 'admin' && role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin permissions required' });
+    }
+
+    const { category } = req.body;
+    if (!category) {
+      return res.status(400).json({ error: 'Category key is required for routing test' });
+    }
+
+    const targetEventId = req.params.eventId || (await getCurrentEventId());
+    if (!targetEventId) {
+      return res.status(400).json({ error: 'Event not found' });
+    }
+
+    const now = new Date().toISOString();
+    const alertId = `test-alert-${crypto.randomBytes(8).toString('hex')}`;
+
+    // Insert dummy test alert (does not populate production safety_alerts child link)
+    await execute(`
+      INSERT INTO event_safety_alerts (
+        id, event_id, child_id, child_event_entry_id, raised_by_user_id, raised_by_role, severity, category, title, message, status, created_at, updated_at
+      ) VALUES (?, ?, NULL, NULL, ?, ?, 'important', ?, 'Event alert test', 'This is a controlled alert routing and delivery test.', 'open', ?, ?)
+    `, [alertId, targetEventId, req.user.id, 'admin', category, now, now]);
+
+    // Resolve and notify test recipients using backend resolution engine
+    const recipients = await resolveAlertRecipients(alertId, category, 'important', req.user.id);
+
+    // Change history audit logs
+    const historyId = `history-${crypto.randomBytes(8).toString('hex')}`;
+    await execute(`
+      INSERT INTO event_routing_change_history (id, event_id, user_id, action, target_type, target_id, details, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [historyId, targetEventId, req.user.id, 'test_alert_sent', 'test', alertId, `Triggered alert routing test for: ${category}`, now]);
+
+    return res.json({
+      success: true,
+      alertId,
+      recipientsCount: recipients.length,
+      message: `Controlled routing test sent successfully. ${recipients.length} eligible duty devices triggered.`
+    });
+  } catch (err: any) {
+    console.error('Error sending test alert:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
+// GET /api/admin/events/:eventId/response-coverage
+adminDutyRouter.get('/events/:eventId/response-coverage', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const role = req.user?.role;
+    if (role !== 'admin' && role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin permissions required' });
+    }
+
+    const { eventId } = req.params;
+
+    // 1. Fetch active event rules
+    const rules = await query(
+      'SELECT * FROM alert_routing_rules WHERE event_id = ? AND is_active = 1 ORDER BY category_key ASC',
+      [eventId]
+    );
+
+    // Standard category definitions if rules are missing or for fallback
+    const standardCategoryNames: Record<string, { name: string; defaultSeverity: string }> = {
+      child_care: { name: 'General Child Care Concern', defaultSeverity: 'Medium' },
+      medical_support: { name: 'Medical or First Aid Support', defaultSeverity: 'Critical' },
+      pickup_issue: { name: 'Pickup Concern', defaultSeverity: 'High' },
+      pass_issue: { name: 'Pass/Check-in Concern', defaultSeverity: 'Medium' },
+      security_concern: { name: 'Security / Missing Child Concerns', defaultSeverity: 'Critical' },
+      location_support: { name: 'Room/Classroom Assistance', defaultSeverity: 'Medium' },
+      other: { name: 'General Help', defaultSeverity: 'Low' }
+    };
+
+    // 2. Hydrate rules with recipients
+    let hydratedRules: any[] = [];
+    if (rules && rules.length > 0) {
+      for (const rule of rules) {
+        const recs = await query(
+          'SELECT * FROM alert_routing_recipients WHERE routing_rule_id = ? ORDER BY sort_order ASC',
+          [rule.id]
+        );
+        hydratedRules.push({
+          ...rule,
+          recipients: recs || []
+        });
+      }
+    } else {
+      // Fallback categories if no rules exist in database yet
+      for (const [key, meta] of Object.entries(standardCategoryNames)) {
+        hydratedRules.push({
+          id: `fallback-${key}`,
+          event_id: eventId,
+          category_key: key,
+          severity_key: meta.defaultSeverity.toLowerCase(),
+          recipients: [
+            { recipient_type: 'role', responsibility_key: 'General Response', delivery_tier: 'primary' }
+          ]
+        });
+      }
+    }
+
+    // 3. Fetch active team assignments for this event
+    const activeAssignments = await query(`
+      SELECT a.*, COALESCE(vp.full_name, pp.full_name, u.email) as full_name, u.email as user_email, u.role as user_role,
+             el.name as assigned_location_name
+      FROM event_duty_assignments a
+      JOIN users u ON a.user_id = u.id
+      LEFT JOIN volunteer_profiles vp ON vp.user_id = u.id
+      LEFT JOIN parent_profiles pp ON pp.user_id = u.id
+      LEFT JOIN event_locations el ON a.assigned_location_id = el.id
+      WHERE a.event_id = ? AND a.status != 'cancelled'
+    `, [eventId]);
+
+    // 4. Fetch registered devices for this event
+    const devices = await query('SELECT * FROM event_duty_devices WHERE event_id = ?', [eventId]);
+    const userDevicesMap = new Map<string, any[]>();
+    for (const d of devices) {
+      if (!userDevicesMap.has(d.user_id)) {
+        userDevicesMap.set(d.user_id, []);
+      }
+      userDevicesMap.get(d.user_id)!.push(d);
+    }
+
+    // Helper to format role names cleanly
+    const formatRole = (r?: string) => {
+      if (!r) return 'General Response';
+      const clean = r.trim();
+      if (clean === 'super_admin') return 'Super Admin';
+      if (clean === 'admin') return 'Administrator';
+      if (clean === 'safeguarding_lead') return 'Safeguarding Lead';
+      if (clean === 'attendance_lead') return 'Attendance Lead';
+      if (clean === 'pickup_lead') return 'Pickup Lead';
+      if (clean === 'volunteer_lead') return 'Volunteer Lead';
+      return clean.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    };
+
+    const categoriesResult: any[] = [];
+    const uniqueActiveRespondersSet = new Set<string>();
+    let totalAssignmentsAcrossCategories = 0;
+    let coverageGapsCount = 0;
+    let routingIssuesCount = 0;
+    const limitations: string[] = [];
+
+    let missingShiftTimeCount = 0;
+
+    for (const rule of hydratedRules) {
+      const catKey = rule.category_key;
+      const meta = standardCategoryNames[catKey] || { name: catKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()), defaultSeverity: 'Medium' };
+      const categoryName = meta.name;
+
+      let rawSev = (rule.severity_key || meta.defaultSeverity || 'Medium').toLowerCase();
+      let severityLabel = 'Medium';
+      if (rawSev.includes('crit')) severityLabel = 'Critical';
+      else if (rawSev.includes('high')) severityLabel = 'High';
+      else if (rawSev.includes('low')) severityLabel = 'Low';
+      else if (rawSev.includes('all')) severityLabel = 'High';
+
+      const recipients = rule.recipients || [];
+      
+      const primaryRecs = recipients.filter((r: any) => r.delivery_tier === 'primary');
+      const backupRecs = recipients.filter((r: any) => r.delivery_tier === 'backup');
+
+      const expectedPrimaryRoles = Array.from(new Set(primaryRecs.map((r: any) => formatRole(r.responsibility_key || r.user_role))));
+      const expectedBackupRoles = Array.from(new Set(backupRecs.map((r: any) => formatRole(r.responsibility_key || r.user_role))));
+      const expectedRolesCombined = Array.from(new Set([...expectedPrimaryRoles, ...expectedBackupRoles]));
+
+      // Function to match an assignment to recipient requirements
+      const isAssignmentMatch = (assign: any, rec: any) => {
+        const respKey = (rec.responsibility_key || '').toLowerCase();
+        const assignResp = (assign.responsibility_key || '').toLowerCase();
+        const userRole = (assign.user_role || '').toLowerCase();
+
+        if (respKey) {
+          if (assignResp && (assignResp.includes(respKey) || respKey.includes(assignResp))) return true;
+          if (respKey.includes('super admin') && userRole === 'super_admin') return true;
+          if (respKey.includes('event admin') && (userRole === 'admin' || userRole === 'super_admin')) return true;
+          if (respKey.includes('general response') || respKey.includes('general')) return true;
+        }
+        if (rec.user_role && rec.user_role.toLowerCase() === userRole) return true;
+        return false;
+      };
+
+      const primaryMatchesMap = new Map<string, any>();
+      const backupMatchesMap = new Map<string, any>();
+
+      for (const assign of activeAssignments) {
+        if (!assign.starts_at || !assign.ends_at) {
+          missingShiftTimeCount++;
+        }
+
+        const isPrimaryMatch = primaryRecs.some((rec: any) => isAssignmentMatch(assign, rec));
+        const isBackupMatch = backupRecs.some((rec: any) => isAssignmentMatch(assign, rec));
+
+        const userDevs = userDevicesMap.get(assign.user_id) || [];
+        const readyDevsCount = userDevs.filter((d: any) => d.readiness_status === 'ready').length;
+
+        const isOnDuty = assign.status === 'on_duty' || assign.status === 'active';
+
+        const responderObj = {
+          userId: assign.user_id,
+          name: assign.full_name || assign.user_email || 'Administrator',
+          responsibility: formatRole(assign.responsibility_key),
+          onDuty: isOnDuty,
+          readyDevices: readyDevsCount,
+          locationName: assign.assigned_location_name || null
+        };
+
+        if (isPrimaryMatch && !primaryMatchesMap.has(assign.user_id)) {
+          primaryMatchesMap.set(assign.user_id, responderObj);
+          if (isOnDuty) {
+            uniqueActiveRespondersSet.add(assign.user_id);
+          }
+        }
+        if (isBackupMatch && !backupMatchesMap.has(assign.user_id) && !primaryMatchesMap.has(assign.user_id)) {
+          backupMatchesMap.set(assign.user_id, responderObj);
+          if (isOnDuty) {
+            uniqueActiveRespondersSet.add(assign.user_id);
+          }
+        }
+      }
+
+      const primaryRespondersList = Array.from(primaryMatchesMap.values());
+      const backupRespondersList = Array.from(backupMatchesMap.values());
+
+      totalAssignmentsAcrossCategories += (primaryRespondersList.length + backupRespondersList.length);
+
+      const activeOnDutyPrimary = primaryRespondersList.filter(r => r.onDuty);
+      const activeOnDutyBackup = backupRespondersList.filter(r => r.onDuty);
+
+      const primaryWithReadyDevice = activeOnDutyPrimary.filter(r => r.readyDevices > 0);
+      const backupWithReadyDevice = activeOnDutyBackup.filter(r => r.readyDevices > 0);
+
+      const totalRespondersInCat = primaryRespondersList.length + backupRespondersList.length;
+      const totalReadyDevicesInCat = [...primaryRespondersList, ...backupRespondersList].filter(r => r.readyDevices > 0).length;
+
+      let deviceReadinessSummary = 'No device assigned';
+      if (totalRespondersInCat > 0) {
+        deviceReadinessSummary = `${totalReadyDevicesInCat}/${totalRespondersInCat} devices ready`;
+      }
+
+      let coverageStatus: 'Complete' | 'Limited' | 'No coverage' | 'Routing issue' = 'No coverage';
+      let coverageReason = '';
+      let recommendedAction = '';
+
+      if (recipients.length === 0 || expectedRolesCombined.length === 0) {
+        coverageStatus = 'Routing issue';
+        coverageReason = 'The alert routing rule has no assigned response roles or recipients configured.';
+        recommendedAction = 'Review this alert rule because no response role is configured.';
+        routingIssuesCount++;
+        coverageGapsCount++;
+      } else if (activeOnDutyPrimary.length === 0) {
+        coverageStatus = 'No coverage';
+        coverageReason = `No eligible primary responder is currently on duty for ${categoryName}.`;
+        const roleTarget = expectedPrimaryRoles[0] || 'responder';
+        recommendedAction = `Assign an on-duty ${roleTarget} to cover ${categoryName}.`;
+        coverageGapsCount++;
+      } else if (primaryWithReadyDevice.length === 0) {
+        coverageStatus = 'Limited';
+        coverageReason = `On-duty primary responder is available, but does not have a registered ready device.`;
+        recommendedAction = `Provide a ready duty device to the primary responder for ${categoryName}.`;
+        coverageGapsCount++;
+      } else if (activeOnDutyBackup.length === 0) {
+        coverageStatus = 'Limited';
+        coverageReason = `Primary responder is available on duty, but no backup responder is currently assigned or on duty.`;
+        recommendedAction = `Add an on-duty backup responder for ${categoryName}.`;
+        coverageGapsCount++;
+      } else {
+        coverageStatus = 'Complete';
+        coverageReason = `Primary and backup responders are on duty with ready devices.`;
+        recommendedAction = `Coverage is sufficient. No action is required.`;
+      }
+
+      categoriesResult.push({
+        id: rule.id || `rule-${catKey}`,
+        categoryKey: catKey,
+        name: categoryName,
+        severity: severityLabel,
+        expectedRoles: expectedRolesCombined.length > 0 ? expectedRolesCombined : ['Unassigned Policy'],
+        primaryResponders: primaryRespondersList,
+        backupResponders: backupRespondersList,
+        deviceReadiness: {
+          primaryReady: primaryWithReadyDevice.length > 0,
+          backupReady: backupWithReadyDevice.length > 0,
+          summary: deviceReadinessSummary
+        },
+        coverageStatus,
+        coverageReason,
+        recommendedAction,
+        allowedActions: ['view_routing', 'assign_responder', 'review_devices']
+      });
+    }
+
+    const validCategoryCount = categoriesResult.length;
+    const totalActiveRespondersCount = uniqueActiveRespondersSet.size;
+
+    const averageRespondersPerAlertNumber = validCategoryCount > 0
+      ? Number((totalAssignmentsAcrossCategories / validCategoryCount).toFixed(1))
+      : null;
+
+    if (missingShiftTimeCount > 0) {
+      limitations.push(`Coverage information is limited because ${missingShiftTimeCount} team assignment(s) do not have explicit shift end times.`);
+    }
+
+    return res.json({
+      success: true,
+      summary: {
+        activeResponders: totalActiveRespondersCount,
+        coverageGaps: coverageGapsCount,
+        averageRespondersPerAlert: averageRespondersPerAlertNumber,
+        routingIssues: routingIssuesCount,
+        validCategoriesCount: validCategoryCount
+      },
+      categories: categoriesResult,
+      limitations
+    });
+  } catch (err: any) {
+    console.error('[Response Coverage] failed for eventId:', req.params?.eventId, err?.message || err);
+    return res.status(500).json({
+      success: false,
+      error: 'RESPONSE_COVERAGE_LOAD_FAILED',
+      message: 'We could not load response coverage.'
+    });
+  }
+});
+
+// ==============================================
+// PHASE 6: VOLUNTEER & DUTY LOCATIONS ENDPOINTS
+// ==============================================
+
+// Helper to resolve duty location for a user (Duty assignment for current event)
+export async function resolveUserDutyLocation(userId: string, eventId?: string | null) {
+  try {
+    const resolvedEventId = eventId || (await getCurrentEventId());
+    if (!resolvedEventId) {
+      return null;
+    }
+
+    // Check user's duty assignment for the current event
+    const assignment = await queryOne(`
+      SELECT a.id as assignment_id, a.responsibility_key, a.team_key as assignment_team, a.assigned_location_id, a.status as assignment_status,
+             a.starts_at, a.ends_at,
+             el.id as location_id, el.name, el.location_type, el.instructions, el.age_group_key, el.team_key as location_team,
+             el.short_name, el.description
+      FROM event_duty_assignments a
+      JOIN event_locations el ON a.assigned_location_id = el.id
+      WHERE a.user_id = ? AND a.event_id = ? AND a.status NOT IN ('cancelled', 'ended') AND el.is_active = 1 AND el.archived_at IS NULL
+      ORDER BY CASE WHEN a.status = 'on_duty' THEN 1 WHEN a.status = 'available' THEN 2 WHEN a.status = 'scheduled' THEN 3 ELSE 4 END, a.updated_at DESC
+      LIMIT 1
+    `, [userId, resolvedEventId]);
+
+    if (!assignment) {
+      return null;
+    }
+
+    const allLocations = await query('SELECT * FROM event_locations WHERE event_id = ?', [resolvedEventId]);
+    const locMap = new Map<string, any>();
+    for (const loc of allLocations) {
+      locMap.set(loc.id, loc);
+    }
+    const getFullPath = (locId: string): string => {
+      const pathParts: string[] = [];
+      let currentId: string | null = locId;
+      const visited = new Set<string>();
+      while (currentId) {
+        if (visited.has(currentId)) break;
+        visited.add(currentId);
+        const current = locMap.get(currentId);
+        if (current) {
+          pathParts.unshift(current.name);
+          currentId = current.parent_location_id;
+        } else {
+          break;
+        }
+      }
+      return pathParts.join(' › ');
+    };
+
+    const activePres = await queryOne(
+      'SELECT started_at FROM event_duty_location_presence WHERE user_id = ? AND event_location_id = ? AND ended_at IS NULL AND event_id = ? LIMIT 1',
+      [userId, assignment.location_id, resolvedEventId]
+    );
+
+    // Format responsibility: e.g. "room_support" -> "Room support"
+    const rawResp = (assignment.responsibility_key || 'Room support').trim();
+    const formattedResp = rawResp
+      .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ')
+      .split(' ')
+      .map((w: string, i: number) => i === 0 ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w.toLowerCase())
+      .join(' ');
+
+    // Format scheduled window: e.g. "6:00 PM – 8:00 PM"
+    let scheduled = '';
+    if (assignment.starts_at && assignment.ends_at) {
+      try {
+        const sDate = new Date(assignment.starts_at);
+        const eDate = new Date(assignment.ends_at);
+        const sTime = sDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        const eTime = eDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        scheduled = `${sTime} – ${eTime}`;
+      } catch {
+        scheduled = `${assignment.starts_at} – ${assignment.ends_at}`;
+      }
+    } else if (assignment.starts_at) {
+      try {
+        scheduled = new Date(assignment.starts_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      } catch {
+        scheduled = assignment.starts_at;
+      }
+    }
+
+    // Determine status: "Scheduled" | "On duty" | "Completed"
+    let displayStatus: 'Scheduled' | 'On duty' | 'Completed' = 'Scheduled';
+    if (activePres || assignment.assignment_status === 'on_duty') {
+      displayStatus = 'On duty';
+    } else if (assignment.assignment_status === 'completed' || assignment.assignment_status === 'ended') {
+      displayStatus = 'Completed';
+    } else {
+      displayStatus = 'Scheduled';
+    }
+
+    return {
+      id: assignment.assignment_id,
+      locationId: assignment.location_id,
+      name: assignment.name,
+      type: assignment.location_type,
+      ageGroup: assignment.age_group_key,
+      ageGroupKey: assignment.age_group_key,
+      team: assignment.location_team || assignment.assignment_team,
+      teamKey: assignment.location_team || assignment.assignment_team,
+      responsibility: formattedResp,
+      responsibilityKey: assignment.responsibility_key,
+      scheduled: scheduled || 'Scheduled',
+      startsAt: assignment.starts_at,
+      endsAt: assignment.ends_at,
+      status: displayStatus,
+      assignmentStatus: displayStatus,
+      instructions: assignment.instructions,
+      description: assignment.description,
+      source: 'admin',
+      isAssignedByAdmin: true,
+      isPresent: !!activePres,
+      presentSince: activePres ? activePres.started_at : null,
+      pathLabel: getFullPath(assignment.location_id)
+    };
+  } catch (err) {
+    console.error('Error resolving user duty location:', err);
+    return null;
+  }
+}
+
+// 1. Get active event locations (scoped to current event, non-deleted, non-archived)
+dutyRouter.get('/locations', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string || '1');
+    const limit = parseInt(req.query.limit as string || '100');
+    const search = (req.query.search as string || '').trim().toLowerCase();
+    const type = req.query.type as string || '';
+    const currentEventId = await getCurrentEventId();
+    const eventId = (req.query.eventId as string) || currentEventId;
+    if (!eventId) {
+      return res.json({
+        locations: [],
+        total: 0,
+        page,
+        limit,
+        totalPages: 0
+      });
+    }
+
+    let queryStr = 'SELECT * FROM event_locations WHERE event_id = ? AND is_active = 1 AND archived_at IS NULL';
+    const params: any[] = [eventId];
+
+    if (type) {
+      queryStr += ' AND location_type = ?';
+      params.push(type);
+    }
+
+    // Volunteers should only see locations actually assigned to them for this event
+    if (req.user && req.user.role !== 'admin') {
+      const userAssignments = await query(
+        `SELECT DISTINCT assigned_location_id FROM event_duty_assignments WHERE user_id = ? AND event_id = ? AND status NOT IN ('cancelled', 'ended') AND assigned_location_id IS NOT NULL AND assigned_location_id != ''`,
+        [req.user.id, eventId]
+      );
+      const assignedIds = userAssignments.map((a: any) => a.assigned_location_id).filter(Boolean);
+      if (assignedIds.length === 0) {
+        return res.json({
+          success: true,
+          items: [],
+          pagination: {
+            page,
+            limit,
+            total: 0,
+            totalPages: 0,
+            hasNextPage: false,
+            hasPreviousPage: false
+          }
+        });
+      }
+      queryStr += ` AND id IN (${assignedIds.map(() => '?').join(',')})`;
+      params.push(...assignedIds);
+    }
+
+    const allLocations = await query(queryStr, params);
+
+    // Build path labels
+    const locMap = new Map<string, any>();
+    for (const loc of allLocations) {
+      locMap.set(loc.id, loc);
+    }
+
+    const getFullPath = (locId: string): string => {
+      const pathParts: string[] = [];
+      let currentId: string | null = locId;
+      const visited = new Set<string>();
+      while (currentId) {
+        if (visited.has(currentId)) break;
+        visited.add(currentId);
+        const current = locMap.get(currentId);
+        if (current) {
+          pathParts.unshift(current.name);
+          currentId = current.parent_location_id;
+        } else {
+          break;
+        }
+      }
+      return pathParts.join(' › ');
+    };
+
+    let items = allLocations.map(loc => {
+      return {
+        id: loc.id,
+        eventId: loc.event_id,
+        parentLocationId: loc.parent_location_id,
+        type: loc.location_type,
+        name: loc.name,
+        shortName: loc.short_name,
+        description: loc.description,
+        instructions: loc.instructions,
+        capacity: loc.capacity,
+        ageGroup: loc.age_group_key,
+        ageGroupKey: loc.age_group_key,
+        team: loc.team_key,
+        teamKey: loc.team_key,
+        emergencyLabel: loc.emergency_label,
+        sortOrder: loc.sort_order,
+        isActive: !!loc.is_active,
+        pathLabel: getFullPath(loc.id)
+      };
+    });
+
+    if (search) {
+      items = items.filter(item =>
+        item.name.toLowerCase().includes(search) ||
+        (item.shortName && item.shortName.toLowerCase().includes(search)) ||
+        (item.ageGroup && item.ageGroup.toLowerCase().includes(search)) ||
+        (item.team && item.team.toLowerCase().includes(search)) ||
+        item.pathLabel.toLowerCase().includes(search) ||
+        item.type.toLowerCase().includes(search)
+      );
+    }
+
+    items.sort((a, b) => {
+      if (a.sortOrder !== b.sortOrder) {
+        return a.sortOrder - b.sortOrder;
+      }
+      return a.pathLabel.localeCompare(b.pathLabel);
+    });
+
+    const total = items.length;
+    const totalPages = Math.ceil(total / limit);
+    const startIdx = (page - 1) * limit;
+    const paginatedItems = items.slice(startIdx, startIdx + limit);
+
+    return res.json({
+      success: true,
+      items: paginatedItems,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching volunteer duty locations:', err);
+    return res.status(500).json({ error: 'Failed to retrieve event locations' });
+  }
+});
+
+// 2. Get current active duty location presence (Admin assignment takes precedence)
+dutyRouter.get('/current-location', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.json({
+        success: true,
+        presence: null,
+        location: null
+      });
+    }
+
+    const dutyLocation = await resolveUserDutyLocation(userId, currentEventId);
+
+    return res.json({
+      success: true,
+      presence: dutyLocation,
+      location: dutyLocation
+    });
+  } catch (err: any) {
+    console.error('Error fetching current duty location:', err);
+    return res.status(500).json({ error: 'Failed to retrieve current duty location' });
+  }
+});
+
+// 3. Set current active duty location presence (manual selection or QR scan verification)
+dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({ success: false, error: 'No current event is available.' });
+    }
+
+    const { locationId, scannedToken, source } = req.body;
+    let resolvedLocationId = locationId;
+    let resolvedSource = source || 'selected';
+
+    if (scannedToken) {
+      // Look up and verify QR code token
+      const code = await queryOne('SELECT * FROM event_location_codes WHERE token_hash = ? AND is_active = 1', [scannedToken]);
+      if (!code) {
+        return res.status(400).json({ success: false, error: 'This location code could not be verified.' });
+      }
+      resolvedLocationId = code.event_location_id;
+      resolvedSource = 'scanned';
+    }
+
+    if (!resolvedLocationId) {
+      return res.status(400).json({ success: false, error: 'Location ID or scanned token is required.' });
+    }
+
+    // Verify location is active, belongs to currentEventId, and not archived
+    const loc = await queryOne('SELECT * FROM event_locations WHERE id = ? AND event_id = ? AND is_active = 1 AND archived_at IS NULL', [resolvedLocationId, currentEventId]);
+    if (!loc) {
+      return res.status(400).json({ success: false, error: 'The selected location is invalid or no longer active.' });
+    }
+
+    // Backend verification: User MUST have an active or scheduled duty assignment for the current event
+    const userAssignments = await query(`
+      SELECT a.*, el.name as assigned_location_name
+      FROM event_duty_assignments a
+      JOIN event_locations el ON a.assigned_location_id = el.id
+      WHERE a.user_id = ? AND a.event_id = ? AND a.status NOT IN ('cancelled', 'ended') AND a.assigned_location_id IS NOT NULL AND a.assigned_location_id != ''
+    `, [userId, currentEventId]);
+
+    if (!userAssignments || userAssignments.length === 0) {
+      return res.status(403).json({
+        success: false,
+        error: 'no_assignment',
+        message: "You don't have a duty location assigned yet."
+      });
+    }
+
+    // Check if any assignment matches the resolved location
+    const matchingAssignment = userAssignments.find((a: any) => a.assigned_location_id === resolvedLocationId);
+    if (!matchingAssignment) {
+      const assignedName = userAssignments[0]?.assigned_location_name || 'your assigned location';
+      return res.status(403).json({
+        success: false,
+        error: 'assigned_elsewhere',
+        assignedLocationName: assignedName,
+        message: `You're assigned to ${assignedName}. You can only report for duty at your assigned location.`
+      });
+    }
+
+    // Check if user is already actively present at this location (avoid duplicate presence records)
+    const existingPresence = await queryOne(`
+      SELECT * FROM event_duty_location_presence
+      WHERE user_id = ? AND event_location_id = ? AND ended_at IS NULL AND event_id = ?
+      ORDER BY started_at DESC LIMIT 1
+    `, [userId, resolvedLocationId, currentEventId]);
+
+    if (existingPresence) {
+      return res.json({
+        success: true,
+        alreadyPresent: true,
+        presence: {
+          id: existingPresence.id,
+          locationId: resolvedLocationId,
+          name: loc.name,
+          type: loc.location_type,
+          ageGroup: loc.age_group_key,
+          ageGroupKey: loc.age_group_key,
+          team: loc.team_key,
+          teamKey: loc.team_key,
+          instructions: loc.instructions,
+          description: loc.description,
+          source: existingPresence.source,
+          startedAt: existingPresence.started_at,
+          isPresent: true,
+          presentSince: existingPresence.started_at,
+          isAssignedByAdmin: true
+        }
+      });
+    }
+
+    const now = new Date().toISOString();
+
+    // End previous active presence sessions for this user at other locations
+    await execute('UPDATE event_duty_location_presence SET ended_at = ? WHERE user_id = ? AND ended_at IS NULL AND event_id = ?', [now, userId, currentEventId]);
+
+    // Create new active presence
+    const presenceId = 'pres-' + crypto.randomBytes(8).toString('hex');
+    await execute(`
+      INSERT INTO event_duty_location_presence (
+        id, event_id, user_id, duty_device_id, event_location_id, source, started_at, ended_at, updated_at
+      ) VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, ?)
+    `, [presenceId, currentEventId, userId, resolvedLocationId, resolvedSource, now, now]);
+
+    // Update assignment status to 'on_duty' if assigned to this location
+    await execute(`
+      UPDATE event_duty_assignments
+      SET status = 'on_duty', updated_at = ?
+      WHERE user_id = ? AND event_id = ? AND assigned_location_id = ? AND status != 'cancelled'
+    `, [now, userId, currentEventId, resolvedLocationId]);
+
+    // Broadcast SSE change for admin/team view sync
+    broadcastSSEEvent('duty_presence_changed', { eventId: currentEventId, userId, locationId: resolvedLocationId });
+
+    return res.json({
+      success: true,
+      presence: {
+        id: presenceId,
+        locationId: resolvedLocationId,
+        name: loc.name,
+        type: loc.location_type,
+        ageGroup: loc.age_group_key,
+        ageGroupKey: loc.age_group_key,
+        team: loc.team_key,
+        teamKey: loc.team_key,
+        instructions: loc.instructions,
+        description: loc.description,
+        source: resolvedSource,
+        startedAt: now,
+        isPresent: true,
+        presentSince: now,
+        isAssignedByAdmin: true
+      }
+    });
+  } catch (err: any) {
+    console.error('Error setting current duty location:', err);
+    return res.status(500).json({ success: false, error: 'Failed to set current duty location' });
+  }
+});
+
+// 4. End current active duty location presence (Clear)
+dutyRouter.delete('/current-location', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.json({ success: true });
+    }
+
+    const now = new Date().toISOString();
+    await execute('UPDATE event_duty_location_presence SET ended_at = ? WHERE user_id = ? AND ended_at IS NULL AND event_id = ?', [now, userId, currentEventId]);
+
+    broadcastSSEEvent('duty_presence_changed', { eventId: currentEventId, userId, locationId: null });
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error('Error clearing current duty location:', err);
+    return res.status(500).json({ error: 'Failed to clear current duty location' });
+  }
+});
+
+export { dutyRouter, adminDutyRouter };

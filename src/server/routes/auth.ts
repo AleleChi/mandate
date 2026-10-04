@@ -1,0 +1,1275 @@
+import { Router, Response } from 'express';
+import crypto from 'crypto';
+import { queryOne, execute, transaction, query } from '../db';
+import { hashPassword, verifyPassword, generateToken, authMiddleware, optionalAuthMiddleware, AuthenticatedRequest, resolveParentProfileForUser } from '../auth';
+import { sendEmailVerificationEmail, sendPasswordResetEmail, sendVolunteerUnderReviewEmail } from '../services/email';
+import { validateEmailAddress, validatePhoneNumber, validateName } from '../utils/validation';
+import { buildPublicAppUrl } from '../utils/urlHelper';
+import { authorizeChildPass, revokeChildPassAuthorizations, isChildPassAuthorized } from '../services/passService';
+import { enqueueWhatsAppJob } from '../services/whatsapp/queue';
+import { getCurrentEventId, getEventById } from '../services/eventService';
+
+const router = Router();
+
+export async function enqueueRegistrationAck(params: {
+  eventId: string;
+  parentId: string;
+  userId?: string | null;
+}): Promise<void> {
+  await enqueueWhatsAppJob({
+    eventId: params.eventId,
+    parentId: params.parentId,
+    userId: params.userId || undefined,
+    idempotencyKey: `registration_ack:parent:${params.parentId}`
+  });
+}
+
+router.post(['/create-account', '/register'], async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { email, password, fullName, phone, whatsapp, whatsappConsent } = req.body;
+
+    // Resolve registration event context once at registration entry
+    const rawEventId = (req.body?.eventId || req.query?.eventId) as string | undefined;
+    let registrationEventId: string | null = null;
+    let targetEvent: any = null;
+    if (rawEventId && typeof rawEventId === 'string' && rawEventId.trim().length > 0) {
+      targetEvent = await getEventById(rawEventId.trim());
+      registrationEventId = targetEvent ? targetEvent.id : null;
+    } else {
+      registrationEventId = await getCurrentEventId();
+      if (registrationEventId) {
+        targetEvent = await getEventById(registrationEventId);
+      }
+    }
+
+    if (targetEvent) {
+      if (targetEvent.parents_can_create_account === 0 || targetEvent.parents_can_create_account === false) {
+        return res.status(403).json({
+          success: false,
+          code: 'REGISTRATION_CLOSED',
+          message: 'New parent account registration is not permitted for this event.',
+          error: 'New parent account registration is not permitted for this event.'
+        });
+      }
+
+      const nowIso = new Date().toISOString();
+      if (targetEvent.parent_access_opens_at && nowIso < targetEvent.parent_access_opens_at) {
+        return res.status(403).json({
+          success: false,
+          code: 'REGISTRATION_NOT_OPEN',
+          message: 'Registration for this event is not open yet.',
+          error: 'Registration for this event is not open yet.'
+        });
+      }
+
+      if (targetEvent.parent_access_closes_at && nowIso > targetEvent.parent_access_closes_at) {
+        return res.status(403).json({
+          success: false,
+          code: 'REGISTRATION_CLOSED',
+          message: 'Registration for this event has closed.',
+          error: 'Registration for this event has closed.'
+        });
+      }
+
+    }
+
+    // Validate Full Name
+    const nameVal = validateName(fullName, 'fullName');
+    if (!nameVal.valid) {
+      return res.status(400).json({
+        success: false,
+        code: nameVal.code,
+        field: 'fullName',
+        message: nameVal.message,
+        error: nameVal.message
+      });
+    }
+
+    // Validate Email with DNS/MX check
+    const emailVal = await validateEmailAddress(email, false);
+    if (!emailVal.valid) {
+      return res.status(400).json({
+        success: false,
+        code: emailVal.code,
+        field: 'email',
+        message: emailVal.message,
+        error: emailVal.message,
+        suggestion: emailVal.suggestion
+      });
+    }
+
+    // Validate Phone
+    const phoneVal = validatePhoneNumber(phone || '', 'NG');
+    if (!phoneVal.valid) {
+      return res.status(400).json({
+        success: false,
+        code: phoneVal.code,
+        field: 'phone',
+        message: phoneVal.message,
+        error: phoneVal.message
+      });
+    }
+
+    // Validate WhatsApp if present
+    if (whatsapp) {
+      const whatsappVal = validatePhoneNumber(whatsapp, 'NG');
+      if (!whatsappVal.valid) {
+        return res.status(400).json({
+          success: false,
+          code: whatsappVal.code,
+          field: 'whatsapp',
+          message: whatsappVal.message,
+          error: whatsappVal.message
+        });
+      }
+    }
+
+    // Validate Password
+    const hasLetter = /[a-zA-Z]/.test(password || '');
+    const hasNumber = /[0-9]/.test(password || '');
+    if (!password || password.length < 8 || !hasLetter || !hasNumber) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_PASSWORD',
+        field: 'password',
+        message: 'Use at least 8 characters with a letter and a number.',
+        error: 'Use at least 8 characters with a letter and a number.'
+      });
+    }
+
+    const cleanEmail = emailVal.normalizedEmail!;
+    const cleanPhone = phoneVal.normalizedPhone!;
+    const cleanWhatsapp = whatsapp ? validatePhoneNumber(whatsapp, 'NG').normalizedPhone! : cleanPhone;
+
+    const existing = await queryOne('SELECT id FROM users WHERE email = ?', [cleanEmail]);
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        code: 'EMAIL_ALREADY_EXISTS',
+        field: 'email',
+        message: 'Account with this email already exists',
+        error: 'Account with this email already exists'
+      });
+    }
+
+    const userId = crypto.randomUUID();
+    const profileId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const hashedPwd = hashPassword(password);
+
+    // Optional WhatsApp consent tracking
+    const isConsentGranted = Boolean(whatsappConsent) && Boolean(cleanWhatsapp || cleanPhone);
+    const consentStatus = isConsentGranted ? 'opted_in' : 'unknown';
+    const consentAt = isConsentGranted ? now : null;
+    const consentSource = isConsentGranted ? 'registration' : null;
+
+    await transaction(async () => {
+      await execute(`
+        INSERT INTO users (id, email, password_hash, role, created_at, updated_at)
+        VALUES (?, ?, ?, 'parent', ?, ?)
+      `, [userId, cleanEmail, hashedPwd, now, now]);
+
+      await execute(`
+        INSERT INTO parent_profiles (
+          id, user_id, full_name, phone_number, whatsapp_number, email,
+          preferred_contact, is_koinonia_worker,
+          whatsapp_consent_status, whatsapp_consent_at, whatsapp_consent_source,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'WhatsApp', 0, ?, ?, ?, ?, ?)
+      `, [
+        profileId,
+        userId,
+        fullName?.trim() || '',
+        cleanPhone,
+        cleanWhatsapp,
+        cleanEmail,
+        consentStatus,
+        consentAt,
+        consentSource,
+        now,
+        now
+      ]);
+    });
+
+    const user = { id: userId, email: cleanEmail, role: 'parent' };
+    const profile = await queryOne('SELECT * FROM parent_profiles WHERE user_id = ?', [userId]);
+    const token = generateToken(userId);
+
+    // Generate secure email verification reference and send notification email
+    try {
+      const rawVerifyToken = crypto.randomBytes(32).toString('hex');
+      const verifyTokenHash = crypto.createHash('sha256').update(rawVerifyToken).digest('hex');
+      const tokenId = crypto.randomUUID();
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      await execute(`
+        INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
+        VALUES (?, ?, ?, 'email_verification', ?, ?)
+      `, [tokenId, userId, verifyTokenHash, expiresAt, now]);
+
+      const verificationLink = buildPublicAppUrl(`/parent/verify-email?token=${rawVerifyToken}`);
+      sendEmailVerificationEmail({
+        parentEmail: cleanEmail,
+        parentFirstName: fullName,
+        verificationLink
+      }).catch(() => {});
+    } catch (e: any) {
+      console.error('Email sending failed during registration:', e);
+    }
+
+    // Optional transactional WhatsApp registration acknowledgement
+    if (isConsentGranted && Boolean(cleanWhatsapp || cleanPhone)) {
+      try {
+        if (registrationEventId) {
+          await enqueueRegistrationAck({
+            eventId: registrationEventId,
+            parentId: profileId,
+            userId
+          });
+        }
+      } catch (waErr) {
+        console.error('WhatsApp registration acknowledgement enqueue failed (non-fatal):', waErr);
+      }
+    }
+
+    res.status(201).json({ user, profile, token });
+  } catch (err: any) {
+    if (process.env.NODE_ENV !== 'production' && !process.env.APP_BASE_URL) {
+      throw err;
+    }
+    console.error('Create account error:', err);
+    res.status(500).json({ error: 'Internal server error during account creation' });
+  }
+});
+
+router.post('/verify-email', async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      return res.status(400).json({ error: 'Verification link is invalid.' });
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const dbToken = await queryOne(
+      "SELECT * FROM auth_tokens WHERE token_hash = ? AND token_type = 'email_verification'",
+      [tokenHash]
+    );
+
+    if (!dbToken) {
+      return res.status(400).json({ error: 'This verification link is invalid.' });
+    }
+
+    if (dbToken.used_at) {
+      return res.status(400).json({ error: 'This verification link has already been used.' });
+    }
+
+    const expiresAt = new Date(dbToken.expires_at).getTime();
+    if (expiresAt < Date.now()) {
+      return res.status(400).json({ error: 'This verification link has expired.' });
+    }
+
+    const nowStr = new Date().toISOString();
+    await transaction(async () => {
+      // Mark token as used
+      await execute('UPDATE auth_tokens SET used_at = ? WHERE id = ?', [nowStr, dbToken.id]);
+      // Mark user as verified
+      await execute('UPDATE users SET email_verified = 1, updated_at = ? WHERE id = ?', [nowStr, dbToken.user_id]);
+    });
+
+    // Check if verified user is a volunteer, and trigger "under-review" status email
+    try {
+      const verifiedUser = await queryOne('SELECT email, role FROM users WHERE id = ?', [dbToken.user_id]);
+      if (verifiedUser && verifiedUser.role === 'volunteer') {
+        const volProfile = await queryOne('SELECT full_name, preferred_team FROM volunteer_profiles WHERE user_id = ?', [dbToken.user_id]);
+        if (volProfile) {
+          sendVolunteerUnderReviewEmail({
+            volunteerEmail: verifiedUser.email,
+            volunteerFirstName: volProfile.full_name,
+            preferredTeam: volProfile.preferred_team
+          }).catch((err) => console.error('Error sending volunteer under-review email:', err));
+        }
+      }
+    } catch (e) {
+      console.error('Failed to trigger under-review email post-verification:', e);
+    }
+
+    res.json({ success: true, message: 'Email verified successfully.' });
+  } catch (err) {
+    console.error('Email verification error:', err);
+    res.status(500).json({ error: 'An unexpected error occurred during email verification.' });
+  }
+});
+
+router.post('/resend-verification', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email address is required.' });
+    }
+
+    const emailVal = await validateEmailAddress(email, true);
+    if (!emailVal.valid) {
+      return res.status(400).json({ error: emailVal.message });
+    }
+
+    const cleanEmail = emailVal.normalizedEmail!;
+
+    const user = await queryOne('SELECT id, email_verified FROM users WHERE email = ?', [cleanEmail]);
+    
+    if (!user) {
+      console.log('No unverified user found for resend request');
+      return res.json({ 
+        success: true, 
+        message: 'If this email is connected to a parent account, a new link has been sent.' 
+      });
+    }
+
+    if (user.email_verified) {
+      return res.json({
+        success: true,
+        alreadyVerified: true,
+        role: 'parent',
+        emailSent: false,
+        message: 'This email is already confirmed. You can sign in.'
+      });
+    }
+
+    // Enforce cooldown (60 seconds)
+    const lastToken = await queryOne(`
+      SELECT created_at FROM auth_tokens
+      WHERE user_id = ? AND token_type = 'email_verification'
+      ORDER BY created_at DESC LIMIT 1
+    `, [user.id]);
+    if (lastToken && lastToken.created_at) {
+      const elapsedMs = Date.now() - new Date(lastToken.created_at).getTime();
+      const cooldownMs = 60 * 1000;
+      if (elapsedMs < cooldownMs) {
+        const retryAfterSeconds = Math.ceil((cooldownMs - elapsedMs) / 1000);
+        return res.status(429).json({
+          success: false,
+          code: 'RESEND_COOLDOWN',
+          emailSent: false,
+          retryAfterSeconds,
+          message: 'Please wait before requesting another verification link.'
+        });
+      }
+    }
+
+    const now = new Date().toISOString();
+
+    // Expire old unused verification tokens
+    await execute(`
+      UPDATE auth_tokens 
+      SET expires_at = ? 
+      WHERE user_id = ? AND token_type = 'email_verification' AND used_at IS NULL
+    `, [now, user.id]);
+
+    const rawVerifyToken = crypto.randomBytes(32).toString('hex');
+    const verifyTokenHash = crypto.createHash('sha256').update(rawVerifyToken).digest('hex');
+    const tokenId = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    
+    await execute(`
+      INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
+      VALUES (?, ?, ?, 'email_verification', ?, ?)
+    `, [tokenId, user.id, verifyTokenHash, expiresAt, now]);
+
+    const profile = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [user.id]);
+    const fullName = profile ? profile.full_name : undefined;
+
+    const verificationLink = buildPublicAppUrl(`/parent/verify-email?token=${rawVerifyToken}`);
+    const emailResult = await sendEmailVerificationEmail({
+      parentEmail: cleanEmail,
+      parentFirstName: fullName,
+      verificationLink
+    });
+
+    if (!emailResult.success) {
+      return res.status(500).json({
+        success: false,
+        message: 'We could not send a new link right now. Please try again.'
+      });
+    }
+
+    res.json({ 
+      success: true, 
+      message: 'If this email is connected to a parent account, a new link has been sent.' 
+    });
+  } catch (err: any) {
+    if (process.env.NODE_ENV !== 'production' && !process.env.APP_BASE_URL) {
+      throw err;
+    }
+    console.error('Resend verification error:', err);
+    res.status(500).json({ error: 'We could not send the email right now. Please try again.' });
+  }
+});
+
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email address is required' });
+
+    const emailVal = await validateEmailAddress(email, true);
+    if (!emailVal.valid) {
+      return res.status(400).json({ error: emailVal.message });
+    }
+
+    const cleanEmail = emailVal.normalizedEmail!;
+    const user = await queryOne('SELECT id FROM users WHERE email = ?', [cleanEmail]);
+    if (user) {
+      // Enforce 60-second database-backed cooldown per user account
+      const lastToken = await queryOne(`
+        SELECT created_at FROM auth_tokens
+        WHERE user_id = ? AND token_type = 'password_reset' AND used_at IS NULL
+        ORDER BY created_at DESC LIMIT 1
+      `, [user.id]);
+      if (lastToken && lastToken.created_at) {
+        const elapsedMs = Date.now() - new Date(lastToken.created_at).getTime();
+        const cooldownMs = 60 * 1000;
+        if (elapsedMs < cooldownMs) {
+          const retryAfterSeconds = Math.ceil((cooldownMs - elapsedMs) / 1000);
+          return res.status(429).json({
+            success: false,
+            code: 'RESET_COOLDOWN',
+            emailSent: false,
+            retryAfterSeconds,
+            message: 'Please wait before requesting another reset link.'
+          });
+        }
+      }
+
+      const now = new Date().toISOString();
+
+      // Expire old unused password_reset tokens
+      await execute(`
+        UPDATE auth_tokens
+        SET expires_at = ?
+        WHERE user_id = ? AND token_type = 'password_reset' AND used_at IS NULL
+      `, [now, user.id]);
+
+      const rawResetToken = crypto.randomBytes(32).toString('hex');
+      const resetTokenHash = crypto.createHash('sha256').update(rawResetToken).digest('hex');
+      const tokenId = crypto.randomUUID();
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      await execute(`
+        INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
+        VALUES (?, ?, ?, 'password_reset', ?, ?)
+      `, [tokenId, user.id, resetTokenHash, expiresAt, now]);
+
+      const profile = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [user.id]);
+      const fullName = profile ? profile.full_name : undefined;
+
+      const resetLink = buildPublicAppUrl(`/parent/new-password?token=${rawResetToken}&email=${encodeURIComponent(cleanEmail)}`);
+      sendPasswordResetEmail({
+        parentEmail: cleanEmail,
+        parentFirstName: fullName,
+        resetLink
+      }).catch(() => {});
+    }
+    res.json({ success: true, message: 'If an account exists with that email, recovery steps have been sent.' });
+  } catch (err: any) {
+    if (process.env.NODE_ENV !== 'production' && !process.env.APP_BASE_URL) {
+      throw err;
+    }
+    console.error('Forgot password error:', err);
+    res.status(500).json({ error: 'We could not send the email right now. Please try again.' });
+  }
+});
+
+router.post('/test-email', optionalAuthMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const isAdmin = req.user && (req.user.role === 'admin' || req.user.role === 'super_admin');
+
+    // In production, strictly require authenticated Admin role to prevent open relay abuse
+    if (process.env.NODE_ENV === 'production') {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+      if (!isAdmin) {
+        return res.status(403).json({ error: 'Access denied: Admin authorization required' });
+      }
+    } else {
+      // In non-production, block unauthenticated requests unless in test mode or with admin token
+      if (!isAdmin && process.env.NODE_ENV !== 'test') {
+        return res.status(403).json({ error: 'Access denied: Admin authorization required' });
+      }
+    }
+
+    const { to } = req.body;
+    if (!to) return res.status(400).json({ error: 'Recipient email address required' });
+
+    const emailVal = await validateEmailAddress(to, true);
+    if (!emailVal.valid) {
+      return res.status(400).json({ error: emailVal.message });
+    }
+
+    const cleanTo = emailVal.normalizedEmail!;
+    const result = await sendEmailVerificationEmail({
+      parentEmail: cleanTo,
+      parentFirstName: 'Test Recipient',
+      verificationLink: buildPublicAppUrl('/parent/verify-email?token=test-token')
+    });
+    if (!result.success) {
+      return res.status(500).json({ error: result.error || 'We could not send the email right now. Please try again.' });
+    }
+    res.json({ success: true, messageId: result.id });
+  } catch (err: any) {
+    res.status(500).json({ error: 'We could not send the email right now. Please try again.' });
+  }
+});
+
+router.post(['/sign-in', '/login'], async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        code: 'REQUIRED_FIELDS_MISSING',
+        message: 'Email and password are required.'
+      });
+    }
+
+    // Skip MX lookup but validate syntax/typos
+    const emailVal = await validateEmailAddress(email, true);
+    if (!emailVal.valid) {
+      return res.status(400).json({
+        success: false,
+        code: emailVal.code || 'INVALID_EMAIL_FORMAT',
+        field: 'email',
+        message: emailVal.message,
+        error: emailVal.message,
+        suggestion: emailVal.suggestion
+      });
+    }
+
+    const cleanEmail = emailVal.normalizedEmail!;
+
+    const user = await queryOne('SELECT id, email, password_hash, role, email_verified, status FROM users WHERE LOWER(TRIM(email)) = ?', [cleanEmail]);
+    console.log(`[SIGN_IN] user lookup { email: "${cleanEmail}", userFound: ${!!user}, role: "${user?.role}" }`);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        code: 'ACCOUNT_NOT_FOUND',
+        message: 'No parent account was found for this email.'
+      });
+    }
+
+    if (user.status === 'suspended' || user.status === 'revoked') {
+      return res.status(403).json({
+        success: false,
+        code: 'ACCOUNT_BLOCKED',
+        message: 'Your account has been suspended or revoked. Please contact event administration.'
+      });
+    }
+
+    const passwordMatches = user.password_hash ? verifyPassword(password, user.password_hash) : false;
+    console.log(`[SIGN_IN] checking password { has_hash: ${!!user.password_hash}, matches: ${passwordMatches} }`);
+    if (!user.password_hash || !passwordMatches) {
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_CREDENTIALS',
+        message: 'Email or password is incorrect.'
+      });
+    }
+
+    const profile = await resolveParentProfileForUser(user.id, user.email);
+    if (user.role !== 'parent' && user.role !== 'admin' && !profile) {
+      return res.status(403).json({
+        success: false,
+        code: 'NO_PARENT_ACCESS',
+        message: 'Parent Access has not been registered for this account.'
+      });
+    }
+    const token = generateToken(user.id);
+
+    const emailVerified = user.email_verified === 1 || user.email_verified === true || user.email_verified === '1';
+    if (!emailVerified) {
+      return res.status(403).json({
+        success: false,
+        code: 'EMAIL_NOT_VERIFIED',
+        message: 'Email is not verified.',
+        user: { id: user.id, email: user.email, role: user.role, email_verified: user.email_verified },
+        profile,
+        token
+      });
+    }
+
+    res.json({
+      user: { id: user.id, email: user.email, role: user.role, email_verified: user.email_verified },
+      profile,
+      token
+    });
+  } catch (err: any) {
+    console.error('Sign in error:', err);
+    res.status(500).json({ error: 'Internal server error during sign in' });
+  }
+});
+
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_OR_EXPIRED_TOKEN',
+        message: 'Token is required.'
+      });
+    }
+
+    const hasLetter = /[a-zA-Z]/.test(password || '');
+    const hasNumber = /[0-9]/.test(password || '');
+    if (!password || password.length < 8 || !hasLetter || !hasNumber) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_PASSWORD',
+        field: 'password',
+        message: 'Use at least 8 characters with a letter and a number.',
+        error: 'Use at least 8 characters with a letter and a number.'
+      });
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const now = new Date().toISOString();
+
+    const tokenRow = await queryOne(`
+      SELECT * FROM auth_tokens 
+      WHERE token_hash = ? AND token_type = 'password_reset' AND used_at IS NULL AND expires_at > ?
+    `, [tokenHash, now]);
+
+    if (!tokenRow) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_OR_EXPIRED_TOKEN',
+        message: 'This reset link has expired. Please request a new one.'
+      });
+    }
+
+    const user = await queryOne('SELECT id, email FROM users WHERE id = ?', [tokenRow.user_id]);
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_OR_EXPIRED_TOKEN',
+        message: 'This reset link has expired. Please request a new one.'
+      });
+    }
+
+    const profile = await queryOne('SELECT id FROM parent_profiles WHERE user_id = ?', [user.id]);
+    if (!profile) {
+      return res.status(403).json({
+        success: false,
+        code: 'NO_PARENT_ACCESS',
+        message: 'Parent profile has not been found for this account.'
+      });
+    }
+
+    const hashedPwd = hashPassword(password);
+    const updatedAt = new Date().toISOString();
+
+    const updateResult = await execute('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?', [hashedPwd, updatedAt, user.id]);
+    console.log(`[RESET_PASSWORD] DB update users table password_hash result: ${JSON.stringify(updateResult)} for userId: "${user.id}"`);
+
+    await execute('UPDATE auth_tokens SET used_at = ? WHERE id = ?', [now, tokenRow.id]);
+    await execute(`
+      UPDATE auth_tokens
+      SET expires_at = ?
+      WHERE user_id = ? AND token_type = 'password_reset' AND used_at IS NULL
+    `, [now, user.id]);
+
+    console.log(`Parent password updated { userId: "${user.id}", changes: ${updateResult.changes} }`);
+
+    return res.json({
+      success: true,
+      message: 'Your password has been updated. You can now sign in.'
+    });
+  } catch (err: any) {
+    console.error('Parent reset password error:', err);
+    res.status(500).json({ error: 'An unexpected error occurred during password reset.' });
+  }
+});
+
+// POST /api/auth/sign-out - revokes server-side session authorizations
+router.post('/sign-out', optionalAuthMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const parentId = req.parentProfile?.id || (req.user?.id ? (await queryOne('SELECT id FROM parent_profiles WHERE user_id = ?', [req.user.id]))?.id : null);
+    if (parentId) {
+      await revokeChildPassAuthorizations(parentId);
+    }
+  } catch (err) {
+    console.warn('Error during pass authorization revocation on sign-out:', err);
+  }
+  res.json({ success: true, message: 'Signed out successfully' });
+});
+
+// POST /api/auth/switch-experience - Safely switch active experience after server-side verification
+router.post('/switch-experience', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { targetExperience } = req.body;
+    if (!targetExperience || !['parent', 'volunteer'].includes(targetExperience)) {
+      return res.status(400).json({ success: false, error: 'We could not switch views. Please try again.' });
+    }
+
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    if (targetExperience === 'volunteer') {
+      const volProfile = await queryOne('SELECT * FROM volunteer_profiles WHERE user_id = ?', [userId]);
+      const isStaffOrAdmin = ['staff', 'admin', 'super_admin'].includes(req.user?.role || '');
+      const isApprovedOrActive = volProfile && (volProfile.status === 'active' || volProfile.status === 'approved');
+
+      if (!isStaffOrAdmin && !isApprovedOrActive) {
+        return res.status(403).json({ success: false, error: 'We could not switch views. Please try again.' });
+      }
+
+      return res.json({
+        success: true,
+        activeExperience: 'volunteer',
+        targetRoute: '/volunteer/event',
+        user: req.user,
+        volunteerProfile: volProfile
+      });
+    }
+
+    if (targetExperience === 'parent') {
+      const parentProfile = await queryOne('SELECT * FROM parent_profiles WHERE user_id = ?', [userId]);
+      return res.json({
+        success: true,
+        activeExperience: 'parent',
+        targetRoute: '/parent/home',
+        user: req.user,
+        parentProfile: parentProfile
+      });
+    }
+
+    return res.status(400).json({ success: false, error: 'We could not switch views. Please try again.' });
+  } catch (err) {
+    console.error('Switch experience error:', err);
+    res.status(500).json({ success: false, error: 'We could not switch views. Please try again.' });
+  }
+});
+
+router.get('/me', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  res.json({ user: req.user, profile: req.parentProfile });
+});
+
+// In-memory challenge store for passkey flows
+const challengesStore = new Map<string, { challenge: string; expires: number }>();
+
+// GET /api/auth/passkeys - list registered passkeys for logged in user
+router.get('/passkeys', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const passkeys = await query(
+      'SELECT id, credential_id as "credentialId", device_name as "deviceName", created_at as "createdAt", last_used_at as "lastUsedAt" FROM user_passkeys WHERE user_id = ? AND revoked_at IS NULL',
+      [req.user.id]
+    );
+    res.json({ success: true, passkeys });
+  } catch (err) {
+    console.error('Fetch passkeys error:', err);
+    res.status(500).json({ error: 'Internal server error fetching passkeys' });
+  }
+});
+
+// DELETE /api/auth/passkeys/:passkeyId - revoke passkey
+router.delete('/passkeys/:passkeyId', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { passkeyId } = req.params;
+    const now = new Date().toISOString();
+    await execute(
+      'UPDATE user_passkeys SET revoked_at = ? WHERE id = ? AND user_id = ?',
+      [now, passkeyId, req.user.id]
+    );
+    res.json({ success: true, message: 'Passkey revoked successfully' });
+  } catch (err) {
+    console.error('Revoke passkey error:', err);
+    res.status(500).json({ error: 'Internal server error revoking passkey' });
+  }
+});
+
+const TRUSTED_PRODUCTION_HOSTNAMES = [
+  'koinonia12.netlify.app',
+  'themandate.dontechservicesconst.com'
+];
+
+function getConfiguredEnvHostnames(): string[] {
+  const envVars = [
+    process.env.PUBLIC_APP_URL,
+    process.env.APP_BASE_URL,
+    process.env.CORS_ORIGIN
+  ].filter(Boolean) as string[];
+
+  const hosts: string[] = [];
+  for (const raw of envVars) {
+    for (const piece of raw.split(',')) {
+      const trimmed = piece.trim();
+      if (!trimmed) continue;
+      try {
+        const parsed = trimmed.startsWith('http') ? new URL(trimmed).hostname : trimmed.split(':')[0];
+        if (parsed && !hosts.includes(parsed.toLowerCase())) {
+          hosts.push(parsed.toLowerCase());
+        }
+      } catch {}
+    }
+  }
+  return hosts;
+}
+
+function isAllowedHostname(hostname: string): boolean {
+  if (!hostname) return false;
+  const cleanHost = hostname.toLowerCase().trim().split(':')[0];
+
+  // 1. Exact known production frontend hosts
+  if (TRUSTED_PRODUCTION_HOSTNAMES.includes(cleanHost)) {
+    return true;
+  }
+
+  // 2. Exact frontend hosts parsed from configured environment variables
+  const envHosts = getConfiguredEnvHostnames();
+  if (envHosts.includes(cleanHost)) {
+    return true;
+  }
+
+  // 3. Local development hosts (localhost and 127.0.0.1 only for development)
+  const isDev = process.env.NODE_ENV !== 'production';
+  if (isDev && (cleanHost === 'localhost' || cleanHost === '127.0.0.1')) {
+    return true;
+  }
+
+  return false;
+}
+
+function resolveAndValidateRpId(req: any): { rpId: string | null; error?: string } {
+  // 1. Check explicit rpId in body
+  if (req.body?.rpId && typeof req.body.rpId === 'string' && req.body.rpId.trim()) {
+    const candidate = req.body.rpId.trim().toLowerCase().split(':')[0];
+    if (isAllowedHostname(candidate)) {
+      return { rpId: candidate };
+    }
+    return { rpId: null, error: 'The requested Relying Party ID is not authorized.' };
+  }
+
+  // 2. Check explicit Origin header
+  if (req.headers.origin) {
+    try {
+      const candidate = new URL(req.headers.origin as string).hostname.toLowerCase();
+      if (isAllowedHostname(candidate)) {
+        return { rpId: candidate };
+      }
+      return { rpId: null, error: 'The request origin is not authorized for secure unlock.' };
+    } catch {
+      return { rpId: null, error: 'Invalid request origin header.' };
+    }
+  }
+
+  // 3. Check explicit Referer header
+  if (req.headers.referer) {
+    try {
+      const candidate = new URL(req.headers.referer as string).hostname.toLowerCase();
+      if (isAllowedHostname(candidate)) {
+        return { rpId: candidate };
+      }
+      return { rpId: null, error: 'The request referer is not authorized for secure unlock.' };
+    } catch {
+      return { rpId: null, error: 'Invalid request referer header.' };
+    }
+  }
+
+  // 4. Default fallback when no explicit client origin/rpId is provided
+  const isDev = process.env.NODE_ENV !== 'production';
+  return { rpId: isDev ? 'localhost' : 'koinonia12.netlify.app' };
+}
+
+// POST /api/auth/passkeys/register/options
+router.post('/passkeys/register/options', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const resolved = resolveAndValidateRpId(req);
+    if (!resolved.rpId) {
+      return res.status(400).json({
+        success: false,
+        code: 'UNAUTHORIZED_ORIGIN',
+        error: resolved.error || 'The request origin is not authorized for secure unlock.'
+      });
+    }
+
+    const challenge = crypto.randomBytes(32).toString('base64url');
+    challengesStore.set(`reg-${req.user.id}`, {
+      challenge,
+      expires: Date.now() + 5 * 60 * 1000
+    });
+
+    const rpId = resolved.rpId;
+
+    res.json({
+      success: true,
+      options: {
+        challenge,
+        rp: {
+          name: 'Koinonia Children & Teens',
+          id: rpId
+        },
+        user: {
+          id: req.user.id,
+          name: req.user.email,
+          displayName: req.parentProfile?.full_name || req.user.email
+        },
+        pubKeyCredParams: [
+          { type: 'public-key', alg: -7 },
+          { type: 'public-key', alg: -257 }
+        ],
+        timeout: 60000,
+        authenticatorSelection: {
+          authenticatorAttachment: 'platform',
+          userVerification: 'required',
+          residentKey: 'required',
+          requireResidentKey: true
+        },
+        attestation: 'none'
+      }
+    });
+  } catch (err) {
+    console.error('Passkey register options error:', err);
+    res.status(500).json({ error: 'Internal server error preparing passkey registration options' });
+  }
+});
+
+// POST /api/auth/passkeys/register/verify
+router.post('/passkeys/register/verify', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const resolved = resolveAndValidateRpId(req);
+    if (!resolved.rpId) {
+      return res.status(400).json({
+        success: false,
+        code: 'UNAUTHORIZED_ORIGIN',
+        error: resolved.error || 'The request origin is not authorized for secure unlock.'
+      });
+    }
+
+    const { credential, deviceName } = req.body;
+    if (!credential || !credential.id) {
+      return res.status(400).json({ success: false, error: 'Invalid passkey credential details provided' });
+    }
+
+    const stored = challengesStore.get(`reg-${req.user.id}`);
+    if (!stored || stored.expires < Date.now()) {
+      return res.status(400).json({ success: false, error: 'Registration verification session expired or not found' });
+    }
+    challengesStore.delete(`reg-${req.user.id}`);
+
+    const pubKey = credential.response?.publicKey || 'encoded-public-key-placeholder';
+    const passkeyId = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    await execute(`
+      INSERT INTO user_passkeys (id, user_id, role, credential_id, public_key, counter, device_name, created_at)
+      VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+    `, [passkeyId, req.user.id, req.user.role, credential.id, pubKey, deviceName || 'This Device', now]);
+
+    res.json({ success: true, message: 'Passkey registered successfully', passkey: { id: passkeyId, deviceName } });
+  } catch (err) {
+    console.error('Passkey register verify error:', err);
+    res.status(500).json({ error: 'Internal server error verifying passkey registration' });
+  }
+});
+
+// POST /api/auth/passkeys/login/options
+router.post('/passkeys/login/options', async (req, res) => {
+  try {
+    const resolved = resolveAndValidateRpId(req);
+    if (!resolved.rpId) {
+      return res.status(400).json({
+        success: false,
+        code: 'UNAUTHORIZED_ORIGIN',
+        error: resolved.error || 'The request origin is not authorized for secure unlock.'
+      });
+    }
+
+    const { email } = req.body || {};
+    const challenge = crypto.randomBytes(32).toString('base64url');
+    const challengeKey = `login-${crypto.randomUUID()}`;
+    challengesStore.set(challengeKey, {
+      challenge,
+      expires: Date.now() + 5 * 60 * 1000
+    });
+
+    const allowCredentials = [];
+    if (email && typeof email === 'string' && email.trim()) {
+      const normalizedEmail = email.trim().toLowerCase();
+      const user = await queryOne('SELECT id, role FROM users WHERE LOWER(email) = ?', [normalizedEmail]);
+      if (user) {
+        const pks = await query('SELECT credential_id as "id" FROM user_passkeys WHERE user_id = ? AND revoked_at IS NULL', [user.id]);
+        for (const pk of pks) {
+          allowCredentials.push({
+            type: 'public-key',
+            id: pk.id
+          });
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      challengeKey,
+      options: {
+        challenge,
+        timeout: 60000,
+        rpId: resolved.rpId,
+        allowCredentials,
+        userVerification: 'required'
+      }
+    });
+  } catch (err) {
+    console.error('Passkey login options error:', err);
+    res.status(500).json({ error: 'Internal server error preparing sign in options' });
+  }
+});
+
+// POST /api/auth/passkeys/login/verify
+router.post('/passkeys/login/verify', async (req, res) => {
+  try {
+    const resolved = resolveAndValidateRpId(req);
+    if (!resolved.rpId) {
+      return res.status(400).json({
+        success: false,
+        code: 'UNAUTHORIZED_ORIGIN',
+        error: resolved.error || 'The request origin is not authorized for secure unlock.'
+      });
+    }
+
+    const { credential, challengeKey } = req.body;
+    if (!credential || !credential.id || !challengeKey) {
+      return res.status(400).json({ success: false, error: 'Authentication request details are missing' });
+    }
+
+    const stored = challengesStore.get(challengeKey);
+    if (!stored || stored.expires < Date.now()) {
+      return res.status(400).json({ success: false, error: 'Device security verification timed out' });
+    }
+    challengesStore.delete(challengeKey);
+
+    const passkey = await queryOne('SELECT * FROM user_passkeys WHERE credential_id = ? AND revoked_at IS NULL', [credential.id]);
+    if (!passkey) {
+      return res.status(401).json({ success: false, error: 'Device credentials are not recognized' });
+    }
+
+    const user = await queryOne('SELECT id, email, role, email_verified FROM users WHERE id = ?', [passkey.user_id]);
+    if (!user) {
+      return res.status(401).json({ success: false, error: 'Account linked with this device is not found' });
+    }
+
+    const profile = await resolveParentProfileForUser(user.id, user.email);
+    const volunteerProfile = await queryOne('SELECT * FROM volunteer_profiles WHERE user_id = ?', [user.id]);
+    const token = generateToken(user.id);
+
+    const now = new Date().toISOString();
+    await execute('UPDATE user_passkeys SET counter = counter + 1, last_used_at = ? WHERE id = ?', [now, passkey.id]);
+
+    res.json({
+      success: true,
+      user: { id: user.id, email: user.email, role: user.role, email_verified: user.email_verified },
+      profile,
+      volunteerProfile,
+      token
+    });
+  } catch (err) {
+    console.error('Passkey login verify error:', err);
+    res.status(500).json({ error: 'Internal server error performing device verification' });
+  }
+});
+
+// POST /api/auth/passkeys/verify-action
+router.post('/passkeys/verify-action', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const resolved = resolveAndValidateRpId(req);
+    if (!resolved.rpId) {
+      return res.status(400).json({
+        success: false,
+        code: 'UNAUTHORIZED_ORIGIN',
+        error: resolved.error || 'The request origin is not authorized for secure unlock.'
+      });
+    }
+
+    const { credential, actionName, childId } = req.body;
+    if (!credential || !credential.id) {
+      return res.status(400).json({ success: false, error: 'Verification credentials are required' });
+    }
+    
+    const passkey = await queryOne('SELECT id FROM user_passkeys WHERE credential_id = ? AND user_id = ? AND revoked_at IS NULL', [credential.id, req.user.id]);
+    if (!passkey) {
+      return res.status(401).json({ success: false, error: 'Device security verification failed' });
+    }
+    
+    const now = new Date().toISOString();
+    await execute('UPDATE user_passkeys SET last_used_at = ? WHERE id = ?', [now, passkey.id]);
+    
+    await execute(`
+      INSERT INTO audit_logs (id, user_id, user_role, action, target_type, details, timestamp)
+      VALUES (?, ?, ?, ?, 'device_verification', ?, ?)
+    `, [crypto.randomUUID(), req.user.id, req.user.role, 'device_secure_confirm', `Verified action: ${actionName || 'Sensitive Action'}`, now]);
+
+    let passAuth: { passToken: string; expiresAt: number } | null = null;
+    if (childId) {
+      // A pass-unlock action was requested — parentProfile and ownership are mandatory.
+      // Fail hard rather than silently returning success with passToken: undefined.
+      if (!req.parentProfile) {
+        console.error('[verify-action] childId provided but req.parentProfile is null', {
+          userId: req.user.id, childId
+        });
+        return res.status(403).json({
+          success: false,
+          error: 'Parent profile is required to unlock a child pass. Please sign in again.'
+        });
+      }
+
+      const child = await queryOne(
+        'SELECT id FROM children WHERE id = ? AND parent_profile_id = ?',
+        [childId, req.parentProfile.id]
+      );
+      if (!child) {
+        return res.status(403).json({ success: false, error: 'Unauthorized child context for biometric pass unlock' });
+      }
+
+      passAuth = await authorizeChildPass(req.parentProfile.id, childId, 15 * 60 * 1000, req.user.id);
+
+      // Immediately self-verify the generated token — defensive guarantee before returning.
+      const tokenValid = await isChildPassAuthorized(req.parentProfile.id, childId, passAuth.passToken);
+      if (!tokenValid) {
+        console.error('[verify-action] passToken failed immediate self-verification', {
+          parentProfileId: req.parentProfile.id, childId
+        });
+        return res.status(500).json({
+          success: false,
+          error: 'Pass authorization could not be established. Please try again.'
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Verification completed successfully',
+      passToken: passAuth?.passToken,
+      expiresAt: passAuth?.expiresAt
+    });
+  } catch (err) {
+    console.error('Verify action error:', err);
+    res.status(500).json({ error: 'Internal server error during device security verification' });
+  }
+});
+
+
+
+// Helper to format friendly date time string
+function formatFriendlyDateTime(isoStr: string | null | undefined): string | null {
+  if (!isoStr) return null;
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return null;
+    const day = d.getDate();
+    const month = d.toLocaleString('en-US', { month: 'long', timeZone: 'Africa/Lagos' });
+    let hours = d.getHours();
+    const minutes = d.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const minuteStr = minutes === 0 ? '' : `:${minutes < 10 ? '0' + minutes : minutes}`;
+    return `${day} ${month} at ${hours}${minuteStr} ${ampm}`;
+  } catch (_) {
+    return null;
+  }
+}
+
+// GET /api/auth/registration-status - Public registration window and status info for current event
+router.get('/registration-status', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const rawEventId = (req.query?.eventId as string) || undefined;
+    let targetEvent: any = null;
+    if (rawEventId && rawEventId.trim().length > 0) {
+      targetEvent = await getEventById(rawEventId.trim());
+    } else {
+      const currentEventId = await getCurrentEventId();
+      if (currentEventId) {
+        targetEvent = await getEventById(currentEventId);
+      }
+    }
+
+    if (!targetEvent) {
+      return res.json({
+        success: true,
+        hasEvent: false,
+        eventName: 'The General Assembly',
+        eventId: null,
+        parent: {
+          isOpen: false,
+          state: 'closed',
+          opensAt: null,
+          closesAt: null,
+          opensAtFormatted: null,
+          closesAtFormatted: null
+        },
+        volunteer: {
+          isOpen: false,
+          state: 'closed',
+          opensAt: null,
+          closesAt: null,
+          opensAtFormatted: null,
+          closesAtFormatted: null
+        }
+      });
+    }
+
+    const nowIso = new Date().toISOString();
+
+    // Parent status
+    let parentState: 'open' | 'not_open_yet' | 'closed' | 'disabled' = 'open';
+    if (targetEvent.parents_can_create_account === 0 || targetEvent.parents_can_create_account === false) {
+      parentState = 'disabled';
+    } else if (targetEvent.parent_access_opens_at && nowIso < targetEvent.parent_access_opens_at) {
+      parentState = 'not_open_yet';
+    } else if (targetEvent.parent_access_closes_at && nowIso > targetEvent.parent_access_closes_at) {
+      parentState = 'closed';
+    }
+
+    // Volunteer status
+    let volunteerState: 'open' | 'not_open_yet' | 'closed' = 'open';
+    if (targetEvent.volunteer_registration_opens_at && nowIso < targetEvent.volunteer_registration_opens_at) {
+      volunteerState = 'not_open_yet';
+    } else if (targetEvent.volunteer_registration_closes_at && nowIso > targetEvent.volunteer_registration_closes_at) {
+      volunteerState = 'closed';
+    }
+
+    return res.json({
+      success: true,
+      hasEvent: true,
+      eventName: targetEvent.title || 'The General Assembly',
+      eventId: targetEvent.id,
+      parent: {
+        isOpen: parentState === 'open',
+        state: parentState,
+        opensAt: targetEvent.parent_access_opens_at || null,
+        closesAt: targetEvent.parent_access_closes_at || null,
+        opensAtFormatted: formatFriendlyDateTime(targetEvent.parent_access_opens_at),
+        closesAtFormatted: formatFriendlyDateTime(targetEvent.parent_access_closes_at)
+      },
+      volunteer: {
+        isOpen: volunteerState === 'open',
+        state: volunteerState,
+        opensAt: targetEvent.volunteer_registration_opens_at || null,
+        closesAt: targetEvent.volunteer_registration_closes_at || null,
+        opensAtFormatted: formatFriendlyDateTime(targetEvent.volunteer_registration_opens_at),
+        closesAtFormatted: formatFriendlyDateTime(targetEvent.volunteer_registration_closes_at)
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching registration status:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve registration status' });
+  }
+});
+
+// POST /api/auth/passkeys/revoke-pass-auth - explicitly revokes pass authorization
+router.post('/passkeys/revoke-pass-auth', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const { childId } = req.body || {};
+  if (req.parentProfile) {
+    await revokeChildPassAuthorizations(req.parentProfile.id, childId);
+  }
+  res.json({ success: true, message: 'Pass authorization revoked' });
+});
+
+export default router;

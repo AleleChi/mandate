@@ -1,0 +1,14415 @@
+import { Router, Response, NextFunction } from 'express';
+import crypto from 'crypto';
+import path from 'path';
+import multer from 'multer';
+import { query, queryOne, execute, transaction } from '../db';
+import { authMiddleware, AuthenticatedRequest, verifyPassword, hashPassword, generateToken } from '../auth';
+import { syncJobsForEvent, executeTestNotification, sendWhatsApp } from '../services/notifications';
+import { sendWebPush } from '../services/push';
+import { sendEmail, sendVolunteerApprovedEmail, sendInvitationEmail, formatInvitationExpiry, isEmailConfigured, resolveEmailProvider } from '../services/email';
+import { issuePassForChild, revokePassForChild } from '../services/passService';
+import { uploadMedia, buildCloudinaryOptimizedVideoUrl, buildCloudinaryVideoPosterUrl } from '../services/media/cloudinary';
+import { processImage } from '../services/media/imageProcessor';
+import { broadcastSSEEvent } from '../services/sse';
+import { getChildSummaryStats } from '../services/childSummaryService';
+import { serializeChildEmergencySummary, captureChildSnapshot } from './volunteer';
+import { eventOperationsService } from '../services/eventOperationsService';
+import { operationsAssistantService } from '../services/operationsAssistantService';
+import { setCurrentEvent, getCurrentEvent, getCurrentEventId, getEventById, EventRow } from '../services/eventService';
+import { cancelActiveEscalationCycles } from '../services/escalationService';
+import { adminDutyRouter, resolveUserDutyLocation } from './duty';
+import { buildPublicAppUrl, buildParentStatusUrl, buildParentPassUrl, buildReviewUrl, resolveMessageTokens } from '../utils/urlHelper';
+import {
+  getWhatsAppProvider,
+  getWhatsAppProviderReadiness,
+  normalizePhoneNumberToE164,
+  logWhatsAppDelivery,
+  enqueueWhatsAppJob,
+  buildIdempotencyKey,
+  processQueuedWhatsAppJobs,
+  isWhatsAppInProcessWorkerEnabled
+} from '../services/whatsapp';
+import {
+  provisionWristband,
+  lookupWristbandByNfcUid,
+  lookupWristbandByIdentifier,
+  bindWristbandToChild,
+  deactivateWristbandAssignment,
+  replaceWristband,
+  WristbandDomainError,
+  getWristbandInventory,
+  previewBulkImportWristbands,
+  executeBulkImportWristbands,
+  getWristbandsForPrint,
+  verifyWristbandTag,
+  prepareWristband,
+  verifyWristband,
+  assertCanProvisionWristband,
+  generateCodeOnlyWristbandBatch,
+  markCodeOnlyWristbandsReady
+} from '../services/wristbandService';
+
+const router = Router();
+const upload = multer({ storage: multer.memoryStorage() });
+
+/**
+ * Resolves the operational event ID for Admin routes.
+ * 1. If explicitEventId is provided, validates that the event exists; throws 404 if not found.
+ * 2. Otherwise resolves canonical current event via getCurrentEventId().
+ * 3. Returns null if no current event exists.
+ * Strictly avoids fallbacks to 'open', 'active', 'latest', or hardcoded constants.
+ */
+async function resolveAdminEventId(explicitEventId?: string | null): Promise<string | null> {
+  if (explicitEventId && typeof explicitEventId === 'string' && explicitEventId.trim()) {
+    const cleanId = explicitEventId.trim();
+    const ev = await getEventById(cleanId);
+    if (!ev) {
+      const err: any = new Error(`Event not found: ${cleanId}`);
+      err.statusCode = 404;
+      throw err;
+    }
+    return ev.id;
+  }
+  return await getCurrentEventId();
+}
+
+/**
+ * Resolves the operational event record for Admin routes.
+ * 1. If explicitEventId is provided, validates that the event exists; throws 404 if not found.
+ * 2. Otherwise resolves canonical current event via getCurrentEvent().
+ * 3. Returns null if no current event exists.
+ * Strictly avoids fallbacks to 'open', 'active', 'latest', or hardcoded constants.
+ */
+async function resolveAdminEvent(explicitEventId?: string | null): Promise<EventRow | null> {
+  if (explicitEventId && typeof explicitEventId === 'string' && explicitEventId.trim()) {
+    const cleanId = explicitEventId.trim();
+    const ev = await getEventById(cleanId);
+    if (!ev) {
+      const err: any = new Error(`Event not found: ${cleanId}`);
+      err.statusCode = 404;
+      throw err;
+    }
+    return ev;
+  }
+  return await getCurrentEvent();
+}
+
+function getChildAge(c: any): number {
+  let age = -1;
+  if (c.date_of_birth) {
+    try {
+      const dob = new Date(c.date_of_birth);
+      if (!isNaN(dob.getTime())) {
+        const now = new Date();
+        age = now.getFullYear() - dob.getFullYear();
+        const m = now.getMonth() - dob.getMonth();
+        if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) {
+          age--;
+        }
+      }
+    } catch (_) {}
+  }
+  if (age < 0 && c.calculated_age !== null && c.calculated_age !== undefined) {
+    age = Number(c.calculated_age);
+  }
+  return age;
+}
+
+// Canonical statuses representing genuine completed/submitted registrations
+export const SUBMITTED_REGISTRATION_STATUSES = [
+  'submitted',
+  'under_review',
+  'review_reopened',
+  'pending_review',
+  'pending',
+  'waiting_list',
+  'selected',
+  'pass_ready',
+  'checked_in',
+  'inside',
+  'picked_up',
+  'not_selected',
+  'rejected',
+  'withdrawn'
+] as const;
+
+export const EXCLUDED_REGISTRATION_STATUSES = [
+  'incomplete',
+  'draft',
+  'removed'
+] as const;
+
+export const SUBMITTED_REGISTRATION_SQL_CONDITION = `e.status NOT IN ('incomplete', 'draft', 'removed') AND e.status IS NOT NULL`;
+
+export function isSubmittedRegistrationStatus(status?: string | null): boolean {
+  if (!status) return false;
+  const s = status.trim().toLowerCase();
+  return !EXCLUDED_REGISTRATION_STATUSES.includes(s as any);
+}
+
+function isChildInAgeGroup(c: any, group: { min_age?: number; minAge?: number; max_age?: number; maxAge?: number; label?: string }): boolean {
+  const minAge = group.min_age !== undefined ? group.min_age : (group.minAge !== undefined ? group.minAge : 0);
+  const maxAge = group.max_age !== undefined ? group.max_age : (group.maxAge !== undefined ? group.maxAge : 999);
+  const groupLabel = (group.label || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  if (c.age_group && groupLabel) {
+    const normChild = String(c.age_group).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (normChild === groupLabel || normChild.includes(groupLabel) || groupLabel.includes(normChild)) {
+      return true;
+    }
+  }
+
+  const age = getChildAge(c);
+  if (age >= 0) {
+    return age >= minAge && age <= maxAge;
+  }
+  return false;
+}
+
+async function validateChildSelectionCapacity(
+  eventId: string,
+  childId: string,
+  currentStatus?: string
+): Promise<{ allowed: boolean; error?: string }> {
+  // If already in an accepted/selected state, selection is not increasing
+  if (['selected', 'pass_ready', 'checked_in', 'inside', 'picked_up'].includes(currentStatus || '')) {
+    return { allowed: true };
+  }
+
+  // 1. Enforce Event Total Capacity
+  const event = await queryOne('SELECT * FROM events WHERE id = ?', [eventId]);
+  if (event && event.capacity !== null && event.capacity !== undefined && Number(event.capacity) > 0) {
+    const selRes = await queryOne(`
+      SELECT COUNT(*) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
+    `, [eventId]);
+    const currentSelected = Number(selRes?.count || 0);
+    if (currentSelected >= Number(event.capacity)) {
+      return { allowed: false, error: 'This event has reached its child capacity.' };
+    }
+  }
+
+  // 2. Enforce Age Group Capacity
+  const child = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
+  if (child) {
+    const ageGroups = await query('SELECT * FROM event_age_groups WHERE event_id = ? ORDER BY sort_order ASC', [eventId]);
+    const matchedGroup = ageGroups.find((g: any) => isChildInAgeGroup(child, g));
+    if (matchedGroup && matchedGroup.capacity !== null && matchedGroup.capacity !== undefined && Number(matchedGroup.capacity) > 0) {
+      const selectedChildren = await query(`
+        SELECT c.id, c.gender, c.date_of_birth, c.calculated_age, c.age_group
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        WHERE e.event_id = ?
+          AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+          AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+          AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
+      `, [eventId]);
+
+      let groupSelected = 0;
+      for (const selChild of selectedChildren) {
+        if (isChildInAgeGroup(selChild, matchedGroup)) {
+          groupSelected++;
+        }
+      }
+
+      if (groupSelected >= Number(matchedGroup.capacity)) {
+        return { allowed: false, error: `The ${matchedGroup.label} group has reached its capacity.` };
+      }
+    }
+  }
+
+  return { allowed: true };
+}
+
+// Public Auth Endpoints for Admin Access
+router.post(['/sign-in', '/login'], async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ success: false, error: 'Email and password are required.' });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const user = await queryOne('SELECT * FROM users WHERE email = ?', [cleanEmail]);
+
+    if (!user || !user.password_hash || !verifyPassword(password, user.password_hash)) {
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_CREDENTIALS',
+        message: 'Email or password is incorrect.'
+      });
+    }
+
+    if (user.status === 'suspended' || user.status === 'revoked' || user.status === 'disabled') {
+      return res.status(403).json({
+        success: false,
+        code: 'ACCOUNT_BLOCKED',
+        message: 'Your account has been deactivated or revoked. Please contact event administration.'
+      });
+    }
+
+    if (user.role !== 'admin' && user.role !== 'super_admin' && user.role !== 'team') {
+      return res.status(403).json({
+        success: false,
+        code: 'ADMIN_ACCESS_REQUIRED',
+        message: 'Admin Access is not enabled for this account.'
+      });
+    }
+
+    const token = generateToken(user.id);
+    
+    // Resolve full name
+    let fullName = 'Admin';
+    const parentProfile = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [user.id]);
+    if (parentProfile && parentProfile.full_name) {
+      fullName = parentProfile.full_name;
+    } else {
+      const volunteerProfile = await queryOne('SELECT full_name FROM volunteer_profiles WHERE user_id = ?', [user.id]);
+      if (volunteerProfile && volunteerProfile.full_name) {
+        fullName = volunteerProfile.full_name;
+      }
+    }
+
+    return res.json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName,
+        role: user.role
+      }
+    });
+  } catch (err: any) {
+    console.error('Admin Sign-In Error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'Email is required.' });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const user = await queryOne('SELECT * FROM users WHERE email = ?', [cleanEmail]);
+
+    // Secure design pattern: Do not disclose user existence
+    if (!user) {
+      return res.json({
+        success: true,
+        message: 'If an admin account with that email exists, a password reset link has been sent.'
+      });
+    }
+
+    if (user.role !== 'admin' && user.role !== 'super_admin' && user.role !== 'team') {
+      return res.status(403).json({
+        success: false,
+        code: 'ADMIN_ACCESS_REQUIRED',
+        message: 'Admin Access is not enabled for this account.'
+      });
+    }
+
+    // Enforce 60-second database-backed cooldown per admin account
+    const lastToken = await queryOne(`
+      SELECT created_at FROM auth_tokens
+      WHERE user_id = ? AND token_type = 'password_reset' AND used_at IS NULL
+      ORDER BY created_at DESC LIMIT 1
+    `, [user.id]);
+    if (lastToken && lastToken.created_at) {
+      const elapsedMs = Date.now() - new Date(lastToken.created_at).getTime();
+      const cooldownMs = 60 * 1000;
+      if (elapsedMs < cooldownMs) {
+        const retryAfterSeconds = Math.ceil((cooldownMs - elapsedMs) / 1000);
+        return res.status(429).json({
+          success: false,
+          code: 'RESET_COOLDOWN',
+          emailSent: false,
+          retryAfterSeconds,
+          message: 'Please wait before requesting another reset link.'
+        });
+      }
+    }
+
+    const now = new Date().toISOString();
+
+    // Expire old unused password_reset tokens
+    await execute(`
+      UPDATE auth_tokens
+      SET expires_at = ?
+      WHERE user_id = ? AND token_type = 'password_reset' AND used_at IS NULL
+    `, [now, user.id]);
+
+    // Generate secure reset token
+    const rawResetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenHash = crypto.createHash('sha256').update(rawResetToken).digest('hex');
+    const tokenId = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
+
+    await execute(`
+      INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
+      VALUES (?, ?, ?, 'password_reset', ?, ?)
+    `, [tokenId, user.id, resetTokenHash, expiresAt, now]);
+
+    const resetLink = buildPublicAppUrl(`/admin/reset-password?token=${rawResetToken}`);
+
+    const htmlContent = `
+      <p>Hello,</p>
+      <p>We received a request to reset the password for your Koinonia Admin Access.</p>
+      <p>Please click the link below to create a new password:</p>
+      <div style="margin: 28px 0;">
+        <a href="${resetLink}" style="background-color: #C59B27; color: #FFFFFF; font-weight: 600; text-decoration: none; padding: 12px 24px; border-radius: 6px; display: inline-block; font-size: 15px;">
+          Create new password
+        </a>
+      </div>
+      <p>If you did not request this, you can safely ignore this email.</p>
+      <p>Best regards,<br/>Koinonia Team</p>
+    `;
+
+    // Send email
+    await sendEmail({
+      to: cleanEmail,
+      subject: 'Reset your Admin Access password',
+      html: htmlContent
+    }).catch(err => {
+      console.error('Error sending admin reset email:', err);
+    });
+
+    return res.json({
+      success: true,
+      message: 'If an admin account with that email exists, a password reset link has been sent.'
+    });
+  } catch (err: any) {
+    console.error('Admin Forgot Password Error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    if (!token || !password) {
+      return res.status(400).json({ success: false, error: 'Token and password are required.' });
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const dbToken = await queryOne(
+      "SELECT * FROM auth_tokens WHERE token_hash = ? AND token_type = 'password_reset'",
+      [tokenHash]
+    );
+
+    if (!dbToken || dbToken.used_at || new Date(dbToken.expires_at).getTime() < Date.now()) {
+      return res.status(400).json({ success: false, error: 'This reset token is invalid or has expired.' });
+    }
+
+    const nowStr = new Date().toISOString();
+    const hashedPwd = hashPassword(password);
+
+    await transaction(async () => {
+      await execute('UPDATE auth_tokens SET used_at = ? WHERE id = ?', [nowStr, dbToken.id]);
+      await execute('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?', [hashedPwd, nowStr, dbToken.user_id]);
+    });
+
+    return res.json({ success: true, message: 'Your password has been updated.' });
+  } catch (err: any) {
+    console.error('Admin Reset Password Error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/verify-invite', async (req, res) => {
+  try {
+    const token = req.query.token as string;
+    if (!token) {
+      return res.status(400).json({
+        valid: false,
+        code: 'INVITATION_INVALID',
+        message: 'No invitation token provided.'
+      });
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const dbToken = await queryOne(
+      "SELECT * FROM auth_tokens WHERE token_hash = ?",
+      [tokenHash]
+    );
+
+    if (!dbToken) {
+      return res.status(404).json({
+        valid: false,
+        code: 'INVITATION_INVALID',
+        message: 'Invitation record not found or link is broken.'
+      });
+    }
+
+    // Check revoked / replaced
+    if (dbToken.revoked_at || dbToken.used_at === 'replaced' || dbToken.used_at === 'revoked') {
+      return res.status(400).json({
+        valid: false,
+        code: 'INVITATION_REVOKED',
+        message: 'A newer invitation has been issued. Please use the link from your most recent email.'
+      });
+    }
+
+    // Check used
+    if (dbToken.used_at) {
+      return res.status(400).json({
+        valid: false,
+        code: 'INVITATION_USED',
+        message: 'This invitation has already been used.'
+      });
+    }
+
+    // Check expired
+    if (new Date(dbToken.expires_at).getTime() < Date.now()) {
+      return res.status(400).json({
+        valid: false,
+        code: 'INVITATION_EXPIRED',
+        message: 'This invitation link has expired. For your security, invitation links are available for a limited time.'
+      });
+    }
+
+    // Fetch user details
+    const user = await queryOne('SELECT id, email, role FROM users WHERE id = ?', [dbToken.user_id]);
+    if (!user) {
+      return res.status(404).json({
+        valid: false,
+        code: 'INVITATION_INVALID',
+        message: 'Invited user account not found.'
+      });
+    }
+
+    // Fetch recipient name from profile
+    let recipientName = '';
+    const pProfile = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [user.id]);
+    if (pProfile && pProfile.full_name) {
+      recipientName = pProfile.full_name;
+    }
+    if (!recipientName) {
+      const vProfile = await queryOne('SELECT full_name FROM volunteer_profiles WHERE user_id = ?', [user.id]);
+      if (vProfile && vProfile.full_name) {
+        recipientName = vProfile.full_name;
+      }
+    }
+
+    return res.json({
+      valid: true,
+      email: user.email,
+      role: user.role,
+      recipientName: recipientName || undefined,
+      expiresAt: dbToken.expires_at
+    });
+  } catch (err: any) {
+    console.error('Verify invite error:', err);
+    return res.status(500).json({ valid: false, code: 'SERVER_ERROR', message: 'Unable to verify invitation.' });
+  }
+});
+
+router.post('/accept-invite', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    if (!token || !password) {
+      return res.status(400).json({ success: false, error: 'Token and password are required.' });
+    }
+
+    // Validate Password
+    const hasLetter = /[a-zA-Z]/.test(password || '');
+    const hasNumber = /[0-9]/.test(password || '');
+    if (password.length < 8 || !hasLetter || !hasNumber) {
+      return res.status(400).json({
+        success: false,
+        code: 'WEAK_PASSWORD',
+        message: 'Choose a stronger password (at least 8 characters with a letter and a number).'
+      });
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const dbToken = await queryOne(
+      "SELECT * FROM auth_tokens WHERE token_hash = ?",
+      [tokenHash]
+    );
+
+    if (!dbToken) {
+      return res.status(400).json({ success: false, code: 'INVITATION_INVALID', error: 'This invitation link is invalid.' });
+    }
+
+    if (dbToken.revoked_at || dbToken.used_at === 'replaced' || dbToken.used_at === 'revoked') {
+      return res.status(400).json({
+        success: false,
+        code: 'INVITATION_REVOKED',
+        error: 'A newer invitation has been issued. Please use the most recent email.'
+      });
+    }
+
+    if (dbToken.used_at) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVITATION_USED',
+        error: 'This invitation has already been used.'
+      });
+    }
+
+    if (new Date(dbToken.expires_at).getTime() < Date.now()) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVITATION_EXPIRED',
+        error: 'This invitation link has expired. For your security, invitation links are available for a limited time.'
+      });
+    }
+
+    const nowStr = new Date().toISOString();
+    const hashedPwd = hashPassword(password);
+
+    await transaction(async () => {
+      // Mark current token used
+      await execute('UPDATE auth_tokens SET used_at = ? WHERE id = ?', [nowStr, dbToken.id]);
+      
+      // Revoke any other unused invitation tokens for this user safely
+      await execute(
+        "UPDATE auth_tokens SET revoked_at = ? WHERE user_id = ? AND id != ? AND used_at IS NULL AND revoked_at IS NULL",
+        [nowStr, dbToken.user_id, dbToken.id]
+      );
+
+      // Activate user account
+      await execute(
+        'UPDATE users SET password_hash = ?, email_verified = 1, updated_at = ? WHERE id = ?',
+        [hashedPwd, nowStr, dbToken.user_id]
+      );
+
+      // Audit log
+      try {
+        await execute(
+          `INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [crypto.randomUUID(), dbToken.user_id, 'ACCEPT_INVITATION', 'user', dbToken.user_id, JSON.stringify({ emailVerified: true }), nowStr]
+        );
+      } catch (e) {}
+    });
+
+    const user = await queryOne('SELECT role FROM users WHERE id = ?', [dbToken.user_id]);
+
+    return res.json({
+      success: true,
+      message: 'Your account credentials have been activated successfully.',
+      role: user?.role || 'admin'
+    });
+  } catch (err: any) {
+    console.error('Admin Accept Invite Error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  let fullName = 'Admin';
+  const parentProfile = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [req.user.id]);
+  if (parentProfile && parentProfile.full_name) {
+    fullName = parentProfile.full_name;
+  } else {
+    const volunteerProfile = await queryOne('SELECT full_name FROM volunteer_profiles WHERE user_id = ?', [req.user.id]);
+    if (volunteerProfile && volunteerProfile.full_name) {
+      fullName = volunteerProfile.full_name;
+    }
+  }
+  return res.json({
+    user: { ...req.user, fullName },
+    profile: req.parentProfile
+  });
+});
+
+// Public Landing Page Settings endpoint
+router.get('/public-landing-page', async (req, res) => {
+  try {
+    const rows = await query('SELECT setting_key, setting_value, value_type FROM admin_landing_settings');
+    const settings: Record<string, string> = {};
+    for (const row of rows) {
+      settings[row.setting_key] = row.setting_value || '';
+    }
+
+    // Populate footerYear and footerCopyrightName with safe defaults/fallbacks
+    if (!settings.footerYear) {
+      try {
+        const footerRow = await queryOne("SELECT copyright_year as copyrightYear, copyright_text as copyrightText FROM admin_footer_settings WHERE id = 'primary_footer_settings'");
+        if (footerRow?.copyrightYear) {
+          settings.footerYear = String(footerRow.copyrightYear);
+        }
+        if (footerRow?.copyrightText && !settings.footerCopyrightName) {
+          settings.footerCopyrightName = footerRow.copyrightText;
+        }
+      } catch (e) {}
+    }
+    if (!settings.footerYear) {
+      settings.footerYear = String(new Date().getFullYear());
+    }
+    if (!settings.footerCopyrightName) {
+      settings.footerCopyrightName = 'The Koinonia General Assembly';
+    }
+
+    const faviconSetting = await queryOne("SELECT url FROM app_media_settings WHERE slot = 'site_favicon'");
+    if (faviconSetting && faviconSetting.url) {
+      settings.site_favicon = faviconSetting.url;
+    }
+
+    // Resolve canonical landing video reference
+    let videoUrl = settings.heroVideo || '';
+    let posterUrl = settings.heroVideoPoster || '';
+
+    if (settings.heroVideoMediaId) {
+      const media = await queryOne('SELECT id, secure_url, optimized_url, poster_url, file_url FROM media_files WHERE id = ?', [settings.heroVideoMediaId]);
+      if (media) {
+        videoUrl = media.optimized_url || media.secure_url || media.file_url || videoUrl;
+        if (!posterUrl && (media.poster_url || media.secure_url)) {
+          posterUrl = media.poster_url || buildCloudinaryVideoPosterUrl(media.secure_url);
+        }
+      }
+    } else if (videoUrl) {
+      const media = await queryOne(`
+        SELECT id, secure_url, optimized_url, poster_url, file_url FROM media_files
+        WHERE (file_type = 'event_video' OR resource_type = 'video')
+          AND (secure_url = ? OR file_url = ? OR ? LIKE '%' || public_id || '%' OR ? LIKE '%' || id || '%')
+        ORDER BY created_at DESC LIMIT 1
+      `, [videoUrl, videoUrl, videoUrl, videoUrl]);
+      if (media) {
+        videoUrl = media.optimized_url || media.secure_url || media.file_url || videoUrl;
+        if (!posterUrl && (media.poster_url || media.secure_url)) {
+          posterUrl = media.poster_url || buildCloudinaryVideoPosterUrl(media.secure_url);
+        }
+      }
+    }
+
+    const landingVideo = videoUrl ? {
+      url: videoUrl,
+      posterUrl: posterUrl || null
+    } : null;
+
+    if (videoUrl) settings.heroVideo = videoUrl;
+    if (posterUrl) settings.heroVideoPoster = posterUrl;
+
+    const rawEvent = await getCurrentEvent();
+    let currentEventAgeGroups: any[] = [];
+    if (rawEvent) {
+      const dbAgeGroups = await query(
+        'SELECT id, label, min_age, max_age, sort_order FROM event_age_groups WHERE event_id = ? ORDER BY sort_order ASC, min_age ASC',
+        [rawEvent.id]
+      );
+      if (dbAgeGroups && dbAgeGroups.length > 0) {
+        currentEventAgeGroups = dbAgeGroups.map((g: any) => ({
+          id: g.id,
+          label: g.label,
+          minAge: Number(g.min_age),
+          maxAge: Number(g.max_age),
+          sortOrder: Number(g.sort_order)
+        }));
+      } else {
+        // Canonical default cohorts for the current event
+        currentEventAgeGroups = [
+          { id: 'ag-below-1', label: 'Below 1', minAge: 0, maxAge: 0, sortOrder: 1 },
+          { id: 'ag-1-3', label: 'Ages 1 to 3', minAge: 1, maxAge: 3, sortOrder: 2 },
+          { id: 'ag-4-6', label: 'Ages 4 to 6', minAge: 4, maxAge: 6, sortOrder: 3 },
+          { id: 'ag-7-9', label: 'Ages 7 to 9', minAge: 7, maxAge: 9, sortOrder: 4 },
+          { id: 'ag-10-12', label: 'Ages 10 to 12', minAge: 10, maxAge: 12, sortOrder: 5 }
+        ];
+      }
+    }
+
+    const currentEvent = rawEvent ? {
+      id: rawEvent.id,
+      title: rawEvent.title,
+      section_name: rawEvent.section_name || null,
+      starts_at: rawEvent.starts_at || null,
+      ends_at: rawEvent.ends_at || null,
+      daily_start_time: rawEvent.daily_start_time || null,
+      daily_end_time: rawEvent.daily_end_time || null,
+      theme: rawEvent.theme || null,
+      scripture: rawEvent.scripture || null,
+      location: rawEvent.location || null,
+      timezone: rawEvent.timezone || null,
+      parents_can_create_account: rawEvent.parents_can_create_account ?? 1,
+      parent_access_opens_at: rawEvent.parent_access_opens_at || null,
+      parent_access_closes_at: rawEvent.parent_access_closes_at || null,
+      ageGroups: currentEventAgeGroups
+    } : null;
+    return res.json({ success: true, settings, landingVideo, currentEvent });
+  } catch (err: any) {
+    console.error('Error fetching public landing settings:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve landing page settings' });
+  }
+});
+
+// Mount auth middleware for all subsequent admin routes
+router.use(authMiddleware);
+
+// Middleware to check if user is an admin or we are in development mode
+function adminCheck(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  if (req.user && (req.user.role === 'admin' || req.user.role === 'super_admin' || req.user.role === 'team' || process.env.NODE_ENV !== 'production')) {
+    return next();
+  }
+  return res.status(403).json({ error: 'Access denied. Admin role required.' });
+}
+
+router.use(adminCheck);
+
+// POST change password for currently signed-in admin
+router.post('/change-password', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ success: false, error: 'Current password and new password are required.' });
+    }
+
+    const user = await queryOne('SELECT * FROM users WHERE id = ?', [req.user?.id]);
+    if (!user || !user.password_hash || !verifyPassword(currentPassword, user.password_hash)) {
+      return res.status(400).json({
+        success: false,
+        code: 'CURRENT_PASSWORD_INCORRECT',
+        message: 'Current password is incorrect.'
+      });
+    }
+
+    // Validate Password
+    const hasLetter = /[a-zA-Z]/.test(newPassword || '');
+    const hasNumber = /[0-9]/.test(newPassword || '');
+    if (newPassword.length < 8 || !hasLetter || !hasNumber) {
+      return res.status(400).json({
+        success: false,
+        code: 'WEAK_PASSWORD',
+        message: 'Choose a stronger password (at least 8 characters with a letter and a number).'
+      });
+    }
+
+    if (currentPassword === newPassword) {
+      return res.status(400).json({
+        success: false,
+        code: 'SAME_PASSWORD',
+        message: 'New password cannot be the same as your current password.'
+      });
+    }
+
+    const hashedPwd = hashPassword(newPassword);
+    const nowStr = new Date().toISOString();
+
+    await execute('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?', [hashedPwd, nowStr, req.user?.id]);
+
+    return res.json({
+      success: true,
+      message: 'Your password has been updated.'
+    });
+  } catch (err: any) {
+    console.error('Admin Change Password Error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET list of admins
+router.get('/admins', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const admins = await query(`
+      SELECT u.id, u.email, u.role, u.status, u.created_at, u.password_hash,
+             COALESCE(p.full_name, v.full_name, 'Admin') as full_name
+      FROM users u
+      LEFT JOIN parent_profiles p ON p.user_id = u.id
+      LEFT JOIN volunteer_profiles v ON v.user_id = u.id
+      WHERE u.role IN ('admin', 'super_admin', 'team')
+      ORDER BY u.created_at DESC
+    `);
+    
+    // Format to clean response
+    const formatted = admins.map((adm: any) => ({
+      id: adm.id,
+      email: adm.email,
+      role: adm.role,
+      fullName: adm.full_name,
+      createdAt: adm.created_at,
+      status: adm.status || ((!adm.password_hash || adm.password_hash === 'invited_pending') ? 'invited' : 'active')
+    }));
+
+    return res.json({ success: true, admins: formatted });
+  } catch (err: any) {
+    console.error('Error fetching admin users list:', err);
+    return res.status(500).json({ error: 'Failed to fetch admin list.' });
+  }
+});
+
+// POST invite other admins
+router.post('/invites', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    // Only super_admin or admin can send invitations
+    if (req.user?.role !== 'super_admin' && req.user?.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        code: 'ADMIN_REQUIRED',
+        error: 'Admin permission required to issue invitations.'
+      });
+    }
+
+    const { email, role, recipientName, fullName, preferredName, firstName, lastName } = req.body;
+    if (!email || !role) {
+      return res.status(400).json({ success: false, error: 'Email and role are required.' });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_EMAIL',
+        error: 'Please enter a valid email address.'
+      });
+    }
+
+    // Role mapping & authorization rule: only super_admin can invite another super_admin
+    if (role === 'super_admin' && req.user?.role !== 'super_admin') {
+      return res.status(403).json({
+        success: false,
+        code: 'SUPER_ADMIN_REQUIRED',
+        error: 'You do not have permission to invite a Super Admin.'
+      });
+    }
+
+    const nameForRecipient = recipientName || fullName || (firstName && lastName ? `${firstName} ${lastName}` : '') || 'Invited User';
+
+    // Check existing user
+    let existingUser = await queryOne('SELECT * FROM users WHERE LOWER(email) = ?', [cleanEmail]);
+    let invitedUserId = '';
+    const nowStr = new Date().toISOString();
+
+    if (existingUser) {
+      if (existingUser.role === 'admin' || existingUser.role === 'super_admin' || existingUser.role === 'team') {
+        if (existingUser.password_hash !== 'invited_pending') {
+          return res.status(400).json({
+            success: false,
+            code: 'ALREADY_ACTIVE_ADMIN',
+            error: 'This email already belongs to an active team member.'
+          });
+        }
+
+        // Check if there is an active pending unexpired invitation token
+        const activePendingToken = await queryOne(
+          "SELECT id FROM auth_tokens WHERE user_id = ? AND token_type = 'admin_invite' AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ?",
+          [existingUser.id, nowStr]
+        );
+        if (activePendingToken) {
+          return res.status(400).json({
+            success: false,
+            code: 'INVITATION_ALREADY_PENDING',
+            error: 'An invitation is already pending for this email.'
+          });
+        }
+
+        // If user exists and is pending with expired/revoked/missing token, reuse user ID
+        invitedUserId = existingUser.id;
+      } else {
+        return res.status(400).json({
+          success: false,
+          code: 'ACCOUNT_EXISTS_CONFIRM_UPGRADE_REQUIRED',
+          error: 'This account already exists as a parent or volunteer. You can update their role from Event Team Access.'
+        });
+      }
+    } else {
+      invitedUserId = crypto.randomUUID();
+    }
+
+    // Generate secure 72-hour invite token
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const tokenId = crypto.randomUUID();
+    const expiryHours = parseInt(process.env.INVITATION_EXPIRY_HOURS || '72', 10);
+    const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString();
+
+    // Atomic DB operations: user, profile, token revocation, token creation, and audit log
+    await transaction(async () => {
+      if (existingUser) {
+        if (existingUser.role !== role) {
+          await execute('UPDATE users SET role = ?, updated_at = ? WHERE id = ?', [role, nowStr, invitedUserId]);
+        }
+      } else {
+        // Create user record
+        await execute(`
+          INSERT INTO users (id, email, password_hash, role, email_verified, created_at, updated_at)
+          VALUES (?, ?, 'invited_pending', ?, 0, ?, ?)
+        `, [invitedUserId, cleanEmail, role, nowStr, nowStr]);
+
+        // Create profile record with schema-valid columns
+        const profileId = crypto.randomUUID();
+        await execute(`
+          INSERT INTO parent_profiles (id, user_id, full_name, email, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `, [profileId, invitedUserId, nameForRecipient, cleanEmail, nowStr, nowStr]);
+      }
+
+      // Revoke any previous pending invitation tokens for this user safely without invalid timestamp literals
+      await execute(
+        "UPDATE auth_tokens SET revoked_at = ?, revoked_by = ? WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL",
+        [nowStr, req.user?.id || null, invitedUserId]
+      );
+
+      // Persist auth token
+      await execute(`
+        INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
+        VALUES (?, ?, ?, 'admin_invite', ?, ?)
+      `, [tokenId, invitedUserId, tokenHash, expiresAt, nowStr]);
+
+      // Audit log inside transaction
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        crypto.randomUUID(), req.user?.id || 'system', req.user?.role || 'admin', 'SEND_INVITATION', 'user', invitedUserId,
+        JSON.stringify({ email: cleanEmail, role, expiresAt }), nowStr
+      ]);
+    });
+
+    const inviteLink = buildPublicAppUrl(`/admin/accept-invite?token=${rawToken}`);
+
+    // Send invitation email with personalized greeting and expiry notice (after commit)
+    const emailResult = await sendInvitationEmail({
+      recipientEmail: cleanEmail,
+      recipientName: nameForRecipient,
+      preferredName,
+      firstName,
+      role,
+      inviteLink,
+      expiresAt
+    }).catch(err => {
+      console.error('Error sending invitation email:', err);
+      return { success: false, error: err?.message || 'Email delivery failed' };
+    });
+
+    if (!emailResult || !emailResult.success) {
+      return res.status(200).json({
+        success: false,
+        code: 'EMAIL_DELIVERY_FAILED',
+        error: 'Invitation created, but the email could not be sent. Try resending.',
+        message: 'Invitation created, but the email could not be sent. Try resending.',
+        inviteLink
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Invitation sent successfully to ' + cleanEmail
+    });
+  } catch (err: any) {
+    console.error('Admin Invitation Error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST resend invitation
+router.post('/invites/resend', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
+      return res.status(403).json({ success: false, code: 'ADMIN_REQUIRED', error: 'Admin permission required.' });
+    }
+
+    const { userId, email } = req.body;
+    let targetUser: any = null;
+
+    if (userId) {
+      targetUser = await queryOne('SELECT * FROM users WHERE id = ?', [userId]);
+    } else if (email) {
+      targetUser = await queryOne('SELECT * FROM users WHERE LOWER(email) = ?', [String(email).trim().toLowerCase()]);
+    }
+
+    if (!targetUser) {
+      return res.status(404).json({ success: false, code: 'USER_NOT_FOUND', error: 'User record not found.' });
+    }
+
+    // Role check: only super_admin can resend invite for a super_admin
+    if (targetUser.role === 'super_admin' && req.user.role !== 'super_admin') {
+      return res.status(403).json({
+        success: false,
+        code: 'SUPER_ADMIN_REQUIRED',
+        error: 'You do not have permission to resend an invitation for a Super Admin.'
+      });
+    }
+
+    // Verify user is actually pending
+    if (targetUser.password_hash !== 'invited_pending') {
+      return res.status(400).json({
+        success: false,
+        code: 'NOT_PENDING_INVITATION',
+        error: 'This user is already an active member and does not have a pending invitation.'
+      });
+    }
+
+    const cleanEmail = targetUser.email;
+    const nowStr = new Date().toISOString();
+
+    // Fetch profile for recipient name
+    let recipientName = '';
+    const pProfile = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [targetUser.id]);
+    if (pProfile && pProfile.full_name) {
+      recipientName = pProfile.full_name;
+    }
+    if (!recipientName) {
+      const vProfile = await queryOne('SELECT full_name FROM volunteer_profiles WHERE user_id = ?', [targetUser.id]);
+      if (vProfile && vProfile.full_name) {
+        recipientName = vProfile.full_name;
+      }
+    }
+
+    // Generate new token with fresh 72-hour expiry
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const tokenId = crypto.randomUUID();
+    const expiryHours = parseInt(process.env.INVITATION_EXPIRY_HOURS || '72', 10);
+    const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString();
+
+    // Atomic DB operations for resend
+    await transaction(async () => {
+      // Revoke any previous pending tokens for this user safely
+      await execute(
+        "UPDATE auth_tokens SET revoked_at = ?, revoked_by = ? WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL",
+        [nowStr, req.user.id, targetUser.id]
+      );
+
+      await execute(`
+        INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
+        VALUES (?, ?, ?, 'admin_invite', ?, ?)
+      `, [tokenId, targetUser.id, tokenHash, expiresAt, nowStr]);
+
+      // Audit log inside transaction
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        crypto.randomUUID(), req.user.id, req.user.role || 'admin', 'RESEND_INVITATION', 'user', targetUser.id,
+        JSON.stringify({ email: cleanEmail, role: targetUser.role, expiresAt }), nowStr
+      ]);
+    });
+
+    const inviteLink = buildPublicAppUrl(`/admin/accept-invite?token=${rawToken}`);
+
+    const emailResult = await sendInvitationEmail({
+      recipientEmail: cleanEmail,
+      recipientName: recipientName || undefined,
+      role: targetUser.role,
+      inviteLink,
+      expiresAt
+    }).catch(err => {
+      console.error('Error sending resend invitation email:', err);
+      return { success: false, error: err?.message || 'Email delivery failed' };
+    });
+
+    if (!emailResult || !emailResult.success) {
+      return res.status(200).json({
+        success: false,
+        code: 'EMAIL_DELIVERY_FAILED',
+        error: 'Invitation renewed, but the email could not be sent. Try resending later.',
+        message: 'Invitation renewed, but the email could not be sent. Try resending later.',
+        inviteLink
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: `Invitation successfully resent to ${cleanEmail}.`
+    });
+  } catch (err: any) {
+    console.error('Resend invitation error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to resend invitation.' });
+  }
+});
+
+// POST check duplicate records
+router.post('/check-duplicate', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
+      return res.status(403).json({ success: false, error: 'Admin permission required.' });
+    }
+
+    const { type, email, phone, firstName, lastName, parentId } = req.body;
+
+    if (type === 'parent' || type === 'user') {
+      const cleanEmail = email ? String(email).trim().toLowerCase() : '';
+      const cleanPhone = phone ? String(phone).trim() : '';
+
+      if (cleanEmail) {
+        const existingByEmail = await queryOne('SELECT p.*, u.role FROM parent_profiles p JOIN users u ON p.user_id = u.id WHERE LOWER(p.email) = ? OR LOWER(u.email) = ?', [cleanEmail, cleanEmail]);
+        if (existingByEmail) {
+          return res.json({
+            duplicateFound: true,
+            matchField: 'email',
+            existingRecord: {
+              id: existingByEmail.id,
+              userId: existingByEmail.user_id,
+              fullName: existingByEmail.full_name,
+              email: existingByEmail.email,
+              phone: existingByEmail.phone_number
+            },
+            message: `A parent record already exists with email "${cleanEmail}".`
+          });
+        }
+      }
+
+      if (cleanPhone) {
+        const existingByPhone = await queryOne('SELECT * FROM parent_profiles WHERE phone_number = ?', [cleanPhone]);
+        if (existingByPhone) {
+          return res.json({
+            duplicateFound: true,
+            matchField: 'phone',
+            existingRecord: {
+              id: existingByPhone.id,
+              userId: existingByPhone.user_id,
+              fullName: existingByPhone.full_name,
+              email: existingByPhone.email,
+              phone: existingByPhone.phone_number
+            },
+            message: `A parent record already exists with phone number "${phone}".`
+          });
+        }
+      }
+    }
+
+    if (type === 'child') {
+      if (firstName && lastName && parentId) {
+        const existingChild = await queryOne(
+          `SELECT c.* FROM children c
+           WHERE LOWER(c.first_name) = ? AND LOWER(c.last_name) = ? AND c.parent_profile_id = ?`,
+          [String(firstName).trim().toLowerCase(), String(lastName).trim().toLowerCase(), parentId]
+        );
+        if (existingChild) {
+          return res.json({
+            duplicateFound: true,
+            matchField: 'name_parent',
+            existingRecord: existingChild,
+            message: `A child named "${firstName} ${lastName}" is already registered under this parent/guardian.`
+          });
+        }
+      }
+    }
+
+    if (type === 'volunteer') {
+      const cleanEmail = email ? String(email).trim().toLowerCase() : '';
+      if (cleanEmail) {
+        const existingVol = await queryOne('SELECT v.*, u.role FROM volunteer_profiles v JOIN users u ON v.user_id = u.id WHERE LOWER(v.email) = ? OR LOWER(u.email) = ?', [cleanEmail, cleanEmail]);
+        if (existingVol) {
+          return res.json({
+            duplicateFound: true,
+            matchField: 'email',
+            existingRecord: {
+              id: existingVol.id,
+              userId: existingVol.user_id,
+              fullName: existingVol.full_name,
+              email: existingVol.email
+            },
+            message: `A volunteer profile already exists with email "${cleanEmail}".`
+          });
+        }
+      }
+    }
+
+    return res.json({ duplicateFound: false });
+  } catch (err: any) {
+    console.error('Check duplicate error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to check duplicate records.' });
+  }
+});
+
+// POST add parent
+router.post('/parents', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
+      return res.status(403).json({ success: false, error: 'Admin permission required.' });
+    }
+
+    const {
+      firstName,
+      lastName,
+      preferredName,
+      email,
+      phone,
+      whatsappPhone,
+      homeAddress,
+      city,
+      stateProvince,
+      postalCode,
+      country,
+      preferredContactMethod,
+      emergencyContactName,
+      emergencyContactPhone,
+      isKoinoniaWorker,
+      workerDepartment,
+      sendInvitation,
+      overrideDuplicate,
+      childDetails
+    } = req.body;
+
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({ success: false, error: 'First name, last name, and email are required.' });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanPhone = phone ? String(phone).trim() : '';
+    const fullName = `${firstName.trim()} ${lastName.trim()}`;
+    const nowStr = new Date().toISOString();
+
+    const targetEventId = await resolveAdminEventId(req.body.eventId || childDetails?.eventId);
+    if (childDetails?.registerForCurrentEvent && !targetEventId) {
+      return res.status(400).json({ success: false, error: 'No active or current event available for registration.' });
+    }
+
+    if (!overrideDuplicate) {
+      const existingUser = await queryOne('SELECT * FROM users WHERE LOWER(email) = ?', [cleanEmail]);
+      if (existingUser) {
+        return res.status(409).json({
+          success: false,
+          code: 'DUPLICATE_RECORD',
+          message: `A user record with email "${cleanEmail}" already exists.`,
+          existingUserId: existingUser.id
+        });
+      }
+    }
+
+    const parentUserId = crypto.randomUUID();
+    const parentProfileId = crypto.randomUUID();
+
+    let inviteTokenRaw = '';
+    let inviteExpiresAt = '';
+
+    await transaction(async () => {
+      // 1. Create User
+      const initialPwdHash = sendInvitation ? 'invited_pending' : 'profile_no_account';
+
+      await execute(`
+        INSERT INTO users (id, email, password_hash, role, email_verified, created_at, updated_at)
+        VALUES (?, ?, ?, 'parent', 0, ?, ?)
+      `, [parentUserId, cleanEmail, initialPwdHash, nowStr, nowStr]);
+
+      // 2. Create Parent Profile
+      await execute(`
+        INSERT INTO parent_profiles (
+          id, user_id, full_name, email, phone_number,
+          whatsapp_number, home_address, city, state_region, country,
+          preferred_contact, is_koinonia_worker, department, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        parentProfileId, parentUserId, fullName, cleanEmail, cleanPhone || null,
+        whatsappPhone || null, homeAddress || null, city || null, stateProvince || null, country || 'UK',
+        preferredContactMethod || 'email', isKoinoniaWorker ? 1 : 0, workerDepartment || null,
+        nowStr, nowStr
+      ]);
+
+      // 3. Optional Child Creation
+      if (childDetails && childDetails.firstName && childDetails.lastName) {
+        const childId = crypto.randomUUID();
+        const childFullName = `${childDetails.firstName.trim()} ${childDetails.lastName.trim()}`;
+
+        await execute(`
+          INSERT INTO children (
+            id, parent_profile_id, full_name, date_of_birth, gender, age_group, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          childId, parentProfileId, childFullName, childDetails.dateOfBirth || null, childDetails.gender || null,
+          childDetails.ageGroup || null, nowStr, nowStr
+        ]);
+
+        if (childDetails.registerForCurrentEvent && targetEventId) {
+          const entryId = crypto.randomUUID();
+          const hasMed = (childDetails.medicalNotes || childDetails.allergies) ? 1 : 0;
+          const medNotes = [childDetails.medicalNotes, childDetails.allergies].filter(Boolean).join('; ');
+          const hasSupport = childDetails.specialNeeds ? 1 : 0;
+          const supNotes = childDetails.specialNeeds || null;
+
+          await execute(`
+            INSERT INTO child_event_entries (
+              id, child_id, event_id, status, has_medical_notes, medical_notes,
+              needs_extra_support, support_notes, submitted_at, created_at, updated_at
+            ) VALUES (?, ?, ?, 'selected', ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            entryId, childId, targetEventId, hasMed, medNotes || null,
+            hasSupport, supNotes, nowStr, nowStr, nowStr
+          ]);
+        }
+      }
+
+      // 4. Create Invitation Token
+      if (sendInvitation) {
+        inviteTokenRaw = crypto.randomBytes(32).toString('hex');
+        const tokenHash = crypto.createHash('sha256').update(inviteTokenRaw).digest('hex');
+        const tokenId = crypto.randomUUID();
+        const expiryHours = parseInt(process.env.INVITATION_EXPIRY_HOURS || '72', 10);
+        inviteExpiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString();
+
+        await execute(`
+          INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
+          VALUES (?, ?, ?, 'admin_invite', ?, ?)
+        `, [tokenId, parentUserId, tokenHash, inviteExpiresAt, nowStr]);
+      }
+
+      // 5. Audit Log
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(), req.user.id, 'ADMIN_ADD_PARENT', 'parent_profile', parentProfileId,
+          JSON.stringify({ fullName, email: cleanEmail, sendInvitation: !!sendInvitation }), nowStr
+        ]);
+      } catch (e) {}
+    });
+
+    // 6. Send Invitation Email if requested
+    if (sendInvitation && inviteTokenRaw) {
+      const inviteLink = buildPublicAppUrl(`/admin/accept-invite?token=${inviteTokenRaw}`);
+      await sendInvitationEmail({
+        recipientEmail: cleanEmail,
+        recipientName: fullName,
+        preferredName,
+        firstName,
+        role: 'parent',
+        inviteLink,
+        expiresAt: inviteExpiresAt
+      }).catch(err => {
+        console.error('Error sending parent invitation email:', err);
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: sendInvitation
+        ? `Parent record created and invitation sent to ${cleanEmail}.`
+        : `Parent record created successfully without active login account.`,
+      parentId: parentProfileId,
+      userId: parentUserId
+    });
+  } catch (err: any) {
+    console.error('Admin Add Parent Error:', err);
+    return res.status(err.statusCode || 500).json({ success: false, error: err.message || 'Failed to create parent record.' });
+  }
+});
+
+// POST add child
+router.post('/children', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
+      return res.status(403).json({ success: false, error: 'Admin permission required.' });
+    }
+
+    const {
+      parentProfileId,
+      firstName,
+      lastName,
+      preferredName,
+      dateOfBirth,
+      gender,
+      ageGroup,
+      medicalNotes,
+      allergies,
+      specialNeeds,
+      mediaConsent,
+      medicalConsent,
+      authorizedPickups,
+      registerForCurrentEvent,
+      overrideDuplicate
+    } = req.body;
+
+    if (!parentProfileId || !firstName || !lastName) {
+      return res.status(400).json({ success: false, error: 'Parent ID, child first name, and child last name are required.' });
+    }
+
+    const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [parentProfileId]);
+    if (!parent) {
+      return res.status(404).json({ success: false, error: 'Parent profile not found.' });
+    }
+
+    const childFullName = `${firstName.trim()} ${lastName.trim()}`;
+    const nowStr = new Date().toISOString();
+
+    const targetEventId = await resolveAdminEventId(req.body.eventId);
+    if (registerForCurrentEvent && !targetEventId) {
+      return res.status(400).json({ success: false, error: 'No active or current event available for registration.' });
+    }
+
+    if (!overrideDuplicate) {
+      const existingChild = await queryOne(
+        'SELECT id FROM children WHERE LOWER(full_name) = ? AND parent_profile_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)',
+        [childFullName.toLowerCase(), parentProfileId]
+      );
+      if (existingChild) {
+        return res.status(409).json({
+          success: false,
+          code: 'DUPLICATE_RECORD',
+          message: `A child named "${childFullName}" is already registered under this parent/guardian.`,
+          existingChildId: existingChild.id
+        });
+      }
+    }
+
+    const childId = crypto.randomUUID();
+    const entryId = (registerForCurrentEvent && targetEventId) ? crypto.randomUUID() : null;
+
+    await transaction(async () => {
+      // 1. Insert child record
+      await execute(`
+        INSERT INTO children (
+          id, parent_profile_id, full_name, date_of_birth, gender, age_group, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        childId, parentProfileId, childFullName, dateOfBirth || null, gender || null, ageGroup || null,
+        nowStr, nowStr
+      ]);
+
+      // 2. Insert pickup people
+      if (Array.isArray(authorizedPickups)) {
+        for (const pickup of authorizedPickups) {
+          if (pickup.fullName) {
+            await execute(`
+              INSERT INTO pickup_people (id, child_event_entry_id, pickup_type, full_name, phone_number, relationship_to_child, created_at, updated_at)
+              VALUES (?, ?, 'authorized_pickup', ?, ?, ?, ?, ?)
+            `, [crypto.randomUUID(), entryId, pickup.fullName.trim(), pickup.phone || null, pickup.relationship || null, nowStr, nowStr]);
+          }
+        }
+      }
+
+      // 3. Register for event if requested
+      if (registerForCurrentEvent && targetEventId && entryId) {
+        const hasMed = (medicalNotes || allergies) ? 1 : 0;
+        const medNotes = [medicalNotes, allergies].filter(Boolean).join('; ');
+        const hasSupport = specialNeeds ? 1 : 0;
+        const supNotes = specialNeeds || null;
+
+        await execute(`
+          INSERT INTO child_event_entries (
+            id, child_id, event_id, status, has_medical_notes, medical_notes,
+            needs_extra_support, support_notes, submitted_at, created_at, updated_at
+          ) VALUES (?, ?, ?, 'selected', ?, ?, ?, ?, ?, ?, ?)
+        `, [entryId, childId, targetEventId, hasMed, medNotes || null, hasSupport, supNotes, nowStr, nowStr, nowStr]);
+
+        try {
+          await issuePassForChild({ childId, eventId: targetEventId });
+        } catch (e) {
+          console.error('Error generating event pass for admin created child:', e);
+        }
+      }
+
+      // 4. Audit log
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(), req.user.id, 'ADMIN_ADD_CHILD', 'child', childId,
+          JSON.stringify({ childFullName, parentProfileId, registerForCurrentEvent: !!registerForCurrentEvent }), nowStr
+        ]);
+      } catch (e) {}
+    });
+
+    return res.json({
+      success: true,
+      message: `Child record for "${childFullName}" created successfully.`,
+      childId
+    });
+  } catch (err: any) {
+    console.error('Admin Add Child Error:', err);
+    return res.status(err.statusCode || 500).json({ success: false, error: err.message || 'Failed to create child record.' });
+  }
+});
+
+// POST add volunteer
+router.post('/volunteers', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
+      return res.status(403).json({ success: false, error: 'Admin permission required.' });
+    }
+
+    const {
+      firstName,
+      lastName,
+      preferredName,
+      email,
+      phone,
+      emergencyContactName,
+      emergencyContactPhone,
+      preferredTeam,
+      skillsExperience,
+      availabilityNotes,
+      assignedDutyRole,
+      sendInvitation,
+      overrideDuplicate
+    } = req.body;
+
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({ success: false, error: 'First name, last name, and email are required.' });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanPhone = phone ? String(phone).trim() : '';
+    const fullName = `${firstName.trim()} ${lastName.trim()}`;
+    const nowStr = new Date().toISOString();
+
+    const targetEventId = await resolveAdminEventId(req.body.eventId);
+
+    if (!overrideDuplicate) {
+      const existingUser = await queryOne('SELECT * FROM users WHERE LOWER(email) = ?', [cleanEmail]);
+      if (existingUser) {
+        return res.status(409).json({
+          success: false,
+          code: 'DUPLICATE_RECORD',
+          message: `A user account with email "${cleanEmail}" already exists.`,
+          existingUserId: existingUser.id
+        });
+      }
+    }
+
+    const volUserId = crypto.randomUUID();
+    const volProfileId = crypto.randomUUID();
+
+    let inviteTokenRaw = '';
+    let inviteExpiresAt = '';
+
+    await transaction(async () => {
+      // 1. Create User
+      const initialPwdHash = sendInvitation ? 'invited_pending' : 'profile_no_account';
+
+      await execute(`
+        INSERT INTO users (id, email, password_hash, role, email_verified, created_at, updated_at)
+        VALUES (?, ?, ?, 'volunteer', 0, ?, ?)
+      `, [volUserId, cleanEmail, initialPwdHash, nowStr, nowStr]);
+
+      // 2. Create Volunteer Profile
+      await execute(`
+        INSERT INTO volunteer_profiles (
+          id, user_id, full_name, preferred_name, first_name, last_name, email, phone_number,
+          emergency_contact_name, emergency_contact_phone, preferred_team, skills_experience,
+          availability_notes, approval_status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)
+      `, [
+        volProfileId, volUserId, fullName, preferredName || null, firstName.trim(), lastName.trim(),
+        cleanEmail, cleanPhone || null, emergencyContactName || null, emergencyContactPhone || null,
+        preferredTeam || 'General Assistance', skillsExperience || null, availabilityNotes || null,
+        nowStr, nowStr
+      ]);
+
+      // 3. Optional duty assignment
+      if (assignedDutyRole && targetEventId) {
+        try {
+          await execute(`
+            INSERT INTO volunteer_event_duties (id, user_id, event_id, role_title, created_at)
+            VALUES (?, ?, ?, ?, ?)
+          `, [crypto.randomUUID(), volUserId, targetEventId, assignedDutyRole, nowStr]);
+        } catch (e) {}
+      }
+
+      // 4. Send invitation token
+      if (sendInvitation) {
+        inviteTokenRaw = crypto.randomBytes(32).toString('hex');
+        const tokenHash = crypto.createHash('sha256').update(inviteTokenRaw).digest('hex');
+        const tokenId = crypto.randomUUID();
+        const expiryHours = parseInt(process.env.INVITATION_EXPIRY_HOURS || '72', 10);
+        inviteExpiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString();
+
+        await execute(`
+          INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
+          VALUES (?, ?, ?, 'admin_invite', ?, ?)
+        `, [tokenId, volUserId, tokenHash, inviteExpiresAt, nowStr]);
+      }
+
+      // 5. Audit log
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(), req.user.id, 'ADMIN_ADD_VOLUNTEER', 'volunteer_profile', volProfileId,
+          JSON.stringify({ fullName, email: cleanEmail, sendInvitation: !!sendInvitation }), nowStr
+        ]);
+      } catch (e) {}
+    });
+
+    if (sendInvitation && inviteTokenRaw) {
+      const inviteLink = buildPublicAppUrl(`/admin/accept-invite?token=${inviteTokenRaw}`);
+      await sendInvitationEmail({
+        recipientEmail: cleanEmail,
+        recipientName: fullName,
+        preferredName,
+        firstName,
+        role: 'volunteer',
+        inviteLink,
+        expiresAt: inviteExpiresAt
+      }).catch(err => {
+        console.error('Error sending volunteer invitation email:', err);
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: sendInvitation
+        ? `Volunteer record created and invitation sent to ${cleanEmail}.`
+        : `Volunteer record created successfully without active login account.`,
+      volunteerId: volProfileId,
+      userId: volUserId
+    });
+  } catch (err: any) {
+    console.error('Admin Add Volunteer Error:', err);
+    return res.status(err.statusCode || 500).json({ success: false, error: err.message || 'Failed to create volunteer record.' });
+  }
+});
+
+// GET list of child applications
+router.get('/applications', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const eventId = await resolveAdminEventId(req.query.eventId as string);
+    const page = parseInt(req.query.page as string, 10) || 1;
+    const limit = parseInt(req.query.limit as string, 10) || 25;
+    const offset = (page - 1) * limit;
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
+
+    if (!eventId) {
+      return res.json({
+        success: true,
+        applications: [],
+        stats: {
+          sentReview: 0,
+          selected: 0,
+          waitingList: 0,
+          notSelected: 0,
+          removed: 0
+        },
+        pagination: {
+          total: 0,
+          page,
+          limit,
+          pages: 0
+        }
+      });
+    }
+
+    // Build WHERE clauses
+    const whereClauses = ['e.event_id = ?'];
+    const params: any[] = [eventId];
+
+    if (q) {
+      whereClauses.push(`(c.full_name LIKE ? OR p.full_name LIKE ? OR p.phone_number LIKE ? OR e.school_class LIKE ? OR e.school_name LIKE ?)`);
+      const likeParam = `%${q}%`;
+      params.push(likeParam, likeParam, likeParam, likeParam, likeParam);
+    }
+
+    if (status && status !== 'all' && status !== 'event_review') {
+      if (status === 'removed') {
+        whereClauses.push(`(e.is_deleted = 1 OR e.status = 'removed')`);
+      } else if (status === 'review' || status === 'under_review') {
+        whereClauses.push(`e.status = 'under_review' AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
+      } else if (status === 'needs_attention') {
+        whereClauses.push(`(e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1 OR NOT EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id)) AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND e.status != 'removed'`);
+      } else if (status === 'selected') {
+        whereClauses.push(`e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up') AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
+      } else if (status === 'waiting_list') {
+        whereClauses.push(`e.status = 'waiting_list' AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
+      } else if (status === 'not_selected') {
+        whereClauses.push(`e.status = 'not_selected' AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
+      } else {
+        whereClauses.push(`e.status = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
+        params.push(status);
+      }
+    } else if (status === 'event_review') {
+      whereClauses.push(`e.status IN ('under_review', 'selected', 'pass_ready', 'waiting_list', 'not_selected') AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
+    } else {
+      whereClauses.push(`(e.is_deleted = 0 OR e.is_deleted IS NULL) AND e.status != 'removed'`);
+    }
+
+    const whereSql = whereClauses.join(' AND ');
+
+    // Count total matching
+    const countRes = await queryOne(`
+      SELECT COUNT(*) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE ${whereSql}
+    `, params);
+    const totalCount = countRes ? countRes.count : 0;
+
+    // Fetch the slice of applications
+    const queryParams = [...params, limit, offset];
+    const applications = await query(`
+      SELECT 
+        e.id as entry_id,
+        e.child_id,
+        e.status,
+        e.school_class,
+        e.school_name,
+        e.previous_children_programme,
+        e.note_to_team,
+        e.has_medical_notes,
+        e.medical_notes,
+        e.needs_extra_support,
+        e.support_notes,
+        e.submitted_at,
+        e.checked_in_at,
+        e.picked_up_at,
+        e.is_deleted,
+        c.full_name as child_name,
+        c.gender,
+        c.date_of_birth,
+        c.calculated_age,
+        c.age_group,
+        c.relationship_to_child,
+        c.needs_age_review,
+        m.secure_url as child_photo_url,
+        p.id as parent_id,
+        p.full_name as parent_name,
+        p.phone_number,
+        p.whatsapp_number,
+        p.email as parent_email,
+        p.is_koinonia_worker,
+        p.department as parent_department,
+        p.photo_file_id as parent_photo_file_id,
+        pm.secure_url as parent_photo_url
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      LEFT JOIN media_files m ON m.id = c.photo_file_id
+      LEFT JOIN media_files pm ON pm.id = p.photo_file_id
+      WHERE ${whereSql}
+      ORDER BY e.submitted_at DESC, e.created_at DESC
+      LIMIT ? OFFSET ?
+    `, queryParams);
+
+    let formatted: any[] = [];
+    if (applications.length > 0) {
+      const entryIds = applications.map((app: any) => app.entry_id);
+      const placeholders = entryIds.map(() => '?').join(',');
+      const pickupPeople = await query(`
+        SELECT p.*, m.secure_url as photo_url
+        FROM pickup_people p
+        LEFT JOIN media_files m ON m.id = p.photo_file_id
+        WHERE p.child_event_entry_id IN (${placeholders})
+      `, entryIds);
+
+      const eventPasses = await query(`
+        SELECT child_event_entry_id, status, pass_reference
+        FROM event_passes
+        WHERE child_event_entry_id IN (${placeholders})
+      `, entryIds);
+
+      formatted = applications.map((app: any) => {
+        const entryPickups = pickupPeople.filter((p: any) => p.child_event_entry_id === app.entry_id)
+          .map((p: any) => ({
+            id: p.id,
+            fullName: p.full_name,
+            relationship: p.relationship_to_child,
+            phone: p.phone_number,
+            photoUrl: p.photo_url || null,
+            approvedByParent: !!p.approved_by_parent
+          }));
+
+        const pass = eventPasses.find((p: any) => p.child_event_entry_id === app.entry_id);
+
+        return {
+          id: app.entry_id,
+          childId: app.child_id,
+          status: app.status,
+          checkedInAt: app.checked_in_at,
+          pickedUpAt: app.picked_up_at,
+          isDeleted: app.is_deleted === 1,
+          hasPass: !!pass,
+          passStatus: pass ? pass.status : null,
+          passReference: pass ? pass.pass_reference : null,
+          schoolClass: app.school_class,
+          schoolName: app.school_name,
+          previousProgramme: app.previous_children_programme,
+          noteToTeam: app.note_to_team,
+          hasMedicalNotes: app.has_medical_notes === 1,
+          medicalNotes: app.medical_notes,
+          needsExtraSupport: app.needs_extra_support === 1,
+          supportNotes: app.support_notes,
+          submittedAt: app.submitted_at,
+          child: {
+            fullName: app.child_name,
+            gender: app.gender,
+            dob: app.date_of_birth,
+            age: app.calculated_age,
+            ageGroup: app.age_group,
+            relationship: app.relationship_to_child,
+            needsAgeReview: app.needs_age_review === 1,
+            photoUrl: app.child_photo_url
+          },
+          parent: {
+            id: app.parent_id,
+            fullName: app.parent_name,
+            phone: app.phone_number,
+            whatsapp: app.whatsapp_number,
+            email: app.parent_email,
+            isWorker: app.is_koinonia_worker === 1,
+            department: app.parent_department,
+            photoUrl: app.parent_photo_url || (app.parent_photo_file_id ? (String(app.parent_photo_file_id).startsWith('http') || String(app.parent_photo_file_id).startsWith('/') ? String(app.parent_photo_file_id) : `/api/media/files/${app.parent_photo_file_id}`) : '')
+          },
+          pickupPeople: entryPickups
+        };
+      });
+    }
+
+    const statSentReview = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'under_review' AND (is_deleted = 0 OR is_deleted IS NULL)`, [eventId]))?.count || 0;
+    const statSelected = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up') AND (is_deleted = 0 OR is_deleted IS NULL)`, [eventId]))?.count || 0;
+    const statWaitingList = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'waiting_list' AND (is_deleted = 0 OR is_deleted IS NULL)`, [eventId]))?.count || 0;
+    const statNotSelected = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'not_selected' AND (is_deleted = 0 OR is_deleted IS NULL)`, [eventId]))?.count || 0;
+    const statRemoved = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND (is_deleted = 1 OR status = 'removed')`, [eventId]))?.count || 0;
+
+    return res.json({ 
+      success: true, 
+      applications: formatted,
+      stats: {
+        sentReview: statSentReview,
+        selected: statSelected,
+        waitingList: statWaitingList,
+        notSelected: statNotSelected,
+        removed: statRemoved
+      },
+      pagination: {
+        total: totalCount,
+        page,
+        limit,
+        pages: Math.ceil(totalCount / limit)
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching applications list:', err);
+    return res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch child applications.' });
+  }
+});
+
+// GET children records list with stats and filtering
+router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const eventId = await resolveAdminEventId(req.query.eventId as string);
+    const page = parseInt(req.query.page as string, 10) || 1;
+    const limit = parseInt(req.query.limit as string, 10) || 25;
+    const offset = (page - 1) * limit;
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const filter = typeof req.query.filter === 'string' ? req.query.filter : '';
+
+    if (!eventId) {
+      return res.json({
+        success: true,
+        stats: {
+          totalChildren: 0,
+          selected: 0,
+          checkedIn: 0,
+          inside: 0,
+          pickedUp: 0,
+          removed: 0,
+          needsAttention: 0
+        },
+        children: [],
+        total: 0,
+        pagination: {
+          total: 0,
+          page,
+          limit,
+          pages: 0
+        },
+        nextCursor: null
+      });
+    }
+
+    // 1. Fetch overall canonical stats
+    const summaryStats = await getChildSummaryStats(eventId);
+
+    // 2. Fetch Children Records
+    let filterClauses = 'e.event_id = ?';
+    const queryParams: any[] = [eventId];
+
+    if (filter === 'removed') {
+      filterClauses += ` AND (e.is_deleted = 1 OR c.is_deleted = 1)`;
+    } else {
+      filterClauses += ` AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL)`;
+    }
+
+    if (q) {
+      filterClauses += ` AND (
+        c.full_name LIKE ? OR 
+        p.full_name LIKE ? OR 
+        p.phone_number LIKE ?
+      )`;
+      const searchPattern = `%${q}%`;
+      queryParams.push(searchPattern, searchPattern, searchPattern);
+    }
+
+    if (filter === 'inside') {
+      filterClauses += ` AND e.status IN ('checked_in', 'inside')`;
+    } else if (filter === 'not_arrived') {
+      filterClauses += ` AND e.status NOT IN ('checked_in', 'inside', 'picked_up')`;
+    } else if (filter === 'picked_up') {
+      filterClauses += ` AND e.status = 'picked_up'`;
+    } else if (filter === 'medical_note') {
+      filterClauses += ` AND e.has_medical_notes = 1`;
+    } else if (filter === 'missing_pickup_photo') {
+      filterClauses += ` AND EXISTS (
+        SELECT 1 FROM pickup_people pp 
+        WHERE pp.child_event_entry_id = e.id AND (pp.photo_file_id IS NULL OR pp.photo_file_id = '')
+      )`;
+    } else if (filter === 'below_event_age') {
+      filterClauses += ` AND c.needs_age_review = 1`;
+    } else if (filter === 'special_support') {
+      filterClauses += ` AND e.needs_extra_support = 1`;
+    }
+
+    // Get total count of filtered children
+    const countSql = `
+      SELECT COUNT(*) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE ${filterClauses}
+    `;
+    const countRow = await queryOne(countSql, queryParams);
+    const totalFiltered = countRow ? countRow.count : 0;
+
+    // Fetch paginated slice of children
+    const paginatedParams = [...queryParams, limit, offset];
+    const queryStr = `
+      SELECT 
+        e.id as entry_id,
+        e.child_id,
+        e.status,
+        e.school_class,
+        e.school_name,
+        e.has_medical_notes,
+        e.medical_notes,
+        e.needs_extra_support,
+        e.support_notes,
+        e.submitted_at,
+        e.is_deleted as entry_deleted,
+        e.delete_reason,
+        c.full_name as child_name,
+        c.gender,
+        c.date_of_birth,
+        c.calculated_age,
+        c.age_group,
+        c.needs_age_review,
+        c.is_deleted as child_deleted,
+        m.secure_url as child_photo_url,
+        p.id as parent_id,
+        p.full_name as parent_name,
+        p.phone_number,
+        p.photo_file_id as parent_photo_file_id,
+        pm.secure_url as parent_photo_url
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      LEFT JOIN media_files m ON m.id = c.photo_file_id
+      LEFT JOIN media_files pm ON pm.id = p.photo_file_id
+      WHERE ${filterClauses}
+      ORDER BY c.full_name ASC
+      LIMIT ? OFFSET ?
+    `;
+
+    const childrenRows = await query(queryStr, paginatedParams);
+
+    let formatted: any[] = [];
+    if (childrenRows.length > 0) {
+      const entryIds = childrenRows.map((app: any) => app.entry_id);
+      const placeholders = entryIds.map(() => '?').join(',');
+      const pickupPeople = await query(`
+        SELECT p.*, m.secure_url as photo_url
+        FROM pickup_people p
+        LEFT JOIN media_files m ON m.id = p.photo_file_id
+        WHERE p.child_event_entry_id IN (${placeholders})
+      `, entryIds);
+
+      formatted = childrenRows.map((app: any) => {
+        const entryPickups = pickupPeople.filter((p: any) => p.child_event_entry_id === app.entry_id)
+          .map((p: any) => ({
+            id: p.id,
+            fullName: p.full_name,
+            relationship: p.relationship_to_child,
+            phone: p.phone_number,
+            whatsapp: p.whatsapp_number,
+            photoUrl: p.photo_url,
+            approved: p.approved_by_parent === 1
+          }));
+
+        const flags: string[] = [];
+        if (app.has_medical_notes === 1) flags.push('medical_notes');
+        if (app.needs_extra_support === 1) flags.push('special_support');
+        if (app.needs_age_review === 1) flags.push('needs_age_review');
+        if (entryPickups.length === 0) {
+          flags.push('missing_pickup_person');
+        } else if (entryPickups.some((pp: any) => !pp.photoUrl)) {
+          flags.push('missing_pickup_photo');
+        }
+
+        let entryStatus: 'checked_in' | 'not_arrived' = 'not_arrived';
+        let pickupStatus: 'inside' | 'picked_up' | 'not_picked_up' = 'not_picked_up';
+
+        if (app.status === 'checked_in' || app.status === 'inside') {
+          entryStatus = 'checked_in';
+          pickupStatus = 'inside';
+        } else if (app.status === 'picked_up') {
+          entryStatus = 'checked_in';
+          pickupStatus = 'picked_up';
+        }
+
+        return {
+          id: app.entry_id,
+          applicationId: app.entry_id,
+          childId: app.child_id,
+          fullName: app.child_name,
+          photoUrl: app.child_photo_url,
+          ageLabel: `${app.calculated_age}y`,
+          gender: app.gender,
+          ageGroup: app.age_group,
+          parentName: app.parent_name,
+          parentPhone: app.phone_number,
+          pickupPersonName: entryPickups[0]?.fullName || null,
+          pickupPersonPhotoUrl: entryPickups[0]?.photoUrl || null,
+          reviewStatus: app.status,
+          entryStatus,
+          pickupStatus,
+          isDeleted: !!app.entry_deleted || !!app.child_deleted,
+          deleteReason: app.delete_reason || null,
+          flags
+        };
+      });
+    }
+
+    return res.json({
+      success: true,
+      stats: {
+        totalChildren: summaryStats.totalChildren,
+        selected: summaryStats.selected,
+        checkedIn: summaryStats.checkedIn,
+        inside: summaryStats.inside,
+        pickedUp: summaryStats.pickedUp,
+        removed: summaryStats.removed,
+        needsAttention: summaryStats.needsAttention
+      },
+      children: formatted,
+      total: totalFiltered,
+      pagination: {
+        total: totalFiltered,
+        page,
+        limit,
+        pages: Math.ceil(totalFiltered / limit)
+      },
+      nextCursor: null
+    });
+  } catch (err: any) {
+    console.error('Error in /api/admin/children:', err);
+    return res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch children records.' });
+  }
+});
+
+// GET attendance with stats and filtering
+router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+
+    const eventId = await resolveAdminEventId(req.query.eventId as string);
+    const status = typeof req.query.status === 'string' ? req.query.status : 'all';
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+
+    if (!eventId) {
+      return res.json({
+        success: true,
+        stats: {
+          expected: 0,
+          checkedIn: 0,
+          inside: 0,
+          pickedUp: 0,
+          notArrived: 0,
+          needsAttention: 0
+        },
+        rows: [],
+        ageGroups: [],
+        recentScans: [],
+        teamActivity: [],
+        total: 0,
+        nextCursor: null
+      });
+    }
+
+    const formatTime = (isoString?: string) => {
+      if (!isoString) return 'No activity';
+      try {
+        const d = new Date(isoString);
+        let hours = d.getHours();
+        const minutes = d.getMinutes();
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12;
+        hours = hours ? hours : 12; // the hour '0' should be '12'
+        const minutesStr = minutes < 10 ? '0' + minutes : minutes;
+        return `${hours}:${minutesStr} ${ampm}`;
+      } catch (e) {
+        return 'No activity';
+      }
+    };
+
+    // 1. Fetch canonical summary stats
+    const summaryStats = await getChildSummaryStats(eventId);
+
+    // 2. Query matching records for rows
+    let queryStr = `
+      SELECT 
+        e.id as entry_id,
+        e.child_id,
+        e.status,
+        e.has_medical_notes,
+        e.medical_notes,
+        e.needs_extra_support,
+        e.support_notes,
+        e.checked_in_at,
+        e.picked_up_at,
+        c.full_name as child_name,
+        c.age_group,
+        c.needs_age_review,
+        p.full_name as parent_name,
+        p.phone_number as parent_phone
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL) AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
+    `;
+
+    const queryParams: any[] = [eventId];
+
+    if (q) {
+      queryStr += ` AND (
+        c.full_name LIKE ? OR 
+        p.full_name LIKE ? OR 
+        p.phone_number LIKE ?
+      )`;
+      const searchPattern = `%${q}%`;
+      queryParams.push(searchPattern, searchPattern, searchPattern);
+    }
+
+    if (status === 'inside') {
+      queryStr += " AND e.status IN ('checked_in', 'inside') AND e.checked_in_at IS NOT NULL AND e.picked_up_at IS NULL";
+    } else if (status === 'picked_up') {
+      queryStr += " AND e.status = 'picked_up' AND e.picked_up_at IS NOT NULL";
+    } else if (status === 'not_arrived') {
+      queryStr += " AND (e.status IN ('selected', 'pass_ready') OR e.checked_in_at IS NULL)";
+    } else if (status === 'needs_attention') {
+      queryStr += " AND (e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1)";
+    }
+
+    queryStr += ` ORDER BY c.full_name ASC`;
+
+    const childrenRows = await query(queryStr, queryParams);
+
+    const rows = childrenRows.map((app: any) => {
+      let rowStatus: 'checked_in' | 'picked_up' | 'not_arrived' | 'needs_attention' = 'not_arrived';
+      let rowLocation: 'inside' | 'picked_up' | 'not_arrived' | null = 'not_arrived';
+
+      if (app.status === 'picked_up' && app.picked_up_at) {
+        rowStatus = 'picked_up';
+        rowLocation = 'picked_up';
+      } else if ((app.status === 'checked_in' || app.status === 'inside') && app.checked_in_at && !app.picked_up_at) {
+        rowStatus = 'checked_in';
+        rowLocation = 'inside';
+      } else {
+        const needsAttention = app.has_medical_notes === 1 || app.needs_extra_support === 1 || app.needs_age_review === 1;
+        if (needsAttention) {
+          rowStatus = 'needs_attention';
+        } else {
+          rowStatus = 'not_arrived';
+        }
+        rowLocation = 'not_arrived';
+      }
+
+      let notesSummary = 'No care note';
+      if (app.has_medical_notes === 1 && app.medical_notes) {
+        notesSummary = app.medical_notes;
+      } else if (app.needs_extra_support === 1 && app.support_notes) {
+        notesSummary = app.support_notes;
+      }
+
+      // Only current lifecycle activity should be reported
+      const lastActAt = (rowStatus === 'picked_up' ? app.picked_up_at : (rowStatus === 'checked_in' ? app.checked_in_at : null)) || null;
+      const lastActLabel = lastActAt ? formatTime(lastActAt) : 'No activity';
+
+      const rawAgeGroup = app.age_group || '';
+      const needsAgeReview = app.needs_age_review === 1 || rawAgeGroup.includes('Review Needed');
+      let cleanAgeGroupLabel = rawAgeGroup.replace(/\s*\(Review Needed\)/gi, '').trim();
+      if (cleanAgeGroupLabel === 'Under 4' || !cleanAgeGroupLabel) {
+        const chAge = getChildAge(app);
+        if (chAge < 1) cleanAgeGroupLabel = 'Below 1';
+        else if (chAge <= 3) cleanAgeGroupLabel = 'Ages 1 to 3';
+        else if (chAge <= 6) cleanAgeGroupLabel = 'Ages 4 to 6';
+        else if (chAge <= 9) cleanAgeGroupLabel = 'Ages 7 to 9';
+        else if (chAge <= 12) cleanAgeGroupLabel = 'Ages 10 to 12';
+        else cleanAgeGroupLabel = 'Teens';
+      } else if (cleanAgeGroupLabel === 'Ages 4-6') {
+        cleanAgeGroupLabel = 'Ages 4 to 6';
+      } else if (cleanAgeGroupLabel === 'Ages 7-9') {
+        cleanAgeGroupLabel = 'Ages 7 to 9';
+      } else if (cleanAgeGroupLabel === 'Ages 10-12') {
+        cleanAgeGroupLabel = 'Ages 10 to 12';
+      }
+
+      return {
+        id: app.entry_id,
+        childId: app.child_id,
+        applicationId: app.entry_id,
+        childName: app.child_name,
+        ageGroup: cleanAgeGroupLabel,
+        needsAgeReview,
+        parentName: app.parent_name,
+        parentPhone: app.parent_phone,
+        status: rowStatus,
+        location: rowLocation,
+        notes: notesSummary,
+        lastActivityAt: lastActAt,
+        lastActivityLabel: lastActLabel
+      };
+    });
+
+    // 3. Compute Age Group statistical breakdown from database using canonical event age groups
+    const allEntriesForAgeGroups = await query(`
+      SELECT 
+        e.status,
+        e.checked_in_at,
+        e.picked_up_at,
+        c.age_group,
+        c.calculated_age,
+        c.date_of_birth,
+        c.needs_age_review
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
+    `, [eventId]);
+
+    // Query canonical age groups configured for this event
+    const dbConfiguredGroups = await query(
+      'SELECT id, label, min_age, max_age, sort_order FROM event_age_groups WHERE event_id = ? ORDER BY sort_order ASC, min_age ASC',
+      [eventId]
+    );
+
+    const canonicalCohorts = (dbConfiguredGroups && dbConfiguredGroups.length > 0)
+      ? dbConfiguredGroups.map((g: any) => ({
+          key: g.label,
+          label: g.label,
+          min: Number(g.min_age),
+          max: Number(g.max_age)
+        }))
+      : [
+          { key: 'Below 1', label: 'Below 1', min: 0, max: 0 },
+          { key: 'Ages 1 to 3', label: 'Ages 1 to 3', min: 1, max: 3 },
+          { key: 'Ages 4 to 6', label: 'Ages 4 to 6', min: 4, max: 6 },
+          { key: 'Ages 7 to 9', label: 'Ages 7 to 9', min: 7, max: 9 },
+          { key: 'Ages 10 to 12', label: 'Ages 10 to 12', min: 10, max: 12 }
+        ];
+
+    const ageGroupsMap = new Map<string, any>();
+    for (const cohort of canonicalCohorts) {
+      ageGroupsMap.set(cohort.key, {
+        ageGroup: cohort.label,
+        expected: 0,
+        checkedIn: 0,
+        inside: 0,
+        pickedUp: 0,
+        notArrived: 0
+      });
+    }
+
+    for (const entry of allEntriesForAgeGroups) {
+      const age = getChildAge(entry);
+      let matchedCohort = canonicalCohorts.find(c => age >= c.min && age <= c.max);
+      if (!matchedCohort && entry.age_group) {
+        const cleanAg = entry.age_group.replace(/\s*\(Review Needed\)/gi, '').trim();
+        const norm = cleanAg.toLowerCase().replace(/[^a-z0-9]/g, '');
+        matchedCohort = canonicalCohorts.find(c => {
+          const cNorm = c.label.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return norm === cNorm || norm.includes(cNorm) || cNorm.includes(norm);
+        });
+      }
+      const groupKey = matchedCohort ? matchedCohort.key : canonicalCohorts[0].key;
+      const statsObj = ageGroupsMap.get(groupKey);
+      if (statsObj) {
+        statsObj.expected++;
+        if (entry.status === 'picked_up' && entry.picked_up_at) {
+          statsObj.checkedIn++;
+          statsObj.pickedUp++;
+        } else if ((entry.status === 'checked_in' || entry.status === 'inside') && entry.checked_in_at && !entry.picked_up_at) {
+          statsObj.checkedIn++;
+          statsObj.inside++;
+        } else {
+          statsObj.notArrived++;
+        }
+      }
+    }
+    const ageGroups = Array.from(ageGroupsMap.values());
+
+    // 4. Fetch Recent Scans logs (max 10) - strictly limited to current active lifecycle
+    const recentScansRows = await query(`
+      SELECT 
+        e.id as entry_id,
+        e.status,
+        e.checked_in_at,
+        e.picked_up_at,
+        c.full_name as child_name,
+        e.has_medical_notes,
+        e.needs_extra_support,
+        c.needs_age_review
+      FROM child_event_entries e
+      JOIN children c ON e.child_id = c.id
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND e.status IN ('checked_in', 'inside', 'picked_up')
+        AND (e.checked_in_at IS NOT NULL OR e.picked_up_at IS NOT NULL)
+      ORDER BY COALESCE(e.picked_up_at, e.checked_in_at) DESC
+      LIMIT 10
+    `, [eventId]);
+
+    const recentScans = recentScansRows.map((r: any) => {
+      const isPickup = r.status === 'picked_up' && r.picked_up_at;
+      const timeLabel = formatTime(isPickup ? r.picked_up_at : r.checked_in_at);
+      const flagged = r.has_medical_notes === 1 || r.needs_extra_support === 1 || r.needs_age_review === 1;
+      return {
+        id: `${r.entry_id}-${isPickup ? 'pickup' : 'checkin'}`,
+        applicationId: r.entry_id,
+        childName: r.child_name,
+        type: isPickup ? 'pickup' : 'check_in',
+        timeLabel,
+        flagged
+      };
+    });
+
+    // 5. Fetch Team Activity logs (max 10) - strictly limited to current active lifecycle
+    const teamActivityRows = await query(`
+      SELECT 
+        e.id as entry_id,
+        c.full_name as child_name,
+        e.status,
+        e.checked_in_at,
+        e.picked_up_at,
+        COALESCE(vp.full_name, u.email, 'Event Worker') as team_member_name
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      LEFT JOIN users u ON (e.status = 'picked_up' AND e.picked_up_by = u.id) OR (e.status != 'picked_up' AND e.checked_in_by = u.id)
+      LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND e.status IN ('checked_in', 'inside', 'picked_up')
+        AND (e.checked_in_by IS NOT NULL OR e.picked_up_by IS NOT NULL)
+      ORDER BY COALESCE(e.picked_up_at, e.checked_in_at) DESC
+      LIMIT 10
+    `, [eventId]);
+
+    const teamActivity = teamActivityRows.map((r: any) => {
+      const isPickup = r.status === 'picked_up' && r.picked_up_at;
+      const timeLabel = formatTime(isPickup ? r.picked_up_at : r.checked_in_at);
+      return {
+        id: r.entry_id,
+        teamMemberName: r.team_member_name,
+        childName: r.child_name,
+        action: isPickup ? 'picked up' : 'checked in',
+        timeLabel
+      };
+    });
+
+    return res.json({
+      success: true,
+      stats: {
+        expected: summaryStats.selected,
+        checkedIn: summaryStats.checkedIn,
+        inside: summaryStats.inside,
+        pickedUp: summaryStats.pickedUp,
+        notArrived: Math.max(0, summaryStats.selected - summaryStats.checkedIn),
+        needsAttention: summaryStats.needsAttention
+      },
+      rows,
+      ageGroups,
+      recentScans,
+      teamActivity,
+      total: rows.length,
+      nextCursor: null
+    });
+  } catch (err: any) {
+    console.error('Error in /api/admin/attendance:', err);
+    return res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch attendance records.' });
+  }
+});
+
+// GET a single child application detail by ID
+router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const app = await queryOne(`
+      SELECT 
+        e.id as entry_id,
+        e.child_id,
+        e.status,
+        e.is_deleted,
+        e.deleted_at,
+        e.deleted_by,
+        e.delete_reason,
+        e.school_class,
+        e.school_name,
+        e.previous_children_programme,
+        e.note_to_team,
+        e.has_medical_notes,
+        e.medical_notes,
+        e.needs_extra_support,
+        e.support_notes,
+        e.submitted_at,
+        e.reviewed_at,
+        e.checked_in_at,
+        e.picked_up_at,
+        e.updated_at,
+        c.full_name as child_name,
+        c.gender,
+        c.date_of_birth,
+        c.calculated_age,
+        c.age_group,
+        c.relationship_to_child,
+        c.needs_age_review,
+        m.secure_url as child_photo_url,
+        p.id as parent_id,
+        p.full_name as parent_name,
+        p.phone_number,
+        p.whatsapp_number,
+        p.email as parent_email,
+        p.is_koinonia_worker,
+        p.department as parent_department,
+        p.home_address as parent_address,
+        p.photo_file_id as parent_photo_file_id,
+        pm.secure_url as parent_photo_url
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      LEFT JOIN media_files m ON m.id = c.photo_file_id
+      LEFT JOIN media_files pm ON pm.id = p.photo_file_id
+      WHERE e.id = ?
+    `, [id]);
+
+    if (!app) {
+      return res.status(404).json({ success: false, error: 'Application entry not found.' });
+    }
+
+    // Query pickup people for this specific entry
+    const pickups = await query(`
+      SELECT p.*, m.secure_url as photo_url
+      FROM pickup_people p
+      LEFT JOIN media_files m ON m.id = p.photo_file_id
+      WHERE p.child_event_entry_id = ?
+    `, [id]);
+
+    const formattedPickups = pickups.map((p: any) => ({
+      id: p.id,
+      fullName: p.full_name,
+      relationship: p.relationship_to_child,
+      phone: p.phone_number,
+      whatsapp: p.whatsapp_number,
+      photoUrl: p.photo_url,
+      approved: p.approved_by_parent === 1
+    }));
+
+    const auditEvents = await query(`
+      SELECT action, user_role, details, timestamp
+      FROM audit_logs
+      WHERE target_id IN (?, ?)
+      ORDER BY timestamp DESC
+    `, [id, app.child_id]);
+
+    const history: any[] = [];
+    if (auditEvents && auditEvents.length > 0) {
+      for (const a of auditEvents) {
+        let parsedDetails: any = null;
+        try { parsedDetails = JSON.parse(a.details); } catch (e) {}
+        history.push({
+          id: `audit-${history.length}`,
+          action: a.action,
+          by: a.user_role === 'super_admin' ? 'Super Admin' : a.user_role === 'admin' ? 'Administrator' : 'Event Team',
+          timestamp: a.timestamp,
+          note: parsedDetails?.reason || parsedDetails?.note || null
+        });
+      }
+    }
+    if (history.length === 0) {
+      if (app.reviewed_at) {
+        history.push({
+          id: 'reviewed',
+          action: app.status === 'selected' || app.status === 'pass_ready' ? 'Selected for event' : app.status === 'waiting_list' ? 'Moved to waiting list' : app.status === 'not_selected' ? 'Marked not selected' : 'Review updated',
+          by: 'Administrator',
+          timestamp: app.reviewed_at,
+          note: app.note_to_team || null
+        });
+      }
+      if (app.submitted_at) {
+        history.push({
+          id: 'submitted',
+          action: 'Application submitted',
+          by: app.parent_name || 'Parent',
+          timestamp: app.submitted_at,
+          note: null
+        });
+      }
+    }
+
+    const pass = await queryOne('SELECT pass_reference, status, issued_at, revoked_at FROM event_passes WHERE child_event_entry_id = ? ORDER BY created_at DESC LIMIT 1', [id]);
+    const passReference = pass ? pass.pass_reference : undefined;
+
+    const applicationDetails = {
+      id: app.entry_id,
+      childId: app.child_id,
+      status: app.status,
+      checkedInAt: app.checked_in_at,
+      pickedUpAt: app.picked_up_at,
+      hasPass: !!pass,
+      passStatus: pass ? pass.status : null,
+      passReference,
+      isDeleted: app.is_deleted === 1,
+      deletedAt: app.deleted_at,
+      deletedBy: app.deleted_by,
+      deleteReason: app.delete_reason,
+      schoolClass: app.school_class,
+      schoolName: app.school_name,
+      previousProgramme: app.previous_children_programme,
+      noteToTeam: app.note_to_team,
+      hasMedicalNotes: app.has_medical_notes === 1,
+      medicalNotes: app.medical_notes,
+      needsExtraSupport: app.needs_extra_support === 1,
+      supportNotes: app.support_notes,
+      submittedAt: app.submitted_at,
+      reviewedAt: app.reviewed_at,
+      child: {
+        fullName: app.child_name,
+        gender: app.gender,
+        dob: app.date_of_birth,
+        age: app.calculated_age,
+        ageGroup: app.age_group,
+        relationship: app.relationship_to_child,
+        needsAgeReview: app.needs_age_review === 1,
+        photoUrl: app.child_photo_url
+      },
+      parent: {
+        id: app.parent_id,
+        fullName: app.parent_name,
+        phone: app.phone_number,
+        whatsapp: app.whatsapp_number,
+        email: app.parent_email,
+        isWorker: app.is_koinonia_worker === 1,
+        department: app.parent_department,
+        address: app.parent_address,
+        photoUrl: app.parent_photo_url || (app.parent_photo_file_id ? (String(app.parent_photo_file_id).startsWith('http') || String(app.parent_photo_file_id).startsWith('/') ? String(app.parent_photo_file_id) : `/api/media/files/${app.parent_photo_file_id}`) : '')
+      },
+      pickupPeople: formattedPickups,
+      history
+    };
+
+    return res.json({ success: true, application: applicationDetails });
+  } catch (err: any) {
+    console.error('Error fetching application details:', err);
+    return res.status(500).json({ success: false, error: 'Failed to fetch application details.' });
+  }
+});
+
+// POST review child application decision
+router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status, noteToTeam, sendNotification } = req.body;
+
+    if (!status) {
+      return res.status(400).json({ success: false, error: 'Status is required.' });
+    }
+
+    const validStatuses = ['under_review', 'selected', 'not_selected', 'waiting_list', 'pass_ready', 'checked_in', 'picked_up'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ success: false, error: 'Invalid review status.' });
+    }
+
+    const app = await queryOne(`
+      SELECT e.*, c.full_name as child_name, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.id as parent_profile_id
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE e.id = ?
+    `, [id]);
+
+    if (!app) {
+      return res.status(404).json({ success: false, error: 'Application entry not found.' });
+    }
+
+    if (app.status === 'incomplete' || app.status === 'draft') {
+      return res.status(400).json({
+        success: false,
+        code: 'APPLICATION_INCOMPLETE',
+        error: 'Cannot review an incomplete application draft.',
+        message: 'Cannot review an incomplete application draft.'
+      });
+    }
+
+    const now = new Date().toISOString();
+    let finalStatus = status;
+    let passData = null;
+    let passErrorReason = null;
+
+    if (status === 'selected' || status === 'pass_ready') {
+      const capCheck = await validateChildSelectionCapacity(app.event_id, app.child_id, app.status);
+      if (!capCheck.allowed) {
+        return res.status(400).json({
+          success: false,
+          error: capCheck.error,
+          message: capCheck.error
+        });
+      }
+
+      // First update to selected so we have an approved status before issuing
+      await execute(`
+        UPDATE child_event_entries 
+        SET status = 'selected', note_to_team = ?, reviewed_at = ?, updated_at = ?
+        WHERE id = ?
+      `, [noteToTeam || app.note_to_team, now, now, id]);
+
+      try {
+        passData = await issuePassForChild({ childId: app.child_id });
+        finalStatus = 'pass_ready';
+      } catch (err: any) {
+        console.error('Failed to issue pass during admin review:', err);
+        passErrorReason = err.message || 'Pass generation failed';
+        finalStatus = 'selected';
+      }
+    }
+
+    // Update status and team notes in database (final update)
+    await execute(`
+      UPDATE child_event_entries 
+      SET status = ?, note_to_team = ?, reviewed_at = ?, updated_at = ?
+      WHERE id = ?
+    `, [finalStatus, noteToTeam || app.note_to_team, now, now, id]);
+
+    // Process notification if requested
+    if (sendNotification) {
+      let subject = 'Koinonia Application Review Update';
+      let message = '';
+      
+      const pName = app.parent_name?.split(' ')[0] || 'Parent';
+      const cName = app.child_name || 'your child';
+
+      if (finalStatus === 'pass_ready') {
+        subject = 'Koinonia Event Pass Ready!';
+        message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nYour secure event pass is now ready in your portal. Please log in to download it and keep it handy during check-in.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+      } else if (finalStatus === 'selected') {
+        subject = 'Koinonia Application Selected!';
+        message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nOur team is finalizing your event details. Your secure event pass will be generated shortly and will be available in your portal.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+      } else if (finalStatus === 'waiting_list') {
+        subject = 'Koinonia Application Waitlist Update';
+        message = `Hello ${pName},\n\nThank you for registering ${cName} for the upcoming Koinonia Children and Teens Event.\n\nDue to venue capacity and safety limits, ${cName} has been placed on our waiting list. We will review seating limits regularly and will notify you immediately if a pass becomes available.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+      } else if (status === 'not_selected') {
+        subject = 'Koinonia Application Status';
+        message = `Hello ${pName},\n\nThank you for registering ${cName} for Koinonia Children and Teens.\n\nDue to high registration volumes and room capacity limits, we are unable to accommodate ${cName} for this upcoming session. We look forward to welcoming your family to future events.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+      } else {
+        subject = 'Koinonia Application Update Needed';
+        message = `Hello ${pName},\n\nOur administrative team has reviewed ${cName}'s application. We kindly ask you to log in to your portal and update the details as requested so we can complete our review.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+      }
+
+      // 1. Send transactional email
+      if (app.parent_email) {
+        await sendEmail({
+          to: app.parent_email,
+          subject,
+          text: message,
+          html: `<div style="font-family: sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 24px; border-radius: 12px; background-color: #FAF9F6;">
+            <div style="text-align: center; margin-bottom: 24px;">
+              <span style="font-family: serif; font-size: 20px; font-weight: bold; color: #18181B; letter-spacing: 2px;">KOINONIA</span>
+              <div style="width: 40px; height: 2px; background-color: #C59B27; margin: 8px auto 0;"></div>
+            </div>
+            <p>${message.replace(/\n/g, '<br>')}</p>
+            <hr style="border: 0; border-top: 1px solid #EAE8E1; margin: 24px 0;">
+            <p style="font-size: 11px; color: #71717A; text-align: center;">This is an official administrative update regarding your Koinonia Children and Teens event registration.</p>
+          </div>`
+        }).catch(err => console.error('Failed to send review email notification:', err));
+      }
+
+      // 2. Dispatch WhatsApp if phone is available
+      if (app.parent_phone) {
+        await sendWhatsApp(app.parent_phone, message).catch(err => console.error('Failed to send review WhatsApp notification:', err));
+      }
+
+      // 3. Create In-App Notification
+      let inAppTitle = subject;
+      let inAppMessage = message;
+      
+      const childFirstName = app.child_name ? app.child_name.trim().split(' ')[0] : 'your child';
+      if (finalStatus === 'pass_ready') {
+        inAppTitle = 'Pass ready';
+        inAppMessage = `${childFirstName}'s event pass is ready. You can open it from your parent account.`;
+      } else if (finalStatus === 'selected') {
+        inAppTitle = 'Application selected';
+        inAppMessage = `${childFirstName} has been selected. The event pass will be available shortly.`;
+      }
+
+      const notifId = `notif-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO notifications (
+          id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
+        ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
+      `, [notifId, inAppTitle, inAppMessage, app.event_id, app.child_id, app.parent_profile_id, now]);
+
+      const pNotifId = `pnotif-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [pNotifId, app.parent_profile_id, app.event_id, app.child_id, inAppTitle, inAppMessage, now]);
+    }
+
+    return res.json({ 
+      success: true, 
+      message: 'Application review submitted successfully.',
+      status: finalStatus,
+      pass: passData,
+      passErrorReason
+    });
+  } catch (err: any) {
+    console.error('Error submitting application review:', err);
+    return res.status(500).json({ success: false, error: 'Failed to submit application review.' });
+  }
+});
+
+// POST reopen child application review (admin revoke selection/pass)
+router.post('/applications/:id/reopen-review', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const app = await queryOne(`
+      SELECT e.*, c.full_name as child_name, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.id as parent_profile_id
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE e.id = ?
+    `, [id]);
+
+    if (!app) {
+      return res.status(404).json({ success: false, error: 'Application entry not found.' });
+    }
+
+    if (app.status === 'incomplete' || app.status === 'draft') {
+      return res.status(400).json({
+        success: false,
+        code: 'APPLICATION_INCOMPLETE',
+        error: 'Cannot reopen an incomplete application draft.',
+        message: 'Cannot reopen an incomplete application draft.'
+      });
+    }
+
+    // Validate child check-in status: cannot reopen if checked in or picked up
+    if (['checked_in', 'inside', 'picked_up', 'checked_out'].includes(app.status)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'This child has already checked in or been picked up. Review cannot be reopened.' 
+      });
+    }
+
+    const now = new Date().toISOString();
+
+    // Update child_event_entries status, reviewed_at to NULL, and append reason to note_to_team as audit trail
+    let auditNote = app.note_to_team || '';
+    if (reason && reason.trim()) {
+      const formattedReason = `\n\n[Review reopened on ${new Date().toLocaleDateString()} for reason: ${reason}]`;
+      auditNote = auditNote ? `${auditNote}${formattedReason}` : formattedReason;
+    }
+
+    await execute(`
+      UPDATE child_event_entries 
+      SET status = 'review_reopened', note_to_team = ?, reviewed_at = NULL, updated_at = ?
+      WHERE id = ?
+    `, [auditNote, now, id]);
+
+    // Revoke any generated event pass
+    await execute(`
+      UPDATE event_passes
+      SET status = 'revoked', revoked_at = ?, updated_at = ?
+      WHERE child_event_entry_id = ?
+    `, [now, now, id]);
+
+    // Send gentle, comforting parent notification
+    const pName = app.parent_name?.split(' ')[0] || 'Parent';
+    const cFirstName = app.child_name ? app.child_name.split(' ')[0] : 'your child';
+    
+    const subject = 'Koinonia Application Update';
+    const message = `The event team has reopened the review for ${cFirstName}. We will share an update when a new decision is made.`;
+
+    // 1. Send transactional email
+    if (app.parent_email) {
+      await sendEmail({
+        to: app.parent_email,
+        subject,
+        text: message,
+        html: `<div style="font-family: sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 24px; border-radius: 12px; background-color: #FAF9F6;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <span style="font-family: serif; font-size: 20px; font-weight: bold; color: #18181B; letter-spacing: 2px;">KOINONIA</span>
+            <div style="width: 40px; height: 2px; background-color: #C59B27; margin: 8px auto 0;"></div>
+          </div>
+          <p>Hello ${pName},</p>
+          <p>${message}</p>
+          <hr style="border: 0; border-top: 1px solid #EAE8E1; margin: 24px 0;">
+          <p style="font-size: 11px; color: #71717A; text-align: center;">This is an official administrative update regarding your Koinonia Children and Teens event registration.</p>
+        </div>`
+      }).catch(err => console.error('Failed to send revoke email notification:', err));
+    }
+
+    // 2. Dispatch WhatsApp if phone is available
+    if (app.parent_phone) {
+      await sendWhatsApp(app.parent_phone, `Hello ${pName}, ${message}`).catch(err => console.error('Failed to send revoke WhatsApp notification:', err));
+    }
+
+    // 3. Create In-App Notification
+    const notifId = `notif-${crypto.randomUUID()}`;
+    await execute(`
+      INSERT INTO notifications (
+        id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
+      ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
+    `, [notifId, subject, `Hello ${pName},\n\n${message}`, app.event_id, app.child_id, app.parent_profile_id, now]);
+
+    const pNotifId = `pnotif-${crypto.randomUUID()}`;
+    await execute(`
+      INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [pNotifId, app.parent_profile_id, app.event_id, app.child_id, subject, `Hello ${pName},\n\n${message}`, now]);
+
+    return res.json({ success: true, message: 'Application review reopened successfully.' });
+  } catch (err: any) {
+    console.error('Error reopening application review:', err);
+    return res.status(500).json({ success: false, error: 'Failed to reopen application review.' });
+  }
+});
+
+// POST bulk review applications
+router.post('/applications/bulk-review', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin', 'team'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const { applicationIds, decision, note } = req.body;
+    if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'Application IDs must be a non-empty array.' });
+    }
+    const validDecisions = ['selected', 'waiting_list', 'not_selected', 'under_review'];
+    if (!validDecisions.includes(decision)) {
+      return res.status(400).json({ success: false, error: 'Invalid bulk decision.' });
+    }
+    const now = new Date().toISOString();
+    let updatedCount = 0;
+    const failures: { id: string; childName?: string; reason: string }[] = [];
+
+    for (const id of applicationIds) {
+      const app = await queryOne(`
+        SELECT e.*, c.full_name as child_name, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.id as parent_profile_id
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        WHERE e.id = ?
+      `, [id]);
+
+      if (!app) {
+        failures.push({ id, reason: 'Application record not found' });
+        continue;
+      }
+
+      if (app.status === 'incomplete' || app.status === 'draft') {
+        failures.push({
+          id,
+          childName: app.child_name,
+          reason: 'Application is an incomplete draft and cannot be reviewed.'
+        });
+        continue;
+      }
+
+      // Safeguard: Never overwrite live attendance states via registration review
+      if (['checked_in', 'inside', 'picked_up'].includes(app.status)) {
+        failures.push({
+          id,
+          childName: app.child_name,
+          reason: `Child is currently in an event attendance state (${app.status}). Attendance records cannot be altered by registration review.`
+        });
+        continue;
+      }
+
+      let finalDecision = decision;
+
+      if (decision === 'selected') {
+        const capCheck = await validateChildSelectionCapacity(app.event_id, app.child_id, app.status);
+        if (!capCheck.allowed) {
+          failures.push({
+            id,
+            childName: app.child_name,
+            reason: capCheck.error || 'Capacity reached'
+          });
+          continue;
+        }
+
+        const childRow = await queryOne('SELECT photo_file_id FROM children WHERE id = ?', [app.child_id]);
+        if (childRow && childRow.photo_file_id && childRow.photo_file_id.trim() !== '') {
+          // Required pass data exists (valid photo) -> Promote to 'pass_ready'
+          finalDecision = 'pass_ready';
+        }
+      }
+
+      // Update status
+      await execute(`
+        UPDATE child_event_entries 
+        SET status = ?, note_to_team = ?, reviewed_at = ?, updated_at = ?
+        WHERE id = ?
+      `, [finalDecision, note || app.note_to_team, now, now, id]);
+
+      // If pass_ready, auto-generate pass
+      if (finalDecision === 'pass_ready') {
+        const pass = await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ?', [id]);
+        if (!pass) {
+          const passId = crypto.randomUUID();
+          const passRef = `KOI-2026-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+          const passHash = crypto.randomBytes(16).toString('hex');
+
+          await execute(`
+            INSERT INTO event_passes (id, child_event_entry_id, pass_reference, pass_hash, status, issued_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'active', ?, ?, ?)
+          `, [passId, id, passRef, passHash, now, now, now]);
+        }
+      }
+
+      // Notifications (Only if not under_review)
+      if (decision !== 'under_review') {
+        let subject = 'Koinonia Application Review Update';
+        let message = '';
+        const pName = app.parent_name?.split(' ')[0] || 'Parent';
+        const cName = app.child_name || 'your child';
+
+        if (finalDecision === 'pass_ready') {
+          subject = 'Koinonia Event Pass Ready!';
+          message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nYour secure event pass is now ready in your portal. Please log in to download it and keep it handy during check-in.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        } else if (finalDecision === 'selected') {
+          subject = 'Koinonia Application Selected!';
+          message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nOur team is finalizing your event details. Your secure event pass will be generated shortly and will be available in your portal.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        } else if (finalDecision === 'waiting_list') {
+          subject = 'Koinonia Application Waitlist Update';
+          message = `Hello ${pName},\n\nThank you for registering ${cName} for the upcoming Koinonia Children and Teens Event.\n\nDue to venue capacity and safety limits, ${cName} has been placed on our waiting list. We will review seating limits regularly and will notify you immediately if a pass becomes available.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        } else if (decision === 'not_selected') {
+          subject = 'Koinonia Application Status';
+          message = `Hello ${pName},\n\nThank you for registering ${cName} for Koinonia Children and Teens.\n\nDue to high registration volumes and room capacity limits, we are unable to accommodate ${cName} for this upcoming session. We look forward to welcoming your family to future events.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        }
+
+        if (app.parent_email) {
+          await sendEmail({
+            to: app.parent_email,
+            subject,
+            text: message,
+            html: `<div style="font-family: sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 24px; border-radius: 12px; background-color: #FAF9F6;">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <span style="font-family: serif; font-size: 20px; font-weight: bold; color: #18181B; letter-spacing: 2px;">KOINONIA</span>
+                <div style="width: 40px; height: 2px; background-color: #C59B27; margin: 8px auto 0;"></div>
+              </div>
+              <p>${message.replace(/\n/g, '<br>')}</p>
+              <hr style="border: 0; border-top: 1px solid #EAE8E1; margin: 24px 0;">
+              <p style="font-size: 11px; color: #71717A; text-align: center;">This is an official administrative update regarding your Koinonia Children and Teens event registration.</p>
+            </div>`
+          }).catch(err => console.error('Failed to send bulk review email notification:', err));
+        }
+
+        if (app.parent_phone) {
+          await sendWhatsApp(app.parent_phone, message).catch(err => console.error('Failed to send bulk review WhatsApp notification:', err));
+        }
+
+        const notifId = `notif-${crypto.randomUUID()}`;
+        await execute(`
+          INSERT INTO notifications (
+            id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
+          ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
+        `, [notifId, subject, message, app.event_id, app.child_id, app.parent_profile_id, now]);
+
+        const pNotifId = `pnotif-${crypto.randomUUID()}`;
+        await execute(`
+          INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [pNotifId, app.parent_profile_id, app.event_id, app.child_id, subject, message, now]);
+      }
+
+      // Record audit log for each reviewed application
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(),
+          req.user.id,
+          req.user.role,
+          'Bulk Review Child Application',
+          'child_event_entry',
+          id,
+          JSON.stringify({ decision: finalDecision, previousStatus: app.status }),
+          now
+        ]);
+      } catch (aErr) {}
+
+      updatedCount++;
+    }
+
+    return res.json({
+      success: true,
+      updatedCount,
+      failures,
+      message: failures.length > 0
+        ? `${updatedCount} application(s) updated. ${failures.length} skipped.`
+        : `Successfully updated ${updatedCount} applications.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk review:', err);
+    return res.status(500).json({ success: false, error: 'Failed to process bulk review.' });
+  }
+});
+
+// PUT update status of an application
+router.put('/applications/:id/status', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status, noteToTeam } = req.body;
+
+    if (!status) {
+      return res.status(400).json({ error: 'Status is required.' });
+    }
+
+    const validStatuses = ['incomplete', 'under_review', 'selected', 'not_selected', 'waiting_list', 'pass_ready', 'checked_in', 'picked_up'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ error: 'Invalid status.' });
+    }
+
+    const entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [id]);
+    if (!entry) {
+      return res.status(404).json({ error: 'Application entry not found.' });
+    }
+
+    const now = new Date().toISOString();
+    let finalStatus = status;
+    let passData = null;
+    let passErrorReason = null;
+
+    if (status === 'selected' || status === 'pass_ready') {
+      const capCheck = await validateChildSelectionCapacity(entry.event_id, entry.child_id, entry.status);
+      if (!capCheck.allowed) {
+        return res.status(400).json({
+          success: false,
+          error: capCheck.error,
+          message: capCheck.error
+        });
+      }
+
+      // First update to selected so we have an approved status before issuing
+      if (noteToTeam !== undefined) {
+        await execute(`
+          UPDATE child_event_entries 
+          SET status = 'selected', note_to_team = ?, reviewed_at = ?, updated_at = ?
+          WHERE id = ?
+        `, [noteToTeam, now, now, id]);
+      } else {
+        await execute(`
+          UPDATE child_event_entries 
+          SET status = 'selected', reviewed_at = ?, updated_at = ?
+          WHERE id = ?
+        `, [now, now, id]);
+      }
+
+      try {
+        passData = await issuePassForChild({ childId: entry.child_id });
+        finalStatus = 'pass_ready';
+      } catch (err: any) {
+        console.error('Failed to issue pass during admin review:', err);
+        passErrorReason = err.message || 'Pass generation failed';
+        finalStatus = 'selected';
+      }
+    }
+
+    // Final update status in database
+    if (noteToTeam !== undefined) {
+      await execute(`
+        UPDATE child_event_entries 
+        SET status = ?, note_to_team = ?, reviewed_at = ?, updated_at = ?
+        WHERE id = ?
+      `, [finalStatus, noteToTeam, now, now, id]);
+    } else {
+      await execute(`
+        UPDATE child_event_entries 
+        SET status = ?, reviewed_at = ?, updated_at = ?
+        WHERE id = ?
+      `, [finalStatus, now, now, id]);
+    }
+
+    return res.json({ 
+      success: true, 
+      message: 'Application status updated successfully.',
+      status: finalStatus,
+      pass: passData,
+      passErrorReason
+    });
+  } catch (err: any) {
+    console.error('Error updating application status:', err);
+    return res.status(500).json({ error: 'Failed to update application status.' });
+  }
+});
+
+
+// GET admin overview dashboard metrics
+router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const event = await resolveAdminEvent(req.query.eventId as string);
+    const eventId = event?.id || null;
+
+    // Intentionally global persistent counts (not event-scoped)
+    const totalChildrenRes = await queryOne('SELECT COUNT(*) as count FROM children WHERE COALESCE(is_deleted, 0) = 0');
+    const totalParentsRes = await queryOne('SELECT COUNT(*) as count FROM parent_profiles');
+    const totalVolunteersRes = await queryOne(`
+      SELECT COUNT(*) as count 
+      FROM volunteer_profiles v 
+      WHERE (v.status IS NULL OR v.status != 'removed')
+        AND v.status IN ('approved', 'active', 'pending_review', 'rejected', 'declined', 'suspended')
+    `);
+    const pendingVolunteersRes = await queryOne(`
+      SELECT COUNT(*) as count 
+      FROM volunteer_profiles v 
+      WHERE v.status = 'pending_review' OR v.status IS NULL OR v.status = ''
+    `);
+
+    // Event-specific live operational counts from canonical childSummaryService
+    const childStats = await getChildSummaryStats(eventId);
+    const underReviewCount = childStats.underReview;
+    const selectedCount = childStats.selected;
+    const checkedInCount = childStats.checkedIn;
+    const pickedUpCount = childStats.pickedUp;
+    const stillInsideCount = childStats.inside;
+    const notSelectedCount = childStats.notSelected;
+
+    // Format admin user info
+    let fullName = 'Admin User';
+    const parentProfile = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [req.user?.id]);
+    if (parentProfile && parentProfile.full_name) {
+      fullName = parentProfile.full_name;
+    } else {
+      const volunteerProfile = await queryOne('SELECT full_name FROM volunteer_profiles WHERE user_id = ?', [req.user?.id]);
+      if (volunteerProfile && volunteerProfile.full_name) {
+        fullName = volunteerProfile.full_name;
+      }
+    }
+    const roleTitle = req.user?.role === 'super_admin' ? 'Global Director' : req.user?.role === 'admin' ? 'Senior Director' : 'Ministry Admin';
+
+    // Format active event details
+    const formatEventDate = (startsAt: string, endsAt: string) => {
+      if (!startsAt) return 'No active event';
+      try {
+        const s = new Date(startsAt);
+        const e = endsAt ? new Date(endsAt) : s;
+        const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric' };
+        if (s.toDateString() === e.toDateString()) {
+          return s.toLocaleDateString('en-US', options);
+        }
+        return `${s.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })} - ${e.toLocaleDateString('en-US', options)}`;
+      } catch {
+        return startsAt;
+      }
+    };
+
+    const dateLabel = event ? formatEventDate(event.starts_at || '', event.ends_at || '') : 'No active event';
+    const timeLabel = (event?.daily_start_time && event?.daily_end_time)
+      ? `${event.daily_start_time} to ${event.daily_end_time}`
+      : 'No active hours';
+
+    // Fetch demographics and calculate counts dynamically from the DB
+    const childrenData = eventId ? await query(`
+      SELECT c.id, c.gender, c.date_of_birth, c.calculated_age, c.age_group, e.status, e.checked_in_at, e.picked_up_at
+      FROM children c
+      JOIN child_event_entries e ON c.id = e.child_id
+      WHERE e.event_id = ? AND COALESCE(c.is_deleted, 0) = 0 AND (e.is_deleted IS NULL OR e.is_deleted = 0)
+    `, [eventId]) : [];
+
+    const ageGroupsList = [
+      { min: 0, max: 0, displayLabel: 'Below 1' },
+      { min: 1, max: 3, displayLabel: 'Ages 1 to 3' },
+      { min: 4, max: 6, displayLabel: 'Ages 4 to 6' },
+      { min: 7, max: 9, displayLabel: 'Ages 7 to 9' },
+      { min: 10, max: 12, displayLabel: 'Ages 10 to 12' },
+      { min: 13, max: 999, displayLabel: 'Teens' }
+    ];
+
+    const demographics = ageGroupsList.map(g => {
+      const matching = (childrenData || []).filter((c: any) => {
+        const age = getChildAge(c);
+        return age >= g.min && age <= g.max;
+      });
+
+      const boys = matching.filter((c: any) => {
+        const s = String(c.gender || '').trim().toLowerCase();
+        return ['boy', 'boys', 'male', 'm'].includes(s);
+      }).length;
+
+      const girls = matching.filter((c: any) => {
+        const s = String(c.gender || '').trim().toLowerCase();
+        return ['girl', 'girls', 'female', 'f'].includes(s);
+      }).length;
+
+      const underReview = matching.filter((c: any) => {
+        const s = String(c.status || '').trim().toLowerCase();
+        return ['under_review', 'pending_review', 'submitted', 'review_pending', 'pending'].includes(s);
+      }).length;
+
+      const selected = matching.filter((c: any) => {
+        const s = String(c.status || '').trim().toLowerCase();
+        return ['selected', 'approved', 'pass_ready', 'checked_in', 'inside', 'picked_up'].includes(s);
+      }).length;
+
+      const checkedIn = matching.filter((c: any) => {
+        const s = String(c.status || '').trim().toLowerCase();
+        return ['checked_in', 'inside'].includes(s) || (c.checked_in_at && !c.picked_up_at);
+      }).length;
+
+      return {
+        ageGroup: g.displayLabel,
+        boys,
+        girls,
+        total: matching.length,
+        underReview,
+        selected,
+        checkedIn
+      };
+    });
+
+    // Calculate Needs Attention items
+    // 1. Below event age (persistent child identity check)
+    const belowAgeCountRes = await queryOne("SELECT COUNT(*) as count FROM children WHERE age_group = 'Under 1 year'");
+    const belowAgeCount = belowAgeCountRes?.count || 0;
+
+    // 2. Medical notes (event-scoped entries)
+    const medicalNotesCountRes = eventId ? await queryOne(`
+      SELECT COUNT(*) as count FROM child_event_entries 
+      WHERE event_id = ? AND (has_medical_notes = 1 OR (medical_notes IS NOT NULL AND medical_notes != ''))
+    `, [eventId]) : { count: 0 };
+    const medicalNotesCount = medicalNotesCountRes?.count || 0;
+
+    // 3. Missing pickup photo (persistent child identity check)
+    const missingPickupPhotoCountRes = await queryOne(`
+      SELECT COUNT(*) as count FROM children WHERE photo_file_id IS NULL OR photo_file_id = ''
+    `);
+    const missingPickupPhotoCount = missingPickupPhotoCountRes?.count || 0;
+
+    // 4. Special support (event-scoped entries)
+    const specialSupportCountRes = eventId ? await queryOne(`
+      SELECT COUNT(*) as count FROM child_event_entries 
+      WHERE event_id = ? AND (needs_extra_support = 1 OR (support_notes IS NOT NULL AND support_notes != ''))
+    `, [eventId]) : { count: 0 };
+    const specialSupportCount = specialSupportCountRes?.count || 0;
+
+    // 5. Duplicate phone number (persistent parent profiles check)
+    const duplicatePhoneCountRes = await queryOne(`
+      SELECT COUNT(*) as count FROM (
+        SELECT phone_number FROM parent_profiles 
+        WHERE phone_number IS NOT NULL AND phone_number != '' 
+        GROUP BY phone_number HAVING COUNT(*) > 1
+      ) as dup
+    `);
+    const duplicatePhoneCount = duplicatePhoneCountRes?.count || 0;
+
+    const needsAttentionItems = [
+      { id: 'below_age', label: 'Below event age', count: belowAgeCount },
+      { id: 'medical', label: 'Medical notes', count: medicalNotesCount },
+      { id: 'missing_pickup', label: 'Missing pickup photo', count: missingPickupPhotoCount },
+      { id: 'special_support', label: 'Special support', count: specialSupportCount },
+      { id: 'duplicate_phone', label: 'Duplicate phone number', count: duplicatePhoneCount }
+    ];
+
+    const needsAttentionTotal = needsAttentionItems.reduce((acc, item) => acc + item.count, 0);
+
+    // Calculate Today's Attendance metrics from canonical childStats
+    const expectedAttendance = selectedCount;
+    const notArrivedCount = Math.max(0, expectedAttendance - checkedInCount);
+
+    // Fetch dynamic Recent Activity (real actions)
+    const recentActivityRows = eventId ? await query(`
+      SELECT c.full_name as name, e.status, e.updated_at
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      WHERE e.event_id = ?
+      ORDER BY e.updated_at DESC
+      LIMIT 4
+    `, [eventId]) : [];
+
+    const formatRelativeTime = (isoString: string) => {
+      try {
+        const d = new Date(isoString);
+        const now = new Date();
+        const diffMs = now.getTime() - d.getTime();
+        const diffMins = Math.floor(diffMs / (60 * 1000));
+        if (diffMins < 1) return 'Just now';
+        if (diffMins < 60) return `${diffMins}m ago`;
+        const diffHours = Math.floor(diffMins / 60);
+        if (diffHours < 24) {
+          return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        }
+        return 'Yesterday, ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      } catch {
+        return 'Recently';
+      }
+    };
+
+    const recentActivity = (recentActivityRows || []).map((row: any, index: number) => {
+      let actionText = 'updated';
+      if (row.status === 'checked_in') actionText = 'checked in';
+      else if (row.status === 'picked_up') actionText = 'picked up';
+      else if (row.status === 'selected') actionText = 'selected for admission';
+      else if (row.status === 'under_review') actionText = 'submitted details for review';
+      else if (row.status === 'not_selected') actionText = 'marked as not selected';
+      
+      return {
+        id: `activity-${index}`,
+        name: row.name,
+        text: `${row.name} ${actionText}`,
+        time: formatRelativeTime(row.updated_at)
+      };
+    });
+
+    // Backwards compatible submissions
+    const recentSubmissions = (recentActivityRows || []).map((row: any) => ({
+      id: row.id || Math.random().toString(),
+      name: row.name,
+      age_group: row.age_group || 'Children',
+      age: row.age || 0,
+      status: row.status,
+      submitted_at: row.updated_at
+    }));
+
+    return res.json({
+      success: true,
+      admin: {
+        id: req.user?.id || 'admin-id',
+        fullName,
+        roleTitle,
+        photoUrl: null
+      },
+      event: event ? {
+        id: event.id,
+        name: event.section_name || event.title || 'Event',
+        section: event.title || 'Children and Teens',
+        dateLabel,
+        timeLabel,
+        status: event.status || '',
+        registrationStatus: (event.status === 'open' || event.status === 'current' || event.status === 'upcoming') ? 'open' : 'closed'
+      } : null,
+      metrics: {
+        totalChildren: totalChildrenRes?.count || 0,
+        totalParents: totalParentsRes?.count || 0,
+        underReview: underReviewCount,
+        selected: selectedCount,
+        checkedIn: checkedInCount,
+        pickedUp: pickedUpCount
+      },
+      checkedInToday: checkedInCount,
+      demographics,
+      needsAttention: {
+        total: needsAttentionTotal,
+        items: needsAttentionItems
+      },
+      reviewProgress: {
+        selected: selectedCount,
+        underReview: underReviewCount,
+        notSelected: notSelectedCount
+      },
+      attendance: {
+        expected: expectedAttendance,
+        checkedIn: checkedInCount,
+        stillInside: stillInsideCount,
+        pickedUp: pickedUpCount,
+        notArrived: notArrivedCount
+      },
+      recentActivity,
+      // Backwards compatibility fallbacks
+      stats: {
+        totalChildren: totalChildrenRes?.count || 0,
+        underReview: underReviewCount,
+        approved: selectedCount,
+        totalParents: totalParentsRes?.count || 0,
+        totalVolunteers: totalVolunteersRes?.count || 0,
+        pendingVolunteers: pendingVolunteersRes?.count || 0,
+        checkedIn: checkedInCount
+      },
+      recentSubmissions
+    });
+  } catch (err: any) {
+    console.error('Error in overview API:', err);
+    return res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch admin overview stats.' });
+  }
+});
+
+// GET Demographics breakdown report
+router.get('/reports/demographics', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const eventId = await resolveAdminEventId(req.query.eventId as string);
+    if (!eventId) {
+      return res.json({
+        success: true,
+        eventId: null,
+        generatedAt: new Date().toISOString(),
+        groups: [],
+        summary: {
+          totalChildren: 0,
+          totalUnderReview: 0,
+          totalSelected: 0,
+          totalCheckedIn: 0
+        }
+      });
+    }
+
+    const childrenData = await query(`
+      SELECT c.id, c.gender, c.date_of_birth, c.calculated_age, c.age_group, e.status, e.checked_in_at, e.picked_up_at
+      FROM children c
+      JOIN child_event_entries e ON c.id = e.child_id
+      WHERE e.event_id = ? AND COALESCE(c.is_deleted, 0) = 0 AND (e.is_deleted IS NULL OR e.is_deleted = 0)
+    `, [eventId]);
+
+    const ageGroupsList = [
+      { key: 'below_1', min: 0, max: 0, displayLabel: 'Below 1' },
+      { key: 'ages_1_3', min: 1, max: 3, displayLabel: 'Ages 1 to 3' },
+      { key: 'ages_4_6', min: 4, max: 6, displayLabel: 'Ages 4 to 6' },
+      { key: 'ages_7_9', min: 7, max: 9, displayLabel: 'Ages 7 to 9' },
+      { key: 'ages_10_12', min: 10, max: 12, displayLabel: 'Ages 10 to 12' },
+      { key: 'teens', min: 13, max: 999, displayLabel: 'Teens' }
+    ];
+
+    let totalChildren = 0;
+    let totalUnderReview = 0;
+    let totalSelected = 0;
+    let totalCheckedIn = 0;
+
+    const groups = ageGroupsList.map(g => {
+      const matching = (childrenData || []).filter((c: any) => {
+        const age = getChildAge(c);
+        return age >= g.min && age <= g.max;
+      });
+
+      const boys = matching.filter((c: any) => {
+        const s = String(c.gender || '').trim().toLowerCase();
+        return ['boy', 'boys', 'male', 'm'].includes(s);
+      }).length;
+
+      const girls = matching.filter((c: any) => {
+        const s = String(c.gender || '').trim().toLowerCase();
+        return ['girl', 'girls', 'female', 'f'].includes(s);
+      }).length;
+
+      const underReview = matching.filter((c: any) => {
+        const s = String(c.status || '').trim().toLowerCase();
+        return ['under_review', 'pending_review', 'submitted', 'review_pending', 'pending'].includes(s);
+      }).length;
+
+      const selected = matching.filter((c: any) => {
+        const s = String(c.status || '').trim().toLowerCase();
+        return ['selected', 'approved', 'pass_ready', 'checked_in', 'inside', 'picked_up'].includes(s);
+      }).length;
+
+      const checkedIn = matching.filter((c: any) => {
+        const s = String(c.status || '').trim().toLowerCase();
+        return ['checked_in', 'inside'].includes(s) || (c.checked_in_at && !c.picked_up_at);
+      }).length;
+
+      totalChildren += matching.length;
+      totalUnderReview += underReview;
+      totalSelected += selected;
+      totalCheckedIn += checkedIn;
+
+      return {
+        key: g.key,
+        label: g.displayLabel,
+        boys,
+        girls,
+        total: matching.length,
+        underReview,
+        selected,
+        checkedIn
+      };
+    });
+
+    res.json({
+      success: true,
+      eventId,
+      generatedAt: new Date().toISOString(),
+      groups,
+      summary: {
+        totalChildren,
+        totalUnderReview,
+        totalSelected,
+        totalCheckedIn
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching demographics report:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to generate demographics report.' });
+  }
+});
+
+// GET event details including scheduler fields and age groups
+router.get('/events/:eventId', async (req: AuthenticatedRequest, res: Response) => {
+  const { eventId } = req.params;
+  const event = await queryOne('SELECT * FROM events WHERE id = ?', [eventId]);
+  if (!event) {
+    return res.status(404).json({ error: 'Event not found' });
+  }
+
+  const ageGroups = await query('SELECT * FROM event_age_groups WHERE event_id = ? ORDER BY sort_order ASC', [eventId]);
+  const appsRes = await queryOne(`
+    SELECT COUNT(*) as count
+    FROM child_event_entries e
+    JOIN children c ON c.id = e.child_id
+    WHERE e.event_id = ?
+      AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+      AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+      AND ${SUBMITTED_REGISTRATION_SQL_CONDITION}
+  `, [eventId]);
+  const registeredCount = Number(appsRes?.count || 0);
+
+  const selRes = await queryOne(`
+    SELECT COUNT(*) as count
+    FROM child_event_entries e
+    JOIN children c ON c.id = e.child_id
+    WHERE e.event_id = ?
+      AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+      AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+      AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
+  `, [eventId]);
+  const selectedCount = Number(selRes?.count || 0);
+
+  const totalCap = event.capacity !== null && event.capacity !== undefined ? Number(event.capacity) : null;
+  const remaining = totalCap !== null ? Math.max(0, totalCap - selectedCount) : null;
+
+  const activeChildren = await query(`
+    SELECT c.id, c.gender, c.date_of_birth, c.calculated_age, c.age_group, e.status
+    FROM child_event_entries e
+    JOIN children c ON c.id = e.child_id
+    WHERE e.event_id = ?
+      AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+      AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+      AND ${SUBMITTED_REGISTRATION_SQL_CONDITION}
+  `, [eventId]);
+
+  const enrichedAgeGroups = ageGroups.map((g: any) => {
+    let groupRegistered = 0;
+    let groupSelected = 0;
+    for (const ch of activeChildren) {
+      if (isChildInAgeGroup(ch, g)) {
+        groupRegistered++;
+        if (['selected', 'pass_ready', 'checked_in', 'inside', 'picked_up'].includes(ch.status)) {
+          groupSelected++;
+        }
+      }
+    }
+    const groupCap = (g.capacity !== null && g.capacity !== undefined && g.capacity !== '') ? Number(g.capacity) : null;
+    const groupRemaining = (groupCap !== null && groupCap > 0) ? Math.max(0, groupCap - groupSelected) : null;
+
+    return {
+      id: g.id,
+      label: g.label,
+      minAge: g.min_age,
+      maxAge: g.max_age,
+      capacity: groupCap,
+      manualReview: g.manual_review === 1 || g.manual_review === true,
+      sortOrder: g.sort_order,
+      registered: groupRegistered,
+      selected: groupSelected,
+      remaining: groupRemaining
+    };
+  });
+
+  res.json({
+    // flat fields for backward compatibility
+    id: event.id,
+    title: event.title,
+    sectionName: event.section_name,
+    theme: event.theme,
+    scripture: event.scripture,
+    location: event.location,
+    startsAt: event.starts_at,
+    endsAt: event.ends_at,
+    dailyStartTime: event.daily_start_time,
+    dailyEndTime: event.daily_end_time,
+    eventStartAt: event.event_start_at || '',
+    eventEndAt: event.event_end_at || '',
+    checkInOpensAt: event.check_in_opens_at || '',
+    checkInClosesAt: event.check_in_closes_at || '',
+    pickupStartsAt: event.pickup_starts_at || '',
+    pickupReminderAt: event.pickup_reminder_at || '',
+    timezone: event.timezone || 'Africa/Lagos',
+    status: event.status,
+    capacity: totalCap,
+    eventCapacity: totalCap,
+    minimumAge: event.minimum_age !== null && event.minimum_age !== undefined ? Number(event.minimum_age) : null,
+    maximumAge: event.maximum_age !== null && event.maximum_age !== undefined ? Number(event.maximum_age) : null,
+    volunteerRegistrationOpensAt: event.volunteer_registration_opens_at || null,
+    volunteerRegistrationClosesAt: event.volunteer_registration_closes_at || null,
+    volunteerAccessOpensAt: event.volunteer_registration_opens_at || null,
+    volunteerAccessClosesAt: event.volunteer_registration_closes_at || null,
+    registeredChildrenCount: registeredCount,
+    applicationsCount: registeredCount,
+    selectedCount,
+    selectedChildrenCount: selectedCount,
+    placesRemaining: remaining,
+    spacesRemaining: remaining,
+
+    // nested objects for structured events client
+    success: true,
+    event: {
+      id: event.id,
+      title: event.title,
+      sectionName: event.section_name,
+      theme: event.theme,
+      scripture: event.scripture,
+      location: event.location,
+      startsAt: event.starts_at,
+      endsAt: event.ends_at,
+      dailyStartTime: event.daily_start_time,
+      dailyEndTime: event.daily_end_time,
+      eventStartAt: event.event_start_at || '',
+      eventEndAt: event.event_end_at || '',
+      checkInOpensAt: event.check_in_opens_at || '',
+      checkInClosesAt: event.check_in_closes_at || '',
+      pickupStartsAt: event.pickup_starts_at || '',
+      pickupReminderAt: event.pickup_reminder_at || '',
+      timezone: event.timezone || 'Africa/Lagos',
+      status: event.status,
+      parentAccessOpensAt: event.parent_access_opens_at,
+      parentAccessClosesAt: event.parent_access_closes_at,
+      parentsCanCreateAccount: event.parents_can_create_account === 1,
+      allowMultipleChildren: event.allow_multiple_children === 1,
+      allowSaveAndContinue: event.allow_save_and_continue === 1,
+      allowEditAfterSubmission: event.allow_edit_after_submission === 1,
+      description: event.description,
+      capacity: totalCap,
+      eventCapacity: totalCap,
+      minimumAge: event.minimum_age !== null && event.minimum_age !== undefined ? Number(event.minimum_age) : null,
+      maximumAge: event.maximum_age !== null && event.maximum_age !== undefined ? Number(event.maximum_age) : null,
+      volunteerRegistrationOpensAt: event.volunteer_registration_opens_at || null,
+      volunteerRegistrationClosesAt: event.volunteer_registration_closes_at || null,
+      volunteerAccessOpensAt: event.volunteer_registration_opens_at || null,
+      volunteerAccessClosesAt: event.volunteer_registration_closes_at || null,
+      registeredChildrenCount: registeredCount,
+      applicationsCount: registeredCount,
+      selectedCount,
+      selectedChildrenCount: selectedCount,
+      placesRemaining: remaining,
+      spacesRemaining: remaining
+    },
+    ageGroups: enrichedAgeGroups
+  });
+});
+
+// UPDATE event details (saves ISO-8601 strings and triggers rule syncing)
+router.put('/events/:eventId', async (req: AuthenticatedRequest, res: Response) => {
+  const { eventId } = req.params;
+  const {
+    eventStartAt,
+    eventEndAt,
+    checkInOpensAt,
+    checkInClosesAt,
+    pickupStartsAt,
+    pickupReminderAt,
+    timezone
+  } = req.body;
+
+  const event = await queryOne('SELECT * FROM events WHERE id = ?', [eventId]);
+  if (!event) {
+    return res.status(404).json({ error: 'Event not found' });
+  }
+
+  const updatedTimezone = timezone || 'Africa/Lagos';
+
+  await execute(`
+    UPDATE events SET
+      event_start_at = ?,
+      event_end_at = ?,
+      check_in_opens_at = ?,
+      check_in_closes_at = ?,
+      pickup_starts_at = ?,
+      pickup_reminder_at = ?,
+      timezone = ?,
+      updated_at = ?
+    WHERE id = ?
+  `, [
+    eventStartAt || null,
+    eventEndAt || null,
+    checkInOpensAt || null,
+    checkInClosesAt || null,
+    pickupStartsAt || null,
+    pickupReminderAt || null,
+    updatedTimezone,
+    new Date().toISOString(),
+    eventId
+  ]);
+
+  // Sync notification jobs immediately when times are updated
+  try {
+    await syncJobsForEvent(eventId);
+  } catch (err: any) {
+    console.error('[Admin API] Error syncing jobs after event update:', err);
+  }
+
+  res.json({
+    success: true,
+    message: 'Event notification settings updated successfully and jobs have been synchronized.'
+  });
+});
+
+// GET all events
+router.get('/events', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const statusFilter = req.query.status as string;
+    let sql = 'SELECT * FROM events';
+    const params: any[] = [];
+    if (statusFilter) {
+      sql += ' WHERE status = ?';
+      params.push(statusFilter);
+    }
+    sql += " ORDER BY CASE WHEN status = 'current' THEN 0 WHEN status IN ('active', 'open') THEN 1 ELSE 2 END, starts_at DESC NULLS LAST, created_at DESC";
+    const events = await query(sql, params);
+
+    const enrichedEvents = [];
+    for (const event of events) {
+      // Get capacities sum
+      const capRes = await queryOne('SELECT SUM(capacity) as total_capacity FROM event_age_groups WHERE event_id = ?', [event.id]);
+      const totalCapacity = capRes?.total_capacity || 0;
+
+      // Get applications count
+      const appsRes = await queryOne(`
+        SELECT COUNT(*) as count
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        WHERE e.event_id = ?
+          AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+          AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+          AND ${SUBMITTED_REGISTRATION_SQL_CONDITION}
+      `, [event.id]);
+      const applicationsCount = Number(appsRes?.count || 0);
+
+      // Get pass ready / selected count
+      const selectedRes = await queryOne(`
+        SELECT COUNT(*) as count
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        WHERE e.event_id = ?
+          AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+          AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+          AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
+      `, [event.id]);
+      const selectedCount = Number(selectedRes?.count || 0);
+      const totalCap = event.capacity !== null && event.capacity !== undefined ? Number(event.capacity) : null;
+      const placesRemaining = totalCap !== null ? Math.max(0, totalCap - selectedCount) : null;
+
+      enrichedEvents.push({
+        id: event.id,
+        title: event.title,
+        sectionName: event.section_name,
+        location: event.location,
+        startsAt: event.starts_at,
+        endsAt: event.ends_at,
+        dailyStartTime: event.daily_start_time,
+        dailyEndTime: event.daily_end_time,
+        status: event.status,
+        is_current: event.status === 'current',
+        timezone: event.timezone || 'Africa/Lagos',
+        parentAccessOpensAt: event.parent_access_opens_at,
+        parentAccessClosesAt: event.parent_access_closes_at,
+        parentsCanCreateAccount: event.parents_can_create_account === 1 || event.parents_can_create_account === true,
+        allowMultipleChildren: event.allow_multiple_children === 1 || event.allow_multiple_children === true,
+        allowSaveAndContinue: event.allow_save_and_continue === 1 || event.allow_save_and_continue === true,
+        allowEditAfterSubmission: event.allow_edit_after_submission === 1 || event.allow_edit_after_submission === true,
+        description: event.description,
+        totalCapacity,
+        capacity: totalCap,
+        eventCapacity: totalCap,
+        minimumAge: event.minimum_age !== null && event.minimum_age !== undefined ? Number(event.minimum_age) : null,
+        maximumAge: event.maximum_age !== null && event.maximum_age !== undefined ? Number(event.maximum_age) : null,
+        volunteerRegistrationOpensAt: event.volunteer_registration_opens_at || null,
+        volunteerRegistrationClosesAt: event.volunteer_registration_closes_at || null,
+        volunteerAccessOpensAt: event.volunteer_registration_opens_at || null,
+        volunteerAccessClosesAt: event.volunteer_registration_closes_at || null,
+        registeredChildrenCount: applicationsCount,
+        applicationsCount,
+        selectedCount,
+        selectedChildrenCount: selectedCount,
+        placesRemaining,
+        spacesRemaining: placesRemaining
+      });
+    }
+
+    res.json({ success: true, events: enrichedEvents });
+  } catch (err: any) {
+    console.error('Error fetching events:', err);
+    res.status(500).json({ error: 'Failed to fetch events.' });
+  }
+});
+
+// CREATE a new event with its age groups
+router.post('/events', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const {
+      title,
+      sectionName,
+      location,
+      startsAt,
+      endsAt,
+      dailyStartTime,
+      dailyEndTime,
+      description,
+      parentAccessOpensAt,
+      parentAccessClosesAt,
+      parentsCanCreateAccount,
+      allowMultipleChildren,
+      allowSaveAndContinue,
+      allowEditAfterSubmission,
+      volunteerRegistrationOpensAt,
+      volunteerRegistrationClosesAt,
+      volunteerAccessOpensAt,
+      volunteerAccessClosesAt,
+      capacity,
+      eventCapacity,
+      minimumAge,
+      maximumAge,
+      minimum_age,
+      maximum_age,
+      status = 'draft',
+      ageGroups = []
+    } = req.body;
+
+    if (!title) {
+      return res.status(400).json({ error: 'Event name is required.' });
+    }
+    if (title.length > 120) {
+      return res.status(400).json({ error: 'Event name cannot exceed 120 characters.' });
+    }
+    if (!sectionName) {
+      return res.status(400).json({ error: 'Event group (section) is required.' });
+    }
+    if (!location) {
+      return res.status(400).json({ error: 'Venue is required.' });
+    }
+    if (location.length > 120) {
+      return res.status(400).json({ error: 'Venue name cannot exceed 120 characters.' });
+    }
+    if (!startsAt) {
+      return res.status(400).json({ error: 'Event date is required.' });
+    }
+    if (!dailyStartTime) {
+      return res.status(400).json({ error: 'Start time is required.' });
+    }
+    if (!dailyEndTime) {
+      return res.status(400).json({ error: 'End time is required.' });
+    }
+
+    const eventId = 'event-' + Math.random().toString(36).substring(2, 11);
+    const now = new Date().toISOString();
+
+    const initialStatus = (status && status !== 'current') ? status : 'draft';
+    const resolvedCapacity = capacity !== undefined ? (capacity ? parseInt(String(capacity), 10) : null) : (eventCapacity !== undefined ? (eventCapacity ? parseInt(String(eventCapacity), 10) : null) : null);
+    const resolvedVolOpens = volunteerRegistrationOpensAt || volunteerAccessOpensAt || null;
+    const resolvedVolCloses = volunteerRegistrationClosesAt || volunteerAccessClosesAt || null;
+    const parsedMinAge = (minimumAge !== undefined && minimumAge !== null && minimumAge !== '')
+      ? parseInt(String(minimumAge), 10)
+      : (minimum_age !== undefined && minimum_age !== null && minimum_age !== '' ? parseInt(String(minimum_age), 10) : null);
+    const parsedMaxAge = (maximumAge !== undefined && maximumAge !== null && maximumAge !== '')
+      ? parseInt(String(maximumAge), 10)
+      : (maximum_age !== undefined && maximum_age !== null && maximum_age !== '' ? parseInt(String(maximum_age), 10) : null);
+
+    await execute(`
+      INSERT INTO events (
+        id, title, section_name, location, starts_at, ends_at,
+        daily_start_time, daily_end_time, description, status,
+        parent_access_opens_at, parent_access_closes_at,
+        parents_can_create_account, allow_multiple_children,
+        allow_save_and_continue, allow_edit_after_submission,
+        volunteer_registration_opens_at, volunteer_registration_closes_at,
+        minimum_age, maximum_age,
+        capacity,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      eventId,
+      title,
+      sectionName,
+      location,
+      startsAt,
+      endsAt || startsAt,
+      dailyStartTime,
+      dailyEndTime,
+      description || '',
+      initialStatus,
+      parentAccessOpensAt || null,
+      parentAccessClosesAt || null,
+      parentsCanCreateAccount ? 1 : 0,
+      allowMultipleChildren ? 1 : 0,
+      allowSaveAndContinue ? 1 : 0,
+      allowEditAfterSubmission ? 1 : 0,
+      resolvedVolOpens,
+      resolvedVolCloses,
+      parsedMinAge,
+      parsedMaxAge,
+      resolvedCapacity,
+      now,
+      now
+    ]);
+
+    if (ageGroups && Array.isArray(ageGroups)) {
+      let sortOrder = 0;
+      for (const group of ageGroups) {
+        const groupId = 'group-' + Math.random().toString(36).substring(2, 11);
+        await execute(`
+          INSERT INTO event_age_groups (
+            id, event_id, label, min_age, max_age, capacity, manual_review, sort_order, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          groupId,
+          eventId,
+          group.label,
+          parseInt(group.minAge) || 0,
+          parseInt(group.maxAge) || 0,
+          parseInt(group.capacity) || 0,
+          group.manualReview ? 1 : 0,
+          sortOrder++,
+          now,
+          now
+        ]);
+      }
+    }
+
+    res.json({ success: true, eventId, message: 'Event created successfully.' });
+  } catch (err: any) {
+    console.error('Error creating event:', err);
+    res.status(500).json({ error: 'Failed to create event.' });
+  }
+});
+
+// UPDATE event details (PATCH style for full/partial editing, handles age group sync)
+router.patch('/events/:eventId', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const {
+      title,
+      sectionName,
+      location,
+      startsAt,
+      endsAt,
+      dailyStartTime,
+      dailyEndTime,
+      description,
+      parentAccessOpensAt,
+      parentAccessClosesAt,
+      parentsCanCreateAccount,
+      allowMultipleChildren,
+      allowSaveAndContinue,
+      allowEditAfterSubmission,
+      volunteerRegistrationOpensAt,
+      volunteerRegistrationClosesAt,
+      volunteerAccessOpensAt,
+      volunteerAccessClosesAt,
+      minimumAge,
+      maximumAge,
+      minimum_age,
+      maximum_age,
+      capacity,
+      eventCapacity,
+      status,
+      ageGroups
+    } = req.body;
+
+    const event = await queryOne('SELECT * FROM events WHERE id = ?', [eventId]);
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found.' });
+    }
+
+    if (title !== undefined) {
+      if (!title) return res.status(400).json({ error: 'Event name is required.' });
+      if (title.length > 120) return res.status(400).json({ error: 'Event name cannot exceed 120 characters.' });
+    }
+    if (sectionName !== undefined && !sectionName) {
+      return res.status(400).json({ error: 'Event section name is required.' });
+    }
+    if (location !== undefined) {
+      if (!location) return res.status(400).json({ error: 'Venue is required.' });
+      if (location.length > 120) return res.status(400).json({ error: 'Venue name cannot exceed 120 characters.' });
+    }
+
+    const now = new Date().toISOString();
+    const resolvedCapacity = capacity !== undefined ? (capacity ? parseInt(String(capacity), 10) : null) : (eventCapacity !== undefined ? (eventCapacity ? parseInt(String(eventCapacity), 10) : null) : event.capacity);
+    const resolvedVolOpens = volunteerRegistrationOpensAt !== undefined ? volunteerRegistrationOpensAt : (volunteerAccessOpensAt !== undefined ? volunteerAccessOpensAt : event.volunteer_registration_opens_at);
+    const resolvedVolCloses = volunteerRegistrationClosesAt !== undefined ? volunteerRegistrationClosesAt : (volunteerAccessClosesAt !== undefined ? volunteerAccessClosesAt : event.volunteer_registration_closes_at);
+    const resolvedMinAge = minimumAge !== undefined
+      ? (minimumAge === null || minimumAge === '' ? null : parseInt(String(minimumAge), 10))
+      : (minimum_age !== undefined ? (minimum_age === null || minimum_age === '' ? null : parseInt(String(minimum_age), 10)) : (event.minimum_age !== undefined ? event.minimum_age : null));
+    const resolvedMaxAge = maximumAge !== undefined
+      ? (maximumAge === null || maximumAge === '' ? null : parseInt(String(maximumAge), 10))
+      : (maximum_age !== undefined ? (maximum_age === null || maximum_age === '' ? null : parseInt(String(maximum_age), 10)) : (event.maximum_age !== undefined ? event.maximum_age : null));
+
+    // Server defence: Ordinary event-detail updates preserve existing lifecycle status.
+    // Lifecycle transitions require explicit actions (/publish, /archive, /set-current).
+    await execute(`
+      UPDATE events SET
+        title = COALESCE(?, title),
+        section_name = COALESCE(?, section_name),
+        location = COALESCE(?, location),
+        starts_at = COALESCE(?, starts_at),
+        ends_at = COALESCE(?, ends_at),
+        daily_start_time = COALESCE(?, daily_start_time),
+        daily_end_time = COALESCE(?, daily_end_time),
+        description = COALESCE(?, description),
+        status = ?,
+        parent_access_opens_at = ?,
+        parent_access_closes_at = ?,
+        parents_can_create_account = COALESCE(?, parents_can_create_account),
+        allow_multiple_children = COALESCE(?, allow_multiple_children),
+        allow_save_and_continue = COALESCE(?, allow_save_and_continue),
+        allow_edit_after_submission = COALESCE(?, allow_edit_after_submission),
+        volunteer_registration_opens_at = ?,
+        volunteer_registration_closes_at = ?,
+        minimum_age = ?,
+        maximum_age = ?,
+        capacity = ?,
+        updated_at = ?
+      WHERE id = ?
+    `, [
+      title || null,
+      sectionName || null,
+      location || null,
+      startsAt || null,
+      endsAt || null,
+      dailyStartTime || null,
+      dailyEndTime || null,
+      description !== undefined ? description : null,
+      event.status,
+      parentAccessOpensAt !== undefined ? parentAccessOpensAt : event.parent_access_opens_at,
+      parentAccessClosesAt !== undefined ? parentAccessClosesAt : event.parent_access_closes_at,
+      parentsCanCreateAccount !== undefined ? (parentsCanCreateAccount ? 1 : 0) : null,
+      allowMultipleChildren !== undefined ? (allowMultipleChildren ? 1 : 0) : null,
+      allowSaveAndContinue !== undefined ? (allowSaveAndContinue ? 1 : 0) : null,
+      allowEditAfterSubmission !== undefined ? (allowEditAfterSubmission ? 1 : 0) : null,
+      resolvedVolOpens || null,
+      resolvedVolCloses || null,
+      resolvedMinAge !== undefined ? resolvedMinAge : null,
+      resolvedMaxAge !== undefined ? resolvedMaxAge : null,
+      resolvedCapacity !== undefined ? resolvedCapacity : null,
+      now,
+      eventId
+    ]);
+
+    if (ageGroups && Array.isArray(ageGroups)) {
+      await execute('DELETE FROM event_age_groups WHERE event_id = ?', [eventId]);
+
+      let sortOrder = 0;
+      for (const group of ageGroups) {
+        const groupId = 'group-' + Math.random().toString(36).substring(2, 11);
+        await execute(`
+          INSERT INTO event_age_groups (
+            id, event_id, label, min_age, max_age, capacity, manual_review, sort_order, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          groupId,
+          eventId,
+          group.label,
+          parseInt(group.minAge) || 0,
+          parseInt(group.maxAge) || 0,
+          parseInt(group.capacity) || 0,
+          group.manualReview ? 1 : 0,
+          sortOrder++,
+          now,
+          now
+        ]);
+      }
+    }
+
+    res.json({ success: true, message: 'Event updated successfully.' });
+  } catch (err: any) {
+    console.error('Error updating event:', err);
+    res.status(500).json({ error: 'Failed to update event.' });
+  }
+});
+
+// PUBLISH event
+router.post('/events/:eventId/publish', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    await execute("UPDATE events SET status = 'upcoming', updated_at = ? WHERE id = ?", [new Date().toISOString(), eventId]);
+    res.json({ success: true, message: 'Event published successfully.' });
+  } catch (err: any) {
+    console.error('Error publishing event:', err);
+    res.status(500).json({ error: 'Failed to publish event.' });
+  }
+});
+
+// ARCHIVE event
+router.post('/events/:eventId/archive', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const now = new Date().toISOString();
+    await execute("UPDATE events SET status = 'archived', archived_at = ?, updated_at = ? WHERE id = ?", [now, now, eventId]);
+    res.json({ success: true, message: 'Event archived successfully.' });
+  } catch (err: any) {
+    console.error('Error archiving event:', err);
+    res.status(500).json({ error: 'Failed to archive event.' });
+  }
+});
+
+// SET CURRENT ACTIVE event (atomic transactional switch)
+router.post('/events/:eventId/set-current', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const result = await setCurrentEvent(eventId);
+    res.json({
+      success: true,
+      message: 'Event is now set as the active current event.',
+      currentEvent: result.currentEvent,
+      previousEventId: result.previousEventId
+    });
+  } catch (err: any) {
+    console.error('Error setting current event:', err);
+    const status = err.statusCode || 500;
+    res.status(status).json({ error: err.message || 'Failed to set current event.' });
+  }
+});
+
+// =============================================================================
+// TGA 2026 PHASE 2A: NFC WRISTBAND INVENTORY, LOOKUP & BINDING (ADMIN)
+// =============================================================================
+
+// POST /api/admin/events/:eventId/wristbands (Provision physical wristband into event inventory)
+router.post('/events/:eventId/wristbands', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const { nfcUid, wristbandCode } = req.body || {};
+
+    const wristband = await provisionWristband({
+      eventId,
+      nfcUid,
+      wristbandCode,
+      actor: {
+        id: req.user?.id || '',
+        role: req.user?.role || '',
+        email: req.user?.email || ''
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Wristband provisioned successfully.',
+      wristband
+    });
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error provisioning wristband:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to provision wristband.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// =============================================================================
+// TGA 2026 PHASE 4A: BULK WRISTBAND INVENTORY, IMPORT & PRINT PREPARATION
+// =============================================================================
+
+// GET /api/admin/events/:eventId/wristbands/inventory
+const handleGetWristbandInventory = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const { page, limit, q, search, status, rangeStart, rangeEnd } = req.query as Record<string, string>;
+
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+
+    const result = await getWristbandInventory({
+      eventId,
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 50,
+      search: q || search || '',
+      status: status || 'all',
+      rangeStart,
+      rangeEnd,
+      actor
+    });
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error fetching wristband inventory:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch wristband inventory.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+router.get('/events/:eventId/wristbands/inventory', authMiddleware, handleGetWristbandInventory);
+router.get('/events/:eventId/wristbands', authMiddleware, handleGetWristbandInventory);
+
+// GET & POST /api/admin/events/:eventId/wristbands/print-batch
+const handleGetWristbandsPrintBatch = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const query = req.query as Record<string, string>;
+    const body = req.body || {};
+
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+
+    let ids: string[] | undefined;
+    if (Array.isArray(body.ids)) {
+      ids = body.ids;
+    } else if (typeof query.ids === 'string') {
+      ids = query.ids.split(',').map((s: string) => s.trim()).filter(Boolean);
+    }
+
+    const rangeStart = (body.rangeStart || query.rangeStart) as string | undefined;
+    const rangeEnd = (body.rangeEnd || query.rangeEnd) as string | undefined;
+    const isReprint = body.isReprint === true || query.isReprint === 'true' || query.isReprint === '1';
+    const status = (body.status || query.status || (isReprint ? undefined : 'prepared')) as string | undefined;
+
+    const result = await getWristbandsForPrint({
+      eventId,
+      ids,
+      rangeStart,
+      rangeEnd,
+      status,
+      isReprint,
+      actor
+    });
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error generating wristband print batch:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate wristband print batch.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+router.get('/events/:eventId/wristbands/print-batch', authMiddleware, handleGetWristbandsPrintBatch);
+router.post('/events/:eventId/wristbands/print-batch', authMiddleware, handleGetWristbandsPrintBatch);
+
+// POST /api/admin/events/:eventId/wristbands/bulk-import/preview
+router.post('/events/:eventId/wristbands/bulk-import/preview', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const { rows, csvText } = req.body || {};
+
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+
+    const preview = await previewBulkImportWristbands({
+      eventId,
+      rows,
+      csvText,
+      actor
+    });
+
+    res.json({
+      success: true,
+      preview
+    });
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error previewing bulk wristband import:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to preview bulk import.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// POST /api/admin/events/:eventId/wristbands/bulk-import/execute
+router.post('/events/:eventId/wristbands/bulk-import/execute', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const { rows, csvText, skipErrors } = req.body || {};
+
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+
+    const result = await executeBulkImportWristbands({
+      eventId,
+      rows,
+      csvText,
+      skipErrors: skipErrors !== false,
+      actor
+    });
+
+    res.status(201).json({
+      success: true,
+      result
+    });
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error executing bulk wristband import:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to execute bulk import.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// GET /api/admin/events/:eventId/wristbands/print-batch
+router.get('/events/:eventId/wristbands/print-batch', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const { ids, rangeStart, rangeEnd, status, isReprint } = req.query as Record<string, string>;
+
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+
+    let idList: string[] | undefined;
+    if (ids) {
+      idList = Array.isArray(ids) ? (ids as string[]) : (ids as string).split(',').map(s => s.trim()).filter(Boolean);
+    }
+
+    const result = await getWristbandsForPrint({
+      eventId,
+      ids: idList,
+      rangeStart,
+      rangeEnd,
+      status,
+      isReprint: isReprint === 'true' || isReprint === '1',
+      actor
+    });
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error fetching print batch:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch print batch.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// POST /api/admin/events/:eventId/wristbands/verify-pack
+router.post('/events/:eventId/wristbands/verify-pack', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const { nfcUid } = req.body || {};
+
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+
+    const result = await verifyWristbandTag({
+      eventId,
+      nfcUid,
+      actor
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error verifying wristband tag:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to verify wristband tag.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// =============================================================================
+// TGA 2026 PHASE 4B1: SCAN, PREPARE & PHYSICAL WRISTBAND VERIFICATION (ADMIN)
+// =============================================================================
+
+// POST /api/admin/events/:eventId/wristbands/prepare & POST /api/admin/wristbands/prepare
+const handlePrepareWristband = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const eventId = req.params.eventId || req.body?.eventId;
+    const { nfcUid } = req.body || {};
+
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+
+    const result = await prepareWristband({
+      eventId,
+      nfcUid,
+      actor
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Wristband prepared successfully.',
+      ...result
+    });
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error preparing wristband:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to prepare wristband.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+router.post('/events/:eventId/wristbands/prepare', authMiddleware, handlePrepareWristband);
+router.post('/wristbands/prepare', authMiddleware, handlePrepareWristband);
+
+// POST /api/admin/events/:eventId/wristbands/generate-codes & POST /api/admin/wristbands/generate-codes
+const handleGenerateWristbandCodes = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const eventId = req.params.eventId || req.body?.eventId;
+    const quantity = parseInt(req.body?.quantity, 10);
+
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+
+    const result = await generateCodeOnlyWristbandBatch({
+      eventId,
+      quantity,
+      actor
+    });
+
+    res.status(201).json(result);
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error generating wristband codes:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate wristband codes.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+router.post('/events/:eventId/wristbands/generate-codes', authMiddleware, handleGenerateWristbandCodes);
+router.post('/wristbands/generate-codes', authMiddleware, handleGenerateWristbandCodes);
+
+// POST /api/admin/events/:eventId/wristbands/mark-ready & POST /api/admin/wristbands/mark-ready
+const handleMarkWristbandsReady = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const eventId = req.params.eventId || req.body?.eventId;
+    const { ids, rangeStart, rangeEnd } = req.body || {};
+
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+
+    const result = await markCodeOnlyWristbandsReady({
+      eventId,
+      ids,
+      rangeStart,
+      rangeEnd,
+      actor
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error marking wristbands ready:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to mark wristbands ready.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+router.post('/events/:eventId/wristbands/mark-ready', authMiddleware, handleMarkWristbandsReady);
+router.post('/wristbands/mark-ready', authMiddleware, handleMarkWristbandsReady);
+
+// GET /api/admin/events/:eventId/wristbands/export-csv & GET /api/admin/wristbands/export-csv
+const handleExportWristbandsCsv = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const eventId = (req.params.eventId || req.query.eventId || '') as string;
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+    assertCanProvisionWristband(actor);
+
+    if (!eventId) {
+      return res.status(400).json({ success: false, error: 'eventId is required' });
+    }
+
+    const { status, rangeStart, rangeEnd } = req.query as Record<string, string>;
+    let sql = 'SELECT wristband_code, status FROM wristbands WHERE event_id = ?';
+    const queryParams: any[] = [eventId];
+
+    if (status) {
+      sql += ' AND status = ?';
+      queryParams.push(status);
+    }
+    if (rangeStart && rangeEnd) {
+      sql += ' AND wristband_code >= ? AND wristband_code <= ?';
+      queryParams.push(rangeStart.trim().toUpperCase(), rangeEnd.trim().toUpperCase());
+    }
+
+    sql += ' ORDER BY wristband_code ASC';
+    const rows = await query<{ wristband_code: string; status: string }>(sql, queryParams);
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="wristbands_${eventId}_${Date.now()}.csv"`);
+
+    let csvContent = 'sequence,wristband_code,qr_payload,status\n';
+    rows.forEach((r, idx) => {
+      csvContent += `${idx + 1},${r.wristband_code},${r.wristband_code},${r.status}\n`;
+    });
+
+    res.send(csvContent);
+  } catch (err: any) {
+    console.error('Error exporting wristband CSV:', err);
+    res.status(500).json({ success: false, error: 'Failed to export wristband CSV.' });
+  }
+};
+
+router.get('/events/:eventId/wristbands/export-csv', authMiddleware, handleExportWristbandsCsv);
+router.get('/wristbands/export-csv', authMiddleware, handleExportWristbandsCsv);
+
+// POST /api/admin/wristbands/verify & POST /api/admin/events/:eventId/wristbands/verify
+const handleVerifyWristband = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const eventId = req.params.eventId || req.body?.eventId;
+    const { wristbandCode, nfcUid } = req.body || {};
+
+    const actor = {
+      id: req.user?.id || '',
+      role: req.user?.role || '',
+      email: req.user?.email || ''
+    };
+
+    const result = await verifyWristband({
+      eventId,
+      wristbandCode,
+      nfcUid,
+      actor
+    });
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error verifying wristband:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to verify wristband.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+router.post('/wristbands/verify', authMiddleware, handleVerifyWristband);
+router.post('/events/:eventId/wristbands/verify', authMiddleware, handleVerifyWristband);
+// POST & GET /api/admin/wristbands/lookup (Event-scoped lookup by NFC UID or WB Code)
+const handleAdminWristbandLookup = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const eventId = (req.body?.eventId || req.query?.eventId || '') as string;
+    const identifier = (req.body?.identifier || req.query?.identifier || req.body?.wristbandCode || req.query?.wristbandCode || '') as string;
+    const nfcUid = (req.body?.nfcUid || req.query?.nfcUid || '') as string;
+
+    let wristband;
+    if (identifier) {
+      wristband = await lookupWristbandByIdentifier({
+        eventId,
+        identifier
+      });
+    } else {
+      wristband = await lookupWristbandByNfcUid({
+        eventId,
+        rawUid: nfcUid
+      });
+    }
+
+    res.json({
+      success: true,
+      wristband
+    });
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error looking up wristband:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to lookup wristband.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+router.post('/wristbands/lookup', authMiddleware, handleAdminWristbandLookup);
+router.get('/wristbands/lookup', authMiddleware, handleAdminWristbandLookup);
+
+// POST /api/admin/wristbands/bind (Admin binding)
+router.post('/wristbands/bind', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId, childEventEntryId, nfcUid, wristbandId, wristbandCode, idempotencyKey } = req.body || {};
+
+    const result = await bindWristbandToChild({
+      eventId,
+      childEventEntryId,
+      nfcUid,
+      wristbandId,
+      wristbandCode,
+      idempotencyKey,
+      actor: {
+        id: req.user?.id || '',
+        role: req.user?.role || '',
+        email: req.user?.email || ''
+      }
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error binding wristband (admin):', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to bind wristband',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// POST /api/admin/wristbands/deactivate (Admin deactivation)
+router.post('/wristbands/deactivate', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId, childEventEntryId, wristbandId, nfcUid, assignmentId, reason, resultingWristbandStatus, idempotencyKey } = req.body || {};
+
+    const result = await deactivateWristbandAssignment({
+      eventId,
+      childEventEntryId,
+      wristbandId,
+      nfcUid,
+      assignmentId,
+      reason,
+      resultingWristbandStatus,
+      idempotencyKey,
+      actor: {
+        id: req.user?.id || '',
+        role: req.user?.role || '',
+        email: req.user?.email || ''
+      }
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error deactivating wristband (admin):', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to deactivate wristband',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// POST /api/admin/wristbands/replace (Admin replacement)
+router.post('/wristbands/replace', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId, childEventEntryId, currentWristbandId, currentNfcUid, replacementWristbandId, replacementNfcUid, reason, idempotencyKey } = req.body || {};
+
+    const result = await replaceWristband({
+      eventId,
+      childEventEntryId,
+      currentWristbandId,
+      currentNfcUid,
+      replacementWristbandId,
+      replacementNfcUid,
+      reason,
+      idempotencyKey,
+      actor: {
+        id: req.user?.id || '',
+        role: req.user?.role || '',
+        email: req.user?.email || ''
+      }
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    if (err instanceof WristbandDomainError) {
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        details: err.details
+      });
+    }
+    console.error('Error replacing wristband (admin):', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to replace wristband',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// Safe report query helpers to prevent any route crashing
+async function safeReportQueryOne(sql: string, params: any[] = []): Promise<any> {
+  try {
+    return await queryOne(sql, params);
+  } catch (err) {
+    console.error('[safeReportQueryOne Error]:', err);
+    return null;
+  }
+}
+
+async function safeReportQuery(sql: string, params: any[] = []): Promise<any[]> {
+  try {
+    return await query(sql, params);
+  } catch (err) {
+    console.error('[safeReportQuery Error]:', err);
+    return [];
+  }
+}
+
+// GET reports endpoint
+router.get('/reports', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const queryOne = safeReportQueryOne;
+    const query = safeReportQuery;
+
+    const event = await resolveAdminEvent(req.query.eventId as string);
+    if (!event) {
+      return res.status(404).json({ error: 'No active or specified event found for reports.' });
+    }
+    const eventId = event.id;
+    let reportType = typeof req.query.reportType === 'string' ? req.query.reportType.trim().toLowerCase() : 'end_of_event';
+    if (reportType === 'pre_event' || reportType === 'pre-event') {
+      reportType = 'pre_event';
+    } else if (reportType === 'live_event' || reportType === 'live-event') {
+      reportType = 'live_event';
+    } else if (reportType === 'end_of_event' || reportType === 'end-of-event') {
+      reportType = 'end_of_event';
+    } else {
+      reportType = 'end_of_event';
+    }
+
+    // 1. Event metadata
+    const eventName = event?.title || event?.section_name || 'Event';
+    const eventSection = event?.section_name || '';
+    const dateRangeLabel = event?.starts_at && event?.ends_at 
+      ? `${event.starts_at} - ${event.ends_at}` 
+      : (event?.starts_at || 'No date set');
+
+    // Fetch demographics and calculate counts dynamically from the DB
+    const childrenData = await query(`
+      SELECT c.id, c.gender, c.date_of_birth, c.calculated_age, c.age_group, e.status, e.has_medical_notes, e.needs_extra_support, c.needs_age_review, e.checked_in_at, e.picked_up_at
+      FROM children c
+      JOIN child_event_entries e ON c.id = e.child_id
+      WHERE e.event_id = ? AND COALESCE(c.is_deleted, 0) = 0 AND (e.is_deleted IS NULL OR e.is_deleted = 0)
+    `, [eventId]);
+
+    const ageGroupsList = [
+      { min: 0, max: 0, displayLabel: 'Below 1' },
+      { min: 1, max: 3, displayLabel: 'Ages 1 to 3' },
+      { min: 4, max: 6, displayLabel: 'Ages 4 to 6' },
+      { min: 7, max: 9, displayLabel: 'Ages 7 to 9' },
+      { min: 10, max: 12, displayLabel: 'Ages 10 to 12' },
+      { min: 13, max: 999, displayLabel: 'Teens' }
+    ];
+
+    // Care & Attention items
+    const medicalNotesRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND has_medical_notes = 1", [eventId]);
+    const extraSupportRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND needs_extra_support = 1", [eventId]);
+
+    const missingPickupPhotoRes = await queryOne(`
+      SELECT COUNT(DISTINCT e.id) as count 
+      FROM child_event_entries e
+      LEFT JOIN pickup_people p ON p.child_event_entry_id = e.id
+      WHERE e.event_id = ? AND (p.id IS NULL OR p.photo_file_id IS NULL OR p.photo_file_id = '')
+    `, [eventId]);
+
+    const manualReviewRes = await queryOne(`
+      SELECT COUNT(*) as count 
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      WHERE e.event_id = ? AND c.needs_age_review = 1
+    `, [eventId]);
+
+    const careNotesRes = await queryOne(`
+      SELECT COUNT(*) as count 
+      FROM child_event_entries 
+      WHERE event_id = ? AND (has_medical_notes = 1 OR needs_extra_support = 1)
+    `, [eventId]);
+
+    // Segment Notes
+    const notesRow = await queryOne('SELECT notes FROM admin_report_notes WHERE event_id = ? AND report_type = ?', [eventId, reportType]);
+    const notes = notesRow?.notes || '';
+
+    // Core variables
+    const totalRegisteredRes = await queryOne('SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ?', [eventId]);
+    const totalRegistered = totalRegisteredRes?.count || 0;
+
+    const parentAccountsRes = await queryOne(`
+      SELECT COUNT(DISTINCT c.parent_profile_id) as count 
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      WHERE e.event_id = ?
+    `, [eventId]);
+    const parentAccounts = parentAccountsRes?.count || 0;
+
+    const selectedRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')", [eventId]);
+    const selected = selectedRes?.count || 0;
+
+    const checkedInRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('checked_in', 'inside', 'picked_up')", [eventId]);
+    const checkedIn = checkedInRes?.count || 0;
+
+    const absentRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready')", [eventId]);
+    const absent = absentRes?.count || 0;
+
+    const pickedUpRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'picked_up'", [eventId]);
+    const pickedUp = pickedUpRes?.count || 0;
+
+    const stillInsideRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('checked_in', 'inside')", [eventId]);
+    const stillInside = stillInsideRes?.count || 0;
+
+    const needsAttentionRes = await queryOne(`
+      SELECT COUNT(*) as count 
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      WHERE e.event_id = ? AND (e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1)
+    `, [eventId]);
+    const needsAttention = needsAttentionRes?.count || 0;
+
+    const careNotesPresent = careNotesRes?.count || 0;
+
+    if (reportType === 'pre_event') {
+      const underReviewRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'under_review'", [eventId]);
+      const underReview = underReviewRes?.count || 0;
+
+      const waitingListRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'waiting_list'", [eventId]);
+      const waitingList = waitingListRes?.count || 0;
+
+      const notSelectedRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('not_selected', 'withdrawn', 'rejected')", [eventId]);
+      const notSelected = notSelectedRes?.count || 0;
+
+      const preSelectedRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready')", [eventId]);
+      const preSelected = preSelectedRes?.count || 0;
+
+      const withPickupRes = await queryOne(`
+        SELECT COUNT(DISTINCT child_event_entry_id) as count 
+        FROM pickup_people 
+        WHERE child_event_entry_id IN (SELECT id FROM child_event_entries WHERE event_id = ?)
+      `, [eventId]);
+      const withPickupCount = withPickupRes?.count || 0;
+
+      const missingContactRes = await queryOne(`
+        SELECT COUNT(DISTINCT p.id) as count 
+        FROM parent_profiles p 
+        JOIN children c ON p.id = c.parent_profile_id 
+        JOIN child_event_entries e ON e.child_id = c.id 
+        WHERE e.event_id = ? AND (p.phone_number IS NULL OR p.phone_number = '' OR p.email IS NULL OR p.email = '')
+      `, [eventId]);
+      const missingContact = missingContactRes?.count || 0;
+
+      const duplicatePhoneRes = await queryOne(`
+        SELECT COUNT(*) as count FROM (
+          SELECT p.phone_number
+          FROM child_event_entries e 
+          JOIN children c ON c.id = e.child_id 
+          JOIN parent_profiles p ON p.id = c.parent_profile_id 
+          WHERE e.event_id = ? 
+          GROUP BY p.phone_number 
+          HAVING COUNT(*) > 1
+        ) as dup_phones
+      `, [eventId]);
+      const duplicatePhone = duplicatePhoneRes?.count || 0;
+
+      const ageGroupSummary = ageGroupsList.map(g => {
+        const matching = (childrenData || []).filter((c: any) => {
+          const age = getChildAge(c);
+          return age >= g.min && age <= g.max;
+        });
+        const registered = matching.length;
+        const selectedCount = matching.filter((c: any) => {
+          const s = String(c.status || '').trim().toLowerCase();
+          return ['selected', 'approved', 'pass_ready', 'checked_in', 'inside', 'picked_up'].includes(s);
+        }).length;
+        const underReviewCount = matching.filter((c: any) => {
+          const s = String(c.status || '').trim().toLowerCase();
+          return ['under_review', 'pending_review', 'submitted', 'review_pending', 'pending'].includes(s);
+        }).length;
+        const needsAttentionCount = matching.filter((c: any) => c.has_medical_notes === 1 || c.needs_extra_support === 1 || c.needs_age_review === 1).length;
+        return {
+          ageGroup: g.displayLabel,
+          registered,
+          selected: selectedCount,
+          underReview: underReviewCount,
+          needsAttention: needsAttentionCount
+        };
+      });
+
+      return res.json({
+        success: true,
+        reportType: 'pre_event',
+        event: {
+          id: eventId,
+          name: eventName,
+          section: eventSection,
+          dateRangeLabel: dateRangeLabel
+        },
+        metrics: {
+          totalRegistered,
+          underReview,
+          selected: preSelected,
+          waitingList,
+          notSelected,
+          needsAttention,
+          missingPickupPhoto: missingPickupPhotoRes?.count || 0,
+          careNotesPresent
+        },
+        sections: {
+          reviewReadiness: [
+            { label: "Under review", value: underReview, desc: "Applications pending director review" },
+            { label: "Selected", value: preSelected, desc: "Children admitted to the event" },
+            { label: "Waiting list", value: waitingList, desc: "Applications on hold due to capacity limits" },
+            { label: "Not selected", value: notSelected, desc: "Applications declined or withdrawn" },
+            { label: "Needs attention", value: needsAttention, desc: "Applications flagged for manual care review" }
+          ],
+          childReadiness: [
+            { label: "Missing pickup photo", value: missingPickupPhotoRes?.count || 0, desc: "Children without registered guardian photos" },
+            { label: "Medical notes", value: medicalNotesRes?.count || 0, desc: "Children with declared health conditions" },
+            { label: "Extra support", value: extraSupportRes?.count || 0, desc: "Children requiring learning or physical support" },
+            { label: "Below event age", value: manualReviewRes?.count || 0, desc: "Children younger than event minimum age threshold" },
+            { label: "Duplicate phone number", value: duplicatePhone, desc: "Registrations sharing identical parent contacts" }
+          ],
+          ageGroupSummary,
+          parentPickupReadiness: [
+            { label: "Parent accounts", value: parentAccounts, desc: "Total registered parent user profiles" },
+            { label: "Children with pickup person", value: withPickupCount, desc: "Children with at least one authorized pickup contact" },
+            { label: "Missing pickup photo", value: missingPickupPhotoRes?.count || 0, desc: "Children with pickup person registered but missing photos" },
+            { label: "Missing contact detail", value: missingContact, desc: "Parents missing email or mobile numbers" }
+          ]
+        },
+        careAttention: [
+          { key: "medical_notes", label: "Medical notes", count: medicalNotesRes?.count || 0 },
+          { key: "extra_support", label: "Extra support", count: extraSupportRes?.count || 0 },
+          { key: "missing_pickup_photo", label: "Missing pickup photo", count: missingPickupPhotoRes?.count || 0 },
+          { key: "manual_review", label: "Manual review", count: manualReviewRes?.count || 0 }
+        ],
+        notes,
+        exports: {
+          readinessSummary: true,
+          selectedChildren: true,
+          careNotes: true,
+          missingPickupPhotos: true
+        }
+      });
+    }
+
+    if (reportType === 'live_event') {
+      const expected = selected;
+      const inside = stillInside;
+      const notArrived = absent;
+
+      const pickupIssueRes = await queryOne(`
+        SELECT COUNT(*) as count 
+        FROM child_event_entries e 
+        LEFT JOIN pickup_people p ON p.child_event_entry_id = e.id 
+        WHERE e.event_id = ? AND e.status IN ('checked_in', 'inside') AND (p.id IS NULL OR p.approved_by_parent = 0)
+      `, [eventId]);
+      const pickupIssueCount = pickupIssueRes?.count || 0;
+
+      const attendanceByAgeGroup = ageGroupsList.map(g => {
+        const matching = (childrenData || []).filter((c: any) => {
+          const age = getChildAge(c);
+          return age >= g.min && age <= g.max;
+        });
+        const exp = matching.filter((c: any) => {
+          const s = String(c.status || '').trim().toLowerCase();
+          return ['selected', 'approved', 'pass_ready', 'checked_in', 'inside', 'picked_up'].includes(s);
+        }).length;
+        const chk = matching.filter((c: any) => {
+          const s = String(c.status || '').trim().toLowerCase();
+          return ['checked_in', 'inside', 'picked_up'].includes(s);
+        }).length;
+        const ins = matching.filter((c: any) => {
+          const s = String(c.status || '').trim().toLowerCase();
+          return ['checked_in', 'inside'].includes(s);
+        }).length;
+        const pku = matching.filter((c: any) => {
+          const s = String(c.status || '').trim().toLowerCase();
+          return s === 'picked_up';
+        }).length;
+        const nta = matching.filter((c: any) => {
+          const s = String(c.status || '').trim().toLowerCase();
+          return ['selected', 'approved', 'pass_ready'].includes(s);
+        }).length;
+        return {
+          ageGroup: g.displayLabel,
+          expected: exp,
+          checkedIn: chk,
+          inside: ins,
+          pickedUp: pku,
+          notArrived: nta
+        };
+      });
+
+      // Recent scans
+      const recentScansRows = await query(`
+        SELECT c.id as child_id, c.full_name as child_name, c.age_group, e.status, e.updated_at
+        FROM child_event_entries e
+        JOIN children c ON e.child_id = c.id
+        WHERE e.event_id = ? AND e.status IN ('checked_in', 'inside', 'picked_up')
+        ORDER BY e.updated_at DESC
+        LIMIT 5
+      `, [eventId]);
+
+      const recentScans = (recentScansRows || []).map((r: any) => ({
+        childId: r.child_id,
+        childName: r.child_name,
+        ageGroup: r.age_group,
+        status: r.status,
+        timestamp: r.updated_at
+      }));
+
+      // Team activity
+      const teamActivityRows = await query(`
+        SELECT full_name, preferred_team as team, status 
+        FROM volunteer_profiles 
+        WHERE status = 'approved' 
+        LIMIT 5
+      `);
+      const teamActivity = (teamActivityRows || []).map((t: any) => ({
+        fullName: t.full_name,
+        team: t.team || 'General',
+        status: t.status
+      }));
+
+      return res.json({
+        success: true,
+        reportType: 'live_event',
+        event: {
+          id: eventId,
+          name: eventName,
+          section: eventSection,
+          dateRangeLabel: dateRangeLabel
+        },
+        metrics: {
+          expected,
+          checkedIn,
+          inside,
+          pickedUp,
+          notArrived,
+          needsAttention
+        },
+        sections: {
+          liveAttendanceOutcome: [
+            { label: "Expected", value: expected, percentage: 100 },
+            { label: "Checked In", value: checkedIn, percentage: expected > 0 ? Math.round((checkedIn / expected) * 100) : 0 },
+            { label: "Inside", value: inside, percentage: expected > 0 ? Math.round((inside / expected) * 100) : 0 },
+            { label: "Picked Up", value: pickedUp, percentage: expected > 0 ? Math.round((pickedUp / expected) * 100) : 0 },
+            { label: "Not arrived", value: notArrived, percentage: expected > 0 ? Math.round((notArrived / expected) * 100) : 0 }
+          ],
+          attendanceByAgeGroup,
+          currentAttentionList: [
+            { label: "Medical note", value: medicalNotesRes?.count || 0, desc: "Children inside with health alerts" },
+            { label: "Extra support", value: extraSupportRes?.count || 0, desc: "Children inside requiring physical/learning assistance" },
+            { label: "Missing pickup photo", value: missingPickupPhotoRes?.count || 0, desc: "Children checked in without guardian photos" },
+            { label: "Manual review", value: manualReviewRes?.count || 0, desc: "Children marked for age verification review" },
+            { label: "Pickup issue", value: pickupIssueCount, desc: "Children checked in with pending guardian confirmation" }
+          ],
+          recentScans,
+          teamActivity
+        },
+        careAttention: [
+          { key: "medical_notes", label: "Medical notes", count: medicalNotesRes?.count || 0 },
+          { key: "extra_support", label: "Extra support", count: extraSupportRes?.count || 0 },
+          { key: "missing_pickup_photo", label: "Missing pickup photo", count: missingPickupPhotoRes?.count || 0 },
+          { key: "manual_review", label: "Manual review", count: manualReviewRes?.count || 0 }
+        ],
+        notes,
+        exports: {
+          liveAttendance: true,
+          childrenInside: true,
+          notArrived: true,
+          pickupList: true,
+          needsAttention: true
+        }
+      });
+    }
+
+    // Default: end_of_event Report
+    return res.json({
+      success: true,
+      reportType: 'end_of_event',
+      event: {
+        id: eventId,
+        name: eventName,
+        section: eventSection,
+        dateRangeLabel: dateRangeLabel
+      },
+      metrics: {
+        totalRegistered,
+        parentAccounts,
+        selected,
+        checkedIn,
+        absent,
+        pickedUp,
+        stillInside,
+        needsAttention,
+        careNotesPresent
+      },
+      attendanceOutcome: [
+        { label: "Selected", value: selected },
+        { label: "Checked In", value: checkedIn },
+        { label: "Absent", value: absent },
+        { label: "Picked Up", value: pickedUp }
+      ],
+      eventSummary: [
+        { label: "Registered children", value: totalRegistered, desc: "All child applications/records for current event" },
+        { label: "Parent accounts", value: parentAccounts, desc: "Total parental user profiles" },
+        { label: "Selected", value: selected, desc: "Children admitted/selected for current event" },
+        { label: "Checked in", value: checkedIn, desc: "Total child check-ins recorded" },
+        { label: "Absent", value: absent, desc: "Admitted children who have not checked in" },
+        { label: "Picked up", value: pickedUp, desc: "Admitted children picked up by guardians" },
+        { label: "Still inside", value: stillInside, desc: "Admitted children currently remaining inside" },
+        { label: "Needs attention", value: needsAttention, desc: "Children flagged for care, medical, or age review" },
+        { label: "Care notes present", value: careNotesPresent, desc: "Children with active medical or special support notes" }
+      ],
+      careAttention: [
+        { key: "medical_notes", label: "Medical notes", count: medicalNotesRes?.count || 0 },
+        { key: "extra_support", label: "Extra support", count: extraSupportRes?.count || 0 },
+        { key: "missing_pickup_photo", label: "Missing pickup photo", count: missingPickupPhotoRes?.count || 0 },
+        { key: "manual_review", label: "Manual review", count: manualReviewRes?.count || 0 }
+      ],
+      notes,
+      exports: {
+        eventReport: true,
+        excelSummary: false,
+        selectedChildren: true,
+        attendance: true,
+        absentChildren: true,
+        careNotes: true,
+        pickupList: true
+      }
+    });
+
+  } catch (err: any) {
+    console.error('Error fetching admin reports:', err);
+    return res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch report metrics.' });
+  }
+});
+
+// POST reports notes endpoint
+router.post('/reports/notes', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { eventId, reportType, notes } = req.body;
+    if (!eventId || !reportType) {
+      return res.status(400).json({ error: 'eventId and reportType are required.' });
+    }
+
+    const now = new Date().toISOString();
+    const existing = await queryOne('SELECT id FROM admin_report_notes WHERE event_id = ? AND report_type = ?', [eventId, reportType]);
+    if (existing) {
+      await execute('UPDATE admin_report_notes SET notes = ?, updated_at = ? WHERE event_id = ? AND report_type = ?', [notes || '', now, eventId, reportType]);
+    } else {
+      const id = `arn-${Math.random().toString(36).substr(2, 9)}`;
+      await execute('INSERT INTO admin_report_notes (id, event_id, report_type, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)', [id, eventId, reportType, notes || '', now, now]);
+    }
+
+    return res.json({ success: true, message: 'Report notes saved successfully.' });
+  } catch (err: any) {
+    console.error('Error saving report notes:', err);
+    return res.status(500).json({ error: 'Failed to save report notes.' });
+  }
+});
+
+// GET reports export endpoint
+router.get('/reports/export', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const eventId = await resolveAdminEventId(req.query.eventId as string);
+    if (!eventId) {
+      return res.status(404).json({ error: 'No active or specified event found for export.' });
+    }
+    const type = typeof req.query.type === 'string' ? req.query.type : 'attendance';
+    const format = typeof req.query.format === 'string' ? req.query.format : 'csv';
+
+    if (format !== 'csv') {
+      return res.status(400).json({ error: 'Unsupported format. Only CSV export is implemented at this time.' });
+    }
+
+    function escapeCSV(val: any) {
+      if (val === null || val === undefined) return '';
+      const str = String(val).replace(/"/g, '""');
+      if (str.includes(',') || str.includes('\n') || str.includes('"')) {
+        return `"${str}"`;
+      }
+      return str;
+    }
+
+    let csvContent = '';
+    let filename = `${type}_export_${new Date().toISOString().split('T')[0]}.csv`;
+
+    if (type === 'event_summary') {
+      const totalRegisteredRes = await queryOne('SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ?', [eventId]);
+      const totalRegistered = totalRegisteredRes?.count || 0;
+
+      const parentAccountsRes = await queryOne(`
+        SELECT COUNT(DISTINCT c.parent_profile_id) as count 
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        WHERE e.event_id = ?
+      `, [eventId]);
+      const parentAccounts = parentAccountsRes?.count || 0;
+
+      const selectedRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')", [eventId]);
+      const selected = selectedRes?.count || 0;
+
+      const checkedInRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('checked_in', 'inside', 'picked_up')", [eventId]);
+      const checkedIn = checkedInRes?.count || 0;
+
+      const absentRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready')", [eventId]);
+      const absent = absentRes?.count || 0;
+
+      const pickedUpRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'picked_up'", [eventId]);
+      const pickedUp = pickedUpRes?.count || 0;
+
+      const stillInsideRes = await queryOne("SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('checked_in', 'inside')", [eventId]);
+      const stillInside = stillInsideRes?.count || 0;
+
+      const needsAttentionRes = await queryOne(`
+        SELECT COUNT(*) as count 
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        WHERE e.event_id = ? AND (e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1)
+      `, [eventId]);
+      const needsAttention = needsAttentionRes?.count || 0;
+
+      const careNotesRes = await queryOne(`
+        SELECT COUNT(*) as count 
+        FROM child_event_entries 
+        WHERE event_id = ? AND (has_medical_notes = 1 OR needs_extra_support = 1)
+      `, [eventId]);
+      const careNotesPresent = careNotesRes?.count || 0;
+
+      csvContent += 'Metric,Count,Description\n';
+      csvContent += `Registered children,${totalRegistered},All child applications/records for current event\n`;
+      csvContent += `Parent accounts,${parentAccounts},Total parental user profiles\n`;
+      csvContent += `Selected,${selected},Children admitted/selected for current event\n`;
+      csvContent += `Checked in,${checkedIn},Total child check-ins recorded\n`;
+      csvContent += `Absent,${absent},Admitted children who have not checked in\n`;
+      csvContent += `Picked up,${pickedUp},Admitted children picked up by guardians\n`;
+      csvContent += `Still inside,${stillInside},Admitted children currently remaining inside\n`;
+      csvContent += `Needs attention,${needsAttention},Children flagged for care, medical, or age review\n`;
+      csvContent += `Care notes present,${careNotesPresent},Children with active medical or special support notes\n`;
+
+    } else if (type === 'attendance') {
+      const rows = await query(`
+        SELECT 
+          e.id as entry_id,
+          e.status,
+          e.has_medical_notes,
+          e.medical_notes,
+          e.needs_extra_support,
+          e.support_notes,
+          e.checked_in_at,
+          e.picked_up_at,
+          c.full_name as child_name,
+          c.age_group,
+          p.full_name as parent_name,
+          p.phone_number as parent_phone
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        WHERE e.event_id = ? AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
+        ORDER BY c.full_name ASC
+      `, [eventId]);
+
+      csvContent += 'Entry ID,Child Name,Age Group,Parent Name,Parent Phone,Status,Checked In At,Picked Up At,Notes\n';
+      for (const r of rows) {
+        let careNote = '';
+        if (r.has_medical_notes && r.medical_notes) careNote = r.medical_notes;
+        else if (r.needs_extra_support && r.support_notes) careNote = r.support_notes;
+
+        csvContent += `${escapeCSV(r.entry_id)},${escapeCSV(r.child_name)},${escapeCSV(r.age_group)},${escapeCSV(r.parent_name)},${escapeCSV(r.parent_phone)},${escapeCSV(r.status)},${escapeCSV(r.checked_in_at)},${escapeCSV(r.picked_up_at)},${escapeCSV(careNote)}\n`;
+      }
+
+    } else if (type === 'absent') {
+      const rows = await query(`
+        SELECT 
+          e.id as entry_id,
+          e.status,
+          c.full_name as child_name,
+          c.age_group,
+          p.full_name as parent_name,
+          p.phone_number as parent_phone
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        WHERE e.event_id = ? AND e.status IN ('selected', 'pass_ready')
+        ORDER BY c.full_name ASC
+      `, [eventId]);
+
+      csvContent += 'Entry ID,Child Name,Age Group,Parent Name,Parent Phone,Status\n';
+      for (const r of rows) {
+        csvContent += `${escapeCSV(r.entry_id)},${escapeCSV(r.child_name)},${escapeCSV(r.age_group)},${escapeCSV(r.parent_name)},${escapeCSV(r.parent_phone)},${escapeCSV(r.status)}\n`;
+      }
+
+    } else if (type === 'care_notes') {
+      const rows = await query(`
+        SELECT 
+          c.full_name as child_name,
+          c.age_group,
+          p.full_name as parent_name,
+          p.phone_number as parent_phone,
+          e.medical_notes,
+          e.support_notes
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        WHERE e.event_id = ? AND (e.has_medical_notes = 1 OR e.needs_extra_support = 1)
+        ORDER BY c.full_name ASC
+      `, [eventId]);
+
+      csvContent += 'Child Name,Age Group,Parent Name,Parent Phone,Medical Notes,Support Notes\n';
+      for (const r of rows) {
+        csvContent += `${escapeCSV(r.child_name)},${escapeCSV(r.age_group)},${escapeCSV(r.parent_name)},${escapeCSV(r.parent_phone)},${escapeCSV(r.medical_notes)},${escapeCSV(r.support_notes)}\n`;
+      }
+
+    } else if (type === 'pickup_list') {
+      const rows = await query(`
+        SELECT 
+          c.full_name as child_name,
+          p.full_name as parent_name,
+          p.phone_number as parent_phone,
+          pp.full_name as pickup_name,
+          pp.relationship_to_child as pickup_relation,
+          pp.phone_number as pickup_phone,
+          e.status
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        LEFT JOIN pickup_people pp ON pp.child_event_entry_id = e.id
+        WHERE e.event_id = ? AND e.status IN ('checked_in', 'inside', 'picked_up')
+        ORDER BY c.full_name ASC
+      `, [eventId]);
+
+      csvContent += 'Child Name,Parent Name,Parent Phone,Pickup Contact,Relationship,Pickup Phone,Status\n';
+      for (const r of rows) {
+        csvContent += `${escapeCSV(r.child_name)},${escapeCSV(r.parent_name)},${escapeCSV(r.parent_phone)},${escapeCSV(r.pickup_name)},${escapeCSV(r.pickup_relation)},${escapeCSV(r.pickup_phone)},${escapeCSV(r.status)}\n`;
+      }
+
+    } else if (type === 'selected_children') {
+      const rows = await query(`
+        SELECT 
+          e.id as entry_id,
+          e.status,
+          c.full_name as child_name,
+          c.age_group,
+          p.full_name as parent_name,
+          p.phone_number as parent_phone
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        WHERE e.event_id = ? AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
+        ORDER BY c.full_name ASC
+      `, [eventId]);
+
+      csvContent += 'Entry ID,Child Name,Age Group,Parent Name,Parent Phone,Status\n';
+      for (const r of rows) {
+        csvContent += `${escapeCSV(r.entry_id)},${escapeCSV(r.child_name)},${escapeCSV(r.age_group)},${escapeCSV(r.parent_name)},${escapeCSV(r.parent_phone)},${escapeCSV(r.status)}\n`;
+      }
+
+    } else if (type === 'missing_pickup_photos') {
+      const rows = await query(`
+        SELECT 
+          e.id as entry_id,
+          c.full_name as child_name,
+          c.age_group,
+          p.full_name as parent_name,
+          p.phone_number as parent_phone
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        LEFT JOIN pickup_people pp ON pp.child_event_entry_id = e.id
+        WHERE e.event_id = ? AND (pp.id IS NULL OR pp.photo_file_id IS NULL OR pp.photo_file_id = '')
+        ORDER BY c.full_name ASC
+      `, [eventId]);
+
+      csvContent += 'Entry ID,Child Name,Age Group,Parent Name,Parent Phone,Status\n';
+      for (const r of rows) {
+        csvContent += `${escapeCSV(r.entry_id)},${escapeCSV(r.child_name)},${escapeCSV(r.age_group)},${escapeCSV(r.parent_name)},${escapeCSV(r.parent_phone)},${escapeCSV(r.status)}\n`;
+      }
+
+    } else if (type === 'children_inside') {
+      const rows = await query(`
+        SELECT 
+          e.id as entry_id,
+          c.full_name as child_name,
+          c.age_group,
+          p.full_name as parent_name,
+          p.phone_number as parent_phone,
+          e.checked_in_at
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        WHERE e.event_id = ? AND e.status IN ('checked_in', 'inside')
+        ORDER BY c.full_name ASC
+      `, [eventId]);
+
+      csvContent += 'Entry ID,Child Name,Age Group,Parent Name,Parent Phone,Checked In At\n';
+      for (const r of rows) {
+        csvContent += `${escapeCSV(r.entry_id)},${escapeCSV(r.child_name)},${escapeCSV(r.age_group)},${escapeCSV(r.parent_name)},${escapeCSV(r.parent_phone)},${escapeCSV(r.checked_in_at)}\n`;
+      }
+
+    } else if (type === 'not_arrived') {
+      const rows = await query(`
+        SELECT 
+          e.id as entry_id,
+          c.full_name as child_name,
+          c.age_group,
+          p.full_name as parent_name,
+          p.phone_number as parent_phone
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        WHERE e.event_id = ? AND e.status IN ('selected', 'pass_ready')
+        ORDER BY c.full_name ASC
+      `, [eventId]);
+
+      csvContent += 'Entry ID,Child Name,Age Group,Parent Name,Parent Phone\n';
+      for (const r of rows) {
+        csvContent += `${escapeCSV(r.entry_id)},${escapeCSV(r.child_name)},${escapeCSV(r.age_group)},${escapeCSV(r.parent_name)},${escapeCSV(r.parent_phone)}\n`;
+      }
+
+    } else if (type === 'needs_attention') {
+      const rows = await query(`
+        SELECT 
+          e.id as entry_id,
+          c.full_name as child_name,
+          c.age_group,
+          p.full_name as parent_name,
+          p.phone_number as parent_phone,
+          e.has_medical_notes,
+          e.medical_notes,
+          e.needs_extra_support,
+          e.support_notes,
+          c.needs_age_review
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        WHERE e.event_id = ? AND (e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1)
+        ORDER BY c.full_name ASC
+      `, [eventId]);
+
+      csvContent += 'Entry ID,Child Name,Age Group,Parent Name,Parent Phone,Medical Alert,Support Alert,Age Review Alert\n';
+      for (const r of rows) {
+        csvContent += `${escapeCSV(r.entry_id)},${escapeCSV(r.child_name)},${escapeCSV(r.age_group)},${escapeCSV(r.parent_name)},${escapeCSV(r.parent_phone)},${r.has_medical_notes ? 'YES' : 'NO'},${r.needs_extra_support ? 'YES' : 'NO'},${r.needs_age_review ? 'YES' : 'NO'}\n`;
+      }
+
+    } else {
+      return res.status(400).json({ error: 'Invalid export type requested.' });
+    }
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(csvContent);
+
+  } catch (err: any) {
+    console.error('Error generating CSV export:', err);
+    return res.status(err.statusCode || 500).json({ error: err.message || 'Failed to generate export file.' });
+  }
+});
+
+// GET all notification rules for an event
+router.get('/events/:eventId/rules', async (req: AuthenticatedRequest, res: Response) => {
+  const { eventId } = req.params;
+  const rules = await query('SELECT * FROM event_notification_rules WHERE event_id = ? ORDER BY created_at ASC', [eventId]);
+  res.json(rules);
+});
+
+// GET all notification jobs for an event (including sending history)
+router.get('/events/:eventId/jobs', async (req: AuthenticatedRequest, res: Response) => {
+  const { eventId } = req.params;
+  const jobs = await query(`
+    SELECT j.*, r.name as rule_name, r.channel, p.full_name as parent_name, p.email as parent_email
+    FROM notification_jobs j
+    LEFT JOIN event_notification_rules r ON r.id = j.rule_id
+    LEFT JOIN parent_profiles p ON p.id = j.parent_id
+    WHERE j.event_id = ?
+    ORDER BY j.scheduled_for ASC, j.created_at DESC
+  `, [eventId]);
+  res.json(jobs);
+});
+
+// POST test notification rule directly to a selected email address
+router.post('/events/:eventId/notifications/test', async (req: AuthenticatedRequest, res: Response) => {
+  const { eventId } = req.params;
+  const { ruleType, testEmail } = req.body;
+
+  if (!ruleType || !testEmail) {
+    return res.status(400).json({ error: 'Missing ruleType or testEmail in payload.' });
+  }
+
+  const result = await executeTestNotification({
+    eventId,
+    ruleType,
+    testEmail
+  });
+
+  if (result.success) {
+    res.json({ success: true, message: result.message });
+  } else {
+    res.status(500).json({ error: result.message });
+  }
+});
+
+// POST manual notification
+router.post('/notifications', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const creatorId = req.user?.id;
+    const {
+      title,
+      message,
+      type = 'info',
+      audienceRole = 'parent',
+      audienceScope = 'all',
+      eventId = 'event-ga-2026',
+      childId,
+      parentId,
+      priority = 'normal',
+      channel = 'in-app',
+      visibleToEventTeam = false,
+      metadata
+    } = req.body;
+
+    if (!title || !message) {
+      return res.status(400).json({ error: 'Title and message are required' });
+    }
+
+    const notificationId = `notif-${crypto.randomUUID()}`;
+    const createdAt = new Date().toISOString();
+
+    await execute(`
+      INSERT INTO notifications (
+        id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id,
+        created_by_user_id, visible_to_event_team, created_at, priority, channel, metadata_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      notificationId,
+      title,
+      message,
+      type,
+      audienceRole,
+      audienceScope,
+      eventId || null,
+      childId || null,
+      parentId || null,
+      creatorId,
+      visibleToEventTeam ? 1 : 0,
+      createdAt,
+      priority,
+      channel,
+      metadata ? JSON.stringify(metadata) : null
+    ]);
+
+    // Backward compatibility with parent_notifications
+    if (audienceRole === 'parent' || parentId) {
+      const parentsToNotify: any[] = [];
+      if (parentId) {
+        parentsToNotify.push({ id: parentId });
+      } else {
+        const allParents = await query('SELECT id FROM parent_profiles');
+        parentsToNotify.push(...allParents);
+      }
+
+      for (const parent of parentsToNotify) {
+        const parentNotifId = `pnotif-${crypto.randomUUID()}`;
+        await execute(`
+          INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [
+          parentNotifId,
+          parent.id,
+          eventId || null,
+          childId || null,
+          title,
+          message,
+          createdAt
+        ]);
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Notification created successfully',
+      notificationId
+    });
+  } catch (err: any) {
+    console.error('Error creating admin notification:', err);
+    res.status(500).json({ error: 'Failed to create notification' });
+  }
+});
+
+// POST test broadcast notification
+router.post('/notifications/test', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const notificationId = `testnotif-${crypto.randomUUID()}`;
+    const createdAt = new Date().toISOString();
+
+    await execute(`
+      INSERT INTO notifications (
+        id, title, message, type, audience_role, audience_scope, created_at, priority, channel
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      notificationId,
+      'System Test Notification',
+      'This is a test notification generated by the administrator to verify the routing pipeline.',
+      'info',
+      'all',
+      'broadcast',
+      createdAt,
+      'high',
+      'in-app'
+    ]);
+
+    res.json({
+      success: true,
+      message: 'Test notification broadcasted successfully',
+      notificationId
+    });
+  } catch (err: any) {
+    console.error('Error creating test notification:', err);
+    res.status(500).json({ error: 'Failed to dispatch test notification' });
+  }
+});
+
+// POST test whatsapp message (Restricted to Super Admin in Phase 1A)
+router.post('/notifications/test-whatsapp', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Your session has expired. Please sign in again.'
+      });
+    }
+
+    if (req.user.role !== 'super_admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Only a Super Admin can send WhatsApp test messages.'
+      });
+    }
+
+    const rawTo = req.body.to || req.body.phone;
+    const message = req.body.message;
+    if (!rawTo) {
+      return res.status(400).json({ success: false, error: 'Recipient phone number is required.' });
+    }
+
+    const normalizedTo = normalizePhoneNumberToE164(rawTo);
+    if (!normalizedTo) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid phone number format. Provide a valid Nigerian (+234...) or international E.164 number.'
+      });
+    }
+
+    const safeMessage = message && typeof message === 'string' && message.trim()
+      ? message.trim()
+      : 'Koinonia Children & Teens\nThis is a test message from the TGA communication system.';
+
+    const readiness = getWhatsAppProviderReadiness();
+    if (!readiness.testSendAvailable) {
+      return res.status(400).json({
+        success: false,
+        error: 'WhatsApp setup incomplete. Provider credentials must be configured before sending test messages.',
+        status: 'failed',
+        readiness
+      });
+    }
+
+    const provider = getWhatsAppProvider();
+    const maskedPhone = normalizedTo.length > 4 ? `${normalizedTo.slice(0, 4)}****` : '****';
+    console.log(`[WhatsApp Test Endpoint] Dispatching test message via provider: ${provider.name} to: ${maskedPhone}`);
+
+    const result = await provider.sendSessionMessage({
+      to: normalizedTo,
+      body: safeMessage
+    });
+
+    const nowIso = new Date().toISOString();
+    const logId = await logWhatsAppDelivery({
+      recipientPhone: normalizedTo,
+      provider: provider.name,
+      providerMessageId: result.messageId || null,
+      status: result.success ? (result.status === 'queued' ? 'queued' : 'sent') : 'failed',
+      sentAt: result.success ? nowIso : null,
+      failedAt: !result.success ? nowIso : null,
+      errorMessage: result.error || null,
+      templateName: 'super_admin_test'
+    });
+
+    if (result.success) {
+      return res.json({
+        success: true,
+        message: 'WhatsApp message accepted by provider.',
+        provider: provider.name,
+        messageSid: result.messageId || 'simulated-sid',
+        status: result.status,
+        logId
+      });
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: result.error || 'Failed to send WhatsApp message via configured provider.',
+        provider: provider.name,
+        status: result.status,
+        logId
+      });
+    }
+  } catch (err: any) {
+    console.error('Error in test-whatsapp endpoint:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to process WhatsApp test request.' });
+  }
+});
+
+// GET test whatsapp delivery status progression (Restricted to Super Admin)
+router.get('/notifications/test-whatsapp-status', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Your session has expired. Please sign in again.'
+      });
+    }
+
+    if (req.user.role !== 'super_admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Only a Super Admin can query WhatsApp test delivery status.'
+      });
+    }
+
+    const logId = (req.query.logId as string) || '';
+    const messageSid = (req.query.messageSid as string) || '';
+
+    if (!logId && !messageSid) {
+      return res.status(400).json({ success: false, error: 'logId or messageSid query parameter is required.' });
+    }
+
+    let logRow: any = null;
+    if (logId) {
+      logRow = await queryOne('SELECT * FROM whatsapp_delivery_logs WHERE id = ?', [logId]);
+    } else if (messageSid) {
+      logRow = await queryOne('SELECT * FROM whatsapp_delivery_logs WHERE provider_message_id = ?', [messageSid]);
+    }
+
+    if (!logRow) {
+      return res.status(404).json({ success: false, error: 'Test delivery log entry not found.' });
+    }
+
+    return res.json({
+      success: true,
+      log: {
+        id: logRow.id,
+        status: logRow.status,
+        provider: logRow.provider,
+        providerMessageId: logRow.provider_message_id,
+        recipientPhone: logRow.recipient_phone,
+        sentAt: logRow.sent_at,
+        deliveredAt: logRow.delivered_at,
+        readAt: logRow.read_at,
+        failedAt: logRow.failed_at,
+        errorCode: logRow.error_code,
+        errorMessage: logRow.error_message
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching test-whatsapp-status:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch test delivery status.' });
+  }
+});
+
+// GET messages dashboard data
+router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const eventId = (req.query.eventId as string) || 'event-ga-2026';
+
+    // 1. Fetch message metrics from our manual admin message logs
+    const logs = await query('SELECT status, channel, recipients_count FROM admin_message_logs');
+    let messagesSent = 0;
+    let whatsappSent = 0;
+    let emailSent = 0;
+    let failed = 0;
+    let pending = 0;
+
+    for (const log of logs) {
+      const count = Number(log.recipients_count || 0);
+      if (log.status === 'sent') {
+        messagesSent += count;
+        if (log.channel === 'whatsapp' || log.channel === 'both') {
+          whatsappSent += count;
+        }
+        if (log.channel === 'email' || log.channel === 'both') {
+          emailSent += count;
+        }
+      } else if (log.status === 'failed') {
+        failed += count;
+      } else if (log.status === 'pending') {
+        pending += count;
+      }
+    }
+
+    // 2. Fetch real counts for recipient groups based on actual children/parents for current event
+    const countAllRes = await queryOne(`
+      SELECT COUNT(DISTINCT p.id) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+    `, [eventId]);
+
+    const countSelectedRes = await queryOne(`
+      SELECT COUNT(DISTINCT p.id) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE e.event_id = ? AND e.status IN ('selected', 'pass_ready')
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+    `, [eventId]);
+
+    const countReviewRes = await queryOne(`
+      SELECT COUNT(DISTINCT p.id) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE e.event_id = ? AND e.status = 'under_review'
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+    `, [eventId]);
+
+    const countWaitingRes = await queryOne(`
+      SELECT COUNT(DISTINCT p.id) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE e.event_id = ? AND e.status = 'waiting_list'
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+    `, [eventId]);
+
+    const countNotSelectedRes = await queryOne(`
+      SELECT COUNT(DISTINCT p.id) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE e.event_id = ? AND e.status = 'not_selected'
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+    `, [eventId]);
+
+    const countPassReadyRes = await queryOne(`
+      SELECT COUNT(DISTINCT p.id) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE e.event_id = ? AND e.status = 'pass_ready'
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+    `, [eventId]);
+
+    const countVolunteersRes = await queryOne(`
+      SELECT COUNT(DISTINCT vp.user_id) as count
+      FROM volunteer_profiles vp
+      WHERE vp.status IN ('active', 'approved')
+    `);
+
+    const countTeamRes = await queryOne(`
+      SELECT COUNT(DISTINCT u.id) as count
+      FROM users u
+      WHERE u.role IN ('staff', 'admin', 'super_admin', 'volunteer')
+        AND (u.status = 'active' OR u.status IS NULL)
+    `);
+
+    // Channel eligibility for current event active parents
+    const inAppCountRes = await queryOne(`
+      SELECT COUNT(DISTINCT p.id) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      JOIN users u ON u.id = p.user_id
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+    `, [eventId]);
+
+    const pushCountRes = await queryOne(`
+      SELECT COUNT(DISTINCT p.id) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      JOIN push_subscriptions ps ON ps.user_id = p.user_id AND ps.revoked_at IS NULL
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+    `, [eventId]);
+
+    const emailCountRes = await queryOne(`
+      SELECT COUNT(DISTINCT p.id) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      JOIN users u ON u.id = p.user_id
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+        AND (u.email IS NOT NULL AND trim(u.email) != '')
+    `, [eventId]);
+
+    const whatsappNumbersCountRes = await queryOne(`
+      SELECT COUNT(DISTINCT p.id) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+        AND (p.whatsapp_number IS NOT NULL AND trim(p.whatsapp_number) != '')
+    `, [eventId]);
+
+    const whatsappOptedInCountRes = await queryOne(`
+      SELECT COUNT(DISTINCT p.id) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+        AND (p.whatsapp_number IS NOT NULL AND trim(p.whatsapp_number) != '')
+        AND p.whatsapp_consent_status = 'opted_in'
+    `, [eventId]);
+
+    const whatsappReadiness = getWhatsAppProviderReadiness();
+    const whatsappEnabled = whatsappReadiness.configured;
+    const whatsappStatus = whatsappReadiness.configured ? 'Ready' : 'WhatsApp setup incomplete';
+
+    const channelEligibility = {
+      inApp: Number(inAppCountRes?.count || 0),
+      push: Number(pushCountRes?.count || 0),
+      email: Number(emailCountRes?.count || 0),
+      whatsappNumbers: Number(whatsappNumbersCountRes?.count || 0),
+      whatsappOptedIn: whatsappReadiness.configured ? Number(whatsappOptedInCountRes?.count || 0) : 0
+    };
+
+    // Query active parents registered for this event to support specific parent recipient targeting
+    const eventParents = await query(`
+      SELECT
+        p.id,
+        p.full_name as name,
+        p.phone_number as phone,
+        p.whatsapp_number as "whatsappNumber",
+        p.whatsapp_consent_status as "whatsappConsentStatus",
+        u.email,
+        u.id as "userId",
+        (SELECT COUNT(DISTINCT ps.id) FROM push_subscriptions ps WHERE ps.user_id = u.id AND ps.revoked_at IS NULL) as "pushCount"
+      FROM parent_profiles p
+      JOIN users u ON u.id = p.user_id
+      WHERE (p.is_deleted = 0 OR p.is_deleted IS NULL)
+        AND EXISTS (
+          SELECT 1
+          FROM children c
+          JOIN child_event_entries e ON e.child_id = c.id
+          WHERE c.parent_profile_id = p.id
+            AND e.event_id = ?
+            AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+            AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        )
+      ORDER BY p.full_name ASC
+    `, [eventId]);
+
+    for (const p of eventParents) {
+      const children = await query(`
+        SELECT c.id, c.full_name as name
+        FROM children c
+        JOIN child_event_entries e ON e.child_id = c.id
+        WHERE c.parent_profile_id = ?
+          AND e.event_id = ?
+          AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+          AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+      `, [p.id, eventId]);
+      p.children = children || [];
+      p.childCount = children?.length || 0;
+    }
+
+    // Query approved volunteers to support volunteer recipient targeting
+    const eventVolunteers = await query(`
+      SELECT
+        vp.id,
+        vp.full_name as name,
+        vp.phone as phone,
+        vp.whatsapp as "whatsappNumber",
+        vp.preferred_team as "preferredTeam",
+        vp.department,
+        vp.status,
+        u.email,
+        u.id as "userId",
+        vp.user_id as "user_id",
+        (SELECT COUNT(DISTINCT ps.id) FROM push_subscriptions ps WHERE ps.user_id = u.id AND ps.revoked_at IS NULL) as "pushCount",
+        pp.id as "parentProfileId",
+        pp.whatsapp_consent_status as "parentConsentStatus",
+        vp.whatsapp_consent_status as "volunteerConsentStatus"
+      FROM volunteer_profiles vp
+      JOIN users u ON u.id = vp.user_id
+      LEFT JOIN parent_profiles pp ON pp.user_id = u.id AND (pp.is_deleted = 0 OR pp.is_deleted IS NULL)
+      WHERE vp.status IN ('active', 'approved')
+        AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
+        AND (u.status = 'active' OR u.status IS NULL)
+      ORDER BY vp.full_name ASC
+    `);
+
+    for (const v of eventVolunteers) {
+      const uId = v.userId || v.user_id || v.userid;
+      const duty = uId ? await resolveUserDutyLocation(uId, eventId) : null;
+      v.dutyLocation = duty?.name || null;
+      v.dutyTeam = duty?.team || duty?.teamKey || v.preferredTeam || v.department || 'Volunteer';
+      // Role-specific consent rule:
+      // For Volunteer audiences, eligibility is strictly based on volunteer_profiles.whatsapp_consent_status.
+      // Parent consent must NOT suppress an explicit Volunteer opt-in for a Volunteer-targeted message.
+      v.whatsappConsentStatus = v.volunteerConsentStatus || 'unknown';
+    }
+
+    const recipientGroups = [
+      { key: 'all_parents', label: 'All parents', count: Number(countAllRes?.count || 0) },
+      { key: 'specific_parents', label: 'Selected parents', count: eventParents.length },
+      { key: 'selected_children', label: 'Selected children', count: Number(countSelectedRes?.count || 0) },
+      { key: 'under_review', label: 'Under review', count: Number(countReviewRes?.count || 0) },
+      { key: 'waiting_list', label: 'Waiting list', count: Number(countWaitingRes?.count || 0) },
+      { key: 'not_selected', label: 'Not selected', count: Number(countNotSelectedRes?.count || 0) },
+      { key: 'pass_ready', label: 'Pass ready', count: Number(countPassReadyRes?.count || 0) },
+      { key: 'volunteers', label: 'All approved volunteers', count: Number(countVolunteersRes?.count || 0) },
+      { key: 'specific_volunteers', label: 'Selected volunteers', count: eventVolunteers.length },
+      { key: 'all_event_team', label: 'Event team & volunteers', count: Number(countTeamRes?.count || 0) }
+    ];
+
+    const messageTypes = [
+      { key: 'general_announcement', label: 'General announcement' },
+      { key: 'pickup_reminder', label: 'Dismissal and pickup reminder' },
+      { key: 'pass_ready', label: 'Pass update' },
+      { key: 'review_update', label: 'Review update' },
+      { key: 'waiting_list_update', label: 'Waitlist update' },
+      { key: 'selection_update', label: 'Selection update' },
+      { key: 'application_status', label: 'Application status' },
+      { key: 'safety_alert', label: 'Safety alert' }
+    ];
+
+    const volunteerMessageTypes = [
+      { key: 'general_announcement', label: 'General announcement' },
+      { key: 'volunteer_application_received', label: 'Volunteer application received' },
+      { key: 'volunteer_application_status', label: 'Volunteer application status' },
+      { key: 'volunteer_approved', label: 'Volunteer approved' },
+      { key: 'volunteer_assignment', label: 'Volunteer assignment' },
+      { key: 'duty_reminder', label: 'Duty reminder' },
+      { key: 'event_information', label: 'Event information' },
+      { key: 'operational_update', label: 'Operational update' },
+      { key: 'safety_alert', label: 'Safety alert' }
+    ];
+
+    // 3. Fetch recent broadcast activities with real delivery statuses and clean copy
+    const rawRecentActivity = await query(`
+      SELECT
+        id,
+        recipient_group as "recipientGroup",
+        message_type as "messageType",
+        channel,
+        subject,
+        body,
+        recipients_count as "recipientsCount",
+        status,
+        created_at as "createdAt"
+      FROM admin_message_logs
+      ORDER BY created_at DESC
+      LIMIT 20
+    `);
+
+    const evRow = await queryOne('SELECT title FROM events WHERE id = ?', [eventId]);
+    const eventName = evRow?.title || 'The General Assembly';
+
+    const recentActivity = await Promise.all(rawRecentActivity.map(async (log: any) => {
+      let resolvedStatus = log.status || 'sent';
+
+      // Look up delivery summary stored in notifications.metadata_json for this campaign
+      const notifMeta = await queryOne(`
+        SELECT metadata_json FROM notifications WHERE id = ?
+      `, [`notif-${log.id}`]);
+      let savedMeta: any = null;
+      if (notifMeta?.metadata_json) {
+        try {
+          savedMeta = JSON.parse(notifMeta.metadata_json);
+        } catch {
+          // Ignore parse error
+        }
+      }
+
+      // Live progression for WhatsApp campaigns from delivery logs and queue jobs
+      let waStatus: 'queued' | 'sent' | 'delivered' | 'read' | 'failed' = 'queued';
+      let hasPending = false;
+      let hasFailed = false;
+      let hasSent = false;
+      let hasDelivered = false;
+      let hasRead = false;
+
+      if (String(log.channel || '').includes('whatsapp')) {
+        const delivLogs = await query(`
+          SELECT status, provider_message_id, delivered_at, sent_at FROM whatsapp_delivery_logs WHERE campaign_id = ?
+        `, [log.id]);
+
+        const pendingJobs = await query(`
+          SELECT status FROM notification_jobs WHERE idempotency_key LIKE ?
+        `, [`campaign:${log.id}:%`]);
+
+        for (const j of pendingJobs) {
+          if (j.status === 'pending' || j.status === 'processing') hasPending = true;
+          if (j.status === 'sent') hasSent = true;
+          if (j.status === 'delivered') hasDelivered = true;
+          if (j.status === 'failed') hasFailed = true;
+        }
+
+        for (const dl of delivLogs) {
+          if (dl.status === 'read') hasRead = true;
+          else if (dl.status === 'delivered' || dl.delivered_at) hasDelivered = true;
+          else if (dl.status === 'sent' || dl.sent_at || (dl.provider_message_id && dl.status !== 'failed')) hasSent = true;
+          else if (dl.status === 'queued') hasPending = true;
+          else if (dl.status === 'failed') hasFailed = true;
+        }
+
+        if (hasRead) waStatus = 'read';
+        else if (hasDelivered) waStatus = 'delivered';
+        else if (hasSent) waStatus = 'sent';
+        else if (hasFailed && !hasSent && !hasDelivered && !hasRead) waStatus = 'failed';
+        else if (hasPending) waStatus = 'queued';
+        else if (log.status === 'failed' || (!hasPending && pendingJobs.length === 0 && delivLogs.length === 0)) waStatus = 'failed';
+        else if (log.status === 'sent') waStatus = 'sent';
+      }
+
+      // Build independent channel status badges
+      const channelList = String(log.channel || '').split(',').map((c: string) => c.trim().toLowerCase()).filter(Boolean);
+      const channelStatuses: Array<{
+        channel: string;
+        label: string;
+        status: string;
+      }> = [];
+
+      for (const ch of channelList) {
+        if (ch === 'whatsapp') {
+          let capStatus = 'Sending';
+          if (waStatus === 'read') capStatus = 'Read';
+          else if (waStatus === 'delivered') capStatus = 'Delivered';
+          else if (waStatus === 'sent') capStatus = 'Sent';
+          else if (waStatus === 'failed') capStatus = 'Failed';
+          else if (hasPending) capStatus = 'Sending';
+          else capStatus = 'Failed';
+
+          channelStatuses.push({
+            channel: 'whatsapp',
+            label: 'WhatsApp',
+            status: capStatus
+          });
+        } else if (ch === 'push') {
+          let pStatus = 'Sent';
+          if (savedMeta?.push) {
+            if (savedMeta.push.status === 'failed' || (savedMeta.push.failedCount > 0 && savedMeta.push.sentCount === 0)) {
+              pStatus = 'Failed';
+            } else if (savedMeta.push.sentCount > 0 && savedMeta.push.failedCount > 0) {
+              pStatus = 'Partially sent';
+            } else if (savedMeta.push.sentCount > 0) {
+              pStatus = 'Sent';
+            }
+          }
+          channelStatuses.push({
+            channel: 'push',
+            label: 'Push',
+            status: pStatus
+          });
+        } else if (ch === 'in_app') {
+          channelStatuses.push({
+            channel: 'in_app',
+            label: 'In-app',
+            status: 'Sent'
+          });
+        } else if (ch === 'email') {
+          const eStatus = (savedMeta?.email?.status === 'failed' || (savedMeta?.email?.failedCount > 0 && savedMeta?.email?.sentCount === 0)) ? 'Failed' : 'Sent';
+          channelStatuses.push({
+            channel: 'email',
+            label: 'Email',
+            status: eStatus
+          });
+        }
+      }
+
+      // Compute overall status according to Part 8 semantics
+      const hasAnySuccess = channelStatuses.some(cs => cs.status === 'Sent' || cs.status === 'Delivered' || cs.status === 'Read' || cs.status === 'Partially sent');
+      const hasAnyFailure = channelStatuses.some(cs => cs.status === 'Failed' || cs.status === 'Could not be sent');
+      const hasAnyQueued = channelStatuses.some(cs => cs.status === 'Sending' || cs.status === 'Queued');
+
+      if (channelStatuses.length > 0 && channelStatuses.every(cs => cs.status === 'Failed' || cs.status === 'Could not be sent')) {
+        resolvedStatus = 'failed';
+      } else if (hasAnySuccess && hasAnyFailure) {
+        resolvedStatus = 'partially_sent';
+      } else if (hasAnyQueued) {
+        resolvedStatus = 'queued';
+      } else if (hasAnySuccess) {
+        const allDelivered = channelStatuses.every(cs => cs.status === 'Delivered' || cs.status === 'Read');
+        resolvedStatus = allDelivered ? 'delivered' : 'sent';
+      } else {
+        resolvedStatus = log.status || 'sent';
+      }
+
+      // Remove raw placeholders from history using canonical URLs
+      const isVolGroup = log.recipientGroup === 'volunteers' || log.recipientGroup === 'specific_volunteers' || log.recipientGroup === 'all_event_team';
+      const recipientCount = log.recipients_count ?? log.recipientsCount ?? 1;
+      const isSingleRecipient = recipientCount === 1;
+
+      let resolvedSingleRecipientName = '';
+      let resolvedSingleRecipientLocation = '';
+      let resolvedSingleRecipientTeam = '';
+
+      if (isSingleRecipient) {
+        // Resolve the specific recipient from notification_jobs or profile
+        const job = await queryOne(`
+          SELECT parent_id, user_id FROM notification_jobs
+          WHERE idempotency_key LIKE ?
+          LIMIT 1
+        `, [`%campaign:${log.id}%`]);
+
+        if (job) {
+          if (job.user_id) {
+            const vp = await queryOne(`SELECT full_name, preferred_team, department FROM volunteer_profiles WHERE user_id = ? OR id = ?`, [job.user_id, job.user_id]);
+            if (vp?.full_name) resolvedSingleRecipientName = vp.full_name.trim();
+            const duty = await resolveUserDutyLocation(job.user_id, eventId || 'event-ga-2026');
+            resolvedSingleRecipientLocation = duty?.name || '';
+            resolvedSingleRecipientTeam = duty?.team || duty?.teamKey || vp?.preferred_team || vp?.department || '';
+          } else if (job.parent_id) {
+            const pp = await queryOne(`SELECT full_name FROM parent_profiles WHERE id = ?`, [job.parent_id]);
+            if (pp?.full_name) resolvedSingleRecipientName = pp.full_name.trim();
+          }
+        }
+      }
+
+      let cleanSubject = log.subject || '';
+      let cleanBody = log.body || '';
+
+      if (isSingleRecipient) {
+        if (resolvedSingleRecipientName) {
+          if (isVolGroup) {
+            cleanBody = cleanBody
+              .replace(/^Dear\s+(?:Volunteers?|\{Volunteer\s+name\}),?/i, `Dear ${resolvedSingleRecipientName},`)
+              .replace(/\{Volunteer\s+name\}/gi, resolvedSingleRecipientName);
+            cleanSubject = cleanSubject.replace(/\{Volunteer\s+name\}/gi, resolvedSingleRecipientName);
+          } else {
+            cleanBody = cleanBody
+              .replace(/^Dear\s+(?:Parents?|\{Parent\s+name\}),?/i, `Dear ${resolvedSingleRecipientName},`)
+              .replace(/\{Parent\s+name\}/gi, resolvedSingleRecipientName);
+            cleanSubject = cleanSubject.replace(/\{Parent\s+name\}/gi, resolvedSingleRecipientName);
+          }
+        }
+        cleanSubject = isVolGroup
+          ? resolveMessageTokens(cleanSubject, {
+              eventName,
+              volunteerName: resolvedSingleRecipientName || 'Volunteer',
+              team: resolvedSingleRecipientTeam || 'Team',
+              location: resolvedSingleRecipientLocation || 'Main Auditorium',
+              supportContact: '+234 803 123 4567'
+            }).replace(/\s+-\s*$/, '').trim()
+          : resolveMessageTokens(cleanSubject, {
+              eventName,
+              parentName: resolvedSingleRecipientName || '',
+              reviewUrl: buildParentStatusUrl(),
+              passUrl: buildParentPassUrl()
+            }).replace(/\s+-\s*$/, '').trim();
+
+        cleanBody = isVolGroup
+          ? resolveMessageTokens(cleanBody, {
+              eventName,
+              volunteerName: resolvedSingleRecipientName || 'Volunteer',
+              team: resolvedSingleRecipientTeam || 'Team',
+              location: resolvedSingleRecipientLocation || 'Main Auditorium',
+              supportContact: '+234 803 123 4567'
+            })
+          : resolveMessageTokens(cleanBody, {
+              eventName,
+              parentName: resolvedSingleRecipientName || '',
+              childName: 'your child',
+              reviewUrl: buildParentStatusUrl(),
+              passUrl: buildParentPassUrl(),
+              pickupTime: '4:00 PM',
+              supportContact: '+234 803 123 4567'
+            });
+      } else {
+        // Bulk campaigns: Keep campaign-level preview, do not pretend one personalized body represents everyone, do not expose template tokens
+        cleanSubject = isVolGroup
+          ? resolveMessageTokens(
+              cleanSubject.replace(/\{Volunteer\s+name\}/gi, 'Volunteers'),
+              {
+                eventName,
+                volunteerName: 'Volunteers',
+                team: 'Team',
+                location: 'Assigned Locations',
+                supportContact: '+234 803 123 4567'
+              }
+            ).replace(/\s+-\s*$/, '').trim()
+          : resolveMessageTokens(
+              cleanSubject.replace(/\{Parent\s+name\}/gi, 'Parents'),
+              {
+                eventName,
+                parentName: 'Parents',
+                reviewUrl: buildParentStatusUrl(),
+                passUrl: buildParentPassUrl()
+              }
+            ).replace(/\s+-\s*$/, '').trim();
+
+        cleanBody = isVolGroup
+          ? resolveMessageTokens(
+              cleanBody
+                .replace(/Dear\s+\{Volunteer\s+name\},?/gi, 'Dear Volunteers,')
+                .replace(/\{Volunteer\s+name\}/gi, 'Volunteers'),
+              {
+                eventName,
+                volunteerName: 'Volunteers',
+                team: 'Assigned Team',
+                location: 'Assigned Location',
+                supportContact: '+234 803 123 4567'
+              }
+            )
+          : resolveMessageTokens(
+              cleanBody
+                .replace(/Dear\s+\{Parent\s+name\},?/gi, 'Dear Parents,')
+                .replace(/\{Parent\s+name\}/gi, 'Parents'),
+              {
+                eventName,
+                parentName: 'Parents',
+                childName: 'your children',
+                reviewUrl: buildParentStatusUrl(),
+                passUrl: buildParentPassUrl(),
+                pickupTime: '4:00 PM',
+                supportContact: '+234 803 123 4567'
+              }
+            );
+      }
+
+      return {
+        ...log,
+        status: resolvedStatus,
+        channelStatuses,
+        subject: cleanSubject,
+        body: cleanBody
+      };
+    }));
+
+    // 4. Fetch latest saved draft
+    const latestDraft = await queryOne(`
+      SELECT
+        recipient_group as "recipientGroup",
+        message_type as "messageType",
+        channel,
+        subject,
+        body
+      FROM admin_message_drafts
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `);
+
+    const emailProvider = resolveEmailProvider();
+    const emailEnabled = isEmailConfigured();
+
+    const settings = await queryOne(`
+      SELECT sender_name as senderName, reply_to_email as replyToEmail
+      FROM admin_message_settings
+      WHERE id = 'primary_settings'
+    `);
+
+    const providerStatus = {
+      emailEnabled,
+      whatsappEnabled,
+      whatsappStatus,
+      whatsappReadiness,
+      emailProvider: ['zeptomail', 'resend', 'smtp'].includes(emailProvider) ? emailProvider : null,
+      whatsappProvider: whatsappReadiness.provider,
+      senderName: settings?.senderName || process.env.MAIL_FROM_NAME || 'Koinonia Global',
+      fromEmail: process.env.MAIL_FROM_ADDRESS || null,
+      replyToEmail: settings?.replyToEmail || process.env.MAIL_FROM_ADDRESS || null
+    };
+
+    res.json({
+      success: true,
+      stats: {
+        messagesSent,
+        whatsappSent,
+        emailSent,
+        failed,
+        pending
+      },
+      recipientGroups,
+      channelEligibility,
+      messageTypes,
+      volunteerMessageTypes,
+      recentActivity: recentActivity || [],
+      latestDraft: latestDraft || null,
+      emailEnabled,
+      whatsappEnabled,
+      providerStatus,
+      eventParents: eventParents || [],
+      eventVolunteers: eventVolunteers || []
+    });
+  } catch (err: any) {
+    console.error('Error fetching admin messages dashboard:', err);
+    res.status(500).json({ success: false, error: 'Failed to retrieve message details' });
+  }
+});
+
+// GET messages settings
+router.get('/messages/settings', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const emailProvider = resolveEmailProvider();
+    const emailEnabled = isEmailConfigured();
+
+    const whatsappProvider = (process.env.WHATSAPP_PROVIDER || 'twilio').toLowerCase();
+    let whatsappEnabled = false;
+    if (whatsappProvider === 'twilio') {
+      whatsappEnabled = !!process.env.TWILIO_ACCOUNT_SID && !!process.env.TWILIO_AUTH_TOKEN;
+    }
+
+    const settings = await queryOne(`
+      SELECT sender_name as senderName, reply_to_email as replyToEmail
+      FROM admin_message_settings
+      WHERE id = 'primary_settings'
+    `);
+
+    res.json({
+      success: true,
+      senderName: settings?.senderName || process.env.MAIL_FROM_NAME || 'Koinonia Global',
+      fromEmail: process.env.MAIL_FROM_ADDRESS || null,
+      replyToEmail: settings?.replyToEmail || process.env.MAIL_FROM_ADDRESS || null,
+      emailEnabled,
+      whatsappEnabled,
+      emailProvider: ['zeptomail', 'resend', 'smtp'].includes(emailProvider) ? emailProvider : null,
+      whatsappProvider: whatsappProvider === 'twilio' ? 'twilio' : null
+    });
+  } catch (err: any) {
+    console.error('Error fetching admin messages settings:', err);
+    res.status(500).json({ success: false, error: 'Failed to retrieve sender settings.' });
+  }
+});
+
+// POST messages settings
+router.post('/messages/settings', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const { senderName, replyToEmail } = req.body;
+    if (!senderName || !replyToEmail) {
+      return res.status(400).json({ success: false, error: 'Sender name and Reply-to email are required.' });
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(replyToEmail)) {
+      return res.status(400).json({ success: false, error: 'Please enter a valid reply-to email address.' });
+    }
+
+    const id = 'primary_settings';
+    const now = new Date().toISOString();
+    await execute('DELETE FROM admin_message_settings WHERE id = ?', [id]);
+    await execute(
+      'INSERT INTO admin_message_settings (id, sender_name, reply_to_email, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      [id, senderName, replyToEmail, now, now]
+    );
+
+    res.json({ success: true, message: 'Sender settings updated successfully.' });
+  } catch (err: any) {
+    console.error('Error updating admin messages settings:', err);
+    res.status(500).json({ success: false, error: 'Failed to update sender settings.' });
+  }
+});
+
+// GET general settings
+router.get('/general-settings', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    let settings = await queryOne(`
+      SELECT parent_registration_enabled as parentRegistrationEnabled,
+             parent_login_enabled as parentLoginEnabled,
+             required_child_photo as requiredChildPhoto,
+             required_parent_photo as requiredParentPhoto,
+             required_medical_notes as requiredMedicalNotes,
+             required_pickup_person as requiredPickupPerson
+      FROM admin_general_settings
+      WHERE id = 'primary_general_settings'
+    `);
+
+    if (!settings) {
+      settings = {
+        parentRegistrationEnabled: 1,
+        parentLoginEnabled: 1,
+        requiredChildPhoto: 1,
+        requiredParentPhoto: 1,
+        requiredMedicalNotes: 0,
+        requiredPickupPerson: 1
+      };
+    }
+
+    return res.json({ success: true, settings });
+  } catch (err: any) {
+    console.error('Error fetching admin general settings:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve general settings.' });
+  }
+});
+
+// POST general settings
+router.post('/general-settings', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const {
+      parentRegistrationEnabled,
+      parentLoginEnabled,
+      requiredChildPhoto,
+      requiredParentPhoto,
+      requiredMedicalNotes,
+      requiredPickupPerson
+    } = req.body;
+
+    const id = 'primary_general_settings';
+    const now = new Date().toISOString();
+
+    const existing = await queryOne('SELECT id FROM admin_general_settings WHERE id = ?', [id]);
+    if (existing) {
+      await execute(`
+        UPDATE admin_general_settings
+        SET parent_registration_enabled = ?,
+            parent_login_enabled = ?,
+            required_child_photo = ?,
+            required_parent_photo = ?,
+            required_medical_notes = ?,
+            required_pickup_person = ?,
+            updated_at = ?
+        WHERE id = ?
+      `, [
+        parentRegistrationEnabled ? 1 : 0,
+        parentLoginEnabled ? 1 : 0,
+        requiredChildPhoto ? 1 : 0,
+        requiredParentPhoto ? 1 : 0,
+        requiredMedicalNotes ? 1 : 0,
+        requiredPickupPerson ? 1 : 0,
+        now,
+        id
+      ]);
+    } else {
+      await execute(`
+        INSERT INTO admin_general_settings (
+          id, parent_registration_enabled, parent_login_enabled, required_child_photo, required_parent_photo,
+          required_medical_notes, required_pickup_person, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        id,
+        parentRegistrationEnabled ? 1 : 0,
+        parentLoginEnabled ? 1 : 0,
+        requiredChildPhoto ? 1 : 0,
+        requiredParentPhoto ? 1 : 0,
+        requiredMedicalNotes ? 1 : 0,
+        requiredPickupPerson ? 1 : 0,
+        now,
+        now
+      ]);
+    }
+
+    return res.json({ success: true, message: 'General settings updated successfully.' });
+  } catch (err: any) {
+    console.error('Error updating admin general settings:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update general settings.' });
+  }
+});
+
+// GET footer copyright settings (public)
+router.get('/footer-settings', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    let settings = await queryOne(`
+      SELECT copyright_year as copyrightYear,
+             copyright_text as copyrightText
+      FROM admin_footer_settings
+      WHERE id = 'primary_footer_settings'
+    `);
+
+    // Check admin_landing_settings as well
+    const landingYearRow = await queryOne("SELECT setting_value FROM admin_landing_settings WHERE setting_key = 'footerYear'");
+    const landingTextRow = await queryOne("SELECT setting_value FROM admin_landing_settings WHERE setting_key = 'footerCopyrightName'");
+
+    const yearVal = landingYearRow?.setting_value
+      ? parseInt(landingYearRow.setting_value, 10)
+      : (settings?.copyrightYear || new Date().getFullYear());
+    const textVal = landingTextRow?.setting_value || settings?.copyrightText || 'The Koinonia General Assembly';
+
+    return res.json({
+      success: true,
+      settings: {
+        copyrightYear: yearVal,
+        copyrightText: textVal
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching admin footer settings:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve footer settings.' });
+  }
+});
+
+// POST footer copyright settings (admin role restricted)
+router.post('/footer-settings', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Unauthorized role access' });
+    }
+
+    const { copyrightYear, copyrightText } = req.body;
+    const id = 'primary_footer_settings';
+    const now = new Date().toISOString();
+    const parsedYear = copyrightYear ? parseInt(copyrightYear, 10) : new Date().getFullYear();
+    const parsedText = copyrightText || 'The Koinonia General Assembly';
+
+    const existing = await queryOne('SELECT id FROM admin_footer_settings WHERE id = ?', [id]);
+    if (existing) {
+      await execute(`
+        UPDATE admin_footer_settings
+        SET copyright_year = ?,
+            copyright_text = ?,
+            updated_at = ?
+        WHERE id = ?
+      `, [
+        parsedYear,
+        parsedText,
+        now,
+        id
+      ]);
+    } else {
+      await execute(`
+        INSERT INTO admin_footer_settings (
+          id, copyright_year, copyright_text, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?)
+      `, [
+        id,
+        parsedYear,
+        parsedText,
+        now,
+        now
+      ]);
+    }
+
+    // Also sync to admin_landing_settings
+    try {
+      await execute(`
+        INSERT INTO admin_landing_settings (setting_key, setting_value, value_type, updated_at)
+        VALUES ('footerYear', ?, 'string', ?)
+        ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = excluded.updated_at
+      `, [String(parsedYear), now]);
+      await execute(`
+        INSERT INTO admin_landing_settings (setting_key, setting_value, value_type, updated_at)
+        VALUES ('footerCopyrightName', ?, 'string', ?)
+        ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = excluded.updated_at
+      `, [parsedText, now]);
+    } catch (syncErr) {
+      console.warn('Could not sync to admin_landing_settings:', syncErr);
+    }
+
+    return res.json({ success: true, message: 'Footer copyright settings updated successfully.' });
+  } catch (err: any) {
+    console.error('Error updating admin footer settings:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update footer copyright settings.' });
+  }
+});
+
+// GET admin landing settings
+router.get('/landing-settings', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const rows = await query('SELECT setting_key, setting_value, value_type FROM admin_landing_settings');
+    const settings: Record<string, string> = {};
+    for (const row of rows) {
+      settings[row.setting_key] = row.setting_value || '';
+    }
+
+    // Resolve canonical media record for heroVideo if configured
+    if (settings.heroVideoMediaId) {
+      const media = await queryOne('SELECT id, original_filename, file_size, secure_url, optimized_url, poster_url, file_url, public_id FROM media_files WHERE id = ?', [settings.heroVideoMediaId]);
+      if (media) {
+        settings.heroVideoMediaId = media.id;
+        if (!settings.heroVideoOriginalName && media.original_filename) {
+          settings.heroVideoOriginalName = media.original_filename;
+        }
+        if (!settings.heroVideoFileSize && media.file_size) {
+          settings.heroVideoFileSize = String(media.file_size);
+        }
+        const playableUrl = media.optimized_url || media.secure_url || media.file_url || settings.heroVideo;
+        if (playableUrl) settings.heroVideo = playableUrl;
+        const posterUrl = media.poster_url || settings.heroVideoPoster || buildCloudinaryVideoPosterUrl(media.secure_url);
+        if (posterUrl) settings.heroVideoPoster = posterUrl;
+      }
+    } else if (settings.heroVideo) {
+      const media = await queryOne(`
+        SELECT id, original_filename, file_size, secure_url, optimized_url, poster_url, file_url, public_id FROM media_files
+        WHERE (file_type = 'event_video' OR resource_type = 'video')
+          AND (secure_url = ? OR file_url = ? OR ? LIKE '%' || public_id || '%' OR ? LIKE '%' || id || '%')
+        ORDER BY created_at DESC LIMIT 1
+      `, [settings.heroVideo, settings.heroVideo, settings.heroVideo, settings.heroVideo]);
+      if (media) {
+        settings.heroVideoMediaId = media.id;
+        if (!settings.heroVideoOriginalName && media.original_filename) {
+          settings.heroVideoOriginalName = media.original_filename;
+        }
+        if (!settings.heroVideoFileSize && media.file_size) {
+          settings.heroVideoFileSize = String(media.file_size);
+        }
+        const playableUrl = media.optimized_url || media.secure_url || media.file_url || settings.heroVideo;
+        if (playableUrl) settings.heroVideo = playableUrl;
+        const posterUrl = media.poster_url || settings.heroVideoPoster || buildCloudinaryVideoPosterUrl(media.secure_url);
+        if (posterUrl) settings.heroVideoPoster = posterUrl;
+      }
+    }
+
+    // Populate footerYear and footerCopyrightName with safe defaults/fallbacks
+    if (!settings.footerYear) {
+      try {
+        const footerRow = await queryOne("SELECT copyright_year as copyrightYear, copyright_text as copyrightText FROM admin_footer_settings WHERE id = 'primary_footer_settings'");
+        if (footerRow?.copyrightYear) {
+          settings.footerYear = String(footerRow.copyrightYear);
+        }
+        if (footerRow?.copyrightText && !settings.footerCopyrightName) {
+          settings.footerCopyrightName = footerRow.copyrightText;
+        }
+      } catch (e) {}
+    }
+    if (!settings.footerYear) {
+      settings.footerYear = String(new Date().getFullYear());
+    }
+    if (!settings.footerCopyrightName) {
+      settings.footerCopyrightName = 'The Koinonia General Assembly';
+    }
+
+    return res.json({ success: true, settings });
+  } catch (err: any) {
+    console.error('Error fetching admin landing settings:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve landing settings.' });
+  }
+});
+
+// POST admin landing settings
+router.post('/landing-settings', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { settings } = req.body;
+    if (!settings || typeof settings !== 'object') {
+      return res.status(400).json({ success: false, error: 'Settings object is required.' });
+    }
+
+    const now = new Date().toISOString();
+    const baseSlots = [
+      'site_logo', 'heroMain', 'heroUpper', 'heroRight', 'heroVideo', 'heroVideoPoster',
+      'passAvatar', 'workerAvatar', 'safetySection',
+      'interactiveSample', 'experiencePickup', 'gallerySample', 'pastMomentsVideo',
+      'galleryArrival', 'galleryCheckIn', 'galleryActivities', 'galleryTeaching',
+      'galleryCareTeam', 'galleryPickup', 'galleryParentUpdates', 'galleryEventMoments', 'galleryEventVideo',
+      'contactEmail', 'contactPhone', 'contactWhatsApp', 'contactAddress',
+      'footerYear', 'footerCopyrightName'
+    ];
+
+    const isAllowedKey = (key: string): boolean => {
+      if (baseSlots.includes(key)) return true;
+      // Allow metadata extensions: <slot>MediaId, <slot>OriginalName, <slot>FileSize, <slot>Poster
+      const match = key.match(/^(.*?)(MediaId|OriginalName|FileSize|Poster)$/);
+      if (match && baseSlots.includes(match[1])) return true;
+      return false;
+    };
+
+    // If clearing heroVideo (e.g. Restore Default), clear all related heroVideo metadata keys
+    if (settings.heroVideo === '') {
+      settings.heroVideoPoster = '';
+      settings.heroVideoMediaId = '';
+      settings.heroVideoOriginalName = '';
+      settings.heroVideoFileSize = '';
+    }
+    // If clearing heroMain (e.g. Restore Default), clear all related heroMain metadata keys
+    if (settings.heroMain === '') {
+      settings.heroMainPoster = '';
+      settings.heroMainMediaId = '';
+      settings.heroMainOriginalName = '';
+      settings.heroMainFileSize = '';
+    }
+
+    // Validate keys and types before updating
+    for (const [key, value] of Object.entries(settings)) {
+      if (!isAllowedKey(key)) {
+        return res.status(400).json({ success: false, error: `Invalid landing setting key: ${key}` });
+      }
+
+      if (value !== null && typeof value !== 'string') {
+        return res.status(400).json({ success: false, error: `Setting value for ${key} must be a string.` });
+      }
+    }
+
+    // If heroVideoMediaId is provided and not empty, verify media record exists
+    if (settings.heroVideoMediaId && settings.heroVideoMediaId.trim()) {
+      const media = await queryOne('SELECT id, original_filename, file_size, secure_url, optimized_url, poster_url FROM media_files WHERE id = ?', [settings.heroVideoMediaId.trim()]);
+      if (media) {
+        if (!settings.heroVideoOriginalName && media.original_filename) {
+          settings.heroVideoOriginalName = media.original_filename;
+        }
+        if (!settings.heroVideoFileSize && media.file_size) {
+          settings.heroVideoFileSize = String(media.file_size);
+        }
+        if (!settings.heroVideo && (media.optimized_url || media.secure_url)) {
+          settings.heroVideo = media.optimized_url || media.secure_url;
+        }
+        if (!settings.heroVideoPoster && (media.poster_url || media.secure_url)) {
+          settings.heroVideoPoster = media.poster_url || buildCloudinaryVideoPosterUrl(media.secure_url);
+        }
+      }
+    }
+
+    // Execute atomic update
+    await transaction(async () => {
+      for (const [key, value] of Object.entries(settings)) {
+        let valueType = 'image';
+        if (key === 'heroVideo' || key === 'galleryEventVideo') {
+          valueType = 'video';
+        } else if (key.startsWith('contact') || key.startsWith('footer')) {
+          valueType = 'string';
+        }
+
+        const existing = await queryOne('SELECT setting_key FROM admin_landing_settings WHERE setting_key = ?', [key]);
+        if (existing) {
+          await execute(
+            'UPDATE admin_landing_settings SET setting_value = ?, value_type = ?, updated_at = ? WHERE setting_key = ?',
+            [value || '', valueType, now, key]
+          );
+        } else {
+          await execute(
+            'INSERT INTO admin_landing_settings (setting_key, setting_value, value_type, updated_at) VALUES (?, ?, ?, ?)',
+            [key, value || '', valueType, now]
+          );
+        }
+
+        // Keep admin_footer_settings synchronized if footer keys are updated
+        if (key === 'footerYear' || key === 'footerCopyrightName') {
+          try {
+            const yr = parseInt(settings.footerYear || String(new Date().getFullYear()), 10);
+            const text = settings.footerCopyrightName || 'The Koinonia General Assembly';
+            const fExist = await queryOne("SELECT id FROM admin_footer_settings WHERE id = 'primary_footer_settings'");
+            if (fExist) {
+              await execute("UPDATE admin_footer_settings SET copyright_year = ?, copyright_text = ?, updated_at = ? WHERE id = 'primary_footer_settings'", [yr, text, now]);
+            } else {
+              await execute("INSERT INTO admin_footer_settings (id, copyright_year, copyright_text, created_at, updated_at) VALUES ('primary_footer_settings', ?, ?, ?, ?)", [yr, text, now, now]);
+            }
+          } catch (e) {}
+        }
+      }
+    });
+
+    return res.json({ success: true, message: 'Landing settings updated successfully.' });
+  } catch (err: any) {
+    console.error('Error updating admin landing settings:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update landing settings.' });
+  }
+});
+
+// GET app media settings
+router.get('/settings/media', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const rows = await query('SELECT slot, url, thumbnail_url FROM app_media_settings');
+    const mediaMap: Record<string, string> = {
+      parent_dashboard_hero: '',
+      volunteer_dashboard_hero: '',
+      default_event_hero: '',
+      site_favicon: ''
+    };
+    for (const row of rows) {
+      mediaMap[row.slot] = row.url || '';
+    }
+    return res.json({ success: true, media: mediaMap });
+  } catch (err: any) {
+    console.error('Error fetching settings media:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve media settings.' });
+  }
+});
+
+// POST upload app media setting
+router.post('/settings/media', upload.single('file'), async (req: AuthenticatedRequest, res: Response) => {
+  // data-component-version="admin-media-upload-validation-v2-secure"
+  try {
+    // Strict admin/super_admin role verification
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ success: false, error: 'Access denied. Admin role required.' });
+    }
+
+    const { slot } = req.body;
+    const file = req.file;
+    if (!slot) {
+      return res.status(400).json({ success: false, error: 'Slot key is required.' });
+    }
+    const allowedSlots = ['parent_dashboard_hero', 'volunteer_dashboard_hero', 'default_event_hero', 'site_favicon'];
+    if (!allowedSlots.includes(slot)) {
+      return res.status(400).json({ success: false, error: 'Invalid slot key.' });
+    }
+    if (!file) {
+      return res.status(400).json({ success: false, error: 'File is required.' });
+    }
+
+    // Reject oversized files (> 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      return res.status(400).json({ success: false, error: 'This image is too large. Please upload an image under 5MB.' });
+    }
+
+    // Verify MIME type explicitly and reject SVG/scripts/executables
+    const mimeType = file.mimetype;
+    const allowedImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!allowedImageTypes.includes(mimeType) || mimeType.includes('xml') || mimeType.includes('svg')) {
+      return res.status(400).json({ success: false, error: 'This file type is not supported. Please upload JPG, PNG, or WebP.' });
+    }
+
+    // Verify file extension matches allowed image extensions to prevent renaming exploits or SVG bypasses
+    const ext = path.extname(file.originalname).toLowerCase();
+    const allowedExts = ['.jpg', '.jpeg', '.png', '.webp'];
+    if (!allowedExts.includes(ext)) {
+      return res.status(400).json({ success: false, error: 'This file type is not supported. Please upload JPG, PNG, or WebP.' });
+    }
+
+    // Prevent directory traversal or filename injection
+    const originalName = file.originalname || '';
+    if (originalName.includes('..') || originalName.includes('/') || originalName.includes('\\') || originalName.includes('%2e%2e')) {
+      return res.status(400).json({ success: false, error: 'Invalid characters in filename.' });
+    }
+
+    let buffer = file.buffer;
+    // Strict processing check: If image processing fails, fail immediately with 422 Unprocessable Entity
+    try {
+      const processed = await processImage(buffer, slot, mimeType);
+      buffer = processed.buffer;
+    } catch (err: any) {
+      console.error('Image processing failed:', err);
+      return res.status(422).json({
+        success: false,
+        error: 'We could not process this image. Please try another JPG, PNG, or WebP file.'
+      });
+    }
+
+    const uploadResult = await uploadMedia(buffer, {
+      purpose: 'landing_image',
+      ownerUserId: req.user!.id,
+      mimeType
+    });
+
+    const url = uploadResult.secureUrl;
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    const existing = await queryOne('SELECT id FROM app_media_settings WHERE slot = ?', [slot]);
+    if (existing) {
+      await execute(`
+        UPDATE app_media_settings 
+        SET url = ?, thumbnail_url = ?, width = ?, height = ?, mime_type = ?, size = ?, uploaded_by = ?, updated_at = ?
+        WHERE slot = ?
+      `, [
+        url,
+        url,
+        uploadResult.width || null,
+        uploadResult.height || null,
+        mimeType,
+        buffer.length,
+        req.user!.id,
+        now,
+        slot
+      ]);
+    } else {
+      await execute(`
+        INSERT INTO app_media_settings (
+          id, slot, url, thumbnail_url, width, height, mime_type, size, uploaded_by, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        id,
+        slot,
+        url,
+        url,
+        uploadResult.width || null,
+        uploadResult.height || null,
+        mimeType,
+        buffer.length,
+        req.user!.id,
+        now,
+        now
+      ]);
+    }
+
+    // Ensure it also has a record in the media_files table so that the local server /api/media/files/:fileId can serve it!
+    const fileIdMatch = url.match(/\/files\/([a-f0-9-]+)/);
+    if (fileIdMatch) {
+      const fileId = fileIdMatch[1];
+      const folder = uploadResult.publicId.includes('/')
+        ? uploadResult.publicId.substring(0, uploadResult.publicId.lastIndexOf('/'))
+        : 'koinonia-children-teens';
+
+      const mExisting = await queryOne('SELECT id FROM media_files WHERE id = ?', [fileId]);
+      if (!mExisting) {
+        await execute(`
+          INSERT INTO media_files (
+            id, owner_user_id, provider, file_type, public_id, secure_url, resource_type,
+            mime_type, file_size, width, height, duration, folder, file_url, storage_key, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          fileId,
+          req.user!.id,
+          uploadResult.provider || 'cloudinary',
+          'landing_image',
+          uploadResult.publicId,
+          url,
+          'image',
+          mimeType,
+          buffer.length,
+          uploadResult.width || null,
+          uploadResult.height || null,
+          null,
+          folder,
+          url,
+          uploadResult.publicId,
+          now
+        ]);
+      }
+    }
+
+    return res.json({
+      success: true,
+      media: {
+        slot,
+        url
+      }
+    });
+  } catch (err: any) {
+    console.error('Error uploading admin settings media:', err);
+    const friendlyMsg = err.message || 'Image upload could not be completed. Please try again.';
+    const displayError = friendlyMsg.includes('Please connect') || friendlyMsg.includes('could not be completed')
+      ? friendlyMsg
+      : 'Image upload could not be completed. Please try again.';
+    return res.status(500).json({ success: false, error: displayError });
+  }
+});
+
+// POST reset app media setting
+router.post('/settings/media/reset', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { slot } = req.body;
+    if (!slot) {
+      return res.status(400).json({ success: false, error: 'Slot key is required.' });
+    }
+    const allowedSlots = ['parent_dashboard_hero', 'volunteer_dashboard_hero', 'default_event_hero', 'site_favicon'];
+    if (!allowedSlots.includes(slot)) {
+      return res.status(400).json({ success: false, error: 'Invalid slot key.' });
+    }
+
+    await execute('DELETE FROM app_media_settings WHERE slot = ?', [slot]);
+    return res.json({ success: true, message: 'Media slot reset successfully.' });
+  } catch (err: any) {
+    console.error('Error resetting settings media:', err);
+    return res.status(500).json({ success: false, error: 'Failed to reset media.' });
+  }
+});
+
+// POST edit team role
+router.post('/team/edit-role', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'super_admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Only Super Administrators can change team member roles.'
+      });
+    }
+
+    const { userId, role } = req.body;
+    if (!userId || !role) {
+      return res.status(400).json({ success: false, error: 'User ID and role are required.' });
+    }
+
+    if (role !== 'admin' && role !== 'super_admin' && role !== 'team' && role !== 'volunteer') {
+      return res.status(400).json({ success: false, error: 'Invalid team role.' });
+    }
+
+    const user = await queryOne('SELECT * FROM users WHERE id = ?', [userId]);
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found.' });
+    }
+
+    const now = new Date().toISOString();
+    await execute('UPDATE users SET role = ?, updated_at = ? WHERE id = ?', [role, now, userId]);
+
+    return res.json({ success: true, message: 'Team member role updated successfully.' });
+  } catch (err: any) {
+    console.error('Error updating team member role:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update team member role.' });
+  }
+});
+
+// POST edit team status (suspend, revoke, activate)
+router.post('/team/edit-status', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'super_admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Only Super Administrators can change team member status.'
+      });
+    }
+
+    const { userId, status } = req.body;
+    if (!userId || !status) {
+      return res.status(400).json({ success: false, error: 'User ID and status are required.' });
+    }
+
+    if (status !== 'active' && status !== 'suspended' && status !== 'revoked' && status !== 'invited') {
+      return res.status(400).json({ success: false, error: 'Invalid team status requested.' });
+    }
+
+    const user = await queryOne('SELECT * FROM users WHERE id = ?', [userId]);
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found.' });
+    }
+
+    const now = new Date().toISOString();
+    await execute('UPDATE users SET status = ?, updated_at = ? WHERE id = ?', [status, now, userId]);
+
+    return res.json({ success: true, message: 'Team member status updated successfully.' });
+  } catch (err: any) {
+    console.error('Error updating team member status:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update team member status.' });
+  }
+});
+
+// Helper handler for removing administrative access
+async function handleRemoveTeamAccess(req: AuthenticatedRequest, res: Response) {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({
+        success: false,
+        code: 'SUPER_ADMIN_REQUIRED',
+        error: 'Only Super Administrators can remove administrative access.'
+      });
+    }
+
+    const userId = req.body?.userId || req.params?.userId;
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        code: 'USER_ID_REQUIRED',
+        error: 'User ID is required.'
+      });
+    }
+
+    if (req.user.id === userId) {
+      return res.status(400).json({
+        success: false,
+        code: 'SELF_REMOVAL_NOT_ALLOWED',
+        error: 'You cannot remove your own access while signed in.'
+      });
+    }
+
+    const targetUser = await queryOne('SELECT * FROM users WHERE id = ?', [userId]);
+    if (!targetUser) {
+      return res.status(404).json({
+        success: false,
+        code: 'TEAM_MEMBER_NOT_FOUND',
+        error: 'Team member not found.'
+      });
+    }
+
+    // Determine if the target user is currently a genuinely active Super Admin
+    const isTargetActiveSuperAdmin =
+      targetUser.role === 'super_admin' &&
+      targetUser.password_hash &&
+      targetUser.password_hash !== 'invited_pending' &&
+      targetUser.status !== 'revoked' &&
+      targetUser.status !== 'suspended' &&
+      targetUser.status !== 'disabled';
+
+    let lastSuperAdminError = false;
+
+    // Atomic transaction for concurrency safety and integrity
+    await transaction(async () => {
+      // Concurrency lock: In PostgreSQL, lock super_admin rows FOR UPDATE to prevent concurrent dual removal
+      const lockSql = (process.env.DATABASE_URL?.startsWith('postgres://') || process.env.DATABASE_URL?.startsWith('postgresql://'))
+        ? "SELECT id FROM users WHERE role = 'super_admin' FOR UPDATE"
+        : "SELECT id FROM users WHERE role = 'super_admin'";
+      await query(lockSql);
+
+      // Rule: Cannot remove the last active Super Admin
+      if (isTargetActiveSuperAdmin) {
+        const activeSuperAdmins = await queryOne(
+          `SELECT COUNT(*) as count FROM users
+           WHERE role = 'super_admin'
+             AND (status = 'active' OR status IS NULL)
+             AND (status IS NULL OR status NOT IN ('revoked', 'suspended', 'disabled', 'invited'))
+             AND password_hash IS NOT NULL
+             AND password_hash != ''
+             AND password_hash != 'invited_pending'
+             AND id != ?`,
+          [userId]
+        );
+
+        if (!activeSuperAdmins || Number(activeSuperAdmins.count) === 0) {
+          lastSuperAdminError = true;
+          return;
+        }
+      }
+
+      // Inspect target user's non-admin identities
+      const volunteerProfile = await queryOne(
+        'SELECT id, status, preferred_team FROM volunteer_profiles WHERE user_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)',
+        [userId]
+      );
+      const hasVolunteerIdentity = !!volunteerProfile && volunteerProfile.status !== 'rejected';
+
+      const parentProfile = await queryOne(
+        'SELECT id, full_name, phone_number, home_address, profile_completed_at FROM parent_profiles WHERE user_id = ?',
+        [userId]
+      );
+
+      let hasChildren = false;
+      if (parentProfile) {
+        const childRow = await queryOne(
+          'SELECT COUNT(*) as count FROM children WHERE parent_profile_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)',
+          [parentProfile.id]
+        );
+        hasChildren = Number(childRow?.count || 0) > 0;
+      }
+
+      const hasGenuineParentIdentity = !!parentProfile && (
+        hasChildren ||
+        Boolean(parentProfile.phone_number && parentProfile.phone_number.trim()) ||
+        Boolean(parentProfile.home_address && parentProfile.home_address.trim()) ||
+        Boolean(parentProfile.profile_completed_at)
+      );
+
+      // Determine target's role and status after removing Admin access
+      let newRole: string;
+      let newStatus: string;
+
+      if (hasVolunteerIdentity && hasGenuineParentIdentity) {
+        // User has both genuine Volunteer and Parent identities:
+        // Setting role = 'volunteer' preserves volunteer routes, while req.parentProfile preserves parent routes
+        newRole = 'volunteer';
+        newStatus = 'active';
+      } else if (hasVolunteerIdentity) {
+        // User is a Volunteer: preserve Volunteer role and active status
+        newRole = 'volunteer';
+        newStatus = 'active';
+        if (parentProfile && !hasGenuineParentIdentity) {
+          await execute('DELETE FROM parent_profiles WHERE id = ?', [parentProfile.id]);
+        }
+      } else if (hasGenuineParentIdentity) {
+        // User is a Parent: preserve Parent role and active status
+        newRole = 'parent';
+        newStatus = 'active';
+      } else {
+        // Admin-only account (no other legitimate identity in the system):
+        // Safely revoke access without forcing them into role = 'parent'
+        newRole = 'revoked';
+        newStatus = 'revoked';
+        if (parentProfile && !hasChildren) {
+          await execute('DELETE FROM parent_profiles WHERE id = ?', [parentProfile.id]);
+        }
+      }
+
+      const now = new Date().toISOString();
+
+      await execute(
+        'UPDATE users SET role = ?, status = ?, updated_at = ? WHERE id = ?',
+        [newRole, newStatus, now, userId]
+      );
+
+      if (newStatus === 'active') {
+        // Only revoke admin invitation tokens; preserve child pass authorizations & parent tokens
+        await execute(
+          "UPDATE auth_tokens SET revoked_at = ?, revoked_by = ? WHERE user_id = ? AND token_type = 'admin_invite' AND revoked_at IS NULL",
+          [now, req.user?.id || null, userId]
+        );
+      } else {
+        // Admin-only account: revoke all active tokens
+        await execute(
+          "UPDATE auth_tokens SET revoked_at = ?, revoked_by = ? WHERE user_id = ? AND revoked_at IS NULL",
+          [now, req.user?.id || null, userId]
+        );
+      }
+
+      // Write audit log with schema-correct columns
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, 'REMOVE_ADMIN_ACCESS', 'user', ?, ?, ?)
+      `, [
+        crypto.randomUUID(),
+        req.user?.id || 'system',
+        req.user?.role || 'super_admin',
+        userId,
+        JSON.stringify({
+          email: targetUser.email,
+          previousRole: targetUser.role,
+          previousStatus: targetUser.status,
+          newRole,
+          newStatus,
+          preservedParent: hasGenuineParentIdentity,
+          preservedVolunteer: hasVolunteerIdentity
+        }),
+        now
+      ]);
+    });
+
+    if (lastSuperAdminError) {
+      return res.status(400).json({
+        success: false,
+        code: 'LAST_SUPER_ADMIN',
+        error: 'This Super Admin cannot be removed because at least one Super Admin must remain.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Access removed successfully.'
+    });
+  } catch (err: any) {
+    console.error('Error removing team member access:', err);
+    return res.status(500).json({ success: false, error: 'Failed to remove team member access.' });
+  }
+}
+
+// POST remove team member access (Super Admin only, cannot remove self, cannot remove last super admin)
+router.post('/team/remove-access', authMiddleware, handleRemoveTeamAccess);
+
+// DELETE remove team member access
+router.delete('/team-members/:userId', authMiddleware, handleRemoveTeamAccess);
+
+/**
+ * Determines whether a message type requires child-specific registration context.
+ * Classified into:
+ * PARENT-LEVEL: general announcements, event reminders, operational updates, safety alerts.
+ * CHILD-SPECIFIC: pass ready / pass update, application status, selection update, waitlist update, review update, pickup reminders.
+ */
+function isChildSpecificMessageType(messageType?: string, body?: string, subject?: string): boolean {
+  const volunteerTypes = [
+    'volunteer_application_received',
+    'volunteer_application_status',
+    'volunteer_approved',
+    'volunteer_assignment',
+    'duty_reminder',
+    'event_information',
+    'operational_update'
+  ];
+  if (messageType && volunteerTypes.includes(messageType)) {
+    return false;
+  }
+  const childTypes = [
+    'pass_ready',
+    'pass_update',
+    'review_update',
+    'review_status',
+    'waiting_list_update',
+    'waitlist_update',
+    'selection_update',
+    'application_status',
+    'pickup_reminder'
+  ];
+  if (messageType && childTypes.includes(messageType)) {
+    return true;
+  }
+  const hasChildTokens = /\{Child name\}|\{Pass link\}|\{Review link\}/i.test(body || '') ||
+    (subject ? /\{Child name\}|\{Pass link\}|\{Review link\}/i.test(subject) : false);
+  return Boolean(hasChildTokens);
+}
+
+// POST message preview
+router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const { recipientGroup, messageType, channel, subject, body, selectedChildId, selectedVolunteerIds } = req.body;
+    if (!body) {
+      return res.status(400).json({ success: false, error: 'Message body is required for preview.' });
+    }
+
+    const eventId = req.body.eventId || 'event-ga-2026';
+    const evRow = await queryOne('SELECT title FROM events WHERE id = ?', [eventId]);
+    const eventName = evRow?.title || 'The General Assembly';
+
+    // Dedicated Volunteer Audience Preview
+    const isVolunteerAudience = recipientGroup === 'volunteers' || recipientGroup === 'specific_volunteers';
+    if (isVolunteerAudience) {
+      let sampleVolunteer: any = null;
+      if (recipientGroup === 'specific_volunteers' && Array.isArray(selectedVolunteerIds) && selectedVolunteerIds.length > 0) {
+        sampleVolunteer = await queryOne(`
+          SELECT vp.id, vp.full_name as volunteer_name, vp.preferred_team as team, vp.department, vp.user_id
+          FROM volunteer_profiles vp
+          WHERE vp.id = ? AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
+          LIMIT 1
+        `, [selectedVolunteerIds[0]]);
+      }
+
+      if (!sampleVolunteer) {
+        sampleVolunteer = await queryOne(`
+          SELECT vp.id, vp.full_name as volunteer_name, vp.preferred_team as team, vp.department, vp.user_id
+          FROM volunteer_profiles vp
+          WHERE vp.status IN ('active', 'approved')
+            AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
+          ORDER BY vp.full_name ASC
+          LIMIT 1
+        `);
+      }
+
+      const volunteerName = (sampleVolunteer?.volunteer_name || '').trim() || 'Volunteer';
+      const duty = sampleVolunteer?.user_id ? await resolveUserDutyLocation(sampleVolunteer.user_id, eventId) : null;
+      const volunteerTeam = (duty?.team || duty?.teamKey || sampleVolunteer?.team || sampleVolunteer?.department || '').trim() || 'Teens Team';
+      const locationName = (duty?.name || '').trim();
+
+      const renderedBody = resolveMessageTokens(body, {
+        volunteerName,
+        team: volunteerTeam,
+        location: locationName,
+        parentName: volunteerName,
+        childName: volunteerName,
+        eventName,
+        pickupTime: '8:30 AM',
+        supportContact: '+234 803 123 4567'
+      });
+
+      const renderedSubject = resolveMessageTokens(subject || '', {
+        volunteerName,
+        team: volunteerTeam,
+        location: locationName,
+        parentName: volunteerName,
+        childName: volunteerName,
+        eventName
+      });
+
+      return res.json({
+        success: true,
+        preview: {
+          subject: renderedSubject,
+          body: renderedBody,
+          representativeVolunteerName: volunteerName,
+          representativeTeam: volunteerTeam,
+          representativeLocation: locationName
+        }
+      });
+    }
+
+    // Build the query based on the selected recipientGroup
+    let groupCondition = '';
+    if (recipientGroup === 'selected_children') {
+      groupCondition = "e.status IN ('selected', 'pass_ready')";
+    } else if (recipientGroup === 'under_review') {
+      groupCondition = "e.status = 'under_review'";
+    } else if (recipientGroup === 'waiting_list') {
+      groupCondition = "e.status = 'waiting_list'";
+    } else if (recipientGroup === 'not_selected') {
+      groupCondition = "e.status = 'not_selected'";
+    } else if (recipientGroup === 'pass_ready') {
+      groupCondition = "e.status = 'pass_ready'";
+    }
+
+    let sampleParent: any = null;
+    if (selectedChildId) {
+      sampleParent = await queryOne(`
+        SELECT p.full_name as parent_name, c.id as child_id, c.full_name as child_name, e.id as entry_id
+        FROM children c
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        LEFT JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        WHERE c.id = ? AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        LIMIT 1
+      `, [eventId, selectedChildId]);
+    } else if (recipientGroup === 'specific_parents' && Array.isArray(req.body.selectedParentIds) && req.body.selectedParentIds.length > 0) {
+      sampleParent = await queryOne(`
+        SELECT p.full_name as parent_name, c.id as child_id, c.full_name as child_name, e.id as entry_id
+        FROM parent_profiles p
+        LEFT JOIN children c ON c.parent_profile_id = p.id AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        LEFT JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        WHERE p.id = ?
+        LIMIT 1
+      `, [eventId, req.body.selectedParentIds[0]]);
+    } else if (groupCondition) {
+      sampleParent = await queryOne(`
+        SELECT p.full_name as parent_name, c.id as child_id, c.full_name as child_name, e.id as entry_id
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        WHERE e.event_id = ? AND ${groupCondition}
+        LIMIT 1
+      `, [eventId]);
+    } else {
+      sampleParent = await queryOne(`
+        SELECT p.full_name as parent_name, c.id as child_id, c.full_name as child_name, e.id as entry_id
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        WHERE e.event_id = ?
+        LIMIT 1
+      `, [eventId]);
+    }
+
+    const parentName = (sampleParent?.parent_name || '').trim() || 'Parent';
+    const childName = (sampleParent?.child_name || '').trim() || 'your child';
+    const childId = sampleParent?.child_id;
+
+    // Safely replace templates using canonical URL helpers with exact childId
+    const renderedBody = resolveMessageTokens(body, {
+      parentName,
+      childName,
+      eventName,
+      passUrl: buildParentPassUrl(childId),
+      reviewUrl: buildParentStatusUrl(childId),
+      pickupTime: '4:00 PM',
+      supportContact: '+234 803 123 4567'
+    });
+
+    const renderedSubject = resolveMessageTokens(subject || '', {
+      parentName,
+      childName,
+      eventName,
+      passUrl: buildParentPassUrl(childId),
+      reviewUrl: buildParentStatusUrl(childId)
+    });
+
+    res.json({
+      success: true,
+      preview: {
+        subject: renderedSubject,
+        body: renderedBody,
+        representativeParentName: parentName,
+        representativeChildName: childName
+      }
+    });
+  } catch (err: any) {
+    console.error('Error generating preview:', err);
+    res.status(500).json({ success: false, error: 'Failed to render preview.' });
+  }
+});
+
+// POST save draft
+router.post('/messages/drafts', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const { recipientGroup, messageType, channel, subject, body } = req.body;
+    if (!recipientGroup || !messageType || !channel || !body) {
+      return res.status(400).json({ success: false, error: 'Recipient group, message type, channel, and message body are required.' });
+    }
+
+    const id = 'primary_draft';
+    const now = new Date().toISOString();
+
+    await execute('DELETE FROM admin_message_drafts WHERE id = ?', [id]);
+    await execute(
+      'INSERT INTO admin_message_drafts (id, recipient_group, message_type, channel, subject, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, recipientGroup, messageType, channel, subject || '', body, now, now]
+    );
+
+    res.json({ success: true, message: 'Draft saved successfully.' });
+  } catch (err: any) {
+    console.error('Error saving message draft:', err);
+    res.status(500).json({ success: false, error: 'Failed to save message draft.' });
+  }
+});
+
+// POST send message
+router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const { recipientGroup, messageType, channel, channels, subject, body, confirmed } = req.body;
+    if (!confirmed) {
+      return res.status(400).json({ success: false, error: 'Send request must be explicitly confirmed.' });
+    }
+    if (!recipientGroup || !messageType || !body) {
+      return res.status(400).json({ success: false, error: 'All fields are required.' });
+    }
+
+    // Resolve active delivery channels from array or single channel
+    let activeChannels: string[] = [];
+    if (Array.isArray(channels) && channels.length > 0) {
+      activeChannels = channels;
+    } else if (channel) {
+      if (channel === 'both') {
+        activeChannels = ['email', 'whatsapp'];
+      } else {
+        activeChannels = [channel];
+      }
+    } else {
+      activeChannels = ['in_app', 'push'];
+    }
+
+    // Provider configuration check for external channels only if selected
+    const emailEnabled = isEmailConfigured();
+
+    if (activeChannels.includes('email') && !emailEnabled) {
+      return res.status(400).json({
+        success: false,
+        code: 'EMAIL_UNCONFIGURED',
+        message: 'The email delivery channel is currently disabled because the provider credentials are not configured.'
+      });
+    }
+
+    const whatsappReadiness = getWhatsAppProviderReadiness();
+    if (activeChannels.includes('whatsapp') && !whatsappReadiness.configured) {
+      return res.status(400).json({
+        success: false,
+        code: 'WHATSAPP_UNCONFIGURED',
+        message: 'WhatsApp delivery setup is incomplete. Provider credentials must be configured before broadcasting.'
+      });
+    }
+
+    const eventId = req.body.eventId || 'event-ga-2026';
+    const eventRow = await queryOne(`SELECT title FROM events WHERE id = ?`, [eventId]);
+    const eventTitle = eventRow?.title || 'The General Assembly';
+
+    // 1. Resolve recipients query based on group
+    let rows: any[] = [];
+
+    if (recipientGroup === 'specific_volunteers') {
+      const selectedIds = Array.isArray(req.body.selectedVolunteerIds) ? req.body.selectedVolunteerIds : [];
+      const deduplicatedVolunteerIds = Array.from(new Set(selectedIds)).filter(Boolean) as string[];
+      if (deduplicatedVolunteerIds.length === 0) {
+        return res.status(400).json({
+          success: false,
+          code: 'NO_RECIPIENTS',
+          message: 'Please select at least one volunteer recipient.'
+        });
+      }
+
+      const volPlaceholders = deduplicatedVolunteerIds.map(() => '?').join(',');
+      rows = await query(`
+        SELECT
+          vp.id as volunteer_id,
+          vp.full_name as volunteer_name,
+          vp.phone as phone_number,
+          vp.whatsapp as whatsapp_number,
+          vp.preferred_team as team,
+          vp.department,
+          u.email,
+          u.id as user_id,
+          pp.id as parent_id,
+          pp.full_name as parent_name,
+          pp.whatsapp_consent_status as parent_consent_status
+        FROM volunteer_profiles vp
+        JOIN users u ON u.id = vp.user_id
+        LEFT JOIN parent_profiles pp ON pp.user_id = u.id AND (pp.is_deleted = 0 OR pp.is_deleted IS NULL)
+        WHERE vp.id IN (${volPlaceholders})
+          AND vp.status IN ('active', 'approved')
+          AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
+          AND (u.status = 'active' OR u.status IS NULL)
+      `, deduplicatedVolunteerIds);
+    } else if (recipientGroup === 'volunteers') {
+      rows = await query(`
+        SELECT
+          vp.id as volunteer_id,
+          vp.full_name as volunteer_name,
+          vp.phone as phone_number,
+          vp.whatsapp as whatsapp_number,
+          vp.preferred_team as team,
+          vp.department,
+          u.email,
+          u.id as user_id,
+          pp.id as parent_id,
+          pp.full_name as parent_name,
+          pp.whatsapp_consent_status as parent_consent_status
+        FROM volunteer_profiles vp
+        JOIN users u ON u.id = vp.user_id
+        LEFT JOIN parent_profiles pp ON pp.user_id = u.id AND (pp.is_deleted = 0 OR pp.is_deleted IS NULL)
+        WHERE vp.status IN ('active', 'approved')
+          AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
+          AND (u.status = 'active' OR u.status IS NULL)
+      `);
+    } else if (recipientGroup === 'all_event_team') {
+      rows = await query(`
+        SELECT u.id as parent_id, COALESCE(vp.full_name, u.email) as parent_name, vp.phone as phone_number, u.email, u.id as user_id, COALESCE(vp.full_name, u.email) as child_name, NULL as entry_id
+        FROM users u
+        LEFT JOIN volunteer_profiles vp ON vp.user_id = u.id
+        WHERE u.role IN ('staff', 'admin', 'super_admin', 'volunteer')
+      `);
+    } else if (recipientGroup === 'specific_parents') {
+      const selectedIds = Array.isArray(req.body.selectedParentIds) ? req.body.selectedParentIds : [];
+      const deduplicatedParentIds = Array.from(new Set(selectedIds)).filter(Boolean) as string[];
+      if (deduplicatedParentIds.length === 0) {
+        return res.status(400).json({
+          success: false,
+          code: 'NO_RECIPIENTS',
+          message: 'Please select at least one parent recipient.'
+        });
+      }
+
+      const rawSelectedChildIds = Array.isArray(req.body.selectedChildIds) ? req.body.selectedChildIds : [];
+      const deduplicatedChildIds = Array.from(new Set(rawSelectedChildIds)).filter(Boolean) as string[];
+      const isChildSpecific = isChildSpecificMessageType(messageType, body, subject);
+      const parentPlaceholders = deduplicatedParentIds.map(() => '?').join(',');
+
+      if (isChildSpecific) {
+        // Query active children linked to selected parents for this event
+        const activeChildren = await query(`
+          SELECT c.id as child_id, c.parent_profile_id, c.full_name as child_name, e.id as entry_id
+          FROM children c
+          JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+          WHERE c.parent_profile_id IN (${parentPlaceholders})
+            AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        `, [eventId, ...deduplicatedParentIds]);
+
+        if (deduplicatedChildIds.length > 0) {
+          // Explicit child selection provided - strictly validate parentage, active status and event relationship
+          const activeChildMap = new Map<string, any>(activeChildren.map((c: any) => [c.child_id, c]));
+          for (const cId of deduplicatedChildIds) {
+            if (!activeChildMap.has(cId)) {
+              return res.status(400).json({
+                success: false,
+                code: 'INVALID_CHILD',
+                message: 'One or more selected children do not belong to the selected parents or are no longer active.'
+              });
+            }
+          }
+
+          const childPlaceholders = deduplicatedChildIds.map(() => '?').join(',');
+          rows = await query(`
+            SELECT p.id as parent_id, p.full_name as parent_name, p.phone_number, u.email, u.id as user_id, c.id as child_id, c.full_name as child_name, e.id as entry_id
+            FROM parent_profiles p
+            JOIN users u ON u.id = p.user_id
+            JOIN children c ON c.parent_profile_id = p.id AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+            JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+            WHERE p.id IN (${parentPlaceholders})
+              AND c.id IN (${childPlaceholders})
+              AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+          `, [eventId, ...deduplicatedParentIds, ...deduplicatedChildIds]);
+        } else {
+          // No explicit child selection provided - inspect parent children count for ambiguity
+          const parentChildrenMap = new Map<string, any[]>();
+          for (const c of activeChildren) {
+            if (!parentChildrenMap.has(c.parent_profile_id)) {
+              parentChildrenMap.set(c.parent_profile_id, []);
+            }
+            parentChildrenMap.get(c.parent_profile_id)!.push(c);
+          }
+
+          const multiChildParents = Array.from(parentChildrenMap.entries()).filter(([, children]) => children.length > 1);
+          if (multiChildParents.length > 0) {
+            return res.status(400).json({
+              success: false,
+              code: 'CHILD_TOKEN_AMBIGUITY',
+              message: 'One or more selected parents have multiple registered children. Please choose which child this update is for.'
+            });
+          }
+
+          // Single-child parents: automatically resolve without ambiguity
+          rows = await query(`
+            SELECT p.id as parent_id, p.full_name as parent_name, p.phone_number, u.email, u.id as user_id, c.id as child_id, c.full_name as child_name, e.id as entry_id
+            FROM parent_profiles p
+            JOIN users u ON u.id = p.user_id
+            JOIN children c ON c.parent_profile_id = p.id AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+            JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+            WHERE p.id IN (${parentPlaceholders})
+              AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+          `, [eventId, ...deduplicatedParentIds]);
+        }
+      } else {
+        // Parent-level message: 1 communication context per parent
+        rows = await query(`
+          SELECT p.id as parent_id, p.full_name as parent_name, p.phone_number, u.email, u.id as user_id, NULL as child_id, NULL as child_name, NULL as entry_id
+          FROM parent_profiles p
+          JOIN users u ON u.id = p.user_id
+          WHERE p.id IN (${parentPlaceholders})
+            AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+        `, deduplicatedParentIds);
+      }
+    } else {
+      let queryStr = `
+        SELECT p.id as parent_id, p.full_name as parent_name, p.phone_number, u.email, u.id as user_id, c.id as child_id, c.full_name as child_name, e.id as entry_id
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        JOIN users u ON u.id = p.user_id
+        WHERE e.event_id = ?
+      `;
+      const params: any[] = [eventId];
+
+      if (recipientGroup === 'selected_children') {
+        queryStr += " AND e.status IN ('selected', 'pass_ready')";
+      } else if (recipientGroup === 'under_review') {
+        queryStr += " AND e.status = 'under_review'";
+      } else if (recipientGroup === 'waiting_list') {
+        queryStr += " AND e.status = 'waiting_list'";
+      } else if (recipientGroup === 'not_selected') {
+        queryStr += " AND e.status = 'not_selected'";
+      } else if (recipientGroup === 'pass_ready') {
+        queryStr += " AND e.status = 'pass_ready'";
+      }
+
+      rows = await query(queryStr, params);
+    }
+
+    if (!rows || rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        code: 'NO_RECIPIENTS',
+        message: 'No recipients match this group.'
+      });
+    }
+
+    // 2. Build personalized messages
+    const isChildSpecific = isChildSpecificMessageType(messageType, body, subject);
+
+    // Final multi-child parent safety guard (defensive fallback for any group)
+    if (isChildSpecific && recipientGroup === 'specific_parents') {
+      const parentChildrenMap = new Map<string, Set<string>>();
+      for (const r of rows) {
+        if (r.child_id) {
+          if (!parentChildrenMap.has(r.parent_id)) {
+            parentChildrenMap.set(r.parent_id, new Set());
+          }
+          parentChildrenMap.get(r.parent_id)!.add(r.child_id);
+        }
+      }
+    }
+
+    const messagesToSend: Array<{
+      parentId?: string;
+      childId?: string;
+      parentName: string;
+      email: string;
+      phone: string;
+      userId?: string;
+      subject: string;
+      body: string;
+    }> = [];
+
+    const isVolunteerAudience = recipientGroup === 'volunteers' || recipientGroup === 'specific_volunteers';
+
+    if (isVolunteerAudience) {
+      const volunteerMap = new Map<string, any>();
+      for (const row of rows) {
+        const key = row.user_id || row.volunteer_id;
+        if (!volunteerMap.has(key)) {
+          volunteerMap.set(key, row);
+        }
+      }
+
+      for (const [, volRow] of volunteerMap.entries()) {
+        const vName = (volRow.volunteer_name || '').trim();
+        const duty = volRow.user_id ? await resolveUserDutyLocation(volRow.user_id, eventId) : null;
+        const vLocation = (duty?.name || '').trim();
+        const vTeam = (duty?.team || duty?.teamKey || volRow.team || volRow.department || '').trim();
+
+        // Validate required tokens
+        const usesLocation = /\{Location\}/i.test(body) || /\{Location\}/i.test(subject || '') || messageType === 'duty_reminder';
+        const usesVolunteerName = /\{Volunteer name\}/i.test(body) || /\{Volunteer name\}/i.test(subject || '') || messageType === 'duty_reminder';
+        const usesEventName = /\{Event name\}/i.test(body) || /\{Event name\}/i.test(subject || '') || messageType === 'duty_reminder';
+        const usesTeam = /\{Team\}/i.test(body) || /\{Team\}/i.test(subject || '');
+
+        if (usesVolunteerName && !vName) {
+          return res.status(400).json({
+            success: false,
+            code: 'MISSING_REQUIRED_TOKEN',
+            message: `Can't send duty reminder\n\nSelected volunteer does not have a name on file.\n\nUpdate the volunteer profile or choose another message type.`
+          });
+        }
+
+        if (usesEventName && !eventTitle) {
+          return res.status(400).json({
+            success: false,
+            code: 'MISSING_REQUIRED_TOKEN',
+            message: `Can't send duty reminder\n\nEvent name could not be resolved.\n\nSelect a valid event or choose another message type.`
+          });
+        }
+
+        if (usesLocation && !vLocation) {
+          return res.status(400).json({
+            success: false,
+            code: 'MISSING_REQUIRED_TOKEN',
+            message: `Can't send duty reminder\n\n${vName || 'Selected volunteer'} does not have a duty location assigned yet.\n\nAssign a location or choose another message type.`
+          });
+        }
+
+        if (usesTeam && !vTeam) {
+          return res.status(400).json({
+            success: false,
+            code: 'MISSING_REQUIRED_TOKEN',
+            message: `Can't send duty reminder\n\n${vName || 'Selected volunteer'} does not have a team assigned yet.\n\nAssign a team or choose another message type.`
+          });
+        }
+
+        const renderedBody = resolveMessageTokens(body, {
+          volunteerName: vName,
+          team: vTeam,
+          location: vLocation,
+          parentName: vName,
+          childName: vName,
+          eventName: eventTitle,
+          supportContact: '+234 803 123 4567'
+        });
+
+        const renderedSubject = resolveMessageTokens(subject || '', {
+          volunteerName: vName,
+          team: vTeam,
+          location: vLocation,
+          parentName: vName,
+          childName: vName,
+          eventName: eventTitle
+        });
+
+        messagesToSend.push({
+          parentId: volRow.parent_id || undefined,
+          parentName: vName,
+          email: volRow.email,
+          phone: volRow.whatsapp_number || volRow.phone_number,
+          userId: volRow.user_id,
+          subject: renderedSubject,
+          body: renderedBody
+        });
+      }
+    } else if (isChildSpecific) {
+      for (const row of rows) {
+        const pName = (row.parent_name || '').trim() || 'Parent';
+        const cName = (row.child_name || '').trim() || 'your child';
+        const passUrl = buildParentPassUrl(row.child_id);
+        const reviewUrl = buildParentStatusUrl(row.child_id);
+
+        const renderedBody = resolveMessageTokens(body, {
+          parentName: pName,
+          childName: cName,
+          eventName: eventTitle,
+          passUrl,
+          reviewUrl,
+          pickupTime: '4:00 PM',
+          supportContact: '+234 803 123 4567'
+        });
+
+        const renderedSubject = resolveMessageTokens(subject || '', {
+          parentName: pName,
+          childName: cName,
+          eventName: eventTitle,
+          passUrl,
+          reviewUrl
+        });
+
+        messagesToSend.push({
+          parentId: row.parent_id,
+          childId: row.child_id,
+          parentName: row.parent_name,
+          email: row.email,
+          phone: row.phone_number,
+          userId: row.user_id,
+          subject: renderedSubject,
+          body: renderedBody
+        });
+      }
+    } else {
+      const parentMap = new Map<string, any>();
+      for (const row of rows) {
+        const key = row.user_id || row.parent_id;
+        if (!parentMap.has(key)) {
+          parentMap.set(key, row);
+        }
+      }
+      for (const [, parentRow] of parentMap.entries()) {
+        const pName = (parentRow.parent_name || '').trim() || 'Parent';
+        const passUrl = buildParentPassUrl();
+        const reviewUrl = buildParentStatusUrl();
+
+        const renderedBody = resolveMessageTokens(body, {
+          parentName: pName,
+          volunteerName: pName,
+          childName: 'your child',
+          eventName: eventTitle,
+          passUrl,
+          reviewUrl,
+          pickupTime: '4:00 PM',
+          supportContact: '+234 803 123 4567'
+        });
+
+        const renderedSubject = resolveMessageTokens(subject || '', {
+          parentName: pName,
+          volunteerName: pName,
+          childName: 'your child',
+          eventName: eventTitle,
+          passUrl,
+          reviewUrl
+        });
+
+        messagesToSend.push({
+          parentId: parentRow.parent_id,
+          parentName: parentRow.parent_name,
+          email: parentRow.email,
+          phone: parentRow.phone_number,
+          userId: parentRow.user_id,
+          subject: renderedSubject,
+          body: renderedBody
+        });
+      }
+    }
+
+    const notifNow = new Date().toISOString();
+    const logId = crypto.randomUUID();
+    const audienceRole = (recipientGroup === 'volunteers' || recipientGroup === 'specific_volunteers')
+      ? 'volunteer' 
+      : (recipientGroup === 'all_event_team' ? 'staff' : 'parent');
+
+    // Known supported communication tokens — must never appear unresolved in In-App storage
+    const KNOWN_TOKENS_RE = /\{(Parent name|Child name|Volunteer name|Team|Location|Event name|Pass link|Review link|Pickup time|Support contact)\}/i;
+
+    // 3. IN-APP NOTIFICATIONS (Canonical source of truth)
+    let inAppCreated = false;
+    if (activeChannels.includes('in_app')) {
+      for (const msg of messagesToSend) {
+        const msgNotifId = `notif-${crypto.randomUUID()}`;
+        // Defensive guard: warn if any known token survived resolution (should never happen after fix)
+        const rawTitle = msg.subject?.trim() || '';
+        const rawBody = msg.body || '';
+        if (KNOWN_TOKENS_RE.test(rawTitle) || KNOWN_TOKENS_RE.test(rawBody)) {
+          const rawInTitle = rawTitle.match(KNOWN_TOKENS_RE)?.[0];
+          const rawInBody = rawBody.match(KNOWN_TOKENS_RE)?.[0];
+          console.error(`[In-App Guard] Unresolved token detected before In-App insert — title: "${rawInTitle || 'none'}", body: "${rawInBody || 'none'}" — recipientGroup: ${recipientGroup}, messageType: ${messageType}`);
+        }
+        await execute(`
+          INSERT INTO notifications (
+            id, title, message, type, audience_role, audience_scope, event_id,
+            child_id, parent_id, created_by_user_id, visible_to_event_team, created_at, priority, channel, metadata_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          msgNotifId,
+          msg.subject.trim() || 'Event Update',
+          msg.body,
+          messageType === 'safety_alert' ? 'safety_alert' : 'broadcast',
+          audienceRole,
+          recipientGroup,
+          eventId,
+          msg.childId || null,
+          msg.parentId || null,
+          req.user?.id || null,
+          audienceRole === 'parent' ? 0 : 1,
+          notifNow,
+          messageType === 'safety_alert' ? 'high' : 'normal',
+          'in-app',
+          JSON.stringify({ campaignId: logId })
+        ]);
+
+        try {
+          broadcastSSEEvent('notification', {
+            id: msgNotifId,
+            title: msg.subject.trim() || 'Event Update',
+            message: msg.body,
+            type: messageType === 'safety_alert' ? 'safety_alert' : 'broadcast',
+            audienceRole,
+            parentId: msg.parentId || null,
+            createdAt: notifNow
+          });
+        } catch (sseErr) {
+          console.warn('[Admin SSE broadcast warning]:', sseErr);
+        }
+      }
+      inAppCreated = true;
+    }
+
+    // 4. PUSH NOTIFICATIONS
+    let pushSentCount = 0;
+    let pushFailCount = 0;
+    let pushNoSubCount = 0;
+    let lastPushErrorReason: string | undefined;
+
+    if (activeChannels.includes('push')) {
+      for (const msg of messagesToSend) {
+        if (!msg.userId) continue;
+        const pushTitle = msg.subject?.trim() || 'Event Update';
+        const pushBody = msg.body;
+        const targetDestination = msg.childId
+          ? `/parent/children/${msg.childId}/pass`
+          : (audienceRole === 'volunteer'
+            ? '/volunteer/event'
+            : (audienceRole === 'staff' ? '/volunteer/team-alerts' : '/notifications'));
+
+        try {
+          const pushRes = await sendWebPush(msg.userId, {
+            title: pushTitle,
+            body: pushBody.length > 140 ? pushBody.slice(0, 140) + '…' : pushBody,
+            metadata: {
+              targetUrl: targetDestination,
+              type: messageType === 'safety_alert' ? 'safety_alert' : 'broadcast',
+              childId: msg.childId || undefined
+            }
+          });
+
+          if (pushRes.sentCount > 0) {
+            pushSentCount += pushRes.sentCount;
+          } else if (pushRes.noSubscriptions) {
+            pushNoSubCount++;
+            lastPushErrorReason = pushRes.failureReason || 'no_subscription';
+            console.warn(`[Admin Push] No active push subscriptions for userId=${msg.userId.slice(0, 8)}`);
+          } else {
+            pushFailCount++;
+            lastPushErrorReason = pushRes.failureReason;
+            if (pushRes.error) {
+              console.error(`[Admin Push Error for userId=${msg.userId.slice(0, 8)}]:`, pushRes.error);
+            }
+          }
+        } catch (pushErr) {
+          console.warn(`[Admin Push Error for user ${msg.userId}]:`, pushErr);
+          pushFailCount++;
+        }
+      }
+    }
+
+    // 5. EMAIL & WHATSAPP (if selected)
+    let emailSentCount = 0;
+    let externalFailCount = 0;
+
+    if (activeChannels.includes('email')) {
+      const settings = await queryOne(`
+        SELECT sender_name as senderName, reply_to_email as replyToEmail
+        FROM admin_message_settings
+        WHERE id = 'primary_settings'
+      `);
+      const customFromName = settings?.senderName || undefined;
+      const customReplyTo = settings?.replyToEmail || undefined;
+
+      for (const msg of messagesToSend) {
+        if (msg.email) {
+          try {
+            const res = await sendEmail({
+              to: msg.email,
+              subject: msg.subject,
+              text: msg.body,
+              html: `<p>${msg.body.replace(/\n/g, '<br>')}</p>`,
+              fromName: customFromName,
+              replyTo: customReplyTo
+            });
+            if (res.success) emailSentCount++;
+            else externalFailCount++;
+          } catch (err) {
+            console.error('[Admin sendEmail failed]:', err);
+            externalFailCount++;
+          }
+        }
+      }
+    }
+
+    // 6. Log sending outcome in admin_message_logs & save master campaign notification
+    const logChannelsStr = activeChannels.join(',');
+    const initialStatus = activeChannels.includes('whatsapp') ? 'queued' : 'sent';
+
+    let cleanLogSubject = 'Event Update';
+    let cleanLogBody = '';
+
+    if (messagesToSend.length === 1) {
+      // Exactly one recipient: use the resolved recipient-specific subject and body
+      cleanLogSubject = messagesToSend[0].subject || 'Event Update';
+      cleanLogBody = messagesToSend[0].body;
+    } else {
+      // Multi-recipient campaign: keep campaign-level preview, do not pretend one personalized body represents everyone, do not expose template tokens
+      if (isVolunteerAudience) {
+        cleanLogSubject = resolveMessageTokens(subject || '', {
+          eventName: eventTitle,
+          volunteerName: 'Volunteers',
+          team: 'Team',
+          location: 'Assigned Locations',
+          supportContact: '+234 803 123 4567'
+        }).replace(/\s+-\s*$/, '').trim() || 'Event Update';
+
+        cleanLogBody = resolveMessageTokens(
+          (body || '')
+            .replace(/Dear\s+\{Volunteer\s+name\},?/gi, 'Dear Volunteers,')
+            .replace(/\{Volunteer\s+name\}/gi, 'Volunteers'),
+          {
+            eventName: eventTitle,
+            volunteerName: 'Volunteers',
+            team: 'Assigned Team',
+            location: 'Assigned Location',
+            supportContact: '+234 803 123 4567'
+          }
+        );
+      } else {
+        cleanLogSubject = resolveMessageTokens(subject || '', {
+          eventName: eventTitle,
+          parentName: 'Parents',
+          reviewUrl: buildParentStatusUrl(),
+          passUrl: buildParentPassUrl()
+        }).replace(/\s+-\s*$/, '').trim() || 'Event Update';
+
+        cleanLogBody = resolveMessageTokens(
+          (body || '')
+            .replace(/Dear\s+\{Parent\s+name\},?/gi, 'Dear Parents,')
+            .replace(/\{Parent\s+name\}/gi, 'Parents'),
+          {
+            eventName: eventTitle,
+            childName: 'your children',
+            parentName: 'Parents',
+            reviewUrl: buildParentStatusUrl(),
+            passUrl: buildParentPassUrl(),
+            pickupTime: '4:00 PM',
+            supportContact: '+234 803 123 4567'
+          }
+        );
+      }
+    }
+
+    await execute(
+      'INSERT INTO admin_message_logs (id, recipient_group, message_type, channel, subject, body, recipients_count, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [logId, recipientGroup, messageType, logChannelsStr, cleanLogSubject, cleanLogBody, messagesToSend.length, initialStatus, notifNow]
+    );
+
+    // Save campaign master summary record in notifications table so GET /messages can read delivery metadata
+    const campaignMasterMeta = JSON.stringify({
+      campaignId: logId,
+      push: {
+        status: pushSentCount > 0 ? 'sent' : ((pushFailCount > 0 || pushNoSubCount > 0) ? 'failed' : 'none'),
+        sentCount: pushSentCount,
+        failedCount: pushFailCount + pushNoSubCount,
+        noSubscriptions: pushNoSubCount > 0,
+        failureReason: lastPushErrorReason
+      },
+      email: {
+        status: emailSentCount > 0 ? 'sent' : (externalFailCount > 0 ? 'failed' : 'none'),
+        sentCount: emailSentCount,
+        failedCount: externalFailCount
+      },
+      in_app: {
+        status: inAppCreated ? 'sent' : 'none',
+        count: inAppCreated ? messagesToSend.length : 0
+      }
+    });
+
+    await execute(`
+      INSERT INTO notifications (
+        id, title, message, type, audience_role, audience_scope, event_id,
+        created_by_user_id, visible_to_event_team, created_at, priority, channel, metadata_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      `notif-${logId}`,
+      cleanLogSubject,
+      cleanLogBody,
+      'campaign_master',
+      'admin',
+      recipientGroup,
+      eventId,
+      req.user?.id || null,
+      0,
+      notifNow,
+      'normal',
+      logChannelsStr,
+      campaignMasterMeta
+    ]);
+
+    // 7. Async WhatsApp Queue Dispatch via notification_jobs (Phase 1B)
+    let whatsappQueuedCount = 0;
+    let whatsappEnqueueError: string | null = null;
+    if (activeChannels.includes('whatsapp')) {
+      try {
+        if (isChildSpecific) {
+          // Child-specific messages: each selected child gets a distinct communication context
+          for (const msg of messagesToSend) {
+            if (!msg.parentId) continue;
+            const pProfile = await queryOne(`
+              SELECT id, phone_number, whatsapp_number, whatsapp_consent_status
+              FROM parent_profiles
+              WHERE id = ? AND (is_deleted = 0 OR is_deleted IS NULL)
+            `, [msg.parentId]);
+
+            if (pProfile && pProfile.whatsapp_consent_status === 'opted_in') {
+              const rawPhone = pProfile.whatsapp_number || pProfile.phone_number;
+              const normalized = normalizePhoneNumberToE164(rawPhone);
+              if (normalized) {
+                const idempotencyKey = buildIdempotencyKey({
+                  type: 'campaign',
+                  campaignId: logId,
+                  parentId: msg.parentId,
+                  childId: msg.childId || undefined
+                });
+
+                const enqueueRes = await enqueueWhatsAppJob({
+                  eventId,
+                  parentId: msg.parentId,
+                  childId: msg.childId || null,
+                  idempotencyKey
+                });
+
+                if (enqueueRes.queued || enqueueRes.duplicate) {
+                  whatsappQueuedCount++;
+                }
+              }
+            }
+          }
+        } else if (isVolunteerAudience) {
+          // VOLUNTEER BROADCAST RULE:
+          // Filter strictly for eligible volunteers: active volunteer + current event/system + whatsapp_consent_status = 'opted_in' + valid E.164 phone.
+          const volunteerUserIds = Array.from(new Set(rows.map((r: any) => r.user_id).filter(Boolean))) as string[];
+
+          for (const uid of volunteerUserIds) {
+            const vProfile = await queryOne(`
+              SELECT id, user_id, phone, whatsapp, whatsapp_consent_status, status
+              FROM volunteer_profiles
+              WHERE user_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)
+              LIMIT 1
+            `, [uid]);
+
+            if (vProfile && vProfile.whatsapp_consent_status === 'opted_in') {
+              const rawPhone = vProfile.whatsapp || vProfile.phone;
+              const normalized = normalizePhoneNumberToE164(rawPhone);
+              if (normalized) {
+                const idempotencyKey = buildIdempotencyKey({
+                  type: 'campaign',
+                  campaignId: logId,
+                  userId: uid
+                });
+
+                const enqueueRes = await enqueueWhatsAppJob({
+                  eventId,
+                  userId: uid,
+                  parentId: null,
+                  idempotencyKey
+                });
+
+                if (enqueueRes.queued || enqueueRes.duplicate) {
+                  whatsappQueuedCount++;
+                }
+              }
+            }
+          }
+        } else {
+          // GENERAL BROADCAST RULE:
+          // Parent with multiple children: general announcement -> ONE WhatsApp message.
+          // Filter strictly for eligible parents: active parent + current event + whatsapp_consent_status = 'opted_in' + valid E.164 phone.
+          const parentIdsInGroup = Array.from(new Set(rows.map((r: any) => r.parent_id).filter(Boolean))) as string[];
+
+          for (const pid of parentIdsInGroup) {
+            const pProfile = await queryOne(`
+              SELECT id, phone_number, whatsapp_number, whatsapp_consent_status
+              FROM parent_profiles
+              WHERE id = ? AND (is_deleted = 0 OR is_deleted IS NULL)
+            `, [pid]);
+
+            if (pProfile && pProfile.whatsapp_consent_status === 'opted_in') {
+              const rawPhone = pProfile.whatsapp_number || pProfile.phone_number;
+              const normalized = normalizePhoneNumberToE164(rawPhone);
+              if (normalized) {
+                const idempotencyKey = buildIdempotencyKey({
+                  type: 'campaign',
+                  campaignId: logId,
+                  parentId: pid
+                });
+
+                const enqueueRes = await enqueueWhatsAppJob({
+                  eventId,
+                  parentId: pid,
+                  idempotencyKey
+                });
+
+                if (enqueueRes.queued || enqueueRes.duplicate) {
+                  whatsappQueuedCount++;
+                }
+              }
+            }
+          }
+        }
+
+        // Trigger in-process queue worker only if in-process worker mode is active.
+        // In external or disabled mode, jobs safely remain queued for the external background worker.
+        if (isWhatsAppInProcessWorkerEnabled()) {
+          processQueuedWhatsAppJobs().catch(err => {
+            console.error('[Admin Messages] Async WhatsApp queue processing trigger error:', err);
+          });
+        }
+      } catch (waErr: any) {
+        console.error('[Admin Messages] WhatsApp queue dispatch error:', waErr);
+        whatsappEnqueueError = waErr?.message || 'Failed to queue WhatsApp messages';
+      }
+    }
+
+    // 8. Human result feedback
+    const totalAudienceSize = isVolunteerAudience
+      ? Array.from(new Set(rows.map((r: any) => r.user_id).filter(Boolean))).length
+      : Array.from(new Set(rows.map((r: any) => r.parent_id).filter(Boolean))).length;
+    const whatsappSkippedCount = activeChannels.includes('whatsapp')
+      ? Math.max(0, totalAudienceSize - whatsappQueuedCount)
+      : 0;
+
+    // If WhatsApp was the sole channel and 0 jobs could be queued, update admin_message_logs to 'failed'
+    if (activeChannels.includes('whatsapp') && activeChannels.length === 1 && whatsappQueuedCount === 0) {
+      await execute(`UPDATE admin_message_logs SET status = 'failed' WHERE id = ?`, [logId]);
+    }
+
+    const skippedNoun = isVolunteerAudience ? 'volunteer' : 'parent';
+    const totalPushFailures = pushFailCount + pushNoSubCount;
+    let humanMessage = `Update sent. Delivered to ${messagesToSend.length} recipient${messagesToSend.length === 1 ? '' : 's'}.`;
+    if (activeChannels.includes('whatsapp')) {
+      const skippedNote = whatsappSkippedCount > 0
+        ? `, ${whatsappSkippedCount} selected ${skippedNoun}${whatsappSkippedCount === 1 ? '' : 's'} not eligible for WhatsApp`
+        : '';
+      const queueFailNote = whatsappEnqueueError ? ' (WhatsApp queueing encountered an error)' : '';
+      if (activeChannels.includes('in_app') || activeChannels.includes('push') || activeChannels.includes('email')) {
+        // Mixed-channel: report each independently
+        const pushNote = activeChannels.includes('push')
+          ? (pushSentCount > 0
+            ? ` Push delivered to ${pushSentCount} device${pushSentCount === 1 ? '' : 's'}.`
+            : totalPushFailures > 0
+              ? (pushNoSubCount > 0 ? ` Push could not be delivered — selected ${skippedNoun} has no active device subscription.` : ' Push notification could not be sent.')
+              : '')
+          : '';
+        humanMessage = `Update queued and sent. Direct channels dispatched; ${whatsappQueuedCount} WhatsApp recipient${whatsappQueuedCount === 1 ? '' : 's'} queued${skippedNote}${queueFailNote}.${pushNote}`;
+      } else {
+        humanMessage = whatsappEnqueueError
+          ? `Could not queue WhatsApp messages: ${whatsappEnqueueError}`
+          : `Update queued. ${whatsappQueuedCount} WhatsApp recipient${whatsappQueuedCount === 1 ? '' : 's'} queued${skippedNote}.`;
+      }
+    } else if (activeChannels.includes('push')) {
+      if (pushSentCount > 0 && totalPushFailures > 0) {
+        humanMessage = `Update sent. ${pushSentCount} device${pushSentCount === 1 ? '' : 's'} received the push notification. ${totalPushFailures} selected parent${totalPushFailures === 1 ? '' : 's'} had no active device subscription.`;
+      } else if (pushSentCount > 0) {
+        humanMessage = `Update sent. Delivered to ${messagesToSend.length} recipient${messagesToSend.length === 1 ? '' : 's'} (${pushSentCount} device${pushSentCount === 1 ? '' : 's'} received push).`;
+      } else if (totalPushFailures > 0) {
+        humanMessage = pushNoSubCount > 0
+          ? `Update sent. However, push could not be delivered — the selected parent has no active device subscription. Ask them to enable push notifications from their device.`
+          : `Update sent. However, push notification could not be sent for the selected device.`;
+      }
+    }
+
+    res.json({
+      success: true,
+      campaignId: logId,
+      message: humanMessage,
+      recipientsCount: messagesToSend.length,
+      channels: activeChannels,
+      queued: {
+        whatsapp: whatsappQueuedCount,
+        email: 0,
+        push: 0,
+        inApp: 0
+      },
+      sent: {
+        inApp: inAppCreated ? messagesToSend.length : 0,
+        push: pushSentCount,
+        email: emailSentCount,
+        whatsapp: 0
+      },
+      skipped: {
+        whatsappNotEligible: whatsappSkippedCount
+      },
+      emailSent: emailSentCount,
+      whatsappQueued: whatsappQueuedCount,
+      whatsappSkipped: whatsappSkippedCount,
+      pushSent: pushSentCount,
+      inAppSent: inAppCreated ? messagesToSend.length : 0,
+      summary: {
+        campaignId: logId,
+        requested: messagesToSend.length,
+        recipients: messagesToSend.length,
+        inAppCreated,
+        pushSent: pushSentCount,
+        pushFailed: totalPushFailures,
+        emailSent: emailSentCount,
+        whatsappSent: 0,
+        whatsappQueued: whatsappQueuedCount,
+        whatsappSkipped: whatsappSkippedCount,
+        failed: externalFailCount + totalPushFailures
+      }
+    });
+  } catch (err: any) {
+    console.error('Error dispatching admin messages:', err);
+    res.status(500).json({
+      success: false,
+      code: 'MESSAGE_SEND_FAILED',
+      message: err.message || 'We could not send this message right now.'
+    });
+  }
+});
+
+// GET /api/admin/messages/campaign-status/:campaignId - Lightweight live delivery status for recent sends
+router.get('/messages/campaign-status/:campaignId', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const { campaignId } = req.params;
+    if (!campaignId) {
+      return res.status(400).json({ success: false, error: 'Campaign ID required' });
+    }
+
+    const log = await queryOne(`
+      SELECT id, subject, body, channel, recipients_count as "recipientsCount", status, created_at as "createdAt"
+      FROM admin_message_logs
+      WHERE id = ?
+    `, [campaignId]);
+
+    if (!log) {
+      return res.status(404).json({ success: false, error: 'Campaign not found' });
+    }
+
+    // Query delivery logs for this campaign
+    const deliveryLogs = await query(`
+      SELECT id, status, provider, provider_message_id as "providerMessageId", error_code as "errorCode", error_message as "errorMessage", sent_at as "sentAt", delivered_at as "deliveredAt", read_at as "readAt", failed_at as "failedAt", created_at as "createdAt"
+      FROM whatsapp_delivery_logs
+      WHERE campaign_id = ?
+    `, [campaignId]);
+
+    // Query pending/processing jobs in notification_jobs for this campaign
+    const jobs = await query(`
+      SELECT id, status, attempt_count as "attemptCount", failure_reason as "failureReason", last_error as "lastError"
+      FROM notification_jobs
+      WHERE idempotency_key LIKE ?
+    `, [`campaign:${campaignId}:%`]);
+
+    // Look up delivery summary stored in notifications.metadata_json for this campaign
+    const notifMeta = await queryOne(`
+      SELECT metadata_json FROM notifications WHERE id = ?
+    `, [`notif-${campaignId}`]);
+    let savedMeta: any = null;
+    if (notifMeta?.metadata_json) {
+      try {
+        savedMeta = JSON.parse(notifMeta.metadata_json);
+      } catch {
+        // Ignore parse error
+      }
+    }
+
+    let queuedCount = 0;
+    let sentCount = 0;
+    let deliveredCount = 0;
+    let readCount = 0;
+    let failedCount = 0;
+    let latestErrorMessage: string | null = null;
+
+    for (const j of jobs) {
+      if (j.status === 'pending' || j.status === 'processing') {
+        queuedCount++;
+      } else if (j.status === 'sent') {
+        sentCount++;
+      } else if (j.status === 'delivered') {
+        deliveredCount++;
+      } else if (j.status === 'failed') {
+        failedCount++;
+        if (j.failureReason || j.lastError) latestErrorMessage = j.failureReason || j.lastError;
+      }
+    }
+
+    for (const dl of deliveryLogs) {
+      if (dl.status === 'read' || dl.readAt) {
+        readCount++;
+      } else if (dl.status === 'delivered' || dl.deliveredAt) {
+        deliveredCount++;
+      } else if (dl.status === 'sent' || dl.sentAt || (dl.providerMessageId && dl.status !== 'failed')) {
+        sentCount++;
+      } else if (dl.status === 'queued' && jobs.length === 0) {
+        queuedCount++;
+      } else if (dl.status === 'failed') {
+        failedCount++;
+        if (dl.errorMessage) latestErrorMessage = dl.errorMessage;
+      }
+    }
+
+    // Build independent channel status badges
+    const channelList = String(log.channel || '').split(',').map((c: string) => c.trim().toLowerCase()).filter(Boolean);
+    const channelStatuses: Array<{
+      channel: string;
+      label: string;
+      status: string;
+    }> = [];
+
+    for (const ch of channelList) {
+      if (ch === 'whatsapp') {
+        let capStatus = 'Sending';
+        if (readCount > 0) capStatus = 'Read';
+        else if (deliveredCount > 0) capStatus = 'Delivered';
+        else if (sentCount > 0) capStatus = 'Sent';
+        else if (failedCount > 0 && sentCount === 0 && deliveredCount === 0) capStatus = 'Could not be sent';
+        else if (log.status === 'failed' || (jobs.length === 0 && deliveryLogs.length === 0)) capStatus = 'Could not be sent';
+        else if (queuedCount > 0) capStatus = 'Sending';
+        else capStatus = 'Could not be sent';
+
+        channelStatuses.push({
+          channel: 'whatsapp',
+          label: 'WhatsApp',
+          status: capStatus
+        });
+      } else if (ch === 'push') {
+        let pStatus = 'Sent';
+        if (savedMeta?.push) {
+          if (savedMeta.push.status === 'failed' || (savedMeta.push.failedCount > 0 && savedMeta.push.sentCount === 0)) {
+            pStatus = 'Could not be sent';
+          } else if (savedMeta.push.sentCount > 0 && savedMeta.push.failedCount > 0) {
+            pStatus = 'Partially sent';
+          } else if (savedMeta.push.sentCount > 0) {
+            pStatus = 'Sent';
+          }
+        }
+        channelStatuses.push({
+          channel: 'push',
+          label: 'Push',
+          status: pStatus
+        });
+      } else if (ch === 'in_app') {
+        channelStatuses.push({
+          channel: 'in_app',
+          label: 'In-app',
+          status: 'Sent'
+        });
+      } else if (ch === 'email') {
+        const eStatus = (savedMeta?.email?.status === 'failed' || (savedMeta?.email?.failedCount > 0 && savedMeta?.email?.sentCount === 0)) ? 'Could not be sent' : 'Sent';
+        channelStatuses.push({
+          channel: 'email',
+          label: 'Email',
+          status: eStatus
+        });
+      }
+    }
+
+    // Determine overall status progression using Part 8 semantics
+    const hasAnySuccess = channelStatuses.some(cs => cs.status === 'Sent' || cs.status === 'Delivered' || cs.status === 'Read' || cs.status === 'Partially sent');
+    const hasAnyFailure = channelStatuses.some(cs => cs.status === 'Could not be sent');
+    const hasAnyQueued = channelStatuses.some(cs => cs.status === 'Sending');
+
+    let overallStatus: 'queued' | 'sent' | 'delivered' | 'read' | 'failed' | 'partially_sent' = 'queued';
+    if (channelStatuses.length > 0 && channelStatuses.every(cs => cs.status === 'Could not be sent')) {
+      overallStatus = 'failed';
+    } else if (hasAnySuccess && hasAnyFailure) {
+      overallStatus = 'partially_sent';
+    } else if (hasAnyQueued) {
+      overallStatus = 'queued';
+    } else if (hasAnySuccess) {
+      const allDelivered = channelStatuses.every(cs => cs.status === 'Delivered' || cs.status === 'Read');
+      overallStatus = allDelivered ? 'delivered' : 'sent';
+    } else {
+      overallStatus = 'queued';
+    }
+
+    res.json({
+      success: true,
+      campaignId,
+      subject: log.subject,
+      channels: String(log.channel || '').split(',').map(c => c.trim()).filter(Boolean),
+      recipientsCount: Number(log.recipientsCount || 0),
+      status: overallStatus,
+      queued: queuedCount,
+      sent: sentCount,
+      delivered: deliveredCount,
+      read: readCount,
+      failed: failedCount,
+      channelStatuses,
+      errorMessage: latestErrorMessage,
+      lastUpdated: new Date().toISOString()
+    });
+  } catch (err: any) {
+    console.error('[Campaign Status Error]:', err);
+    res.status(500).json({ success: false, error: 'Failed to retrieve campaign status' });
+  }
+});
+
+// GET /api/admin/volunteers - Get all volunteer applications and profiles
+router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin', 'team'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const page = parseInt(req.query.page as string, 10) || 1;
+    const limit = parseInt(req.query.limit as string, 10) || 25;
+    const offset = (page - 1) * limit;
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
+    const team = typeof req.query.team === 'string' ? req.query.team : '';
+
+    let filterClauses = '1=1';
+    const queryParams: any[] = [];
+
+    if (q) {
+      filterClauses += ` AND (v.full_name LIKE ? OR u.email LIKE ? OR v.phone LIKE ?)`;
+      const searchPattern = `%${q}%`;
+      queryParams.push(searchPattern, searchPattern, searchPattern);
+    }
+
+    if (status === 'removed') {
+      filterClauses += ` AND v.status = 'removed'`;
+    } else if (status === 'active') {
+      filterClauses += ` AND v.status IN ('approved', 'active')`;
+    } else if (status === 'pending_review' || status === 'pending') {
+      filterClauses += ` AND (v.status = 'pending_review' OR v.status IS NULL OR v.status = '')`;
+    } else if (status === 'declined' || status === 'rejected') {
+      filterClauses += ` AND v.status IN ('rejected', 'declined', 'suspended')`;
+    } else {
+      filterClauses += ` AND (v.status IS NULL OR v.status != 'removed')`;
+      if (status) {
+        filterClauses += ` AND v.status = ?`;
+        queryParams.push(status);
+      }
+    }
+
+    if (team) {
+      filterClauses += ` AND v.preferred_team = ?`;
+      queryParams.push(team);
+    }
+
+    // Count total filtered
+    const countRes = await queryOne(`
+      SELECT COUNT(*) as count 
+      FROM volunteer_profiles v
+      JOIN users u ON u.id = v.user_id
+      WHERE ${filterClauses}
+    `, queryParams);
+    const totalCount = Number(countRes?.count ?? 0);
+
+    const queryStr = `
+      SELECT 
+        v.*,
+        u.email,
+        u.role,
+        u.email_verified,
+        m.secure_url as photo_url
+      FROM volunteer_profiles v
+      JOIN users u ON u.id = v.user_id
+      LEFT JOIN media_files m ON m.id = v.photo_file_id
+      WHERE ${filterClauses}
+      ORDER BY v.created_at DESC
+      LIMIT ? OFFSET ?
+    `;
+    const paginatedParams = [...queryParams, limit, offset];
+
+    const rows = await query(queryStr, paginatedParams);
+    const formatted = rows.map((v: any) => ({
+      id: v.id,
+      userId: v.user_id,
+      fullName: v.full_name,
+      phone: v.phone,
+      whatsapp: v.whatsapp,
+      isKoinoniaWorker: v.is_koinonia_worker === 1,
+      department: v.department,
+      preferredTeam: v.preferred_team,
+      assignedTeam: v.preferred_team,
+      servingExperience: v.serving_experience,
+      note: v.note,
+      status: v.status || 'pending_review',
+      photoFileId: v.photo_file_id,
+      photoUrl: v.photo_url || (v.photo_file_id ? (String(v.photo_file_id).startsWith('http') || String(v.photo_file_id).startsWith('/') ? String(v.photo_file_id) : `/api/media/files/${v.photo_file_id}`) : ''),
+      createdAt: v.created_at,
+      updatedAt: v.updated_at,
+      email: v.email,
+      role: v.role,
+      emailVerified: v.email_verified === 1 || v.email_verified === true || v.email_verified === '1',
+      isDeleted: false,
+      deletedAt: null,
+      deletedBy: null,
+      deletedByEmail: null,
+      deleteReason: null,
+      restoredAt: null,
+      restoredBy: null,
+      restoredByEmail: null,
+      approvedAt: null,
+      reviewedAt: null,
+      removedAt: null
+    }));
+
+    // Calculate metrics using only columns confirmed to exist in production schema.
+    // PostgreSQL COUNT(*) returns bigint which the pg driver serialises as a string.
+    // All counts MUST be cast with Number() before any arithmetic to prevent string concatenation.
+
+    // ACTIVE: Current approved/active volunteers only
+    const approvedVolunteers = Number((await queryOne(`
+      SELECT COUNT(*) as count 
+      FROM volunteer_profiles v
+      WHERE v.status IN ('approved', 'active')
+    `))?.count ?? 0);
+
+    // AWAITING REVIEW: Pending volunteer profiles
+    const pendingReview = Number((await queryOne(`
+      SELECT COUNT(*) as count 
+      FROM volunteer_profiles v
+      WHERE v.status = 'pending_review' OR v.status IS NULL OR v.status = ''
+    `))?.count ?? 0);
+
+    // NOT APPROVED: Declined/rejected/suspended volunteer profiles
+    const declinedVolunteers = Number((await queryOne(`
+      SELECT COUNT(*) as count 
+      FROM volunteer_profiles v
+      WHERE v.status IN ('rejected', 'declined', 'suspended')
+    `))?.count ?? 0);
+
+    // REMOVED: Volunteers explicitly marked as removed via status
+    const removedVolunteers = Number((await queryOne(`
+      SELECT COUNT(*) as count 
+      FROM volunteer_profiles v
+      WHERE v.status = 'removed'
+    `))?.count ?? 0);
+
+    // TEAMS: Distinct teams represented by active volunteers
+    const assignedTeamsCount = Number((await queryOne(`
+      SELECT COUNT(DISTINCT v.preferred_team) as count 
+      FROM volunteer_profiles v
+      WHERE v.status IN ('approved', 'active')
+        AND v.preferred_team IS NOT NULL
+        AND v.preferred_team != ''
+    `))?.count ?? 0);
+
+    // VOLUNTEERS: All current NON-REMOVED volunteer profiles = Active + Awaiting review + Not approved
+    // All operands are Number() — safe integer addition, not string concatenation
+    const totalVolunteers: number = approvedVolunteers + pendingReview + declinedVolunteers;
+
+    return res.json({ 
+      success: true, 
+      stats: {
+        totalVolunteers,
+        pendingReview,
+        approvedVolunteers,
+        declinedVolunteers,
+        assignedTeams: assignedTeamsCount,
+        removedVolunteers
+      },
+      volunteers: formatted,
+      pagination: {
+        total: totalCount,
+        page,
+        limit,
+        pages: Math.ceil(totalCount / limit)
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching admin volunteers:', err);
+    return res.status(500).json({ success: false, error: 'Failed to fetch volunteers' });
+  }
+});
+
+// POST /api/admin/volunteers/:id/remove - Archive a volunteer profile by setting status = 'removed'
+router.post('/volunteers/:id/remove', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const volunteerId = req.params.id;
+    const now = new Date().toISOString();
+
+    const volunteer = await queryOne('SELECT id, status FROM volunteer_profiles WHERE id = ?', [volunteerId]);
+    if (!volunteer) {
+      return res.status(404).json({ success: false, error: 'Volunteer profile not found' });
+    }
+    if (volunteer.status === 'removed') {
+      return res.status(400).json({ success: false, error: 'Volunteer is already removed.' });
+    }
+
+    const result = await execute(`
+      UPDATE volunteer_profiles
+      SET status = 'removed', updated_at = ?
+      WHERE id = ? AND status != 'removed'
+    `, [now, volunteerId]);
+
+    // Verify the row was actually changed — protect against false success
+    const updated = (result as any)?.rowCount ?? (result as any)?.changes ?? 1;
+    if (Number(updated) === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "We couldn't remove this volunteer. Please refresh and try again."
+      });
+    }
+
+    try {
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        crypto.randomUUID(), req.user.id, req.user.role,
+        'Remove Volunteer', 'volunteer_profile', volunteerId,
+        JSON.stringify({ previousStatus: volunteer.status }), now
+      ]);
+    } catch (_) {}
+
+    return res.json({ success: true, message: 'Volunteer removed successfully' });
+  } catch (err: any) {
+    console.error('Error removing volunteer:', err);
+    return res.status(500).json({ success: false, error: 'We could not remove this volunteer. Please try again.' });
+  }
+});
+
+// POST /api/admin/volunteers/:id/restore - Restore a removed volunteer to pending_review
+// NOTE: Previous status is not stored in the schema; pending_review is the safe recoverable default.
+router.post('/volunteers/:id/restore', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const volunteerId = req.params.id;
+    const now = new Date().toISOString();
+
+    const volunteer = await queryOne('SELECT id, status FROM volunteer_profiles WHERE id = ?', [volunteerId]);
+    if (!volunteer) {
+      return res.status(404).json({ success: false, error: 'Volunteer profile not found' });
+    }
+    if (volunteer.status !== 'removed') {
+      return res.status(400).json({ success: false, error: 'Only removed volunteers can be restored.' });
+    }
+
+    const result = await execute(`
+      UPDATE volunteer_profiles
+      SET status = 'pending_review', updated_at = ?
+      WHERE id = ? AND status = 'removed'
+    `, [now, volunteerId]);
+
+    const updated = (result as any)?.rowCount ?? (result as any)?.changes ?? 1;
+    if (Number(updated) === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "We couldn't restore this volunteer. Please refresh and try again."
+      });
+    }
+
+    try {
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        crypto.randomUUID(), req.user.id, req.user.role,
+        'Restore Volunteer', 'volunteer_profile', volunteerId,
+        JSON.stringify({ restoredToStatus: 'pending_review' }), now
+      ]);
+    } catch (_) {}
+
+    return res.json({ success: true, message: 'Volunteer restored successfully' });
+  } catch (err: any) {
+    console.error('Error restoring volunteer:', err);
+    return res.status(500).json({ success: false, error: 'We could not restore this volunteer. Please try again.' });
+  }
+});
+
+// GET /api/admin/volunteers/:id - Get detailed profile of a volunteer
+router.get('/volunteers/:id', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin', 'team'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const id = req.params.id;
+    const v = await queryOne(`
+      SELECT 
+        v.*,
+        u.email,
+        u.role,
+        u.email_verified,
+        m.secure_url as photo_url
+      FROM volunteer_profiles v
+      JOIN users u ON u.id = v.user_id
+      LEFT JOIN media_files m ON m.id = v.photo_file_id
+      WHERE v.id = ?
+    `, [id]);
+
+    if (!v) {
+      return res.status(404).json({ success: false, error: 'Volunteer not found' });
+    }
+
+    const formatted = {
+      id: v.id,
+      userId: v.user_id,
+      fullName: v.full_name,
+      phone: v.phone,
+      whatsapp: v.whatsapp,
+      isKoinoniaWorker: v.is_koinonia_worker === 1,
+      department: v.department,
+      preferredTeam: v.preferred_team,
+      servingExperience: v.serving_experience,
+      note: v.note,
+      status: v.status,
+      photoFileId: v.photo_file_id,
+      photoUrl: v.photo_url || (v.photo_file_id ? (String(v.photo_file_id).startsWith('http') || String(v.photo_file_id).startsWith('/') ? String(v.photo_file_id) : `/api/media/files/${v.photo_file_id}`) : ''),
+      createdAt: v.created_at,
+      updatedAt: v.updated_at,
+      email: v.email,
+      role: v.role,
+      emailVerified: v.email_verified === 1 || v.email_verified === true || v.email_verified === '1'
+    };
+
+    return res.json({ success: true, volunteer: formatted });
+  } catch (err: any) {
+    console.error('Error fetching volunteer details:', err);
+    return res.status(500).json({ success: false, error: 'Failed to fetch volunteer details' });
+  }
+});
+
+// PATCH /api/admin/volunteers/:id/assignment - Update team assignment of a volunteer
+router.patch('/volunteers/:id/assignment', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const id = req.params.id;
+    const { assignedTeam } = req.body;
+
+    if (!assignedTeam) {
+      return res.status(400).json({ success: false, error: 'Assigned team is required' });
+    }
+
+    const v = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [id]);
+    if (!v) {
+      return res.status(404).json({ success: false, error: 'Volunteer profile not found' });
+    }
+
+    const nowStr = new Date().toISOString();
+    await execute(`
+      UPDATE volunteer_profiles 
+      SET preferred_team = ?, updated_at = ?
+      WHERE id = ?
+    `, [assignedTeam, nowStr, id]);
+
+    return res.json({ success: true, message: 'Volunteer team assignment updated successfully' });
+  } catch (err: any) {
+    console.error('Error updating volunteer assignment:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update volunteer assignment' });
+  }
+});
+
+// POST /api/admin/volunteers/:id/resend-approval-email - Resend approval welcome email
+router.post('/volunteers/:id/resend-approval-email', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const id = req.params.id;
+
+    const v = await queryOne(`
+      SELECT v.*, u.email 
+      FROM volunteer_profiles v 
+      JOIN users u ON u.id = v.user_id 
+      WHERE v.id = ?
+    `, [id]);
+
+    if (!v) {
+      return res.status(404).json({ success: false, error: 'Volunteer profile not found' });
+    }
+
+    if (v.status !== 'approved' && v.status !== 'active') {
+      return res.status(400).json({ success: false, error: 'Only approved volunteers can receive an approval email.' });
+    }
+
+    const loginLink = buildPublicAppUrl('/volunteer/sign-in');
+
+    await sendVolunteerApprovedEmail({
+      volunteerEmail: v.email,
+      volunteerFirstName: v.full_name,
+      preferredTeam: v.preferred_team,
+      loginLink: loginLink
+    });
+
+    return res.json({ success: true, message: 'Approval email resent successfully.' });
+  } catch (err: any) {
+    console.error('Error resending volunteer approval email:', err);
+    return res.status(500).json({ success: false, error: 'Failed to resend approval email' });
+  }
+});
+
+// POST /api/admin/volunteers/:id/review - Approve or reject a volunteer application
+router.post('/volunteers/:id/review', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin', 'team'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const id = req.params.id;
+    const { status, team, note } = req.body;
+
+    if (!status || !['approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ success: false, error: 'Invalid status' });
+    }
+
+    const v = await queryOne('SELECT v.*, u.email FROM volunteer_profiles v JOIN users u ON u.id = v.user_id WHERE v.id = ?', [id]);
+    if (!v) {
+      return res.status(404).json({ success: false, error: 'Volunteer profile not found' });
+    }
+
+    const nowStr = new Date().toISOString();
+    const finalTeam = team || v.preferred_team;
+
+    await execute(`
+      UPDATE volunteer_profiles 
+      SET status = ?, preferred_team = ?, note = COALESCE(?, note), approved_by_user_id = ?, approved_at = ?, updated_at = ?
+      WHERE id = ?
+    `, [status, finalTeam, note, req.user.id, status === 'approved' ? nowStr : null, nowStr, id]);
+
+    if (status === 'approved') {
+      const user = await queryOne('SELECT * FROM users WHERE id = ?', [v.user_id]);
+      if (user && (user.role === 'parent' || user.role === 'user')) {
+        await execute("UPDATE users SET role = 'volunteer', updated_at = ? WHERE id = ?", [nowStr, v.user_id]);
+      }
+      
+      const loginLink = buildPublicAppUrl('/volunteer/sign-in');
+      
+      await sendVolunteerApprovedEmail({
+        volunteerEmail: v.email,
+        volunteerFirstName: v.full_name,
+        preferredTeam: finalTeam,
+        loginLink: loginLink
+      }).catch((e) => {
+        console.error('Failed to send volunteer approval email:', e);
+      });
+    } else {
+      await sendEmail({
+        to: v.email,
+        subject: 'Update on your volunteer application',
+        html: `
+          <div style="font-family: sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 24px; border-radius: 12px; background-color: #FAF9F6;">
+            <p>Hello ${v.full_name},</p>
+            <p>Thank you for choosing to serve Koinonia Children and Teens. At this time, we are unable to accept your volunteer application for the upcoming event.</p>
+            <p>We appreciate your heart and interest. We will keep your profile in our database and notify you for future opportunities.</p>
+            <p>Best regards,<br>Koinonia Children and Teens Team</p>
+          </div>
+        `
+      }).catch((e) => {
+         console.error('Failed to send volunteer rejection email:', e);
+      });
+    }
+
+    return res.json({ success: true, message: `Volunteer application ${status} successfully.` });
+  } catch (err: any) {
+    console.error('Error reviewing volunteer application:', err);
+    return res.status(500).json({ success: false, error: 'Failed to process review' });
+  }
+});
+
+// POST /api/admin/volunteers/bulk-review - Bulk approve or reject volunteer applications
+router.post('/volunteers/bulk-review', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin', 'team'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const { volunteerIds, status, team, note } = req.body;
+    if (!Array.isArray(volunteerIds) || volunteerIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'Volunteer IDs must be a non-empty array' });
+    }
+    if (!status || !['approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ success: false, error: 'Valid status is required (approved or rejected)' });
+    }
+
+    const nowStr = new Date().toISOString();
+    let updatedCount = 0;
+    const failures: { id: string; reason: string }[] = [];
+
+    for (const id of volunteerIds) {
+      try {
+        const v = await queryOne('SELECT v.*, u.email FROM volunteer_profiles v JOIN users u ON u.id = v.user_id WHERE v.id = ?', [id]);
+        if (!v) {
+          failures.push({ id, reason: 'Profile not found' });
+          continue;
+        }
+
+        const finalTeam = team || v.preferred_team;
+
+        await execute(`
+          UPDATE volunteer_profiles 
+          SET status = ?, preferred_team = ?, note = COALESCE(?, note), approved_by_user_id = ?, approved_at = ?, updated_at = ?
+          WHERE id = ?
+        `, [status, finalTeam, note, req.user.id, status === 'approved' ? nowStr : null, nowStr, id]);
+
+        if (status === 'approved') {
+          const user = await queryOne('SELECT * FROM users WHERE id = ?', [v.user_id]);
+          if (user && (user.role === 'parent' || user.role === 'user')) {
+            await execute("UPDATE users SET role = 'volunteer', updated_at = ? WHERE id = ?", [nowStr, v.user_id]);
+          }
+
+          const loginLink = buildPublicAppUrl('/volunteer/sign-in');
+          sendVolunteerApprovedEmail({
+            volunteerEmail: v.email,
+            volunteerFirstName: v.full_name,
+            preferredTeam: finalTeam,
+            loginLink
+          }).catch(e => console.error('Failed to send volunteer approval email:', e));
+        } else {
+          sendEmail({
+            to: v.email,
+            subject: 'Update on your volunteer application',
+            html: `
+              <div style="font-family: sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 24px; border-radius: 12px; background-color: #FAF9F6;">
+                <p>Hello ${v.full_name},</p>
+                <p>Thank you for choosing to serve Koinonia Children and Teens. At this time, we are unable to accept your volunteer application for the upcoming event.</p>
+                <p>We appreciate your heart and interest. We will keep your profile in our database and notify you for future opportunities.</p>
+                <p>Best regards,<br>Koinonia Children and Teens Team</p>
+              </div>
+            `
+          }).catch(e => console.error('Failed to send volunteer rejection email:', e));
+        }
+
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(),
+            req.user.id,
+            req.user.role,
+            `Bulk ${status === 'approved' ? 'Approve' : 'Decline'} Volunteer`,
+            'volunteer_profile',
+            id,
+            JSON.stringify({ status, team: finalTeam }),
+            nowStr
+          ]);
+        } catch (aErr) {}
+
+        updatedCount++;
+      } catch (err: any) {
+        failures.push({ id, reason: err.message || 'Update failed' });
+      }
+    }
+
+    return res.json({
+      success: true,
+      count: updatedCount,
+      failures,
+      message: `${updatedCount} volunteer(s) ${status === 'approved' ? 'approved' : 'declined'}.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk volunteer review:', err);
+    return res.status(500).json({ success: false, error: 'Failed to process bulk volunteer review' });
+  }
+});
+
+// POST /api/admin/volunteers/bulk-assign-team - Bulk assign or change team
+router.post('/volunteers/bulk-assign-team', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const { volunteerIds, assignedTeam } = req.body;
+    if (!Array.isArray(volunteerIds) || volunteerIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'Volunteer IDs must be a non-empty array' });
+    }
+    if (!assignedTeam || typeof assignedTeam !== 'string') {
+      return res.status(400).json({ success: false, error: 'Assigned team is required' });
+    }
+
+    const nowStr = new Date().toISOString();
+    let updatedCount = 0;
+    const failures: { id: string; reason: string }[] = [];
+
+    for (const id of volunteerIds) {
+      try {
+        const v = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [id]);
+        if (!v) {
+          failures.push({ id, reason: 'Profile not found' });
+          continue;
+        }
+
+        await execute(`
+          UPDATE volunteer_profiles 
+          SET preferred_team = ?, updated_at = ?
+          WHERE id = ?
+        `, [assignedTeam, nowStr, id]);
+
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(),
+            req.user.id,
+            req.user.role,
+            'Bulk Assign Volunteer Team',
+            'volunteer_profile',
+            id,
+            JSON.stringify({ assignedTeam }),
+            nowStr
+          ]);
+        } catch (aErr) {}
+
+        updatedCount++;
+      } catch (err: any) {
+        failures.push({ id, reason: err.message || 'Assignment failed' });
+      }
+    }
+
+    return res.json({
+      success: true,
+      count: updatedCount,
+      failures,
+      message: `${updatedCount} volunteer(s) assigned to ${assignedTeam}.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk volunteer team assignment:', err);
+    return res.status(500).json({ success: false, error: 'Failed to assign volunteer team' });
+  }
+});
+
+// POST /api/admin/volunteers/bulk-remove - Bulk archive volunteers by setting status = 'removed'
+router.post('/volunteers/bulk-remove', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const { volunteerIds, reason } = req.body;
+    if (!Array.isArray(volunteerIds) || volunteerIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'Volunteer IDs must be a non-empty array' });
+    }
+
+    const nowStr = new Date().toISOString();
+    const requested = volunteerIds.length;
+    let removedCount = 0;
+    const failures: { id: string; reason: string }[] = [];
+
+    for (const id of volunteerIds) {
+      try {
+        const v = await queryOne('SELECT id, status FROM volunteer_profiles WHERE id = ?', [id]);
+        if (!v) {
+          failures.push({ id, reason: 'Profile not found' });
+          continue;
+        }
+        if (v.status === 'removed') {
+          failures.push({ id, reason: 'Already removed' });
+          continue;
+        }
+
+        const result = await execute(`
+          UPDATE volunteer_profiles
+          SET status = 'removed', updated_at = ?
+          WHERE id = ? AND status != 'removed'
+        `, [nowStr, id]);
+
+        const updated = Number((result as any)?.rowCount ?? (result as any)?.changes ?? 1);
+        if (updated === 0) {
+          failures.push({ id, reason: 'No rows updated' });
+          continue;
+        }
+
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(), req.user.id, req.user.role,
+            'Bulk Remove Volunteer', 'volunteer_profile', id,
+            JSON.stringify({ reason: reason || 'Bulk removal', previousStatus: v.status }),
+            nowStr
+          ]);
+        } catch (_) {}
+
+        removedCount++;
+      } catch (err: any) {
+        failures.push({ id, reason: 'Removal failed' });
+      }
+    }
+
+    // False-success protection: if nothing was actually updated, return an error
+    if (removedCount === 0) {
+      return res.status(400).json({
+        success: false,
+        requested,
+        updated: 0,
+        failures,
+        error: "We couldn't remove the selected volunteers. Please refresh and try again."
+      });
+    }
+
+    return res.json({
+      success: true,
+      requested,
+      updated: removedCount,
+      count: removedCount,
+      failures,
+      message: `${removedCount} volunteer(s) removed.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk volunteer removal:', err);
+    return res.status(500).json({ success: false, error: 'We could not remove the selected volunteers. Please try again.' });
+  }
+});
+
+// POST /api/admin/volunteers/bulk-restore - Bulk restore removed volunteers to pending_review
+// NOTE: Previous status is not stored in the schema; pending_review is the safe recoverable default.
+router.post('/volunteers/bulk-restore', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const { volunteerIds } = req.body;
+    if (!Array.isArray(volunteerIds) || volunteerIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'Volunteer IDs must be a non-empty array' });
+    }
+
+    const nowStr = new Date().toISOString();
+    const requested = volunteerIds.length;
+    let restoredCount = 0;
+    const failures: { id: string; reason: string }[] = [];
+
+    for (const id of volunteerIds) {
+      try {
+        const v = await queryOne('SELECT id, status FROM volunteer_profiles WHERE id = ?', [id]);
+        if (!v) {
+          failures.push({ id, reason: 'Profile not found' });
+          continue;
+        }
+        if (v.status !== 'removed') {
+          failures.push({ id, reason: 'Not in removed state' });
+          continue;
+        }
+
+        const result = await execute(`
+          UPDATE volunteer_profiles
+          SET status = 'pending_review', updated_at = ?
+          WHERE id = ? AND status = 'removed'
+        `, [nowStr, id]);
+
+        const updated = Number((result as any)?.rowCount ?? (result as any)?.changes ?? 1);
+        if (updated === 0) {
+          failures.push({ id, reason: 'No rows updated' });
+          continue;
+        }
+
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(), req.user.id, req.user.role,
+            'Bulk Restore Volunteer', 'volunteer_profile', id,
+            JSON.stringify({ restoredToStatus: 'pending_review', restoredAt: nowStr }),
+            nowStr
+          ]);
+        } catch (_) {}
+
+        restoredCount++;
+      } catch (err: any) {
+        failures.push({ id, reason: 'Restoration failed' });
+      }
+    }
+
+    // False-success protection: if nothing was actually updated, return an error
+    if (restoredCount === 0) {
+      return res.status(400).json({
+        success: false,
+        requested,
+        updated: 0,
+        failures,
+        error: "We couldn't restore the selected volunteers. Please refresh and try again."
+      });
+    }
+
+    return res.json({
+      success: true,
+      requested,
+      updated: restoredCount,
+      count: restoredCount,
+      failures,
+      message: `${restoredCount} volunteer(s) restored.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk volunteer restore:', err);
+    return res.status(500).json({ success: false, error: 'We could not restore the selected volunteers. Please try again.' });
+  }
+});
+
+// GET /api/admin/parents - Get all parents and metrics
+router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin', 'team'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const status = typeof req.query.status === 'string' ? req.query.status.trim() : 'active';
+
+    let queryStr = `
+      SELECT 
+        p.*,
+        u.email as user_email,
+        u.role as user_role,
+        m.secure_url as photo_url,
+        (SELECT COUNT(*) FROM children c WHERE c.parent_profile_id = p.id) as children_count,
+        (SELECT email FROM users WHERE id = p.deleted_by) as deleted_by_email,
+        (SELECT email FROM users WHERE id = p.restored_by) as restored_by_email
+      FROM parent_profiles p
+      JOIN users u ON u.id = p.user_id
+      LEFT JOIN media_files m ON m.id = p.photo_file_id
+      WHERE 1=1
+    `;
+    const queryParams: any[] = [];
+
+    if (status === 'removed') {
+      queryStr += ` AND p.is_deleted = 1`;
+    } else if (status === 'all') {
+      // Show all
+    } else {
+      // Default to 'active'
+      queryStr += ` AND (p.is_deleted = 0 OR p.is_deleted IS NULL)`;
+    }
+
+    if (q) {
+      queryStr += ` AND (p.full_name LIKE ? OR u.email LIKE ? OR p.phone_number LIKE ? OR p.city LIKE ?)`;
+      const searchPattern = `%${q}%`;
+      queryParams.push(searchPattern, searchPattern, searchPattern, searchPattern);
+    }
+
+    queryStr += ` ORDER BY p.created_at DESC`;
+
+    const rows = await query(queryStr, queryParams);
+    const formatted = rows.map((p: any) => ({
+      id: p.id,
+      userId: p.user_id,
+      fullName: p.full_name,
+      phone: p.phone_number,
+      whatsapp: p.whatsapp_number,
+      whatsappConsentStatus: p.whatsapp_consent_status || 'unknown',
+      email: p.email || p.user_email,
+      homeAddress: p.home_address,
+      preferredContact: p.preferred_contact,
+      isKoinoniaWorker: p.is_koinonia_worker === 1,
+      department: p.department,
+      photoFileId: p.photo_file_id,
+      photoUrl: p.photo_url || (p.photo_file_id ? (String(p.photo_file_id).startsWith('http') || String(p.photo_file_id).startsWith('/') ? String(p.photo_file_id) : `/api/media/files/${p.photo_file_id}`) : ''),
+      country: p.country,
+      stateRegion: p.state_region,
+      city: p.city,
+      createdAt: p.created_at,
+      updatedAt: p.updated_at,
+      userRole: p.user_role,
+      childrenCount: Number(p.children_count || 0),
+      isDeleted: p.is_deleted === 1,
+      deletedAt: p.deleted_at,
+      deletedBy: p.deleted_by,
+      deletedByEmail: p.deleted_by_email,
+      deleteReason: p.delete_reason,
+      restoredAt: p.restored_at,
+      restoredBy: p.restored_by,
+      restoredByEmail: p.restored_by_email
+    }));
+
+    return res.json({ success: true, parents: formatted });
+  } catch (err: any) {
+    console.error('Error fetching admin parents list:', err);
+    return res.status(500).json({ success: false, error: 'Failed to fetch parents list' });
+  }
+});
+
+// POST /api/admin/parents/:id/remove - Soft-delete/archive a parent profile
+router.post('/parents/:id/remove', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const parentId = req.params.id;
+    const { reason } = req.body;
+    const now = new Date().toISOString();
+
+    const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [parentId]);
+    if (!parent) {
+      return res.status(404).json({ success: false, error: 'Parent profile not found' });
+    }
+
+    await execute(`
+      UPDATE parent_profiles 
+      SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?
+      WHERE id = ?
+    `, [now, req.user.id, reason || 'No reason specified', parentId]);
+
+    return res.json({ success: true, message: 'Parent archived successfully' });
+  } catch (err: any) {
+    console.error('Error removing parent:', err);
+    return res.status(500).json({ success: false, error: 'Failed to remove parent' });
+  }
+});
+
+// POST /api/admin/parents/:id/restore - Restore an archived parent profile
+router.post('/parents/:id/restore', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const parentId = req.params.id;
+    const now = new Date().toISOString();
+
+    const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [parentId]);
+    if (!parent) {
+      return res.status(404).json({ success: false, error: 'Parent profile not found' });
+    }
+
+    await execute(`
+      UPDATE parent_profiles 
+      SET is_deleted = 0, restored_at = ?, restored_by = ?
+      WHERE id = ?
+    `, [now, req.user.id, parentId]);
+
+    return res.json({ success: true, message: 'Parent restored successfully' });
+  } catch (err: any) {
+    console.error('Error restoring parent:', err);
+    return res.status(500).json({ success: false, error: 'Failed to restore parent' });
+  }
+});
+
+// POST /api/admin/parents/bulk-remove - Bulk soft-delete / archive parents
+router.post('/parents/bulk-remove', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const { parentIds, reason } = req.body;
+    if (!Array.isArray(parentIds) || parentIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'Parent IDs must be a non-empty array' });
+    }
+
+    const nowStr = new Date().toISOString();
+    let removedCount = 0;
+    const failures: { id: string; reason: string }[] = [];
+
+    for (const id of parentIds) {
+      try {
+        const p = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [id]);
+        if (!p) {
+          failures.push({ id, reason: 'Profile not found' });
+          continue;
+        }
+
+        // Soft delete parent profile only. Linked children, attendance, registrations, audit history are fully preserved.
+        await execute(`
+          UPDATE parent_profiles 
+          SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?
+          WHERE id = ?
+        `, [nowStr, req.user.id, reason || 'Bulk removal', id]);
+
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(),
+            req.user.id,
+            req.user.role,
+            'Bulk Remove Parent',
+            'parent_profile',
+            id,
+            JSON.stringify({ reason: reason || 'Bulk removal' }),
+            nowStr
+          ]);
+        } catch (aErr) {}
+
+        removedCount++;
+      } catch (err: any) {
+        failures.push({ id, reason: err.message || 'Removal failed' });
+      }
+    }
+
+    return res.json({
+      success: true,
+      count: removedCount,
+      failures,
+      message: `${removedCount} parent(s) removed.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk parent removal:', err);
+    return res.status(500).json({ success: false, error: 'Failed to remove parents' });
+  }
+});
+
+// POST /api/admin/parents/bulk-restore - Bulk restore archived parents
+router.post('/parents/bulk-restore', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const { parentIds } = req.body;
+    if (!Array.isArray(parentIds) || parentIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'Parent IDs must be a non-empty array' });
+    }
+
+    const nowStr = new Date().toISOString();
+    let restoredCount = 0;
+    const failures: { id: string; reason: string }[] = [];
+
+    for (const id of parentIds) {
+      try {
+        const p = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [id]);
+        if (!p) {
+          failures.push({ id, reason: 'Profile not found' });
+          continue;
+        }
+
+        await execute(`
+          UPDATE parent_profiles 
+          SET is_deleted = 0, restored_at = ?, restored_by = ?
+          WHERE id = ?
+        `, [nowStr, req.user.id, id]);
+
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(),
+            req.user.id,
+            req.user.role,
+            'Bulk Restore Parent',
+            'parent_profile',
+            id,
+            JSON.stringify({ restored_at: nowStr }),
+            nowStr
+          ]);
+        } catch (aErr) {}
+
+        restoredCount++;
+      } catch (err: any) {
+        failures.push({ id, reason: err.message || 'Restoration failed' });
+      }
+    }
+
+    return res.json({
+      success: true,
+      count: restoredCount,
+      failures,
+      message: `${restoredCount} parent(s) restored.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk parent restore:', err);
+    return res.status(500).json({ success: false, error: 'Failed to restore parents' });
+  }
+});
+
+// GET /api/admin/parents/:id - Get parent details, children, event summary, attention and admin notes
+router.get('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin', 'team'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const id = req.params.id;
+    const p = await queryOne(`
+      SELECT 
+        p.*,
+        u.email as user_email,
+        u.role as user_role,
+        u.email_verified as user_email_verified,
+        m.secure_url as photo_url,
+        (SELECT email FROM users WHERE id = p.deleted_by) as deleted_by_email,
+        (SELECT email FROM users WHERE id = p.restored_by) as restored_by_email
+      FROM parent_profiles p
+      JOIN users u ON u.id = p.user_id
+      LEFT JOIN media_files m ON m.id = p.photo_file_id
+      WHERE p.id = ?
+    `, [id]);
+
+    if (!p) {
+      return res.status(404).json({ success: false, error: 'Parent profile not found' });
+    }
+
+    const targetEventId = await resolveAdminEventId(req.query.eventId as string);
+
+    const kids = await query(`
+      SELECT 
+        c.*,
+        m.secure_url as photo_url,
+        e.id as child_event_entry_id,
+        e.status as entry_status,
+        e.submitted_at as entry_submitted_at,
+        e.has_medical_notes,
+        e.needs_extra_support,
+        e.checked_in_at,
+        e.picked_up_at
+      FROM children c
+      LEFT JOIN media_files m ON m.id = c.photo_file_id
+      LEFT JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = ? AND COALESCE(e.is_deleted, 0) = 0
+      WHERE c.parent_profile_id = ?
+      ORDER BY c.full_name ASC
+    `, [targetEventId || '', id]);
+
+    const linkedChildren = kids.map((c: any) => {
+      const careFlags: string[] = [];
+      if (c.has_medical_notes === 1) careFlags.push('medical_issue');
+      if (c.needs_extra_support === 1) careFlags.push('needs_support');
+      if (c.needs_age_review === 1) careFlags.push('age_review');
+
+      let pickupStatus = 'not_arrived';
+      if (c.picked_up_at) {
+        pickupStatus = 'picked_up';
+      } else if (c.checked_in_at) {
+        pickupStatus = 'checked_in';
+      } else if (c.entry_status === 'selected' || c.entry_status === 'pass_ready') {
+        pickupStatus = 'expected';
+      }
+
+      return {
+        id: c.id,
+        applicationId: c.child_event_entry_id || null,
+        fullName: c.full_name,
+        ageLabel: `${c.calculated_age || 0} years`,
+        gender: c.gender,
+        ageGroup: c.age_group || 'Not Assigned',
+        photoUrl: c.photo_url || (c.photo_file_id ? (String(c.photo_file_id).startsWith('http') || String(c.photo_file_id).startsWith('/') ? String(c.photo_file_id) : `/api/media/files/${c.photo_file_id}`) : null),
+        reviewStatus: c.entry_status || 'not_registered',
+        entryStatus: c.entry_status || 'not_registered',
+        pickupStatus,
+        careFlags
+      };
+    });
+
+    // Event Summary calculation based on active children in target/current event
+    const childrenAdded = kids.length;
+    const selected = kids.filter((c: any) => c.entry_status === 'selected' || c.entry_status === 'pass_ready').length;
+    const underReview = kids.filter((c: any) => c.entry_status === 'under_review').length;
+    const passReady = kids.filter((c: any) => c.entry_status === 'pass_ready').length;
+    const checkedIn = kids.filter((c: any) => c.checked_in_at).length;
+    const pickedUp = kids.filter((c: any) => c.picked_up_at).length;
+
+    const eventSummary = {
+      childrenAdded,
+      selected,
+      underReview,
+      passReady,
+      checkedIn,
+      pickedUp
+    };
+
+    // Attention validation checks
+    const attentionItems: string[] = [];
+    if (!p.phone_number) {
+      attentionItems.push('Missing contact phone number');
+    }
+    if (!p.photo_file_id) {
+      attentionItems.push('Parent profile photo not uploaded');
+    }
+    kids.forEach((c: any) => {
+      if (c.needs_age_review === 1) {
+        attentionItems.push(`Child ${c.full_name} age is flagged for review`);
+      }
+      if (c.has_medical_notes === 1) {
+        attentionItems.push(`Child ${c.full_name} has registered medical notes`);
+      }
+      if (!c.photo_file_id) {
+        attentionItems.push(`Child ${c.full_name} is missing a profile photo`);
+      }
+    });
+
+    const attention = {
+      hasIssue: attentionItems.length > 0,
+      message: attentionItems.length > 0 ? 'Needs attention' : 'No parent issue found',
+      items: attentionItems
+    };
+
+    // Get Admin Notes
+    const notesRows = await query(`
+      SELECT n.*, u.email as admin_email
+      FROM admin_parent_notes n
+      LEFT JOIN users u ON u.id = n.admin_user_id
+      WHERE n.parent_id = ?
+      ORDER BY n.created_at DESC
+    `, [id]);
+
+    const adminNotes = notesRows.map((n: any) => ({
+      id: n.id,
+      author: n.admin_name || n.admin_email || 'Admin Team',
+      note: n.note,
+      createdAt: n.created_at
+    }));
+
+    const locationParts = [];
+    if (p.city) locationParts.push(p.city);
+    if (p.state_region) locationParts.push(p.state_region);
+    if (p.country) locationParts.push(p.country);
+
+    const formattedParent = {
+      id: p.id,
+      userId: p.user_id,
+      fullName: p.full_name,
+      email: p.email || p.user_email,
+      phone: p.phone_number,
+      whatsapp: p.whatsapp_number,
+      homeAddress: p.home_address,
+      location: locationParts.join(', ') || 'Not Specified',
+      preferredContact: p.preferred_contact || 'phone',
+      isKoinoniaWorker: p.is_koinonia_worker === 1,
+      department: p.department || '',
+      photoUrl: p.photo_url || (p.photo_file_id ? (String(p.photo_file_id).startsWith('http') || String(p.photo_file_id).startsWith('/') ? String(p.photo_file_id) : `/api/media/files/${p.photo_file_id}`) : null),
+      photoFileId: p.photo_file_id || null,
+      emailVerified: p.user_email_verified === 1,
+      accountStatus: p.user_email_verified === 1 ? 'verified' : 'pending',
+      createdAt: p.created_at,
+      isDeleted: p.is_deleted === 1,
+      deletedAt: p.deleted_at,
+      deletedBy: p.deleted_by,
+      deletedByEmail: p.deleted_by_email,
+      deleteReason: p.delete_reason,
+      restoredAt: p.restored_at,
+      restoredBy: p.restored_by,
+      restoredByEmail: p.restored_by_email
+    };
+
+    return res.json({
+      success: true,
+      parent: formattedParent,
+      linkedChildren,
+      eventSummary,
+      attention,
+      adminNotes
+    });
+  } catch (err: any) {
+    console.error('Error fetching admin parent details:', err);
+    return res.status(err.statusCode || 500).json({ success: false, error: err.message || 'Failed to fetch parent details' });
+  }
+});
+
+// POST /api/admin/parents/:id/notes - Add an admin note
+router.post('/parents/:id/notes', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin', 'team'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const id = req.params.id;
+    const { note } = req.body;
+    if (!note || !note.trim()) {
+      return res.status(400).json({ success: false, error: 'Note content cannot be empty' });
+    }
+
+    const parent = await queryOne('SELECT id FROM parent_profiles WHERE id = ?', [id]);
+    if (!parent) {
+      return res.status(404).json({ success: false, error: 'Parent profile not found' });
+    }
+
+    const noteId = 'note-' + Math.random().toString(36).substring(2, 11);
+    const nowStr = new Date().toISOString();
+    const adminEmail = req.user.email;
+    const adminName = (req.user as any).fullName || adminEmail.split('@')[0];
+
+    await execute(`
+      INSERT INTO admin_parent_notes (id, parent_id, admin_user_id, admin_name, note, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [
+      noteId,
+      id,
+      req.user.id,
+      adminName,
+      note.trim(),
+      nowStr,
+      nowStr
+    ]);
+
+    return res.json({
+      success: true,
+      message: 'Note saved successfully',
+      note: {
+        id: noteId,
+        author: adminName,
+        note: note.trim(),
+        createdAt: nowStr
+      }
+    });
+  } catch (err: any) {
+    console.error('Error saving admin parent note:', err);
+    return res.status(500).json({ success: false, error: 'Failed to save admin note' });
+  }
+});
+
+// PUT /api/admin/parents/:id - Edit parent details
+router.put('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin', 'team'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const id = req.params.id;
+    const { fullName, phone, whatsapp, homeAddress, preferredContact, isKoinoniaWorker, department, country, stateRegion, city } = req.body;
+
+    const p = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [id]);
+    if (!p) {
+      return res.status(404).json({ success: false, error: 'Parent profile not found' });
+    }
+
+    const nowStr = new Date().toISOString();
+    await execute(`
+      UPDATE parent_profiles
+      SET 
+        full_name = COALESCE(?, full_name),
+        phone_number = COALESCE(?, phone_number),
+        whatsapp_number = COALESCE(?, whatsapp_number),
+        home_address = COALESCE(?, home_address),
+        preferred_contact = COALESCE(?, preferred_contact),
+        is_koinonia_worker = COALESCE(?, is_koinonia_worker),
+        department = COALESCE(?, department),
+        country = COALESCE(?, country),
+        state_region = COALESCE(?, state_region),
+        city = COALESCE(?, city),
+        updated_at = ?
+      WHERE id = ?
+    `, [
+      fullName || null, 
+      phone || null, 
+      whatsapp || null, 
+      homeAddress || null, 
+      preferredContact || null,
+      isKoinoniaWorker !== undefined ? (isKoinoniaWorker ? 1 : 0) : null,
+      department || null, 
+      country || null, 
+      stateRegion || null, 
+      city || null, 
+      nowStr, 
+      id
+    ]);
+
+    return res.json({ success: true, message: 'Parent profile updated successfully' });
+  } catch (err: any) {
+    console.error('Error updating admin parent profile:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update parent profile' });
+  }
+});
+
+// GET /api/admin/reports/volunteer-parent-stats - Custom reports sub-endpoint
+router.get('/reports/volunteer-parent-stats', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin', 'team'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+
+    const totalParents = await queryOne('SELECT COUNT(*) as count FROM parent_profiles');
+    const totalVolunteers = await queryOne('SELECT COUNT(*) as count FROM volunteer_profiles');
+    const approvedVolunteers = await queryOne("SELECT COUNT(*) as count FROM volunteer_profiles WHERE status = 'approved'");
+    const pendingVolunteers = await queryOne("SELECT COUNT(*) as count FROM volunteer_profiles WHERE status = 'pending_review'");
+    const rejectedVolunteers = await queryOne("SELECT COUNT(*) as count FROM volunteer_profiles WHERE status = 'rejected'");
+    const unapprovedParents = await queryOne("SELECT COUNT(*) as count FROM parent_profiles WHERE profile_completed_at IS NULL");
+
+    const volunteersByTeamRows = await query(`
+      SELECT preferred_team as team, COUNT(*) as count 
+      FROM volunteer_profiles 
+      WHERE status = 'approved'
+      GROUP BY preferred_team
+    `);
+    const volunteersByTeam = volunteersByTeamRows.map((r: any) => ({
+      team: r.team || 'Unassigned',
+      count: r.count
+    }));
+
+    return res.json({
+      success: true,
+      stats: {
+        totalParents: totalParents?.count || 0,
+        totalVolunteers: totalVolunteers?.count || 0,
+        approvedVolunteers: approvedVolunteers?.count || 0,
+        pendingVolunteers: pendingVolunteers?.count || 0,
+        rejectedVolunteers: rejectedVolunteers?.count || 0,
+        totalApprovedVolunteers: approvedVolunteers?.count || 0,
+        activeVolunteersCount: totalVolunteers?.count || 0,
+        totalRegisteredParents: totalParents?.count || 0,
+        unapprovedParentsCount: unapprovedParents?.count || 0,
+        volunteersByTeam
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching volunteer and parent reports stats:', err);
+    return res.status(500).json({ success: false, error: 'Failed to load custom stats.' });
+  }
+});
+
+// PASS MANAGEMENT ENDPOINTS
+router.get('/children/:childId/pass', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { childId } = req.params;
+    const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ?', [childId]);
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Child event registration not found' });
+    }
+    const pass = await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entry.id, 'active']);
+    return res.json({
+      success: true,
+      entryStatus: entry.status,
+      pass: pass ? {
+        id: pass.id,
+        passReference: pass.pass_reference,
+        status: pass.status,
+        issuedAt: pass.issued_at
+      } : null
+    });
+  } catch (err: any) {
+    console.error('Error in GET /api/admin/children/:childId/pass:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Internal server error' });
+  }
+});
+
+router.post('/children/:childId/pass/generate', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { childId } = req.params;
+    
+    // First let's check if the child has registration
+    const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ?', [childId]);
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Child registration not found' });
+    }
+
+    const pass = await issuePassForChild({ childId });
+    if (!pass) {
+      return res.status(400).json({ success: false, error: 'Failed to issue pass' });
+    }
+
+    const child = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
+    const childFirstName = child ? child.full_name.split(' ')[0] : 'Child';
+    const parentId = child ? child.parent_profile_id : null;
+    
+    // Send Pass Ready Notification
+    if (parentId) {
+      const now = new Date().toISOString();
+      const subject = 'Pass ready';
+      const message = `${childFirstName}'s event pass is ready. You can open it from your parent account.`;
+      
+      const notifId = `notif-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO notifications (
+          id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
+        ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
+      `, [notifId, subject, message, entry.event_id, childId, parentId, now]);
+
+      const pNotifId = `pnotif-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [pNotifId, parentId, entry.event_id, childId, subject, message, now]);
+    }
+
+    return res.json({
+      success: true,
+      pass: {
+        id: pass.id,
+        passReference: pass.pass_reference,
+        status: pass.status,
+        issuedAt: pass.issued_at
+      }
+    });
+  } catch (err: any) {
+    console.error('Error in POST /api/admin/children/:childId/pass/generate:', err);
+    return res.status(400).json({ success: false, error: err.message || 'Failed to generate pass' });
+  }
+});
+
+router.post('/children/:childId/pass/revoke', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { childId } = req.params;
+    const { reason } = req.body;
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ success: false, error: 'Revocation reason is required' });
+    }
+    const adminId = req.user?.id || 'admin';
+    await revokePassForChild(childId, undefined, reason, adminId);
+    return res.json({ success: true, message: 'Pass revoked successfully' });
+  } catch (err: any) {
+    console.error('Error in POST /api/admin/children/:childId/pass/revoke:', err);
+    return res.status(400).json({ success: false, error: err.message || 'Failed to revoke pass' });
+  }
+});
+
+// PUT /api/admin/applications/:id - Edit child and entry details
+router.put('/applications/:id', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const {
+      fullName,
+      gender,
+      dateOfBirth,
+      schoolClass,
+      schoolName,
+      hasMedicalNotes,
+      medicalNotes,
+      needsExtraSupport,
+      supportNotes,
+      parentFullName,
+      parentPhone,
+      parentWhatsApp,
+      parentHomeAddress,
+      pickupPersonName,
+      pickupPersonRelationship,
+      pickupPersonPhone
+    } = req.body;
+
+    const entry = await queryOne(`SELECT child_id FROM child_event_entries WHERE id = ?`, [id]);
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Application entry not found.' });
+    }
+
+    const now = new Date().toISOString();
+
+    // Update parent details if specified
+    const childRow = await queryOne('SELECT parent_profile_id FROM children WHERE id = ?', [entry.child_id]);
+    if (childRow && childRow.parent_profile_id) {
+      const parentUpdates: string[] = [];
+      const parentParams: any[] = [];
+      if (parentFullName !== undefined) { parentUpdates.push('full_name = ?'); parentParams.push(parentFullName); }
+      if (parentPhone !== undefined) { parentUpdates.push('phone_number = ?'); parentParams.push(parentPhone); }
+      if (parentWhatsApp !== undefined) { parentUpdates.push('whatsapp_number = ?'); parentParams.push(parentWhatsApp); }
+      if (parentHomeAddress !== undefined) { parentUpdates.push('home_address = ?'); parentParams.push(parentHomeAddress); }
+      if (parentUpdates.length > 0) {
+        parentUpdates.push('updated_at = ?'); parentParams.push(now);
+        parentParams.push(childRow.parent_profile_id);
+        await execute(`UPDATE parent_profiles SET ${parentUpdates.join(', ')} WHERE id = ?`, parentParams);
+      }
+    }
+
+    // Update authorized pickup details if specified
+    if (pickupPersonName !== undefined || pickupPersonRelationship !== undefined || pickupPersonPhone !== undefined) {
+      const existingPickup = await queryOne('SELECT id FROM pickup_people WHERE child_event_entry_id = ?', [id]);
+      if (existingPickup) {
+        const pickupUpdates: string[] = [];
+        const pickupParams: any[] = [];
+        if (pickupPersonName !== undefined) { pickupUpdates.push('full_name = ?'); pickupParams.push(pickupPersonName); }
+        if (pickupPersonRelationship !== undefined) { pickupUpdates.push('relationship_to_child = ?'); pickupParams.push(pickupPersonRelationship); }
+        if (pickupPersonPhone !== undefined) { pickupUpdates.push('phone_number = ?'); pickupParams.push(pickupPersonPhone); }
+        if (pickupUpdates.length > 0) {
+          pickupUpdates.push('updated_at = ?'); pickupParams.push(now);
+          pickupParams.push(existingPickup.id);
+          await execute(`UPDATE pickup_people SET ${pickupUpdates.join(', ')} WHERE id = ?`, pickupParams);
+        }
+      } else {
+        const newPickupId = 'pickup-' + Math.random().toString(36).substring(2, 11);
+        await execute(`
+          INSERT INTO pickup_people (id, child_event_entry_id, pickup_type, full_name, relationship_to_child, phone_number, whatsapp_number, approved_by_parent, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [newPickupId, id, 'other', pickupPersonName || '', pickupPersonRelationship || '', pickupPersonPhone || '', '', 1, now, now]);
+      }
+    }
+
+    // Calculate age if dob is updated
+    let calculatedAge = null;
+    let ageGroup = null;
+    let needsAgeReview = 0;
+    if (dateOfBirth) {
+      const dobDate = new Date(dateOfBirth);
+      const today = new Date();
+      let age = today.getFullYear() - dobDate.getFullYear();
+      const m = today.getMonth() - dobDate.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) {
+        age--;
+      }
+      calculatedAge = age;
+
+      // Determine age group
+      if (age < 1) {
+        ageGroup = 'Below 1';
+      } else if (age < 3) {
+        ageGroup = 'Ages 1 to 2';
+      } else if (age < 6) {
+        ageGroup = 'Ages 3 to 5';
+      } else if (age < 10) {
+        ageGroup = 'Ages 6 to 9';
+      } else {
+        ageGroup = 'Teens (Ages 10+)';
+      }
+
+      // Under 1 year check for event
+      if (age < 1) {
+        needsAgeReview = 1;
+      }
+    }
+
+    // Update children table
+    const childUpdates: string[] = [];
+    const childParams: any[] = [];
+
+    if (fullName) { childUpdates.push('full_name = ?'); childParams.push(fullName); }
+    if (gender) { childUpdates.push('gender = ?'); childParams.push(gender); }
+    if (dateOfBirth) { 
+      childUpdates.push('date_of_birth = ?'); childParams.push(dateOfBirth); 
+      childUpdates.push('calculated_age = ?'); childParams.push(calculatedAge);
+      childUpdates.push('age_group = ?'); childParams.push(ageGroup);
+      childUpdates.push('needs_age_review = ?'); childParams.push(needsAgeReview);
+    }
+    childUpdates.push('updated_at = ?'); childParams.push(now);
+
+    if (childUpdates.length > 1) {
+      childParams.push(entry.child_id);
+      await execute(`UPDATE children SET ${childUpdates.join(', ')} WHERE id = ?`, childParams);
+    }
+
+    // Update child_event_entries table
+    const entryUpdates: string[] = [];
+    const entryParams: any[] = [];
+
+    if (schoolClass !== undefined) { entryUpdates.push('school_class = ?'); entryParams.push(schoolClass); }
+    if (schoolName !== undefined) { entryUpdates.push('school_name = ?'); entryParams.push(schoolName); }
+    if (hasMedicalNotes !== undefined) { entryUpdates.push('has_medical_notes = ?'); entryParams.push(hasMedicalNotes ? 1 : 0); }
+    if (medicalNotes !== undefined) { entryUpdates.push('medical_notes = ?'); entryParams.push(medicalNotes); }
+    if (needsExtraSupport !== undefined) { entryUpdates.push('needs_extra_support = ?'); entryParams.push(needsExtraSupport ? 1 : 0); }
+    if (supportNotes !== undefined) { entryUpdates.push('support_notes = ?'); entryParams.push(supportNotes); }
+    entryUpdates.push('updated_at = ?'); entryParams.push(now);
+
+    entryParams.push(id);
+    await execute(`UPDATE child_event_entries SET ${entryUpdates.join(', ')} WHERE id = ?`, entryParams);
+
+    // Audit history trail safely
+    try {
+      const adminId = req.user?.id || 'admin';
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        Math.random().toString(36).substring(2, 15),
+        adminId,
+        'admin',
+        'Update Child details',
+        'child_event_entry',
+        id,
+        JSON.stringify({ fullName, gender, dateOfBirth, schoolClass }),
+        now
+      ]);
+    } catch (auditErr) {
+      console.error('[Safe Audit Warning] Failed to log details update:', auditErr);
+    }
+
+    return res.json({ success: true, message: 'Child details updated successfully' });
+  } catch (err: any) {
+    console.error('Error updating child details:', err);
+    return res.status(400).json({ success: false, error: 'We could not update child details right now. Please try again.' });
+  }
+});
+
+// POST /api/admin/applications/bulk-remove - Bulk soft-delete children
+router.post('/applications/bulk-remove', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { applicationIds, reason } = req.body;
+    if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one application ID is required' });
+    }
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ success: false, error: 'Removal reason is required' });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user?.id || 'admin';
+    let removedCount = 0;
+    const failures: { id: string; reason: string }[] = [];
+
+    for (const id of applicationIds) {
+      try {
+        const entry = await queryOne(`SELECT child_id, status FROM child_event_entries WHERE id = ?`, [id]);
+        if (!entry) {
+          failures.push({ id, reason: 'Record not found' });
+          continue;
+        }
+
+        // Protected condition check
+        if (entry.status === 'checked_in' || entry.status === 'inside') {
+          failures.push({ id, reason: 'Child is currently checked in. Please check out or pick up before removal.' });
+          continue;
+        }
+
+        await execute(`
+          UPDATE child_event_entries 
+          SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?, status = 'removed'
+          WHERE id = ?
+        `, [now, adminId, reason, id]);
+
+        await execute(`
+          UPDATE children 
+          SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?
+          WHERE id = ?
+        `, [now, adminId, reason, entry.child_id]);
+
+        try {
+          await revokePassForChild(entry.child_id, undefined, `Bulk child registration removed: ${reason}`, adminId);
+        } catch (passErr) {
+          // ignore pass revocation error
+        }
+
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            Math.random().toString(36).substring(2, 15),
+            adminId,
+            'admin',
+            'Bulk Remove Child',
+            'child_event_entry',
+            id,
+            JSON.stringify({ reason }),
+            now
+          ]);
+        } catch (aErr) {}
+
+        removedCount++;
+      } catch (err: any) {
+        failures.push({ id, reason: err.message || 'Removal failed' });
+      }
+    }
+
+    const summary = await getChildSummaryStats();
+    return res.json({
+      success: true,
+      result: {
+        requested: applicationIds.length,
+        removed: removedCount,
+        skipped: failures.length,
+        failures
+      },
+      summary
+    });
+  } catch (err: any) {
+    console.error('Error in bulk-remove:', err);
+    return res.status(500).json({ success: false, error: 'Bulk removal failed' });
+  }
+});
+
+// POST /api/admin/applications/bulk-purge - Controlled bulk permanent removal of eligible records (Super Admin only)
+router.post('/applications/bulk-purge', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "You don't have permission to permanently delete this record." });
+    }
+    const { applicationIds, reason, confirmText } = req.body;
+    if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one record is required for permanent removal.' });
+    }
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ success: false, error: 'Removal reason is required.' });
+    }
+    if (confirmText !== 'DELETE') {
+      return res.status(400).json({ success: false, error: 'Confirmation text must be DELETE.' });
+    }
+
+    const adminId = req.user.id;
+    const now = new Date().toISOString();
+
+    let permanentlyRemoved = 0;
+    let retained = 0;
+    const failures: { id: string; reason: string }[] = [];
+
+    for (const id of applicationIds) {
+      try {
+        const entry = await queryOne(`
+          SELECT e.id, e.child_id, e.status, e.is_deleted, e.checked_in_at, e.picked_up_at, c.full_name
+          FROM child_event_entries e
+          JOIN children c ON c.id = e.child_id
+          WHERE e.id = ?
+        `, [id]);
+
+        if (!entry) {
+          failures.push({ id, reason: 'Record not found.' });
+          continue;
+        }
+
+        if (entry.is_deleted !== 1 && entry.status !== 'removed') {
+          failures.push({ id, reason: 'Only removed children can be permanently deleted. Remove this child first.' });
+          continue;
+        }
+
+        // 1. Unresolved safety alert check
+        const unresolvedAlert = await queryOne(`
+          SELECT id FROM event_safety_alerts 
+          WHERE (child_id = ? OR child_event_entry_id = ?) AND status != 'resolved'
+        `, [entry.child_id, id]);
+        if (unresolvedAlert) {
+          retained++;
+          failures.push({ id, reason: `${entry.full_name || 'This child'} cannot be permanently deleted while an unresolved safeguarding or safety alert exists. Resolve or close the alert first.` });
+          continue;
+        }
+
+        // 2. Attendance / Active status check
+        if (
+          ['checked_in', 'inside'].includes(entry.status) ||
+          (entry.checked_in_at != null && entry.picked_up_at == null)
+        ) {
+          retained++;
+          failures.push({ id, reason: `${entry.full_name || 'This child'} cannot be permanently deleted while an active attendance record exists. Reset event progress first.` });
+          continue;
+        }
+
+        // Record is eligible for permanent deletion inside a safe transaction
+        await transaction(async () => {
+          // Anonymize safeguarding/incident references
+          await execute(`UPDATE event_safety_alerts SET child_id = NULL, child_event_entry_id = NULL WHERE child_id = ? OR child_event_entry_id = ?`, [entry.child_id, id]);
+          await execute(`UPDATE alert_child_context_snapshots SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+          await execute(`UPDATE child_summary_access_logs SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+          await execute(`UPDATE alert_child_link_history SET previous_child_id = NULL WHERE previous_child_id = ?`, [entry.child_id]);
+          await execute(`UPDATE alert_child_link_history SET new_child_id = NULL WHERE new_child_id = ?`, [entry.child_id]);
+          await execute(`UPDATE child_contact_attempts SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+          await execute(`UPDATE notifications SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+          await execute(`UPDATE notification_jobs SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+          await execute(`UPDATE parent_notifications SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+
+          // Clear operational records
+          await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [id]);
+          await execute(`DELETE FROM child_attention_items WHERE child_id = ?`, [entry.child_id]);
+          await execute(`DELETE FROM pickup_people WHERE child_event_entry_id = ?`, [id]);
+          await execute(`DELETE FROM event_passes WHERE child_event_entry_id = ?`, [id]);
+          await execute(`DELETE FROM child_event_entries WHERE id = ?`, [id]);
+
+          const otherEntries = await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE child_id = ?`, [entry.child_id]);
+          if (!otherEntries || otherEntries.count === 0) {
+            await execute(`DELETE FROM children WHERE id = ?`, [entry.child_id]);
+          }
+
+          try {
+            await execute(`
+              INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+              crypto.randomUUID(),
+              adminId,
+              req.user.role,
+              'Child permanently deleted by Super Admin',
+              'child',
+              entry.child_id,
+              JSON.stringify({ reason }),
+              now
+            ]);
+          } catch (aErr) {}
+        });
+
+        permanentlyRemoved++;
+      } catch (err: any) {
+        console.error('Error permanently deleting child record:', err);
+        failures.push({ id, reason: "We couldn't permanently delete this child. Nothing was changed." });
+      }
+    }
+
+    const summary = await getChildSummaryStats();
+    return res.json({
+      success: true,
+      result: {
+        requested: applicationIds.length,
+        permanentlyRemoved,
+        retained,
+        failures
+      },
+      summary,
+      message: `${permanentlyRemoved} child record(s) permanently deleted.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk-purge:', err);
+    return res.status(500).json({ success: false, error: "We couldn't permanently delete selected children. Nothing was changed." });
+  }
+});
+
+// POST /api/admin/applications/bulk-restore - Bulk restore removed children
+router.post('/applications/bulk-restore', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { applicationIds, reason } = req.body;
+    if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one application ID is required' });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user?.id || 'admin';
+    let restoredCount = 0;
+
+    for (const id of applicationIds) {
+      const entry = await queryOne(`SELECT child_id FROM child_event_entries WHERE id = ?`, [id]);
+      if (!entry) continue;
+
+      await execute(`
+        UPDATE child_event_entries 
+        SET is_deleted = 0, restored_at = ?, restored_by = ?, status = 'under_review'
+        WHERE id = ?
+      `, [now, adminId, id]);
+
+      await execute(`
+        UPDATE children 
+        SET is_deleted = 0, restored_at = ?, restored_by = ?
+        WHERE id = ?
+      `, [now, adminId, entry.child_id]);
+
+      restoredCount++;
+    }
+
+    const summary = await getChildSummaryStats();
+    return res.json({
+      success: true,
+      restoredCount,
+      summary
+    });
+  } catch (err: any) {
+    console.error('Error in bulk-restore:', err);
+    return res.status(500).json({ success: false, error: 'Bulk restore failed' });
+  }
+});
+
+// POST /api/admin/applications/:id/remove - Soft-delete a child registration
+router.post('/applications/:id/remove', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ success: false, error: 'Removal reason is required' });
+    }
+
+    const entry = await queryOne(`SELECT child_id, status FROM child_event_entries WHERE id = ?`, [id]);
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Application entry not found.' });
+    }
+
+    if (entry.status === 'checked_in' || entry.status === 'inside') {
+      return res.status(400).json({ success: false, error: 'This child is currently checked in. Complete or reverse attendance before removal.' });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user?.id || 'admin';
+
+    // Soft delete child_event_entries
+    await execute(`
+      UPDATE child_event_entries 
+      SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?, status = 'removed'
+      WHERE id = ?
+    `, [now, adminId, reason, id]);
+
+    // Soft delete children
+    await execute(`
+      UPDATE children 
+      SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?
+      WHERE id = ?
+    `, [now, adminId, reason, entry.child_id]);
+
+    // Revoke any active passes for the child
+    try {
+      await revokePassForChild(entry.child_id, undefined, `Child registration removed: ${reason}`, adminId);
+    } catch (passErr) {
+      console.log('No active pass to revoke or pass revocation failed:', passErr);
+    }
+
+    // Add audit history trail safely
+    try {
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        Math.random().toString(36).substring(2, 15),
+        adminId,
+        'admin',
+        'Remove Child',
+        'child_event_entry',
+        id,
+        JSON.stringify({ reason }),
+        now
+      ]);
+    } catch (auditErr) {
+      console.error('[Safe Audit Warning] Failed to log child removal:', auditErr);
+    }
+
+    const summary = await getChildSummaryStats();
+    return res.json({ success: true, message: 'Child registration removed successfully.', summary });
+  } catch (err: any) {
+    console.error('Error removing child:', err);
+    return res.status(400).json({ success: false, error: 'We could not remove this child right now. Please try again.' });
+  }
+});
+
+// POST /api/admin/applications/:id/restore - Restore a soft-deleted child registration
+router.post('/applications/:id/restore', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const entry = await queryOne(`SELECT child_id FROM child_event_entries WHERE id = ?`, [id]);
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Application entry not found.' });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user?.id || 'admin';
+
+    // Restore child_event_entries (status resets to under_review)
+    await execute(`
+      UPDATE child_event_entries 
+      SET is_deleted = 0, restored_at = ?, restored_by = ?, status = 'under_review'
+      WHERE id = ?
+    `, [now, adminId, id]);
+
+    // Restore children
+    await execute(`
+      UPDATE children 
+      SET is_deleted = 0, restored_at = ?, restored_by = ?
+      WHERE id = ?
+    `, [now, adminId, entry.child_id]);
+
+    // Add audit history trail safely
+    try {
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        Math.random().toString(36).substring(2, 15),
+        adminId,
+        'admin',
+        'Restore Child',
+        'child_event_entry',
+        id,
+        JSON.stringify({ reason: reason || 'Restored by administrator' }),
+        now
+      ]);
+    } catch (auditErr) {
+      console.error('[Safe Audit Warning] Failed to log child restore:', auditErr);
+    }
+
+    const summary = await getChildSummaryStats();
+    return res.json({ success: true, message: 'Child registration restored successfully. Status reset to Under Review.', summary });
+  } catch (err: any) {
+    console.error('Error restoring child:', err);
+    return res.status(400).json({ success: false, error: 'We could not restore this child right now. Please try again.' });
+  }
+});
+
+// POST /api/admin/applications/bulk-reset-progress - Super Admin bulk action to reset event progress
+router.post('/applications/bulk-reset-progress', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "Super Admin permission is required to reset event progress." });
+    }
+    const { applicationIds, mode } = req.body;
+    if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one registration is required.' });
+    }
+    if (mode !== 'review' && mode !== 'attendance') {
+      return res.status(400).json({ success: false, error: 'Valid reset mode is required (review or attendance).' });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user.id;
+    let resetCount = 0;
+
+    await transaction(async () => {
+      for (const id of applicationIds) {
+        const entry = await queryOne(`SELECT id, child_id, event_id, status FROM child_event_entries WHERE id = ? OR child_id = ?`, [id, id]);
+        if (!entry) continue;
+
+        if (mode === 'review') {
+          await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, entry.id]);
+          await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [entry.id]);
+          await execute(`
+            UPDATE child_event_entries 
+            SET status = 'under_review', checked_in_at = NULL, checked_in_by = NULL, picked_up_at = NULL, picked_up_by = NULL, reviewed_at = NULL, decision_at = NULL, updated_at = ?
+            WHERE id = ?
+          `, [now, entry.id]);
+
+          try {
+            await execute(`
+              INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+              crypto.randomUUID(),
+              adminId,
+              req.user.role,
+              'Event progress reset to review by Super Admin',
+              'child_event_entry',
+              entry.id,
+              JSON.stringify({ mode: 'review', childId: entry.child_id, eventId: entry.event_id, previousStatus: entry.status }),
+              now
+            ]);
+          } catch (aErr) {}
+        } else {
+          const pass = await queryOne(`SELECT id, status FROM event_passes WHERE child_event_entry_id = ? AND status = 'active'`, [entry.id]);
+          const targetStatus = pass ? 'pass_ready' : (entry.status === 'under_review' ? 'under_review' : 'selected');
+
+          await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [entry.id]);
+          await execute(`
+            UPDATE child_event_entries 
+            SET status = ?, checked_in_at = NULL, checked_in_by = NULL, picked_up_at = NULL, picked_up_by = NULL, updated_at = ?
+            WHERE id = ?
+          `, [targetStatus, now, entry.id]);
+
+          try {
+            await execute(`
+              INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+              crypto.randomUUID(),
+              adminId,
+              req.user.role,
+              'Event attendance reset by Super Admin',
+              'child_event_entry',
+              entry.id,
+              JSON.stringify({ mode: 'attendance', targetStatus, childId: entry.child_id, eventId: entry.event_id, previousStatus: entry.status }),
+              now
+            ]);
+          } catch (aErr) {}
+        }
+        resetCount++;
+      }
+    });
+
+    const summary = await getChildSummaryStats();
+    return res.json({
+      success: true,
+      resetCount,
+      summary,
+      message: `${resetCount} children's event progress was reset.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk reset event progress:', err);
+    return res.status(400).json({ success: false, error: "We couldn't reset selected registrations. Nothing was changed." });
+  }
+});
+
+// POST /api/admin/applications/bulk-reset-and-remove - Super Admin combined workflow to reset event progress and soft-remove
+router.post('/applications/bulk-reset-and-remove', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "Super Admin permission is required to reset and remove registrations." });
+    }
+    const { applicationIds, reason } = req.body;
+    if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one registration is required.' });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user.id;
+    const removalReason = (reason && reason.trim()) ? reason.trim() : 'Reset and removed by Super Admin';
+    let processedCount = 0;
+
+    await transaction(async () => {
+      for (const id of applicationIds) {
+        const entry = await queryOne(`SELECT id, child_id, event_id, status FROM child_event_entries WHERE id = ? OR child_id = ?`, [id, id]);
+        if (!entry) continue;
+
+        // 1. Revoke any active pass for this entry
+        await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, entry.id]);
+
+        // 2. Clear current event attendance records
+        await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [entry.id]);
+
+        // 3. Soft remove child_event_entries: clear attendance, set status = 'removed', is_deleted = 1
+        await execute(`
+          UPDATE child_event_entries 
+          SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?, status = 'removed',
+              checked_in_at = NULL, checked_in_by = NULL, picked_up_at = NULL, picked_up_by = NULL, updated_at = ?
+          WHERE id = ?
+        `, [now, adminId, removalReason, now, entry.id]);
+
+        // 4. Soft remove children record (remains restorable)
+        await execute(`
+          UPDATE children 
+          SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?
+          WHERE id = ?
+        `, [now, adminId, removalReason, entry.child_id]);
+
+        // 5. Clean readable audit log
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(),
+            adminId,
+            req.user.role,
+            'Event progress reset and registration removed by Super Admin',
+            'child_event_entry',
+            entry.id,
+            JSON.stringify({ reason: removalReason, childId: entry.child_id, eventId: entry.event_id, previousStatus: entry.status }),
+            now
+          ]);
+        } catch (aErr) {}
+
+        processedCount++;
+      }
+    });
+
+    const summary = await getChildSummaryStats();
+    return res.json({
+      success: true,
+      processedCount,
+      summary,
+      message: `${processedCount} ${processedCount === 1 ? 'registration was' : 'registrations were'} moved to Removed.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk reset and remove:', err);
+    return res.status(400).json({ success: false, error: "We couldn't reset and remove these registrations. Nothing was changed." });
+  }
+});
+
+// POST /api/admin/applications/bulk-revoke-pass - Bulk revoke event passes
+router.post('/applications/bulk-revoke-pass', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { applicationIds, reason } = req.body;
+    if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one registration is required.' });
+    }
+    const now = new Date().toISOString();
+    const adminId = req.user?.id || 'admin';
+    let revokedCount = 0;
+
+    await transaction(async () => {
+      for (const id of applicationIds) {
+        const entry = await queryOne(`SELECT id, child_id, status FROM child_event_entries WHERE id = ?`, [id]);
+        if (!entry) continue;
+
+        await execute(`
+          UPDATE event_passes 
+          SET status = 'revoked', revoked_at = ? 
+          WHERE child_event_entry_id = ? AND status = 'active'
+        `, [now, id]);
+
+        if (entry.status === 'pass_ready') {
+          await execute(`UPDATE child_event_entries SET status = 'selected', updated_at = ? WHERE id = ?`, [now, id]);
+        }
+
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(),
+            adminId,
+            req.user?.role || 'admin',
+            'Pass revoked',
+            'child_event_entry',
+            id,
+            JSON.stringify({ reason: reason || 'Bulk pass revocation', childId: entry.child_id }),
+            now
+          ]);
+        } catch (aErr) {}
+
+        revokedCount++;
+      }
+    });
+
+    const summary = await getChildSummaryStats();
+    return res.json({
+      success: true,
+      revokedCount,
+      summary,
+      message: `${revokedCount} passes revoked.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk revoke passes:', err);
+    return res.status(500).json({ success: false, error: "We couldn't revoke passes for selected children. Nothing was changed." });
+  }
+});
+
+// POST /api/admin/applications/:id/reset-progress - Super Admin action to reset event progress for a child
+router.post('/applications/:id/reset-progress', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "Super Admin permission is required to reset event progress." });
+    }
+    const { id } = req.params;
+    const { mode } = req.body; // 'review' | 'attendance'
+
+    if (mode !== 'review' && mode !== 'attendance') {
+      return res.status(400).json({ success: false, error: 'Valid reset mode is required (review or attendance).' });
+    }
+
+    const entry = await queryOne(`
+      SELECT e.id, e.child_id, e.event_id, e.status, e.is_deleted, c.full_name
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      WHERE e.id = ? OR e.child_id = ?
+    `, [id, id]);
+
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Registration record not found.' });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user.id;
+
+    await transaction(async () => {
+      if (mode === 'review') {
+        await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, entry.id]);
+        await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [entry.id]);
+        await execute(`
+          UPDATE child_event_entries 
+          SET status = 'under_review', checked_in_at = NULL, checked_in_by = NULL, picked_up_at = NULL, picked_up_by = NULL, reviewed_at = NULL, decision_at = NULL, updated_at = ?
+          WHERE id = ?
+        `, [now, entry.id]);
+
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(),
+            adminId,
+            req.user.role,
+            'Event progress reset to review by Super Admin',
+            'child_event_entry',
+            entry.id,
+            JSON.stringify({ mode: 'review', childId: entry.child_id, eventId: entry.event_id, previousStatus: entry.status }),
+            now
+          ]);
+        } catch (aErr) {}
+      } else {
+        const pass = await queryOne(`SELECT id, status FROM event_passes WHERE child_event_entry_id = ? AND status = 'active'`, [entry.id]);
+        const targetStatus = pass ? 'pass_ready' : (entry.status === 'under_review' ? 'under_review' : 'selected');
+
+        await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [entry.id]);
+        await execute(`
+          UPDATE child_event_entries 
+          SET status = ?, checked_in_at = NULL, checked_in_by = NULL, picked_up_at = NULL, picked_up_by = NULL, updated_at = ?
+          WHERE id = ?
+        `, [targetStatus, now, entry.id]);
+
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(),
+            adminId,
+            req.user.role,
+            'Event attendance reset by Super Admin',
+            'child_event_entry',
+            entry.id,
+            JSON.stringify({ mode: 'attendance', targetStatus, childId: entry.child_id, eventId: entry.event_id, previousStatus: entry.status }),
+            now
+          ]);
+        } catch (aErr) {}
+      }
+    });
+
+    const summary = await getChildSummaryStats();
+    return res.json({
+      success: true,
+      summary,
+      message: `${entry.full_name || 'Child'}'s event progress was reset.`
+    });
+  } catch (err: any) {
+    console.error('Error resetting event progress:', err);
+    return res.status(400).json({ success: false, error: "We couldn't reset this child's event progress. Nothing was changed." });
+  }
+});
+
+// POST /api/admin/applications/:id/reset-and-remove - Super Admin single action to reset event progress and soft-remove
+router.post('/applications/:id/reset-and-remove', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "Super Admin permission is required to reset and remove registrations." });
+    }
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const entry = await queryOne(`
+      SELECT e.id, e.child_id, e.event_id, e.status, e.is_deleted, c.full_name
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      WHERE e.id = ? OR e.child_id = ?
+    `, [id, id]);
+
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Registration record not found.' });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user.id;
+    const removalReason = (reason && reason.trim()) ? reason.trim() : 'Reset and removed by Super Admin';
+
+    await transaction(async () => {
+      await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, entry.id]);
+      await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [entry.id]);
+      await execute(`
+        UPDATE child_event_entries 
+        SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?, status = 'removed',
+            checked_in_at = NULL, checked_in_by = NULL, picked_up_at = NULL, picked_up_by = NULL, updated_at = ?
+        WHERE id = ?
+      `, [now, adminId, removalReason, now, entry.id]);
+      await execute(`
+        UPDATE children 
+        SET is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?
+        WHERE id = ?
+      `, [now, adminId, removalReason, entry.child_id]);
+
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(),
+          adminId,
+          req.user.role,
+          'Event progress reset and registration removed by Super Admin',
+          'child_event_entry',
+          entry.id,
+          JSON.stringify({ reason: removalReason, childId: entry.child_id, eventId: entry.event_id, previousStatus: entry.status }),
+          now
+        ]);
+      } catch (aErr) {}
+    });
+
+    const summary = await getChildSummaryStats();
+    return res.json({
+      success: true,
+      summary,
+      message: `${entry.full_name || 'Registration'} was moved to Removed.`
+    });
+  } catch (err: any) {
+    console.error('Error resetting and removing registration:', err);
+    return res.status(400).json({ success: false, error: "We couldn't reset and remove this registration. Nothing was changed." });
+  }
+});
+
+// POST /api/admin/applications/:id/prepare-delete - Super Admin action to prepare a removed test record for permanent deletion
+router.post('/applications/:id/prepare-delete', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "Super Admin permission is required to prepare records for permanent deletion." });
+    }
+    const { id } = req.params;
+    const entry = await queryOne(`
+      SELECT e.id, e.child_id, e.status, e.is_deleted, c.full_name
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      WHERE e.id = ?
+    `, [id]);
+
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Registration record not found.' });
+    }
+
+    if (entry.is_deleted !== 1 && entry.status !== 'removed') {
+      return res.status(400).json({ success: false, error: 'Only removed applications can be prepared for permanent deletion. Remove this application first.' });
+    }
+
+    const unresolvedAlert = await queryOne(`
+      SELECT id FROM event_safety_alerts 
+      WHERE (child_id = ? OR child_event_entry_id = ?) AND status != 'resolved'
+    `, [entry.child_id, id]);
+    if (unresolvedAlert) {
+      return res.status(400).json({
+        success: false,
+        error: `${entry.full_name || 'This child'} cannot be prepared for deletion while an unresolved safeguarding or safety alert exists. Resolve or close the alert first.`
+      });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user.id;
+
+    await transaction(async () => {
+      await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, id]);
+      await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [id]);
+      await execute(`
+        UPDATE child_event_entries 
+        SET checked_in_at = NULL, checked_in_by = NULL, picked_up_at = NULL, picked_up_by = NULL, updated_at = ?
+        WHERE id = ?
+      `, [now, id]);
+
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(),
+          adminId,
+          req.user.role,
+          'Prepared for permanent deletion by Super Admin',
+          'child_event_entry',
+          id,
+          JSON.stringify({ childId: entry.child_id }),
+          now
+        ]);
+      } catch (aErr) {}
+    });
+
+    const summary = await getChildSummaryStats();
+    return res.json({
+      success: true,
+      summary,
+      message: `${entry.full_name || 'Record'} is prepared and ready for permanent deletion.`
+    });
+  } catch (err: any) {
+    console.error('Error preparing record for permanent deletion:', err);
+    return res.status(500).json({ success: false, error: "We couldn't prepare this record for deletion. Nothing was changed." });
+  }
+});
+
+// POST /api/admin/applications/:id/permanent-delete - Permanently delete removed child (Super Admin only)
+router.post('/applications/:id/permanent-delete', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "You don't have permission to permanently delete this record." });
+    }
+    const { id } = req.params;
+    const { reason, confirmation } = req.body;
+
+    if (confirmation !== 'DELETE') {
+      return res.status(400).json({ success: false, error: 'Typed confirmation of DELETE is required.' });
+    }
+
+    const entry = await queryOne(`
+      SELECT e.id, e.child_id, e.status, e.is_deleted, e.checked_in_at, e.picked_up_at, c.full_name
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      WHERE e.id = ?
+    `, [id]);
+
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Child record not found.' });
+    }
+
+    if (entry.is_deleted !== 1 && entry.status !== 'removed') {
+      return res.status(400).json({ success: false, error: 'Only removed children can be permanently deleted. Remove this application first.' });
+    }
+
+    // Safety checks
+    const unresolvedAlert = await queryOne(`
+      SELECT id FROM event_safety_alerts 
+      WHERE (child_id = ? OR child_event_entry_id = ?) AND status != 'resolved'
+    `, [entry.child_id, id]);
+    if (unresolvedAlert) {
+      return res.status(400).json({
+        success: false,
+        error: `${entry.full_name || 'This child'} cannot be permanently deleted while an unresolved safeguarding or safety alert exists. Resolve or close the alert first.`
+      });
+    }
+
+    if (
+      ['checked_in', 'inside'].includes(entry.status) ||
+      (entry.checked_in_at != null && entry.picked_up_at == null)
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: `${entry.full_name || 'This child'} cannot be permanently deleted while an active attendance record exists. Reset event progress first.`
+      });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user.id;
+
+    await transaction(async () => {
+      // 1. Audit log before deletion
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(),
+          adminId,
+          req.user.role,
+          'Child permanently deleted by Super Admin',
+          'child',
+          entry.child_id,
+          JSON.stringify({ reason: reason || 'Permanent deletion' }),
+          now
+        ]);
+      } catch (aErr) {}
+
+      // 2. Anonymize safeguarding/incident relationships without deleting safety alerts or incident reports
+      await execute(`UPDATE event_safety_alerts SET child_id = NULL, child_event_entry_id = NULL WHERE child_id = ? OR child_event_entry_id = ?`, [entry.child_id, id]);
+      await execute(`UPDATE alert_child_context_snapshots SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+      await execute(`UPDATE child_summary_access_logs SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+      await execute(`UPDATE alert_child_link_history SET previous_child_id = NULL WHERE previous_child_id = ?`, [entry.child_id]);
+      await execute(`UPDATE alert_child_link_history SET new_child_id = NULL WHERE new_child_id = ?`, [entry.child_id]);
+      await execute(`UPDATE child_contact_attempts SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+      await execute(`UPDATE notifications SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+      await execute(`UPDATE notification_jobs SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+      await execute(`UPDATE parent_notifications SET child_id = NULL WHERE child_id = ?`, [entry.child_id]);
+
+      // 3. Clear operational dependencies
+      await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [id]);
+      await execute(`DELETE FROM child_attention_items WHERE child_id = ?`, [entry.child_id]);
+      await execute(`DELETE FROM pickup_people WHERE child_event_entry_id = ?`, [id]);
+      await execute(`DELETE FROM event_passes WHERE child_event_entry_id = ?`, [id]);
+      await execute(`DELETE FROM child_event_entries WHERE id = ?`, [id]);
+
+      const otherEntries = await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE child_id = ?`, [entry.child_id]);
+      if (!otherEntries || otherEntries.count === 0) {
+        await execute(`DELETE FROM children WHERE id = ?`, [entry.child_id]);
+      }
+    });
+
+    const summary = await getChildSummaryStats();
+    return res.json({ success: true, message: 'Child registration permanently deleted successfully.', summary });
+  } catch (err: any) {
+    console.error('Error in permanent child delete:', err);
+    return res.status(500).json({ success: false, error: "We couldn't permanently delete this child. Nothing was changed." });
+  }
+});
+
+// POST /api/admin/parents/bulk-permanent-delete - Bulk permanent delete removed parents (Admin and Super Admin)
+router.post('/parents/bulk-permanent-delete', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "Only super administrators can permanently delete parent records." });
+    }
+    const { parentIds, confirmText, reason } = req.body;
+    if (!Array.isArray(parentIds) || parentIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'Parent IDs must be a non-empty array' });
+    }
+    if (confirmText !== 'DELETE') {
+      return res.status(400).json({ success: false, error: 'Confirmation text must be DELETE' });
+    }
+
+    const nowStr = new Date().toISOString();
+    let deletedCount = 0;
+    const failures: { id: string; reason: string }[] = [];
+
+    for (const id of parentIds) {
+      try {
+        const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [id]);
+        if (!parent) {
+          failures.push({ id, reason: 'Parent profile not found' });
+          continue;
+        }
+        if (parent.is_deleted !== 1) {
+          failures.push({ id, reason: 'Only removed parents can be permanently deleted. Remove this parent first.' });
+          continue;
+        }
+
+        // Check if any linked children are currently checked in or inside
+        const activeAttendance = await query(`
+          SELECT COUNT(*) as count 
+          FROM child_event_entries e 
+          JOIN children c ON c.id = e.child_id 
+          WHERE c.parent_profile_id = ? AND e.status IN ('checked_in', 'inside')
+        `, [id]);
+        if (activeAttendance[0]?.count > 0) {
+          failures.push({ id, reason: 'Cannot permanently delete this parent because one or more of their children are currently checked in or attending an event.' });
+          continue;
+        }
+
+        await transaction(async () => {
+          // 1. Audit log before deletion
+          try {
+            await execute(`
+              INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+              crypto.randomUUID(),
+              req.user.id,
+              req.user.role,
+              'Parent permanently deleted by Super Admin',
+              'parent_profile',
+              id,
+              JSON.stringify({ reason: reason || 'Bulk permanent deletion' }),
+              nowStr
+            ]);
+          } catch (aErr) {}
+
+          // 2. Clean up child records belonging to this parent
+          const childRows = await query('SELECT id FROM children WHERE parent_profile_id = ?', [id]);
+          for (const ch of childRows) {
+            const entryRows = await query('SELECT id FROM child_event_entries WHERE child_id = ?', [ch.id]);
+            for (const ent of entryRows) {
+              await execute('DELETE FROM pickup_people WHERE child_event_entry_id = ?', [ent.id]);
+              await execute('DELETE FROM event_passes WHERE child_event_entry_id = ?', [ent.id]);
+              try {
+                await execute('UPDATE whatsapp_delivery_logs SET child_event_entry_id = NULL WHERE child_event_entry_id = ?', [ent.id]);
+              } catch (wErr) {}
+            }
+            await execute('DELETE FROM child_attention_items WHERE child_id = ?', [ch.id]);
+            await execute('DELETE FROM child_event_entries WHERE child_id = ?', [ch.id]);
+            await execute('UPDATE event_safety_alerts SET child_id = NULL, child_event_entry_id = NULL WHERE child_id = ?', [ch.id]);
+            await execute('UPDATE notifications SET child_id = NULL WHERE child_id = ?', [ch.id]);
+            await execute('UPDATE notification_jobs SET child_id = NULL WHERE child_id = ?', [ch.id]);
+            await execute('UPDATE parent_notifications SET child_id = NULL WHERE child_id = ?', [ch.id]);
+            await execute('DELETE FROM children WHERE id = ?', [ch.id]);
+          }
+
+          // 3. Clean up parent records
+          try {
+            await execute('UPDATE whatsapp_delivery_logs SET parent_profile_id = NULL, user_id = NULL WHERE parent_profile_id = ?', [id]);
+          } catch (wErr) {}
+          await execute('UPDATE notifications SET parent_id = NULL WHERE parent_id = ?', [id]);
+          await execute('DELETE FROM notification_jobs WHERE parent_id = ?', [id]);
+          await execute('DELETE FROM parent_notifications WHERE parent_id = ?', [id]);
+          await execute('DELETE FROM admin_parent_notes WHERE parent_id = ?', [id]);
+          await execute('DELETE FROM parent_profiles WHERE id = ?', [id]);
+          if (parent.user_id) {
+            await execute('DELETE FROM auth_tokens WHERE user_id = ?', [parent.user_id]);
+            await execute('DELETE FROM users WHERE id = ?', [parent.user_id]);
+          }
+        });
+
+        deletedCount++;
+      } catch (itemErr: any) {
+        console.error('Error permanently deleting parent:', itemErr);
+        failures.push({ id, reason: "We couldn't permanently delete this parent. Nothing was changed." });
+      }
+    }
+
+    return res.json({
+      success: deletedCount > 0,
+      count: deletedCount,
+      failures,
+      message: deletedCount > 0
+        ? `${deletedCount} parent(s) permanently deleted.`
+        : (failures[0]?.reason || "We couldn't permanently delete the selected parents.")
+    });
+  } catch (err: any) {
+    console.error('Error in bulk parent permanent delete:', err);
+    return res.status(500).json({ success: false, error: "We couldn't permanently delete selected parents. Nothing was changed." });
+  }
+});
+
+// POST /api/admin/parents/:id/permanent-delete - Permanently delete parent (Admin and Super Admin)
+router.post('/parents/:id/permanent-delete', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "Only super administrators can permanently delete parent records." });
+    }
+    const parentId = req.params.id;
+    const { reason, confirmation } = req.body;
+
+    if (confirmation !== 'DELETE') {
+      return res.status(400).json({ success: false, error: 'Typed confirmation of DELETE is required' });
+    }
+
+    const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [parentId]);
+    if (!parent) {
+      return res.status(404).json({ success: false, error: 'Parent profile not found' });
+    }
+
+    if (parent.is_deleted !== 1) {
+      return res.status(400).json({ success: false, error: 'Only removed parents can be permanently deleted. Remove this parent first.' });
+    }
+
+    // Check if any linked children are currently checked in or inside
+    const activeAttendance = await query(`
+      SELECT COUNT(*) as count 
+      FROM child_event_entries e 
+      JOIN children c ON c.id = e.child_id 
+      WHERE c.parent_profile_id = ? AND e.status IN ('checked_in', 'inside')
+    `, [parentId]);
+    if (activeAttendance[0]?.count > 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Cannot permanently delete this parent because one or more of their children are currently checked in or attending an event.' 
+      });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user.id;
+
+    await transaction(async () => {
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(),
+          adminId,
+          req.user.role,
+          'Parent permanently deleted by Super Admin',
+          'parent_profile',
+          parentId,
+          JSON.stringify({ reason: reason || 'Single permanent deletion' }),
+          now
+        ]);
+      } catch (auditErr) {}
+
+      const childRows = await query('SELECT id FROM children WHERE parent_profile_id = ?', [parentId]);
+      for (const ch of childRows) {
+        const entryRows = await query('SELECT id FROM child_event_entries WHERE child_id = ?', [ch.id]);
+        for (const ent of entryRows) {
+          await execute('DELETE FROM pickup_people WHERE child_event_entry_id = ?', [ent.id]);
+          await execute('DELETE FROM event_passes WHERE child_event_entry_id = ?', [ent.id]);
+          try {
+            await execute('UPDATE whatsapp_delivery_logs SET child_event_entry_id = NULL WHERE child_event_entry_id = ?', [ent.id]);
+          } catch (wErr) {}
+        }
+        await execute('DELETE FROM child_attention_items WHERE child_id = ?', [ch.id]);
+        await execute('DELETE FROM child_event_entries WHERE child_id = ?', [ch.id]);
+        await execute('UPDATE event_safety_alerts SET child_id = NULL, child_event_entry_id = NULL WHERE child_id = ?', [ch.id]);
+        await execute('UPDATE notifications SET child_id = NULL WHERE child_id = ?', [ch.id]);
+        await execute('UPDATE notification_jobs SET child_id = NULL WHERE child_id = ?', [ch.id]);
+        await execute('UPDATE parent_notifications SET child_id = NULL WHERE child_id = ?', [ch.id]);
+        await execute('DELETE FROM children WHERE id = ?', [ch.id]);
+      }
+
+      try {
+        await execute('UPDATE whatsapp_delivery_logs SET parent_profile_id = NULL, user_id = NULL WHERE parent_profile_id = ?', [parentId]);
+      } catch (wErr) {}
+      await execute('UPDATE notifications SET parent_id = NULL WHERE parent_id = ?', [parentId]);
+      await execute('DELETE FROM notification_jobs WHERE parent_id = ?', [parentId]);
+      await execute('DELETE FROM parent_notifications WHERE parent_id = ?', [parentId]);
+      await execute('DELETE FROM admin_parent_notes WHERE parent_id = ?', [parentId]);
+      await execute('DELETE FROM parent_profiles WHERE id = ?', [parentId]);
+      if (parent.user_id) {
+        await execute('DELETE FROM auth_tokens WHERE user_id = ?', [parent.user_id]);
+        await execute('DELETE FROM users WHERE id = ?', [parent.user_id]);
+      }
+    });
+
+    return res.json({ success: true, message: 'Parent profile permanently deleted successfully.' });
+  } catch (err: any) {
+    console.error('Error in permanent parent delete:', err);
+    return res.status(500).json({ success: false, error: "We couldn't permanently delete this parent. Nothing was changed." });
+  }
+});
+
+// POST /api/admin/volunteers/bulk-permanent-delete - Bulk permanent delete removed volunteers (Super Admin only)
+router.post('/volunteers/bulk-permanent-delete', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "You don't have permission to permanently delete this record." });
+    }
+    const { volunteerIds, confirmText, reason } = req.body;
+    if (!Array.isArray(volunteerIds) || volunteerIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'Volunteer IDs must be a non-empty array' });
+    }
+    if (confirmText !== 'DELETE') {
+      return res.status(400).json({ success: false, error: 'Confirmation text must be DELETE' });
+    }
+
+    const nowStr = new Date().toISOString();
+    let deletedCount = 0;
+    const failures: { id: string; reason: string }[] = [];
+
+    for (const id of volunteerIds) {
+      try {
+        const volunteer = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [id]);
+        if (!volunteer) {
+          failures.push({ id, reason: 'Volunteer profile not found' });
+          continue;
+        }
+        if (volunteer.is_deleted !== 1) {
+          failures.push({ id, reason: 'Only removed volunteers can be permanently deleted. Remove this volunteer first.' });
+          continue;
+        }
+
+        await transaction(async () => {
+          // 1. Audit log before deletion
+          try {
+            await execute(`
+              INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+              crypto.randomUUID(),
+              req.user.id,
+              req.user.role,
+              'Volunteer permanently deleted by Super Admin',
+              'volunteer_profile',
+              id,
+              JSON.stringify({ reason: reason || 'Bulk permanent deletion' }),
+              nowStr
+            ]);
+          } catch (aErr) {}
+
+          // 2. Clean up volunteer assignments and operational data
+          if (volunteer.user_id) {
+            await execute('DELETE FROM event_duty_assignments WHERE user_id = ?', [volunteer.user_id]);
+            await execute('DELETE FROM event_duty_devices WHERE user_id = ?', [volunteer.user_id]);
+            await execute('DELETE FROM device_readiness_logs WHERE user_id = ?', [volunteer.user_id]);
+            await execute('DELETE FROM user_duty_status WHERE user_id = ?', [volunteer.user_id]);
+            await execute('DELETE FROM safety_alert_recipients WHERE recipient_user_id = ?', [volunteer.user_id]);
+            await execute('DELETE FROM auth_tokens WHERE user_id = ?', [volunteer.user_id]);
+            await execute('DELETE FROM users WHERE id = ?', [volunteer.user_id]);
+          }
+          await execute('DELETE FROM volunteer_event_reports WHERE volunteer_profile_id = ?', [id]);
+          await execute('DELETE FROM volunteer_profiles WHERE id = ?', [id]);
+        });
+
+        deletedCount++;
+      } catch (itemErr: any) {
+        console.error('Error permanently deleting volunteer:', itemErr);
+        failures.push({ id, reason: "We couldn't permanently delete this volunteer. Nothing was changed." });
+      }
+    }
+
+    return res.json({
+      success: true,
+      count: deletedCount,
+      failures,
+      message: `${deletedCount} volunteer(s) permanently deleted.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk volunteer permanent delete:', err);
+    return res.status(500).json({ success: false, error: "We couldn't permanently delete selected volunteers. Nothing was changed." });
+  }
+});
+
+// POST /api/admin/volunteers/:volunteerId/permanent-delete - Permanently delete volunteer (Super Admin only)
+router.post('/volunteers/:id/permanent-delete', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: "You don't have permission to permanently delete this record." });
+    }
+    const volunteerId = req.params.id;
+    const { reason, confirmation } = req.body;
+
+    if (confirmation !== 'DELETE') {
+      return res.status(400).json({ success: false, error: 'Typed confirmation of DELETE is required' });
+    }
+
+    const volunteer = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [volunteerId]);
+    if (!volunteer) {
+      return res.status(404).json({ success: false, error: 'Volunteer profile not found' });
+    }
+
+    if (volunteer.is_deleted !== 1) {
+      return res.status(400).json({ success: false, error: 'Only removed volunteers can be permanently deleted. Remove this volunteer first.' });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user.id;
+
+    await transaction(async () => {
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(),
+          adminId,
+          req.user.role,
+          'Volunteer permanently deleted by Super Admin',
+          'volunteer_profile',
+          volunteerId,
+          JSON.stringify({ reason: reason || 'Single permanent deletion' }),
+          now
+        ]);
+      } catch (aErr) {}
+
+      if (volunteer.user_id) {
+        await execute('DELETE FROM event_duty_assignments WHERE user_id = ?', [volunteer.user_id]);
+        await execute('DELETE FROM event_duty_devices WHERE user_id = ?', [volunteer.user_id]);
+        await execute('DELETE FROM device_readiness_logs WHERE user_id = ?', [volunteer.user_id]);
+        await execute('DELETE FROM user_duty_status WHERE user_id = ?', [volunteer.user_id]);
+        await execute('DELETE FROM safety_alert_recipients WHERE recipient_user_id = ?', [volunteer.user_id]);
+        await execute('DELETE FROM auth_tokens WHERE user_id = ?', [volunteer.user_id]);
+        await execute('DELETE FROM users WHERE id = ?', [volunteer.user_id]);
+      }
+      await execute('DELETE FROM volunteer_event_reports WHERE volunteer_profile_id = ?', [volunteerId]);
+      await execute('DELETE FROM volunteer_profiles WHERE id = ?', [volunteerId]);
+    });
+
+    return res.json({ success: true, message: 'Volunteer profile permanently deleted successfully.' });
+  } catch (err: any) {
+    console.error('Error in permanent volunteer delete:', err);
+    return res.status(500).json({ success: false, error: "We couldn't permanently delete this volunteer. Nothing was changed." });
+  }
+});
+
+// GET /api/admin/attention-items
+router.get('/attention-items', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const targetEventId = await resolveAdminEventId(req.query.eventId as string);
+    if (!targetEventId) {
+      return res.json([]);
+    }
+
+    const items = await query(`
+      SELECT cai.*, 
+             c.full_name as child_name, 
+             c.photo_file_id as child_photo_file_id, 
+             c.calculated_age as child_age, 
+             c.age_group as child_age_group,
+             parent.full_name as parent_name,
+             parent.phone_number as parent_phone
+      FROM child_attention_items cai
+      JOIN children c ON cai.child_id = c.id
+      LEFT JOIN parent_profiles parent ON c.parent_profile_id = parent.id
+      WHERE cai.event_id = ?
+      ORDER BY cai.priority = 'high' DESC, cai.created_at DESC
+    `, [targetEventId]);
+
+    res.json(items);
+  } catch (err: any) {
+    console.error('Get admin attention items error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to retrieve attention items' });
+  }
+});
+
+// POST /api/admin/attention-items/:itemId/resolve
+router.post('/attention-items/:itemId/resolve', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+    const { itemId } = req.params;
+    const { note } = req.body;
+
+    const item = await queryOne('SELECT * FROM child_attention_items WHERE id = ?', [itemId]);
+    if (!item) {
+      return res.status(404).json({ error: 'Attention item not found' });
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE child_attention_items
+      SET status = 'resolved',
+          resolved_by = ?,
+          resolved_at = ?,
+          resolution_note = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [req.user.id, now, note || 'Resolved by administrator', now, itemId]);
+
+    res.json({ success: true, message: 'Attention item resolved by admin.' });
+  } catch (err) {
+    console.error('Admin resolve attention item error:', err);
+    res.status(500).json({ error: 'Failed to resolve attention item' });
+  }
+});
+
+// POST /api/admin/attention-items/:itemId/reopen
+router.post('/attention-items/:itemId/reopen', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+    const { itemId } = req.params;
+
+    const item = await queryOne('SELECT * FROM child_attention_items WHERE id = ?', [itemId]);
+    if (!item) {
+      return res.status(404).json({ error: 'Attention item not found' });
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE child_attention_items
+      SET status = 'open',
+          resolved_by = NULL,
+          resolved_at = NULL,
+          resolution_note = NULL,
+          updated_at = ?
+      WHERE id = ?
+    `, [now, itemId]);
+
+    res.json({ success: true, message: 'Attention item reopened.' });
+  } catch (err) {
+    console.error('Admin reopen attention item error:', err);
+    res.status(500).json({ error: 'Failed to reopen attention item' });
+  }
+});
+
+// GET /api/admin/safety-alerts
+router.get('/safety-alerts', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const targetEventId = await resolveAdminEventId(req.query.eventId as string);
+    const page = parseInt(req.query.page as string, 10);
+    const limit = parseInt(req.query.limit as string, 10);
+    const offset = page && limit ? (page - 1) * limit : 0;
+
+    if (!targetEventId) {
+      if (page && limit) {
+        return res.json({
+          success: true,
+          alerts: [],
+          pagination: {
+            total: 0,
+            page,
+            limit,
+            pages: 0
+          }
+        });
+      }
+      return res.json([]);
+    }
+
+    const now = new Date().toISOString();
+
+    // Auto-escalation: Escalate open safety concerns to urgent after 45 seconds of no responder acknowledgement
+    try {
+      const openUnacknowledgedAlerts = await query(`
+        SELECT id, created_at, severity, title FROM event_safety_alerts 
+        WHERE status = 'open' AND severity != 'urgent' AND event_id = ?
+      `, [targetEventId]);
+
+      for (const alert of openUnacknowledgedAlerts) {
+        const elapsedMs = Date.now() - new Date(alert.created_at).getTime();
+        const escalationThresholdMs = 45000; // 45 seconds for reactive on-duty escalation
+        if (elapsedMs > escalationThresholdMs) {
+          const escalatedTitle = alert.title.startsWith('[ESCALATED]') ? alert.title : `[ESCALATED] ${alert.title}`;
+          await execute(`
+            UPDATE event_safety_alerts
+            SET severity = 'urgent', title = ?, updated_at = ?
+            WHERE id = ?
+          `, [escalatedTitle, now, alert.id]);
+
+          // Un-silence and trigger sound for all recipients
+          await execute(`
+            UPDATE safety_alert_recipients
+            SET sound_started_at = ?, sound_stopped_at = NULL, updated_at = ?
+            WHERE alert_id = ?
+          `, [now, now, alert.id]);
+
+          try {
+            broadcastSSEEvent('safety_alert_escalated', {
+              alertId: alert.id,
+              severity: 'urgent',
+              escalatedAt: now,
+              title: escalatedTitle
+            });
+          } catch (sseErr) {
+            console.error('[SSE Broadcast] Failed to send sse alert auto-escalate:', sseErr);
+          }
+          
+          console.log(`[Auto-Escalation] Alert ${alert.id} escalated to urgent after ${elapsedMs / 1000}s of inactivity.`);
+        }
+      }
+    } catch (escalateErr) {
+      console.error('[Auto-Escalation] Failed to run escalation check:', escalateErr);
+    }
+
+    // Auto-register this admin as a recipient for active alerts if not already tracked
+    const openAlerts = await query(`SELECT id, severity, status FROM event_safety_alerts WHERE status != 'resolved' AND event_id = ?`, [targetEventId]);
+    for (const alert of openAlerts) {
+      const exists = await queryOne(`SELECT id FROM safety_alert_recipients WHERE alert_id = ? AND recipient_user_id = ?`, [alert.id, req.user.id]);
+      if (!exists) {
+        const recipientId = `recip-${crypto.randomUUID()}`;
+        const dutyStatus = await queryOne(`SELECT alert_enabled FROM user_duty_status WHERE user_id = ?`, [req.user.id]);
+        const alertEnabled = dutyStatus ? dutyStatus.alert_enabled : 1;
+        await execute(`
+          INSERT INTO safety_alert_recipients (
+            id, alert_id, recipient_user_id, recipient_role,
+            sound_started_at, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [
+          recipientId,
+          alert.id,
+          req.user.id,
+          req.user.role,
+          alert.status === 'open' && alert.severity === 'urgent' && alertEnabled === 1 ? now : null,
+          now,
+          now
+        ]);
+      }
+    }
+
+    // Mark as delivered in app
+    await execute(`
+      UPDATE safety_alert_recipients
+      SET delivered_in_app_at = COALESCE(delivered_in_app_at, ?)
+      WHERE recipient_user_id = ? AND delivered_in_app_at IS NULL
+    `, [now, req.user.id]);
+
+    let countRes = await queryOne(`SELECT COUNT(*) as count FROM event_safety_alerts WHERE event_id = ?`, [targetEventId]);
+    const totalCount = countRes ? countRes.count : 0;
+
+    const queryParams: any[] = [req.user.id, targetEventId];
+    let sql = `
+      SELECT a.*,
+             c.full_name as child_name,
+             c.photo_file_id as child_photo_file_id,
+             c.age_group as child_age_group,
+             c.calculated_age as child_calculated_age,
+             c.relationship_to_child as relationship_to_child,
+             COALESCE(p_parent.full_name, pk_pickup.full_name) as parent_name,
+             COALESCE(p_parent.phone_number, pk_pickup.phone_number) as parent_phone,
+             COALESCE(p_parent.photo_file_id, pk_pickup.photo_file_id) as parent_photo_file_id,
+             COALESCE(p_raised.full_name, v_raised.full_name, 'Volunteer') as raised_by_name,
+             COALESCE(p_ack.full_name, v_ack.full_name, 'Admin') as acknowledged_by_name,
+             COALESCE(p_res.full_name, v_res.full_name, 'Admin') as resolved_by_name,
+             v_raised.phone as volunteer_phone,
+             v_raised.preferred_team as volunteer_team,
+             r.delivered_in_app_at,
+             r.read_at,
+             r.sound_started_at,
+             r.sound_stopped_at,
+             r.acknowledged_visibility_at
+      FROM event_safety_alerts a
+      LEFT JOIN children c ON a.child_id = c.id
+      LEFT JOIN parent_profiles p_parent ON c.parent_profile_id = p_parent.id
+      LEFT JOIN pickup_people pk_pickup ON pk_pickup.id = (
+        SELECT id FROM pickup_people
+        WHERE child_event_entry_id = a.child_event_entry_id AND approved_by_parent = 1
+        LIMIT 1
+      )
+      LEFT JOIN parent_profiles p_raised ON a.raised_by_user_id = p_raised.user_id
+      LEFT JOIN volunteer_profiles v_raised ON a.raised_by_user_id = v_raised.user_id
+      LEFT JOIN parent_profiles p_ack ON a.acknowledged_by = p_ack.user_id
+      LEFT JOIN volunteer_profiles v_ack ON a.acknowledged_by = v_ack.user_id
+      LEFT JOIN parent_profiles p_res ON a.resolved_by = p_res.user_id
+      LEFT JOIN volunteer_profiles v_res ON a.resolved_by = v_res.user_id
+      LEFT JOIN safety_alert_recipients r ON (a.id = r.alert_id AND r.recipient_user_id = ?)
+      WHERE a.event_id = ?
+      ORDER BY 
+        CASE WHEN a.status = 'open' THEN 1
+             WHEN a.status = 'acknowledged' THEN 2
+             ELSE 3
+        END,
+        CASE WHEN a.severity = 'urgent' THEN 1
+             WHEN a.severity = 'important' THEN 2
+             ELSE 3
+        END,
+        a.created_at DESC
+    `;
+
+    if (page && limit) {
+      sql += ` LIMIT ? OFFSET ?`;
+      queryParams.push(limit, offset);
+    }
+
+    const alerts = await query(sql, queryParams);
+
+    const mappedAlerts = (alerts || []).map((a: any) => {
+      const childPhoto = a.child_photo_file_id ? (String(a.child_photo_file_id).startsWith('http') || String(a.child_photo_file_id).startsWith('/') ? String(a.child_photo_file_id) : `/api/media/files/${a.child_photo_file_id}`) : '';
+      const parentPhoto = a.parent_photo_file_id ? (String(a.parent_photo_file_id).startsWith('http') || String(a.parent_photo_file_id).startsWith('/') ? String(a.parent_photo_file_id) : `/api/media/files/${a.parent_photo_file_id}`) : '';
+      return {
+        ...a,
+        child_photo_url: childPhoto,
+        child_photo_file_id: childPhoto,
+        parent_photo_url: parentPhoto,
+        parent_photo_file_id: parentPhoto,
+        relationship_to_child: a.relationship_to_child || null,
+        soundEligible: a.status === 'open' && (a.severity === 'urgent' || a.severity === 'important') && (!a.sound_stopped_at || a.sound_stopped_at === '')
+      };
+    });
+
+    if (page && limit) {
+      res.json({
+        success: true,
+        alerts: mappedAlerts,
+        pagination: {
+          total: totalCount,
+          page,
+          limit,
+          pages: Math.ceil(totalCount / limit)
+        }
+      });
+    } else {
+      res.json(mappedAlerts);
+    }
+  } catch (err: any) {
+    console.error('Get admin safety alerts error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to retrieve safety alerts' });
+  }
+});
+
+// GET /api/admin/safety-alerts/:id
+router.get('/safety-alerts/:id', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { id } = req.params;
+    let alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ? OR public_reference = ?', [id, id]);
+    if (!alert) {
+      return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    // Auto-generate public_reference if missing
+    if (!alert.public_reference) {
+      const publicRef = `ref-${crypto.randomBytes(16).toString('hex')}`;
+      await execute('UPDATE event_safety_alerts SET public_reference = ? WHERE id = ?', [publicRef, alert.id]);
+      alert.public_reference = publicRef;
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE safety_alert_recipients
+      SET read_at = COALESCE(read_at, ?)
+      WHERE alert_id = ? AND recipient_user_id = ? AND read_at IS NULL
+    `, [now, alert.id, req.user.id]);
+
+    const dutyRole = req.query.role as string || req.headers['x-duty-role'] as string || req.user?.role || 'admin';
+
+    let raisedBy = null;
+    const volunteerProfile = await queryOne('SELECT * FROM volunteer_profiles WHERE user_id = ?', [alert.raised_by_user_id]);
+    if (volunteerProfile) {
+      raisedBy = {
+        name: volunteerProfile.full_name,
+        role: alert.raised_by_role || 'volunteer',
+        phone: volunteerProfile.phone || '',
+        team: volunteerProfile.preferred_team || '',
+        photoUrl: volunteerProfile.photo_file_id ? (String(volunteerProfile.photo_file_id).startsWith('http') || String(volunteerProfile.photo_file_id).startsWith('/') ? String(volunteerProfile.photo_file_id) : `/api/media/files/${volunteerProfile.photo_file_id}`) : ''
+      };
+    } else {
+      const parentProf = await queryOne('SELECT * FROM parent_profiles WHERE user_id = ?', [alert.raised_by_user_id]);
+      raisedBy = {
+        name: parentProf ? parentProf.full_name : 'Staff Member',
+        role: alert.raised_by_role || 'staff',
+        phone: parentProf?.phone_number || '',
+        team: '',
+        photoUrl: parentProf?.photo_file_id ? `/api/media/files/${parentProf.photo_file_id}` : ''
+      };
+    }
+
+    let child = null;
+    let parent = null;
+    let pickup = null;
+    let careSummary = null;
+
+    if (alert.child_id) {
+      const dbChild = await queryOne(`
+        SELECT c.*, e.status as entry_status, e.has_medical_notes, e.medical_notes, e.needs_extra_support, e.support_notes, e.note_to_team
+        FROM children c
+        LEFT JOIN child_event_entries e ON (c.id = e.child_id AND e.event_id = ?)
+        WHERE c.id = ?
+      `, [alert.event_id, alert.child_id]);
+
+      if (dbChild) {
+        const dbPass = await queryOne('SELECT status FROM event_passes WHERE child_event_entry_id = ?', [alert.child_event_entry_id || '']);
+        const passStatus = dbPass ? dbPass.status : 'no_pass';
+
+        const childPhoto = dbChild.photo_file_id ? (String(dbChild.photo_file_id).startsWith('http') || String(dbChild.photo_file_id).startsWith('/') ? String(dbChild.photo_file_id) : `/api/media/files/${dbChild.photo_file_id}`) : '';
+
+        child = {
+          id: dbChild.id,
+          fullName: dbChild.full_name,
+          firstName: dbChild.full_name.split(' ')[0],
+          photoUrl: childPhoto,
+          ageDisplay: dbChild.calculated_age ? `${dbChild.calculated_age} yrs` : 'Unknown',
+          ageGroup: dbChild.age_group || 'Unassigned',
+          gender: dbChild.gender,
+          status: dbChild.entry_status || 'registered',
+          passStatus
+        };
+
+        const dbParent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [dbChild.parent_profile_id]);
+        if (dbParent) {
+          const parentPhoto = dbParent.photo_file_id ? (String(dbParent.photo_file_id).startsWith('http') || String(dbParent.photo_file_id).startsWith('/') ? String(dbParent.photo_file_id) : `/api/media/files/${dbParent.photo_file_id}`) : '';
+          parent = {
+            fullName: dbParent.full_name,
+            relationship: dbChild.relationship_to_child || null,
+            phoneMaskedOrVisibleByPermission: dbParent.phone_number,
+            whatsappMaskedOrVisibleByPermission: dbParent.whatsapp_number,
+            photoUrl: parentPhoto
+          };
+        }
+
+        const dbPickup = await queryOne(`
+          SELECT * FROM pickup_people
+          WHERE child_event_entry_id = ?
+          LIMIT 1
+        `, [alert.child_event_entry_id || '']);
+
+        if (dbPickup) {
+          const pickupPhoto = dbPickup.photo_file_id ? (String(dbPickup.photo_file_id).startsWith('http') || String(dbPickup.photo_file_id).startsWith('/') ? String(dbPickup.photo_file_id) : `/api/media/files/${dbPickup.photo_file_id}`) : '';
+          pickup = {
+            fullName: dbPickup.full_name,
+            relationship: dbPickup.relationship_to_child,
+            phoneMaskedOrVisibleByPermission: dbPickup.phone_number,
+            photoUrl: pickupPhoto
+          };
+        }
+
+        const hasMedicalNote = dbChild.has_medical_notes === 1;
+        const hasSupportNeed = dbChild.needs_extra_support === 1;
+        const shortSummary = [
+          hasMedicalNote ? `Medical: ${dbChild.medical_notes || 'Yes'}` : '',
+          hasSupportNeed ? `Support: ${dbChild.support_notes || 'Yes'}` : ''
+        ].filter(Boolean).join(' | ') || 'No special care flags';
+
+        careSummary = {
+          hasAllergy: hasMedicalNote && String(dbChild.medical_notes || '').toLowerCase().includes('allerg'),
+          hasMedicalNote,
+          hasSupportNeed,
+          shortSummary
+        };
+      }
+    }
+
+    if (dutyRole === 'gate_lead') {
+      if (careSummary) {
+        careSummary = {
+          hasAllergy: false,
+          hasMedicalNote: false,
+          hasSupportNeed: false,
+          shortSummary: 'Masked - Gate Access Only'
+        };
+      }
+    } else if (dutyRole === 'pickup_lead') {
+      if (careSummary) {
+        careSummary = {
+          hasAllergy: false,
+          hasMedicalNote: false,
+          hasSupportNeed: false,
+          shortSummary: 'Masked - Pickup Verification Only'
+        };
+      }
+    } else if (dutyRole === 'volunteer') {
+      if (parent) {
+        parent.phoneMaskedOrVisibleByPermission = '***-****';
+        parent.whatsappMaskedOrVisibleByPermission = '***-****';
+      }
+      if (pickup) {
+        pickup.phoneMaskedOrVisibleByPermission = '***-****';
+      }
+    }
+
+    res.json({
+      success: true,
+      alert: {
+        id: alert.id,
+        reference: alert.public_reference || alert.id,
+        severity: alert.severity,
+        category: alert.category,
+        status: alert.status,
+        locationLabel: alert.location_label,
+        message: alert.message,
+        createdAt: alert.created_at,
+        acknowledgedAt: alert.acknowledged_at,
+        resolvedAt: alert.resolved_at,
+        structuredDetails: alert.structured_details ? JSON.parse(alert.structured_details) : null,
+        categoryVersion: alert.category_version || 1
+      },
+      raisedBy,
+      child,
+      parent,
+      pickup,
+      careSummary
+    });
+  } catch (err: any) {
+    console.error('Get admin safety alert detail error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to retrieve safety alert detail' });
+  }
+});
+
+// POST /api/admin/safety-alerts/bulk-resolve
+router.post('/safety-alerts/bulk-resolve', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { alertIds, resolutionNote, outcome } = req.body;
+
+    if (!Array.isArray(alertIds) || alertIds.length === 0) {
+      return res.status(400).json({ error: 'alertIds array is required and cannot be empty.' });
+    }
+
+    if (!resolutionNote || !resolutionNote.trim()) {
+      return res.status(400).json({ error: 'Please provide a resolution note.' });
+    }
+
+    const cleanNote = resolutionNote.trim();
+    const cleanOutcome = outcome?.trim() || 'resolved_on_site';
+    const finalNote = outcome ? `${cleanOutcome}: ${cleanNote}` : cleanNote;
+    const now = new Date().toISOString();
+
+    const results: Array<{ id: string; status: 'resolved' | 'skipped' | 'failed'; reason?: string }> = [];
+
+    for (const id of alertIds) {
+      try {
+        const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [id]);
+        if (!alert) {
+          results.push({ id, status: 'failed', reason: 'Alert not found' });
+          continue;
+        }
+
+        if (alert.status === 'resolved') {
+          results.push({ id, status: 'skipped', reason: 'Already resolved' });
+          continue;
+        }
+
+        await execute(`
+          UPDATE event_safety_alerts
+          SET status = 'resolved',
+              resolved_by = ?,
+              resolved_at = ?,
+              resolution_note = ?,
+              updated_at = ?
+          WHERE id = ?
+        `, [req.user.id, now, finalNote, now, id]);
+
+        await execute(`
+          UPDATE safety_alert_recipients
+          SET sound_stopped_at = COALESCE(sound_stopped_at, ?), updated_at = ?
+          WHERE alert_id = ?
+        `, [now, now, id]);
+
+        try {
+          await cancelActiveEscalationCycles({ alertId: id, reason: 'Bulk resolved by admin' });
+        } catch (escErr) {
+          console.error('[Escalation Cancel Error]:', escErr);
+        }
+
+        try {
+          broadcastSSEEvent('safety_alert_resolved', {
+            alertId: id,
+            resolvedBy: req.user.id,
+            resolvedAt: now,
+            resolutionNote: finalNote
+          });
+        } catch (_) {}
+
+        results.push({ id, status: 'resolved' });
+      } catch (itemErr: any) {
+        results.push({ id, status: 'failed', reason: itemErr?.message || 'Database error' });
+      }
+    }
+
+    const resolvedCount = results.filter(r => r.status === 'resolved').length;
+    const skippedCount = results.filter(r => r.status === 'skipped').length;
+    const failedCount = results.filter(r => r.status === 'failed').length;
+
+    return res.json({
+      success: true,
+      message: `${resolvedCount} alert(s) resolved${skippedCount > 0 ? `, ${skippedCount} skipped (already resolved)` : ''}${failedCount > 0 ? `, ${failedCount} failed` : ''}.`,
+      resolvedCount,
+      skippedCount,
+      failedCount,
+      results
+    });
+  } catch (err) {
+    console.error('Bulk resolve safety alerts error:', err);
+    res.status(500).json({ error: 'Failed to bulk resolve safety alerts' });
+  }
+});
+
+// POST /api/admin/safety-alerts/bulk-acknowledge
+router.post('/safety-alerts/bulk-acknowledge', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { alertIds } = req.body;
+    if (!Array.isArray(alertIds) || alertIds.length === 0) {
+      return res.status(400).json({ error: 'alertIds array is required and cannot be empty.' });
+    }
+
+    const now = new Date().toISOString();
+    const results: Array<{ id: string; status: 'acknowledged' | 'skipped' | 'failed'; reason?: string }> = [];
+
+    for (const id of alertIds) {
+      try {
+        const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [id]);
+        if (!alert) {
+          results.push({ id, status: 'failed', reason: 'Alert not found' });
+          continue;
+        }
+
+        if (alert.status !== 'open') {
+          results.push({ id, status: 'skipped', reason: `Status is already ${alert.status}` });
+          continue;
+        }
+
+        await execute(`
+          UPDATE event_safety_alerts
+          SET status = 'acknowledged',
+              acknowledged_by = ?,
+              acknowledged_at = ?,
+              updated_at = ?
+          WHERE id = ? AND status = 'open'
+        `, [req.user.id, now, now, id]);
+
+        await execute(`
+          UPDATE safety_alert_recipients
+          SET sound_stopped_at = COALESCE(sound_stopped_at, ?), updated_at = ?
+          WHERE alert_id = ?
+        `, [now, now, id]);
+
+        try {
+          broadcastSSEEvent('safety_alert_acknowledged', {
+            alertId: id,
+            acknowledgedBy: req.user.id,
+            acknowledgedAt: now
+          });
+        } catch (_) {}
+
+        results.push({ id, status: 'acknowledged' });
+      } catch (itemErr: any) {
+        results.push({ id, status: 'failed', reason: itemErr?.message || 'Database error' });
+      }
+    }
+
+    const ackCount = results.filter(r => r.status === 'acknowledged').length;
+    const skippedCount = results.filter(r => r.status === 'skipped').length;
+    const failedCount = results.filter(r => r.status === 'failed').length;
+
+    return res.json({
+      success: true,
+      message: `${ackCount} alert(s) acknowledged${skippedCount > 0 ? `, ${skippedCount} skipped` : ''}${failedCount > 0 ? `, ${failedCount} failed` : ''}.`,
+      acknowledgedCount: ackCount,
+      skippedCount,
+      failedCount,
+      results
+    });
+  } catch (err) {
+    console.error('Bulk acknowledge safety alerts error:', err);
+    res.status(500).json({ error: 'Failed to bulk acknowledge safety alerts' });
+  }
+});
+
+// POST /api/admin/safety-alerts/bulk-assign
+router.post('/safety-alerts/bulk-assign', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { alertIds, targetUserId, reason } = req.body;
+    if (!Array.isArray(alertIds) || alertIds.length === 0) {
+      return res.status(400).json({ error: 'alertIds array is required and cannot be empty.' });
+    }
+    if (!targetUserId) {
+      return res.status(400).json({ error: 'targetUserId is required.' });
+    }
+
+    const targetUser = await queryOne('SELECT id, email, role FROM users WHERE id = ?', [targetUserId]);
+    if (!targetUser) {
+      return res.status(404).json({ error: 'Target responder not found.' });
+    }
+
+    const now = new Date().toISOString();
+    const results: Array<{ id: string; status: 'assigned' | 'skipped' | 'failed'; reason?: string }> = [];
+
+    for (const id of alertIds) {
+      try {
+        const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [id]);
+        if (!alert) {
+          results.push({ id, status: 'failed', reason: 'Alert not found' });
+          continue;
+        }
+
+        if (alert.status === 'resolved') {
+          results.push({ id, status: 'skipped', reason: 'Cannot assign resolved alert' });
+          continue;
+        }
+
+        await execute(`
+          UPDATE event_safety_alerts
+          SET owner_user_id = ?,
+              owner_assigned_at = ?,
+              updated_at = ?
+          WHERE id = ?
+        `, [targetUserId, now, now, id]);
+
+        results.push({ id, status: 'assigned' });
+      } catch (itemErr: any) {
+        results.push({ id, status: 'failed', reason: itemErr?.message || 'Database error' });
+      }
+    }
+
+    const assignedCount = results.filter(r => r.status === 'assigned').length;
+    return res.json({
+      success: true,
+      message: `${assignedCount} alert(s) assigned.`,
+      assignedCount,
+      results
+    });
+  } catch (err) {
+    console.error('Bulk assign safety alerts error:', err);
+    res.status(500).json({ error: 'Failed to bulk assign safety alerts' });
+  }
+});
+
+// POST /api/admin/safety-alerts/:id/acknowledge
+router.post('/safety-alerts/:id/acknowledge', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { id } = req.params;
+    const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [id]);
+    if (!alert) {
+      return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    if (alert.status !== 'open') {
+      const ackProfile = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [alert.acknowledged_by])
+        || await queryOne('SELECT full_name FROM volunteer_profiles WHERE user_id = ?', [alert.acknowledged_by]);
+      const ackUser = await queryOne('SELECT email FROM users WHERE id = ?', [alert.acknowledged_by]);
+      const ackName = ackProfile?.full_name || (ackUser?.email ? ackUser.email.split('@')[0] : 'another responder');
+      return res.status(409).json({
+        success: false,
+        error: `This alert was already acknowledged by ${ackName}.`,
+        alreadyAcknowledged: true,
+        acknowledgedBy: alert.acknowledged_by,
+        acknowledgedByName: ackName,
+        acknowledgedAt: alert.acknowledged_at
+      });
+    }
+
+    const now = new Date().toISOString();
+    const updateResult = await execute(`
+      UPDATE event_safety_alerts
+      SET status = 'acknowledged',
+          acknowledged_by = ?,
+          acknowledged_at = ?,
+          updated_at = ?
+      WHERE id = ? AND status = 'open'
+    `, [req.user.id, now, now, id]);
+
+    if (updateResult.changes === 0) {
+      // First valid Admin acknowledgement wins!
+      const currentAlert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [id]);
+      const ackProfile = currentAlert?.acknowledged_by
+        ? await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [currentAlert.acknowledged_by])
+          || await queryOne('SELECT full_name FROM volunteer_profiles WHERE user_id = ?', [currentAlert.acknowledged_by])
+        : null;
+      const ackUser = currentAlert?.acknowledged_by
+        ? await queryOne('SELECT email FROM users WHERE id = ?', [currentAlert.acknowledged_by])
+        : null;
+      const ackName = ackProfile?.full_name || (ackUser?.email ? ackUser.email.split('@')[0] : 'another responder');
+      return res.status(409).json({
+        success: false,
+        error: `This alert was already acknowledged by ${ackName}.`,
+        alreadyAcknowledged: true,
+        acknowledgedBy: currentAlert?.acknowledged_by,
+        acknowledgedByName: ackName,
+        acknowledgedAt: currentAlert?.acknowledged_at
+      });
+    }
+
+    // Also update this recipient's specific record to show acknowledgement action
+    await execute(`
+      UPDATE safety_alert_recipients
+      SET acknowledged_visibility_at = ?, sound_stopped_at = COALESCE(sound_stopped_at, ?), updated_at = ?
+      WHERE alert_id = ? AND recipient_user_id = ?
+    `, [now, now, now, id, req.user.id]);
+
+    // Also update all other recipients of this alert to stop their sounds!
+    await execute(`
+      UPDATE safety_alert_recipients
+      SET sound_stopped_at = COALESCE(sound_stopped_at, ?), updated_at = ?
+      WHERE alert_id = ?
+    `, [now, now, id]);
+
+    // Stop server escalation for this alert
+    try {
+      await cancelActiveEscalationCycles({ alertId: id, reason: 'Alert was acknowledged' });
+    } catch (escErr) {
+      console.error('[Escalation Cancel Error]:', escErr);
+    }
+
+    // Look up responder's human-friendly name (users table does NOT have full_name)
+    const adminProfile = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [req.user.id])
+      || await queryOne('SELECT full_name FROM volunteer_profiles WHERE user_id = ?', [req.user.id]);
+    const responderName = adminProfile?.full_name || (req.user.email ? req.user.email.split('@')[0] : 'Admin');
+
+    try {
+      broadcastSSEEvent('safety_alert_acknowledged', {
+        alertId: id,
+        acknowledgedBy: req.user.id,
+        acknowledgedByName: responderName,
+        acknowledgedAt: now
+      });
+    } catch (sseErr) {
+      console.error('[SSE Broadcast] Failed to send sse alert acknowledge:', sseErr);
+    }
+
+    res.json({ 
+      success: true, 
+      message: 'Alert acknowledged.',
+      alert: {
+        id,
+        status: 'acknowledged',
+        acknowledgedBy: req.user.id,
+        acknowledgedByName: responderName,
+        acknowledgedAt: now,
+        resolvedAt: alert.resolved_at || null,
+        soundEligible: false
+      }
+    });
+  } catch (err) {
+    console.error('Acknowledge safety alert error:', err);
+    res.status(500).json({ error: 'Could not acknowledge this alert. Please try again.' });
+  }
+});
+
+// POST /api/admin/safety-alerts/:id/resolve
+router.post('/safety-alerts/:id/resolve', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { id } = req.params;
+    const { note } = req.body;
+
+    const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [id]);
+    if (!alert) {
+      return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    if (alert.status === 'resolved') {
+      const resUser = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [alert.resolved_by]);
+      const resName = resUser ? resUser.full_name : 'another Admin';
+      return res.status(409).json({
+        success: false,
+        error: `This alert has already been resolved by ${resName}.`,
+        alreadyResolved: true
+      });
+    }
+
+    if ((alert.severity === 'important' || alert.severity === 'urgent') && (!note || !note.trim())) {
+      return res.status(400).json({ error: 'Please add a resolution note.' });
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE event_safety_alerts
+      SET status = 'resolved',
+          resolved_by = ?,
+          resolved_at = ?,
+          resolution_note = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [req.user.id, now, (note || 'Resolved by admin').trim(), now, id]);
+
+    // Ensure repeating sound is stopped for all recipients of this resolved alert
+    await execute(`
+      UPDATE safety_alert_recipients
+      SET sound_stopped_at = COALESCE(sound_stopped_at, ?), updated_at = ?
+      WHERE alert_id = ?
+    `, [now, now, id]);
+
+    // Stop server escalation for this alert
+    try {
+      await cancelActiveEscalationCycles({ alertId: id, reason: 'Alert was resolved' });
+    } catch (escErr) {
+      console.error('[Escalation Cancel Error]:', escErr);
+    }
+
+    try {
+      broadcastSSEEvent('safety_alert_resolved', {
+        alertId: id,
+        resolvedBy: req.user.id,
+        resolvedAt: now,
+        resolutionNote: (note || 'Resolved by admin').trim()
+      });
+    } catch (sseErr) {
+      console.error('[SSE Broadcast] Failed to send sse alert resolve:', sseErr);
+    }
+
+    res.json({ 
+      success: true, 
+      message: 'Alert resolved.',
+      alert: {
+        id,
+        status: 'resolved',
+        acknowledgedAt: alert.acknowledged_at || null,
+        resolvedAt: now,
+        soundEligible: false
+      }
+    });
+  } catch (err) {
+    console.error('Resolve safety alert error:', err);
+    res.status(500).json({ error: 'Failed to resolve safety alert' });
+  }
+});
+
+// POST /api/admin/safety-alerts/:id/silence
+router.post('/safety-alerts/:id/silence', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { id } = req.params;
+    const now = new Date().toISOString();
+
+    await execute(`
+      UPDATE safety_alert_recipients
+      SET sound_stopped_at = ?, updated_at = ?
+      WHERE alert_id = ? AND recipient_user_id = ?
+    `, [now, now, id, req.user.id]);
+
+    res.json({ success: true, message: 'Alert silenced on this device.' });
+  } catch (err) {
+    console.error('Silence safety alert error:', err);
+    res.status(500).json({ error: 'Failed to silence safety alert' });
+  }
+});
+
+// POST /api/admin/safety-alerts/:id/escalate
+router.post('/safety-alerts/:id/escalate', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { id } = req.params;
+    const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [id]);
+    if (!alert) {
+      return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    const now = new Date().toISOString();
+    await execute(`
+      UPDATE event_safety_alerts
+      SET severity = 'urgent',
+          updated_at = ?
+      WHERE id = ?
+    `, [now, id]);
+
+    try {
+      broadcastSSEEvent('safety_alert_escalated', {
+        alertId: id,
+        severity: 'urgent',
+        escalatedAt: now
+      });
+    } catch (sseErr) {
+      console.error('[SSE Broadcast] Failed to send sse alert escalate:', sseErr);
+    }
+
+    res.json({ success: true, message: 'Alert escalated to urgent severity.' });
+  } catch (err) {
+    console.error('Escalate safety alert error:', err);
+    res.status(500).json({ error: 'Failed to escalate safety alert' });
+  }
+});
+
+// POST /api/admin/alert-delivery/test-device
+router.post('/alert-delivery/test-device', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'team')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const targetEventId = (await resolveAdminEventId(req.body?.eventId)) || (await getCurrentEventId()) || 'test-device-event';
+
+    const testAlert = {
+      id: 'test_device_alert_id_' + Date.now(),
+      isTest: true,
+      event_id: targetEventId,
+      severity: 'urgent',
+      status: 'open',
+      category: 'TEST_ALERT',
+      title: 'Emergency Sound & Vibration Test',
+      message: 'This is an honest safety delivery test alert. If active sound & vibration are enabled, your browser will trigger them now. Please keep this application open on duty devices for best protection.',
+      location_label: 'Main Gate & Care HQ',
+      child_id: null,
+      child_name: 'System Test Record',
+      raised_by_user_id: req.user.id,
+      raised_by_name: 'Event Safety Monitor',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    // Attempt to send physical push notification if subscriptions exist
+    let pushResult = null;
+    try {
+      pushResult = await sendWebPush(req.user.id, {
+        title: 'Urgent help needed',
+        body: 'A volunteer requested admin support. (This is a safety delivery test)',
+        metadata: {
+          targetUrl: '/#/admin?alertId=' + testAlert.id,
+          isTest: true
+        }
+      });
+    } catch (e) {
+      console.error('Failed to send web push in test-device alert:', e);
+    }
+
+    let pushSent = false;
+    let feedbackMessage = 'Test alert sent to this device.';
+
+    if (pushResult) {
+      if (pushResult.sentCount > 0) {
+        pushSent = true;
+        feedbackMessage = 'Test alert sent to this device.';
+      } else if (pushResult.error) {
+        feedbackMessage = 'We could not send a push notification to this device. Please check browser permission and push setup.';
+      } else {
+        feedbackMessage = 'In-app test worked, but push is not connected.';
+      }
+    } else {
+      feedbackMessage = 'In-app test worked, but push is not connected.';
+    }
+
+    res.json({
+      success: true,
+      message: feedbackMessage,
+      pushSent,
+      alert: testAlert
+    });
+  } catch (err: any) {
+    console.error('Test device alert error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to dispatch device test alert' });
+  }
+});
+
+// GET /api/admin/updates/summary
+router.get('/updates/summary', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const userId = req.user?.id;
+    const role = req.user?.role;
+    if (!userId || (role !== 'admin' && role !== 'super_admin')) {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const rawNotifs = await query(`
+      SELECT n.* FROM notifications n
+      WHERE (n.audience_role IN ('admin', 'super_admin', 'staff', 'volunteer', 'team', 'all') OR n.audience_role IS NULL)
+    `, []);
+
+    // Query open safety alerts directly from the database table for perfect, independent stats integrity
+    const targetEventId = await resolveAdminEventId(req.query.eventId as string);
+    let openAlerts = 0;
+    if (targetEventId) {
+      const openAlertsRow = await queryOne(`
+        SELECT COUNT(*) as cnt FROM event_safety_alerts WHERE status = 'open' AND event_id = ?
+      `, [targetEventId]);
+      openAlerts = openAlertsRow ? openAlertsRow.cnt : 0;
+    }
+
+    let total = 0;
+    let unread = 0;
+    let read = 0;
+    let urgent = 0;
+    let important = 0;
+    let resolved = 0;
+    let acknowledged = 0;
+    let archived = 0;
+    let deliveryIssues = 0;
+
+    for (const n of rawNotifs) {
+      const archiveRow = await queryOne('SELECT archived_at FROM notification_archives WHERE user_id = ? AND notification_id = ?', [userId, n.id]);
+      const isArchived = !!archiveRow;
+
+      if (isArchived) {
+        archived++;
+        continue;
+      }
+
+      const readRow = await queryOne('SELECT read_at FROM notification_reads WHERE user_id = ? AND notification_id = ?', [userId, n.id]);
+      const isRead = !!readRow;
+
+      if (isRead) {
+        read++;
+      } else {
+        unread++;
+      }
+
+      let metadata: any = null;
+      if (n.metadata_json) {
+        try {
+          metadata = JSON.parse(n.metadata_json);
+        } catch (_) {}
+      }
+
+      let actionStatus = 'n/a';
+      if (n.type === 'safety_alert' || n.type === 'escalation') {
+        const alertId = metadata?.safetyAlertId || metadata?.safety_alert_id || metadata?.alertId || n.id;
+        const alertObj = await queryOne('SELECT status FROM event_safety_alerts WHERE id = ?', [alertId]);
+        if (alertObj) {
+          actionStatus = alertObj.status;
+        } else {
+          const attId = metadata?.attentionItemId || metadata?.attention_item_id || n.id;
+          const attObj = await queryOne('SELECT status FROM child_attention_items WHERE id = ?', [attId]);
+          if (attObj) {
+            actionStatus = attObj.status;
+          }
+        }
+      }
+
+      total++;
+
+      if (n.priority === 'urgent' || n.priority === 'high') {
+        urgent++;
+      }
+
+      if (n.priority === 'important') {
+        important++;
+      }
+
+      if (actionStatus === 'resolved') {
+        resolved++;
+      }
+
+      if (actionStatus === 'acknowledged') {
+        acknowledged++;
+      }
+
+      if (n.type === 'delivery_issue' || n.type === 'failed') {
+        deliveryIssues++;
+      }
+    }
+
+    return res.json({
+      success: true,
+      summary: {
+        total,
+        unread,
+        read,
+        openAlerts,
+        urgent,
+        important,
+        resolved,
+        acknowledged,
+        archived,
+        deliveryIssues
+      }
+    });
+
+  } catch (err: any) {
+    console.error('Error fetching admin updates summary in admin.ts:', err);
+    return res.status(err.statusCode || 500).json({ error: err.message || 'Failed to retrieve updates summary' });
+  }
+});
+
+// ==========================================
+// PHASE 6: ADMIN EVENT LOCATIONS ENDPOINTS
+// ==========================================
+
+async function wouldBeCircular(childId: string, parentId: string): Promise<boolean> {
+  if (childId === parentId) return true;
+  let currentParentId = parentId;
+  const visited = new Set<string>();
+  while (currentParentId) {
+    if (visited.has(currentParentId)) return true;
+    visited.add(currentParentId);
+    const parentLoc = await queryOne('SELECT parent_location_id FROM event_locations WHERE id = ?', [currentParentId]);
+    if (parentLoc && parentLoc.parent_location_id) {
+      if (parentLoc.parent_location_id === childId) return true;
+      currentParentId = parentLoc.parent_location_id;
+    } else {
+      break;
+    }
+  }
+  return false;
+}
+
+// 1. List event locations (paginated & searchable)
+router.get('/events/:eventId/locations', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { eventId } = req.params;
+    const page = parseInt(req.query.page as string || '1');
+    const limit = parseInt(req.query.limit as string || '100');
+    const search = (req.query.search as string || '').trim().toLowerCase();
+    const type = req.query.type as string || '';
+    const isActive = req.query.isActive as string || '';
+
+    let queryStr = 'SELECT * FROM event_locations WHERE event_id = ?';
+    const params: any[] = [eventId];
+
+    if (isActive === 'true') {
+      queryStr += ' AND is_active = 1';
+    } else if (isActive === 'false') {
+      queryStr += ' AND is_active = 0';
+    }
+
+    if (type) {
+      queryStr += ' AND location_type = ?';
+      params.push(type);
+    }
+
+    const allLocations = await query(queryStr, params);
+
+    // Build a map for quick full path label construction
+    const locMap = new Map<string, any>();
+    for (const loc of allLocations) {
+      locMap.set(loc.id, loc);
+    }
+
+    const getFullPath = (locId: string): string => {
+      const pathParts: string[] = [];
+      let currentId: string | null = locId;
+      const visited = new Set<string>();
+      while (currentId) {
+        if (visited.has(currentId)) break;
+        visited.add(currentId);
+        const current = locMap.get(currentId);
+        if (current) {
+          pathParts.unshift(current.name);
+          currentId = current.parent_location_id;
+        } else {
+          break;
+        }
+      }
+      return pathParts.join(' › ');
+    };
+
+    // Operational metrics calculation
+    const totalLocations = allLocations.filter(l => l.is_active === 1 && !l.archived_at).length;
+
+    // Volunteers assigned to locations for this event
+    const assignedRow = await queryOne(`
+      SELECT COUNT(DISTINCT user_id) as count
+      FROM event_duty_assignments
+      WHERE event_id = ? AND status != 'cancelled' AND assigned_location_id IS NOT NULL AND assigned_location_id != ''
+    `, [eventId]);
+    const volunteersAssigned = Number(assignedRow?.count || 0);
+
+    // Currently on duty (active presence sessions right now)
+    const onDutyRow = await queryOne(`
+      SELECT COUNT(DISTINCT user_id) as count
+      FROM event_duty_location_presence
+      WHERE event_id = ? AND ended_at IS NULL
+    `, [eventId]);
+    const currentlyOnDuty = Number(onDutyRow?.count || 0);
+
+    // Volunteers needing assignment
+    const totalVolunteersRow = await queryOne(`
+      SELECT COUNT(DISTINCT u.id) as count
+      FROM users u
+      LEFT JOIN volunteer_profiles vp ON vp.user_id = u.id
+      WHERE (vp.status = 'approved' OR vp.status = 'active' OR u.role IN ('volunteer', 'staff'))
+    `);
+    const totalVols = Number(totalVolunteersRow?.count || 0);
+    const needAssignment = Math.max(0, totalVols - volunteersAssigned);
+
+    // Per-location assignments count
+    const locAssignmentCounts = await query(`
+      SELECT assigned_location_id, COUNT(DISTINCT user_id) as assigned_count
+      FROM event_duty_assignments
+      WHERE event_id = ? AND status != 'cancelled' AND assigned_location_id IS NOT NULL
+      GROUP BY assigned_location_id
+    `, [eventId]);
+    const locAssignMap = new Map<string, number>();
+    for (const r of locAssignmentCounts) {
+      locAssignMap.set(r.assigned_location_id, Number(r.assigned_count));
+    }
+
+    // Per-location presence count
+    const presenceCounts = await query(`
+      SELECT event_location_id, COUNT(DISTINCT user_id) as present_count
+      FROM event_duty_location_presence
+      WHERE event_id = ? AND ended_at IS NULL
+      GROUP BY event_location_id
+    `, [eventId]);
+    const locPresenceMap = new Map<string, number>();
+    for (const r of presenceCounts) {
+      locPresenceMap.set(r.event_location_id, Number(r.present_count));
+    }
+
+    // Per-location active alerts count
+    const alertCounts = await query(`
+      SELECT location_id, COUNT(*) as alert_count
+      FROM event_safety_alerts
+      WHERE event_id = ? AND status IN ('open', 'acknowledged')
+      GROUP BY location_id
+    `, [eventId]);
+    const locAlertMap = new Map<string, number>();
+    for (const r of alertCounts) {
+      locAlertMap.set(r.location_id, Number(r.alert_count));
+    }
+
+    let locationsNeedingAttention = 0;
+    for (const loc of allLocations) {
+      if (loc.is_active === 1 && !loc.archived_at) {
+        const assigned = locAssignMap.get(loc.id) || 0;
+        const alerts = locAlertMap.get(loc.id) || 0;
+        if (assigned === 0 || alerts > 0) {
+          locationsNeedingAttention++;
+        }
+      }
+    }
+
+    let items = allLocations.map(loc => {
+      const assignedCount = locAssignMap.get(loc.id) || 0;
+      const presentCount = locPresenceMap.get(loc.id) || 0;
+      const alertCount = locAlertMap.get(loc.id) || 0;
+      return {
+        id: loc.id,
+        eventId: loc.event_id,
+        parentLocationId: loc.parent_location_id,
+        type: loc.location_type,
+        name: loc.name,
+        shortName: loc.short_name,
+        description: loc.description,
+        instructions: loc.instructions,
+        capacity: loc.capacity,
+        volunteerCapacity: loc.volunteer_capacity !== null && loc.volunteer_capacity !== undefined ? Number(loc.volunteer_capacity) : null,
+        ageGroupKey: loc.age_group_key,
+        teamKey: loc.team_key,
+        emergencyLabel: loc.emergency_label,
+        sortOrder: loc.sort_order,
+        isActive: !!loc.is_active,
+        archivedAt: loc.archived_at,
+        pathLabel: getFullPath(loc.id),
+        assignedCount,
+        presentCount,
+        alertCount,
+        needsAttention: assignedCount === 0 || alertCount > 0
+      };
+    });
+
+    if (search) {
+      items = items.filter(item => 
+        item.name.toLowerCase().includes(search) ||
+        (item.shortName && item.shortName.toLowerCase().includes(search)) ||
+        item.pathLabel.toLowerCase().includes(search) ||
+        item.type.toLowerCase().includes(search)
+      );
+    }
+
+    items.sort((a, b) => {
+      if (a.sortOrder !== b.sortOrder) {
+        return a.sortOrder - b.sortOrder;
+      }
+      return a.pathLabel.localeCompare(b.pathLabel);
+    });
+
+    const total = items.length;
+    const totalPages = Math.ceil(total / limit);
+    const startIdx = (page - 1) * limit;
+    const paginatedItems = items.slice(startIdx, startIdx + limit);
+
+    return res.json({
+      success: true,
+      summary: {
+        locations: totalLocations,
+        totalLocations,
+        volunteersAssigned,
+        currentlyOnDuty,
+        stillExpected: Math.max(0, volunteersAssigned - currentlyOnDuty),
+        needAssignment,
+        locationsNeedingAttention,
+        activeLocations: totalLocations,
+        gates: allLocations.filter(l => ['gate', 'check_in_point', 'pickup_point'].includes(l.location_type)).length,
+        rooms: allLocations.filter(l => l.location_type === 'room').length,
+        zones: allLocations.filter(l => l.location_type === 'zone').length
+      },
+      locations: items,
+      items: paginatedItems,
+      filters: {
+        types: ['room', 'hall', 'gate', 'pickup_point', 'check_in_point']
+      },
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching event locations:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'EVENT_LOCATIONS_LOAD_FAILED',
+      message: 'We could not load event locations.'
+    });
+  }
+});
+
+// 2. Create event location
+router.post('/events/:eventId/locations', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { eventId } = req.params;
+    const {
+      name, shortName, type, parentLocationId, description, instructions,
+      capacity, volunteerCapacity, volunteer_capacity, ageGroupKey, teamKey, emergencyLabel, sortOrder
+    } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, error: 'Location name is required.' });
+    }
+    if (!type || !type.trim()) {
+      return res.status(400).json({ success: false, error: 'Location type is required.' });
+    }
+
+    const id = 'loc-' + crypto.randomBytes(8).toString('hex');
+    const now = new Date().toISOString();
+
+    const parentId = (parentLocationId && parentLocationId !== 'none') ? parentLocationId : null;
+
+    if (parentId) {
+      // Check circular parent relationship
+      if (await wouldBeCircular(id, parentId)) {
+        return res.status(400).json({ success: false, error: 'Circular parent relationship is not allowed.' });
+      }
+    }
+
+    const resolvedVolCap = volunteerCapacity !== undefined ? (volunteerCapacity ? parseInt(String(volunteerCapacity), 10) : null) : (volunteer_capacity !== undefined ? (volunteer_capacity ? parseInt(String(volunteer_capacity), 10) : null) : null);
+
+    await execute(`
+      INSERT INTO event_locations (
+        id, event_id, parent_location_id, location_type, name, short_name, description,
+        instructions, capacity, volunteer_capacity, age_group_key, team_key, emergency_label, sort_order,
+        is_active, created_by, updated_by, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+    `, [
+      id, eventId, parentId, type, name.trim(), shortName ? shortName.trim() : null,
+      description ? description.trim() : null, instructions ? instructions.trim() : null,
+      capacity ? parseInt(String(capacity)) : null, resolvedVolCap, ageGroupKey || null, teamKey || null,
+      emergencyLabel ? emergencyLabel.trim() : null, sortOrder ? parseInt(String(sortOrder)) : 0,
+      req.user?.id || null, req.user?.id || null, now, now
+    ]);
+
+    // Broadcast change
+    broadcastSSEEvent('event_locations_changed', { eventId, action: 'create', locationId: id });
+
+    return res.json({
+      success: true,
+      locationId: id,
+      location: {
+        id,
+        eventId,
+        name: name.trim(),
+        type,
+        capacity: capacity ? parseInt(String(capacity), 10) : null,
+        volunteerCapacity: resolvedVolCap
+      }
+    });
+  } catch (err: any) {
+    console.error('Error creating event location:', err);
+    return res.status(500).json({ success: false, error: 'Failed to create event location' });
+  }
+});
+
+// 3. Get event location details
+router.get('/events/:eventId/locations/:locationId', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { locationId } = req.params;
+    const loc = await queryOne('SELECT * FROM event_locations WHERE id = ?', [locationId]);
+    if (!loc) {
+      return res.status(404).json({ success: false, error: 'Location not found.' });
+    }
+
+    // Get QR codes if active
+    const codeEntry = await queryOne('SELECT id, token_hash, is_active FROM event_location_codes WHERE event_location_id = ? AND is_active = 1', [locationId]);
+
+    return res.json({
+      success: true,
+      location: {
+        id: loc.id,
+        eventId: loc.event_id,
+        parentLocationId: loc.parent_location_id,
+        type: loc.location_type,
+        name: loc.name,
+        shortName: loc.short_name,
+        description: loc.description,
+        instructions: loc.instructions,
+        capacity: loc.capacity,
+        volunteerCapacity: loc.volunteer_capacity !== null && loc.volunteer_capacity !== undefined ? Number(loc.volunteer_capacity) : null,
+        ageGroupKey: loc.age_group_key,
+        teamKey: loc.team_key,
+        emergencyLabel: loc.emergency_label,
+        sortOrder: loc.sort_order,
+        isActive: !!loc.is_active,
+        archivedAt: loc.archived_at,
+        qrCodeActive: !!codeEntry,
+        qrToken: codeEntry ? codeEntry.token_hash : null
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching location details:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve location details' });
+  }
+});
+
+// 4. Update event location
+router.patch('/events/:eventId/locations/:locationId', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { eventId, locationId } = req.params;
+    const {
+      name, shortName, type, parentLocationId, description, instructions,
+      capacity, volunteerCapacity, volunteer_capacity, ageGroupKey, teamKey, emergencyLabel, sortOrder, isActive
+    } = req.body;
+
+    const existingLoc = await queryOne('SELECT * FROM event_locations WHERE id = ?', [locationId]);
+    if (!existingLoc) {
+      return res.status(404).json({ success: false, error: 'Location not found.' });
+    }
+
+    const parentId = parentLocationId === 'none' ? null : (parentLocationId !== undefined ? parentLocationId : existingLoc.parent_location_id);
+
+    if (parentId && parentId !== existingLoc.parent_location_id) {
+      if (await wouldBeCircular(locationId, parentId)) {
+        return res.status(400).json({ success: false, error: 'Circular parent relationship is not allowed.' });
+      }
+    }
+
+    const now = new Date().toISOString();
+    const rawVolCap = volunteerCapacity !== undefined ? volunteerCapacity : volunteer_capacity;
+    const resolvedVolCap = rawVolCap === '' ? null : (rawVolCap !== undefined ? parseInt(String(rawVolCap), 10) : existingLoc.volunteer_capacity);
+
+    await execute(`
+      UPDATE event_locations SET
+        name = COALESCE(?, name),
+        short_name = ?,
+        location_type = COALESCE(?, location_type),
+        parent_location_id = ?,
+        description = ?,
+        instructions = ?,
+        capacity = ?,
+        volunteer_capacity = ?,
+        age_group_key = ?,
+        team_key = ?,
+        emergency_label = ?,
+        sort_order = COALESCE(?, sort_order),
+        is_active = COALESCE(?, is_active),
+        updated_by = ?,
+        updated_at = ?
+      WHERE id = ?
+    `, [
+      name ? name.trim() : null,
+      shortName === '' ? null : (shortName ? shortName.trim() : existingLoc.short_name),
+      type || null,
+      parentId,
+      description === '' ? null : (description ? description.trim() : existingLoc.description),
+      instructions === '' ? null : (instructions ? instructions.trim() : existingLoc.instructions),
+      capacity === '' ? null : (capacity !== undefined ? parseInt(String(capacity)) : existingLoc.capacity),
+      resolvedVolCap,
+      ageGroupKey === '' ? null : (ageGroupKey ? ageGroupKey : existingLoc.age_group_key),
+      teamKey === '' ? null : (teamKey ? teamKey : existingLoc.team_key),
+      emergencyLabel === '' ? null : (emergencyLabel ? emergencyLabel.trim() : existingLoc.emergency_label),
+      sortOrder !== undefined ? parseInt(String(sortOrder)) : null,
+      isActive !== undefined ? (isActive ? 1 : 0) : null,
+      req.user?.id || null,
+      now,
+      locationId
+    ]);
+
+    broadcastSSEEvent('event_locations_changed', { eventId, action: 'update', locationId });
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error('Error updating location:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update location' });
+  }
+});
+
+// 5. Archive event location
+router.post('/events/:eventId/locations/:locationId/archive', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { eventId, locationId } = req.params;
+    const now = new Date().toISOString();
+
+    // Check if referenced by active routing rules
+    const rulesUsingLocation = await query('SELECT id FROM alert_routing_rules WHERE location_id = ? AND is_active = 1', [locationId]);
+    const dutyPresence = await query('SELECT id FROM event_duty_location_presence WHERE event_location_id = ? AND ended_at IS NULL', [locationId]);
+
+    const warnings: string[] = [];
+    if (rulesUsingLocation.length > 0) {
+      warnings.push('This location is currently referenced in active alert routing rules.');
+    }
+    if (dutyPresence.length > 0) {
+      warnings.push(`There are currently ${dutyPresence.length} responder(s) on active duty at this location.`);
+    }
+
+    await execute(`
+      UPDATE event_locations SET
+        is_active = 0,
+        archived_at = ?,
+        archived_by = ?,
+        updated_at = ?
+      WHERE id = ?
+    `, [now, req.user?.id || null, now, locationId]);
+
+    // Deactivate active QR codes for this location
+    await execute('UPDATE event_location_codes SET is_active = 0 WHERE event_location_id = ?', [locationId]);
+
+    broadcastSSEEvent('event_locations_changed', { eventId, action: 'archive', locationId });
+
+    return res.json({ success: true, warnings });
+  } catch (err: any) {
+    console.error('Error archiving location:', err);
+    return res.status(500).json({ success: false, error: 'Failed to archive location' });
+  }
+});
+
+// 6. Restore event location
+router.post('/events/:eventId/locations/:locationId/restore', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { eventId, locationId } = req.params;
+    const now = new Date().toISOString();
+
+    await execute(`
+      UPDATE event_locations SET
+        is_active = 1,
+        archived_at = NULL,
+        archived_by = NULL,
+        updated_at = ?
+      WHERE id = ?
+    `, [now, locationId]);
+
+    broadcastSSEEvent('event_locations_changed', { eventId, action: 'restore', locationId });
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error('Error restoring location:', err);
+    return res.status(500).json({ success: false, error: 'Failed to restore location' });
+  }
+});
+
+// 7. QR code endpoints: Generate
+router.post('/events/:eventId/locations/:locationId/code', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { eventId, locationId } = req.params;
+    const now = new Date().toISOString();
+
+    // Deactivate previous active codes
+    await execute('UPDATE event_location_codes SET is_active = 0 WHERE event_location_id = ?', [locationId]);
+
+    // Generate signed/opaque unguessable token
+    const token = 'loc_code_' + crypto.randomBytes(24).toString('hex');
+    const id = 'code-' + crypto.randomBytes(8).toString('hex');
+
+    await execute(`
+      INSERT INTO event_location_codes (
+        id, event_location_id, token_hash, token_version, is_active, generated_by, generated_at
+      ) VALUES (?, ?, ?, 1, 1, ?, ?)
+    `, [id, locationId, token, req.user?.id || null, now]);
+
+    return res.json({ success: true, token });
+  } catch (err: any) {
+    console.error('Error generating QR code:', err);
+    return res.status(500).json({ success: false, error: 'Failed to generate QR code' });
+  }
+});
+
+// 8. QR code: Rotate
+router.post('/events/:eventId/locations/:locationId/code/rotate', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { eventId, locationId } = req.params;
+    const now = new Date().toISOString();
+
+    // Deactivate existing codes
+    await execute('UPDATE event_location_codes SET is_active = 0 WHERE event_location_id = ?', [locationId]);
+
+    // Generate new unguessable token
+    const token = 'loc_code_' + crypto.randomBytes(24).toString('hex');
+    const id = 'code-' + crypto.randomBytes(8).toString('hex');
+
+    await execute(`
+      INSERT INTO event_location_codes (
+        id, event_location_id, token_hash, token_version, is_active, generated_by, generated_at, rotated_at
+      ) VALUES (?, ?, ?, 1, 1, ?, ?, ?)
+    `, [id, locationId, token, req.user?.id || null, now, now]);
+
+    return res.json({ success: true, token });
+  } catch (err: any) {
+    console.error('Error rotating QR code:', err);
+    return res.status(500).json({ success: false, error: 'Failed to rotate QR code' });
+  }
+});
+
+// 9. QR code: Disable
+router.post('/events/:eventId/locations/:locationId/code/disable', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { locationId } = req.params;
+    const now = new Date().toISOString();
+
+    await execute(`
+      UPDATE event_location_codes SET
+        is_active = 0,
+        disabled_at = ?
+      WHERE event_location_id = ? AND is_active = 1
+    `, [now, locationId]);
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error('Error disabling QR code:', err);
+    return res.status(500).json({ success: false, error: 'Failed to disable QR code' });
+  }
+});
+
+// 10. Location Coverage detail and status
+router.get('/events/:eventId/locations/:locationId/coverage', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { eventId, locationId } = req.params;
+
+    const loc = await queryOne('SELECT * FROM event_locations WHERE id = ?', [locationId]);
+    if (!loc) {
+      return res.status(404).json({ success: false, error: 'Location not found' });
+    }
+
+    // Active present responders (from both volunteer_profiles and parent_profiles)
+    const activePresence = await query(`
+      SELECT p.*, u.role, COALESCE(vp.full_name, pr.full_name, u.email) as full_name, COALESCE(vp.phone, pr.phone_number) as phone_number
+      FROM event_duty_location_presence p
+      JOIN users u ON p.user_id = u.id
+      LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
+      LEFT JOIN parent_profiles pr ON u.id = pr.user_id
+      WHERE p.event_location_id = ? AND p.ended_at IS NULL
+    `, [locationId]);
+
+    // Assigned responders (status != cancelled)
+    const assignedResponders = await query(`
+      SELECT a.*, COALESCE(vp.full_name, pr.full_name, u.email) as full_name, u.role,
+             (SELECT p2.started_at FROM event_duty_location_presence p2 WHERE p2.user_id = a.user_id AND p2.event_location_id = a.assigned_location_id AND p2.ended_at IS NULL ORDER BY p2.started_at DESC LIMIT 1) as present_since
+      FROM event_duty_assignments a
+      JOIN users u ON a.user_id = u.id
+      LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
+      LEFT JOIN parent_profiles pr ON u.id = pr.user_id
+      WHERE a.event_id = ? AND a.assigned_location_id = ? AND a.status != 'cancelled'
+    `, [eventId, locationId]);
+
+    let coverageStatus = 'Not covered';
+    if (activePresence.length > 0) {
+      coverageStatus = 'Covered';
+    } else if (assignedResponders.length > 0) {
+      coverageStatus = 'Covered with backup only';
+    }
+
+    // Also get active alarms associated with this location
+    const activeAlerts = await query(`
+      SELECT id, title, category, severity, status, created_at
+      FROM event_safety_alerts
+      WHERE event_id = ? AND location_id = ? AND status IN ('open', 'acknowledged')
+    `, [eventId, locationId]);
+
+    return res.json({
+      success: true,
+      coverage: {
+        locationId,
+        locationName: loc.name,
+        coverageStatus,
+        activePresence: activePresence.map(p => ({
+          userId: p.user_id,
+          fullName: p.full_name,
+          role: p.role,
+          phone: p.phone_number,
+          source: p.source,
+          startedAt: p.started_at
+        })),
+        assignedResponders: assignedResponders.map(a => ({
+          id: a.id,
+          userId: a.user_id,
+          fullName: a.full_name,
+          role: a.role,
+          responsibilityKey: a.responsibility_key,
+          startsAt: a.starts_at,
+          endsAt: a.ends_at,
+          isPresent: !!a.present_since,
+          presentSince: a.present_since
+        })),
+        activeAlertsCount: activeAlerts.length,
+        activeAlerts
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching location coverage details:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve location coverage' });
+  }
+});
+
+// Admin manual duty presence actions (mark arrived / end duty)
+router.post('/events/:eventId/locations/:locationId/presence', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { eventId, locationId } = req.params;
+    const { userId, action } = req.body;
+
+    if (!userId || !action) {
+      return res.status(400).json({ success: false, error: 'User ID and action are required' });
+    }
+
+    const loc = await queryOne('SELECT * FROM event_locations WHERE id = ?', [locationId]);
+    if (!loc) {
+      return res.status(404).json({ success: false, error: 'Location not found' });
+    }
+
+    const now = new Date().toISOString();
+
+    if (action === 'check_in') {
+      await execute('UPDATE event_duty_location_presence SET ended_at = ? WHERE user_id = ? AND ended_at IS NULL AND event_id = ?', [now, userId, eventId]);
+
+      const presenceId = 'pres-' + crypto.randomBytes(8).toString('hex');
+      await execute(`
+        INSERT INTO event_duty_location_presence (
+          id, event_id, user_id, duty_device_id, event_location_id, source, started_at, ended_at, updated_at
+        ) VALUES (?, ?, ?, NULL, ?, 'admin_manual', ?, NULL, ?)
+      `, [presenceId, eventId, userId, locationId, now, now]);
+
+      await execute(`
+        UPDATE event_duty_assignments
+        SET status = 'on_duty', updated_at = ?
+        WHERE user_id = ? AND event_id = ? AND assigned_location_id = ? AND status != 'cancelled'
+      `, [now, userId, eventId, locationId]);
+
+      broadcastSSEEvent('duty_presence_changed', { eventId, userId, locationId });
+      return res.json({ success: true, action: 'checked_in', startedAt: now });
+    } else if (action === 'end_duty') {
+      await execute('UPDATE event_duty_location_presence SET ended_at = ? WHERE user_id = ? AND event_location_id = ? AND ended_at IS NULL AND event_id = ?', [now, userId, locationId, eventId]);
+
+      await execute(`
+        UPDATE event_duty_assignments
+        SET status = 'available', updated_at = ?
+        WHERE user_id = ? AND event_id = ? AND assigned_location_id = ? AND status = 'on_duty'
+      `, [now, userId, eventId, locationId]);
+
+      broadcastSSEEvent('duty_presence_changed', { eventId, userId, locationId: null });
+      return res.json({ success: true, action: 'duty_ended' });
+    } else {
+      return res.status(400).json({ success: false, error: 'Invalid action' });
+    }
+  } catch (err: any) {
+    console.error('Error modifying location presence:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update location presence' });
+  }
+});
+
+router.post('/locations/:locationId/presence', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  req.params.eventId = 'event-ga-2026';
+  const { locationId } = req.params;
+  const { userId, action } = req.body;
+
+  if (!userId || !action) {
+    return res.status(400).json({ success: false, error: 'User ID and action are required' });
+  }
+
+  const now = new Date().toISOString();
+  if (action === 'check_in') {
+    await execute('UPDATE event_duty_location_presence SET ended_at = ? WHERE user_id = ? AND ended_at IS NULL', [now, userId]);
+
+    const presenceId = 'pres-' + crypto.randomBytes(8).toString('hex');
+    await execute(`
+      INSERT INTO event_duty_location_presence (
+        id, event_id, user_id, duty_device_id, event_location_id, source, started_at, ended_at, updated_at
+      ) VALUES (?, 'event-ga-2026', ?, NULL, ?, 'admin_manual', ?, NULL, ?)
+    `, [presenceId, userId, locationId, now, now]);
+
+    await execute(`
+      UPDATE event_duty_assignments
+      SET status = 'on_duty', updated_at = ?
+      WHERE user_id = ? AND assigned_location_id = ? AND status != 'cancelled'
+    `, [now, userId, locationId]);
+
+    broadcastSSEEvent('duty_presence_changed', { eventId: 'event-ga-2026', userId, locationId });
+    return res.json({ success: true, action: 'checked_in', startedAt: now });
+  } else if (action === 'end_duty') {
+    await execute('UPDATE event_duty_location_presence SET ended_at = ? WHERE user_id = ? AND event_location_id = ? AND ended_at IS NULL', [now, userId, locationId]);
+
+    await execute(`
+      UPDATE event_duty_assignments
+      SET status = 'available', updated_at = ?
+      WHERE user_id = ? AND assigned_location_id = ? AND status = 'on_duty'
+    `, [now, userId, locationId]);
+
+    broadcastSSEEvent('duty_presence_changed', { eventId: 'event-ga-2026', userId, locationId: null });
+    return res.json({ success: true, action: 'duty_ended' });
+  } else {
+    return res.status(400).json({ success: false, error: 'Invalid action' });
+  }
+});
+
+// Alias endpoints for /api/admin/locations (default event: event-ga-2026)
+router.get('/locations', authMiddleware, async (req: AuthenticatedRequest, res, next) => {
+  req.params.eventId = 'event-ga-2026';
+  // Forward to /events/:eventId/locations logic
+  const handleLocations = (router as any)._router.stack.find((s: any) => s.route && s.route.path === '/events/:eventId/locations' && s.route.methods.get);
+  if (handleLocations) {
+    return handleLocations.handle(req, res, next);
+  }
+  return res.redirect(307, '/api/admin/events/event-ga-2026/locations');
+});
+
+router.post('/locations', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  req.params.eventId = 'event-ga-2026';
+  const { name, shortName, type, parentLocationId, description, instructions, capacity, ageGroupKey, teamKey, emergencyLabel, sortOrder, locationType } = req.body;
+  const realType = type || locationType || 'room';
+  if (!name || !name.trim()) {
+    return res.status(400).json({ success: false, error: 'Location name is required.' });
+  }
+  const id = 'loc-' + crypto.randomBytes(8).toString('hex');
+  const now = new Date().toISOString();
+  const parentId = (parentLocationId && parentLocationId !== 'none') ? parentLocationId : null;
+
+  await execute(`
+    INSERT INTO event_locations (
+      id, event_id, parent_location_id, location_type, name, short_name, description,
+      instructions, capacity, age_group_key, team_key, emergency_label, sort_order,
+      is_active, created_by, updated_by, created_at, updated_at
+    ) VALUES (?, 'event-ga-2026', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+  `, [
+    id, parentId, realType, name.trim(), shortName ? shortName.trim() : null,
+    description ? description.trim() : null, instructions ? instructions.trim() : null,
+    capacity ? parseInt(String(capacity)) : null, ageGroupKey || null, teamKey || null,
+    emergencyLabel ? emergencyLabel.trim() : null, sortOrder ? parseInt(String(sortOrder)) : 0,
+    req.user?.id || null, req.user?.id || null, now, now
+  ]);
+
+  const newLoc = await queryOne('SELECT * FROM event_locations WHERE id = ?', [id]);
+  return res.json({ success: true, locationId: id, location: newLoc });
+});
+
+router.get('/locations/:locationId', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  req.params.eventId = 'event-ga-2026';
+  const { locationId } = req.params;
+  const loc = await queryOne('SELECT * FROM event_locations WHERE id = ?', [locationId]);
+  if (!loc) {
+    return res.status(404).json({ success: false, error: 'Location not found.' });
+  }
+  const codeEntry = await queryOne('SELECT id, token_hash, is_active FROM event_location_codes WHERE event_location_id = ? AND is_active = 1', [locationId]);
+  return res.json({
+    success: true,
+    location: {
+      id: loc.id,
+      eventId: loc.event_id,
+      parentLocationId: loc.parent_location_id,
+      type: loc.location_type,
+      name: loc.name,
+      shortName: loc.short_name,
+      description: loc.description,
+      instructions: loc.instructions,
+      capacity: loc.capacity,
+      ageGroupKey: loc.age_group_key,
+      teamKey: loc.team_key,
+      emergencyLabel: loc.emergency_label,
+      sortOrder: loc.sort_order,
+      isActive: !!loc.is_active,
+      archivedAt: loc.archived_at,
+      qrCodeActive: !!codeEntry,
+      qrToken: codeEntry ? codeEntry.token_hash : null
+    }
+  });
+});
+
+const handleUpdateLocation = async (req: AuthenticatedRequest, res: Response) => {
+  const { locationId } = req.params;
+  const { name, shortName, type, locationType, parentLocationId, description, instructions, capacity, ageGroupKey, teamKey, emergencyLabel, sortOrder, isActive } = req.body;
+  const existingLoc = await queryOne('SELECT * FROM event_locations WHERE id = ?', [locationId]);
+  if (!existingLoc) {
+    return res.status(404).json({ success: false, error: 'Location not found.' });
+  }
+  const realType = type || locationType || existingLoc.location_type;
+  const parentId = parentLocationId === 'none' ? null : (parentLocationId !== undefined ? parentLocationId : existingLoc.parent_location_id);
+  const now = new Date().toISOString();
+
+  await execute(`
+    UPDATE event_locations SET
+      name = COALESCE(?, name),
+      short_name = ?,
+      location_type = COALESCE(?, location_type),
+      parent_location_id = ?,
+      description = ?,
+      instructions = ?,
+      capacity = ?,
+      age_group_key = ?,
+      team_key = ?,
+      emergency_label = ?,
+      sort_order = COALESCE(?, sort_order),
+      is_active = COALESCE(?, is_active),
+      updated_by = ?,
+      updated_at = ?
+    WHERE id = ?
+  `, [
+    name ? name.trim() : null,
+    shortName === '' ? null : (shortName ? shortName.trim() : existingLoc.short_name),
+    realType,
+    parentId,
+    description === '' ? null : (description ? description.trim() : existingLoc.description),
+    instructions === '' ? null : (instructions ? instructions.trim() : existingLoc.instructions),
+    capacity === '' ? null : (capacity !== undefined ? parseInt(String(capacity)) : existingLoc.capacity),
+    ageGroupKey === '' ? null : (ageGroupKey ? ageGroupKey : existingLoc.age_group_key),
+    teamKey === '' ? null : (teamKey ? teamKey : existingLoc.team_key),
+    emergencyLabel === '' ? null : (emergencyLabel ? emergencyLabel.trim() : existingLoc.emergency_label),
+    sortOrder !== undefined ? parseInt(String(sortOrder)) : null,
+    isActive !== undefined ? (isActive ? 1 : 0) : null,
+    req.user?.id || null,
+    now,
+    locationId
+  ]);
+
+  const updatedLoc = await queryOne('SELECT * FROM event_locations WHERE id = ?', [locationId]);
+  return res.json({ success: true, location: updatedLoc });
+};
+
+router.put('/locations/:locationId', authMiddleware, handleUpdateLocation as any);
+router.patch('/locations/:locationId', authMiddleware, handleUpdateLocation as any);
+
+router.post('/locations/:locationId/archive', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  const { locationId } = req.params;
+  const now = new Date().toISOString();
+  await execute(`
+    UPDATE event_locations SET is_active = 0, archived_at = ?, archived_by = ?, updated_at = ? WHERE id = ?
+  `, [now, req.user?.id || null, now, locationId]);
+  await execute('UPDATE event_location_codes SET is_active = 0 WHERE event_location_id = ?', [locationId]);
+  return res.json({ success: true });
+});
+
+router.post('/locations/:locationId/restore', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  const { locationId } = req.params;
+  const now = new Date().toISOString();
+  await execute(`
+    UPDATE event_locations SET is_active = 1, archived_at = NULL, archived_by = NULL, updated_at = ? WHERE id = ?
+  `, [now, locationId]);
+  return res.json({ success: true });
+});
+
+// QR Code endpoints for /locations/:locationId/qr
+router.get('/locations/:locationId/qr', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  const { locationId } = req.params;
+  let codeEntry = await queryOne('SELECT id, token_hash, is_active FROM event_location_codes WHERE event_location_id = ? AND is_active = 1', [locationId]);
+  if (!codeEntry) {
+    const token = 'loc_code_' + crypto.randomBytes(24).toString('hex');
+    const id = 'code-' + crypto.randomBytes(8).toString('hex');
+    const now = new Date().toISOString();
+    await execute(`
+      INSERT INTO event_location_codes (id, event_location_id, token_hash, token_version, is_active, generated_by, generated_at)
+      VALUES (?, ?, ?, 1, 1, ?, ?)
+    `, [id, locationId, token, req.user?.id || null, now]);
+    codeEntry = { id, token_hash: token, is_active: 1 };
+  }
+  return res.json({ success: true, code: codeEntry });
+});
+
+router.post('/locations/:locationId/qr', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  const { locationId } = req.params;
+  const now = new Date().toISOString();
+  await execute('UPDATE event_location_codes SET is_active = 0 WHERE event_location_id = ?', [locationId]);
+  const token = 'loc_code_' + crypto.randomBytes(24).toString('hex');
+  const id = 'code-' + crypto.randomBytes(8).toString('hex');
+  await execute(`
+    INSERT INTO event_location_codes (id, event_location_id, token_hash, token_version, is_active, generated_by, generated_at)
+    VALUES (?, ?, ?, 1, 1, ?, ?)
+  `, [id, locationId, token, req.user?.id || null, now]);
+  return res.json({ success: true, token, code: { id, token_hash: token, is_active: 1 } });
+});
+
+router.delete('/locations/:locationId/qr', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  const { locationId } = req.params;
+  const now = new Date().toISOString();
+  await execute('UPDATE event_location_codes SET is_active = 0, disabled_at = ? WHERE event_location_id = ? AND is_active = 1', [now, locationId]);
+  return res.json({ success: true });
+});
+
+router.get('/locations/:locationId/coverage', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  const { locationId } = req.params;
+  const loc = await queryOne('SELECT * FROM event_locations WHERE id = ?', [locationId]);
+  if (!loc) {
+    return res.status(404).json({ success: false, error: 'Location not found' });
+  }
+  const activePresence = await query(`
+    SELECT p.*, u.role, pr.full_name, pr.phone_number
+    FROM event_duty_location_presence p
+    JOIN users u ON p.user_id = u.id
+    JOIN parent_profiles pr ON u.id = pr.user_id
+    WHERE p.event_location_id = ? AND p.ended_at IS NULL
+  `, [locationId]);
+
+  return res.json({
+    success: true,
+    coverage: {
+      locationId,
+      locationName: loc.name,
+      activePresence: activePresence.map(p => ({
+        userId: p.user_id, fullName: p.full_name, role: p.role, phone: p.phone_number, startedAt: p.started_at
+      })),
+      activeAlerts: []
+    },
+    responders: activePresence,
+    alerts: []
+  });
+});
+
+// ==========================================
+// Phase 7 Admin Child Summary Endpoints
+// ==========================================
+
+// GET /api/admin/safety-alerts/:alertId/child-summary
+router.get('/safety-alerts/:alertId/child-summary', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { alertId } = req.params;
+    const summary = await serializeChildEmergencySummary({
+      actor: { id: req.user.id, role: req.user.role },
+      alertId,
+      accessReason: 'Admin summary overview view'
+    });
+
+    res.json(summary);
+  } catch (err: any) {
+    console.error('Admin child summary error:', err);
+    res.status(403).json({ error: err.message || 'Access denied' });
+  }
+});
+
+// GET /api/admin/safety-alerts/:alertId/child-summary/protected/:section
+router.get('/safety-alerts/:alertId/child-summary/protected/:section', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { alertId, section } = req.params;
+
+    const summary = await serializeChildEmergencySummary({
+      actor: { id: req.user.id, role: req.user.role },
+      alertId,
+      revealedSections: [section],
+      accessReason: `Admin explicit reveal of ${section}`
+    });
+
+    res.json(summary);
+  } catch (err: any) {
+    console.error('Admin child summary protected reveal error:', err);
+    res.status(403).json({ error: err.message || 'Access denied' });
+  }
+});
+
+// POST /api/admin/safety-alerts/:alertId/link-child
+router.post('/safety-alerts/:alertId/link-child', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { alertId } = req.params;
+    const { childId, reason } = req.body;
+
+    if (!childId) {
+      return res.status(400).json({ error: 'childId is required' });
+    }
+
+    const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [alertId]);
+    if (!alert) {
+      return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    const child = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
+    if (!child) {
+      return res.status(400).json({ error: 'Selected child profile not found.' });
+    }
+
+    const entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, alert.event_id]);
+    const finalEntryId = entry?.id || null;
+
+    const now = new Date().toISOString();
+    const prevChildId = alert.child_id;
+
+    await execute(`
+      UPDATE event_safety_alerts
+      SET child_id = ?,
+          child_event_entry_id = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [childId, finalEntryId, now, alertId]);
+
+    const historyId = 'link-hist-' + crypto.randomUUID();
+    await execute(`
+      INSERT INTO alert_child_link_history (
+        id, alert_id, previous_child_id, new_child_id, action, reason, changed_by, created_at
+      ) VALUES (?, ?, ?, ?, 'link', ?, ?, ?)
+    `, [historyId, alertId, prevChildId, childId, reason || 'Admin child link', req.user.id, now]);
+
+    await captureChildSnapshot(alertId, childId);
+
+    const timelineId = 'timeline-' + crypto.randomUUID();
+    await execute(`
+      INSERT INTO alert_response_history (
+        id, alert_id, user_id, action, target_user_id, note, created_at
+      ) VALUES (?, ?, ?, 'child_linked', null, ?, ?)
+    `, [timelineId, alertId, req.user.id, `Admin linked child ${child.full_name}. Reason: ${reason || 'Admin override'}`, now]);
+
+    broadcastSSEEvent(alert.event_id, {
+      type: 'alert.child_linked',
+      alertId,
+      summaryVersion: 1,
+      refreshHint: true
+    });
+
+    res.json({ success: true, message: 'Child successfully linked by admin.' });
+  } catch (err: any) {
+    console.error('Admin link child error:', err);
+    res.status(500).json({ error: 'Failed to link child' });
+  }
+});
+
+// POST /api/admin/safety-alerts/:alertId/correct-child-link
+router.post('/safety-alerts/:alertId/correct-child-link', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { alertId } = req.params;
+    const { childId, reason } = req.body;
+
+    if (!childId) {
+      return res.status(400).json({ error: 'childId is required' });
+    }
+
+    if (!reason) {
+      return res.status(400).json({ error: 'Reason for correction is required' });
+    }
+
+    const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [alertId]);
+    if (!alert) {
+      return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    const child = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
+    if (!child) {
+      return res.status(400).json({ error: 'Selected child profile not found.' });
+    }
+
+    const entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, alert.event_id]);
+    const finalEntryId = entry?.id || null;
+
+    const now = new Date().toISOString();
+    const prevChildId = alert.child_id;
+
+    await execute(`
+      UPDATE event_safety_alerts
+      SET child_id = ?,
+          child_event_entry_id = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [childId, finalEntryId, now, alertId]);
+
+    const historyId = 'link-hist-' + crypto.randomUUID();
+    await execute(`
+      INSERT INTO alert_child_link_history (
+        id, alert_id, previous_child_id, new_child_id, action, reason, changed_by, created_at
+      ) VALUES (?, ?, ?, ?, 'correction', ?, ?, ?)
+    `, [historyId, alertId, prevChildId, childId, reason, req.user.id, now]);
+
+    await captureChildSnapshot(alertId, childId);
+
+    const timelineId = 'timeline-' + crypto.randomUUID();
+    await execute(`
+      INSERT INTO alert_response_history (
+        id, alert_id, user_id, action, target_user_id, note, created_at
+      ) VALUES (?, ?, ?, 'child_link_corrected', null, ?, ?)
+    `, [timelineId, alertId, req.user.id, `Corrected child link to ${child.full_name}. Reason: ${reason}`, now]);
+
+    broadcastSSEEvent(alert.event_id, {
+      type: 'alert.child_link_corrected',
+      alertId,
+      summaryVersion: 1,
+      refreshHint: true
+    });
+
+    res.json({ success: true, message: 'Child link corrected successfully.' });
+  } catch (err: any) {
+    console.error('Correct child link error:', err);
+    res.status(500).json({ error: 'Failed to correct child link' });
+  }
+});
+
+// POST /api/admin/safety-alerts/:alertId/contact-attempt
+router.post('/safety-alerts/:alertId/contact-attempt', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { alertId } = req.params;
+    const { contactType, contactReference, outcome, safeNote } = req.body;
+
+    if (!contactType || !contactReference || !outcome) {
+      return res.status(400).json({ error: 'contactType, contactReference and outcome are required' });
+    }
+
+    const alert = await queryOne('SELECT * FROM event_safety_alerts WHERE id = ?', [alertId]);
+    if (!alert) {
+      return res.status(404).json({ error: 'Safety alert not found' });
+    }
+
+    if (!alert.child_id) {
+      return res.status(400).json({ error: 'No child is linked to this alert.' });
+    }
+
+    const now = new Date().toISOString();
+    const id = 'attempt-' + crypto.randomUUID();
+
+    await execute(`
+      INSERT INTO child_contact_attempts (
+        id, event_id, alert_id, child_id, contact_type, contact_reference, outcome, safe_note, attempted_by, attempted_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      id, alert.event_id, alertId, alert.child_id, contactType,
+      contactReference, outcome, safeNote || null, req.user.id, now
+    ]);
+
+    const timelineId = 'timeline-' + crypto.randomUUID();
+    await execute(`
+      INSERT INTO alert_response_history (
+        id, alert_id, user_id, action, target_user_id, note, created_at
+      ) VALUES (?, ?, ?, 'contact_attempted', null, ?, ?)
+    `, [timelineId, alertId, req.user.id, `Contacted ${contactReference} via ${contactType}. Result: ${outcome}. Note: ${safeNote || 'None'}`, now]);
+
+    broadcastSSEEvent(alert.event_id, {
+      type: 'child.contact_attempt_recorded',
+      alertId,
+      summaryVersion: 1,
+      refreshHint: true
+    });
+
+    res.json({ success: true, message: 'Contact attempt logged successfully by admin.' });
+  } catch (err: any) {
+    console.error('Record contact attempt error:', err);
+    res.status(500).json({ error: 'Failed to record contact attempt' });
+  }
+});
+
+// GET /api/admin/children/:childId/emergency-summary
+router.get('/children/:childId/emergency-summary', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied: Admin role required' });
+    }
+
+    const { childId } = req.params;
+    const summary = await serializeChildEmergencySummary({
+      actor: { id: req.user.id, role: req.user.role },
+      childId,
+      accessReason: 'Admin child directory lookup'
+    });
+
+    res.json(summary);
+  } catch (err: any) {
+    console.error('Admin direct child summary error:', err);
+    res.status(403).json({ error: err.message || 'Access denied' });
+  }
+});
+
+// GET /api/admin/events/:eventId/operations/overview
+router.get('/events/:eventId/operations/overview', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const { profile } = req.query;
+
+    const userRole = req.user?.role;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    let activeProfile: any = profile || 'admin';
+
+    if (userRole === 'super_admin') {
+      // Super Admin bypasses assignment checks and can select any presentation preview
+      activeProfile = profile || 'admin';
+    } else if (userRole === 'admin') {
+      // Event Admin must be explicitly assigned to this event
+      const assignment = await queryOne(`
+        SELECT responsibility_key FROM event_duty_assignments
+        WHERE event_id = ? AND user_id = ? AND status != 'cancelled'
+        LIMIT 1
+      `, [eventId, userId]);
+
+      if (!assignment) {
+        return res.status(403).json({ success: false, error: 'Access denied: You are not assigned to this event.' });
+      }
+
+      // Event Admin cannot request a super_admin profile
+      activeProfile = profile || 'admin';
+      if (activeProfile === 'super_admin') {
+        activeProfile = 'admin';
+      }
+    } else {
+      // Functional leads, team leads, etc. must be assigned and are locked to their profile
+      const assignment = await queryOne(`
+        SELECT responsibility_key FROM event_duty_assignments
+        WHERE event_id = ? AND user_id = ? AND status != 'cancelled'
+        LIMIT 1
+      `, [eventId, userId]);
+
+      if (!assignment) {
+        return res.status(403).json({ success: false, error: 'Access denied: Scoped permissions required.' });
+      }
+
+      const key = assignment.responsibility_key;
+      let allowedProfile = 'volunteer';
+      if (key === 'First Aid Team' || key === 'First Aid Lead') {
+        allowedProfile = 'first_aid';
+      } else if (key === 'Security Lead' || key === 'Security Team') {
+        allowedProfile = 'security';
+      } else if (key === 'Pickup Lead') {
+        allowedProfile = 'pickup';
+      } else if (key === 'Care Lead' || key === 'Room/Group Lead') {
+        allowedProfile = 'team_lead';
+      } else {
+        return res.status(403).json({ success: false, error: 'Access denied: Scoped permissions required.' });
+      }
+
+      // Always force their allowed scoped profile, ignoring external query input
+      activeProfile = allowedProfile;
+    }
+
+    const data = await eventOperationsService.getEventOperationsOverview(eventId, {
+      profile: activeProfile
+    });
+
+    res.json(data);
+  } catch (err: any) {
+    console.error('Error fetching event operations overview:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to retrieve event operations.' });
+  }
+});
+
+// GET /api/admin/events/:eventId/operations/activity
+router.get('/events/:eventId/operations/activity', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const { type, page, limit } = req.query;
+
+    const userRole = req.user?.role;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    if (userRole !== 'super_admin') {
+      const assignment = await queryOne(`
+        SELECT id FROM event_duty_assignments
+        WHERE event_id = ? AND user_id = ? AND status != 'cancelled'
+        LIMIT 1
+      `, [eventId, userId]);
+
+      if (!assignment) {
+        return res.status(403).json({ success: false, error: 'Access denied: You are not assigned to this event.' });
+      }
+    }
+
+    const filterType = (type || 'all') as any;
+    const pageNum = parseInt(String(page || '1')) || 1;
+    const limitNum = parseInt(String(limit || '10')) || 10;
+
+    const data = await eventOperationsService.getRecentOperationalActivity(eventId, {
+      type: filterType,
+      page: pageNum,
+      limit: limitNum
+    });
+
+    res.json(data);
+  } catch (err: any) {
+    console.error('Error fetching event operations activity:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to retrieve event activity.' });
+  }
+});
+
+// Alias /api/admin/events/:eventId/response-coverage to adminDutyRouter
+router.use('/events/:eventId/response-coverage', (req, res, next) => {
+  req.url = `/events/${req.params.eventId}/response-coverage`;
+  adminDutyRouter(req, res, next);
+});
+
+// =========================================================================
+// OPERATIONS ASSISTANT ENDPOINTS (PHASE 1)
+// =========================================================================
+
+// GET /api/admin/operations-assistant/readiness
+router.get('/operations-assistant/readiness', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Admin access required.' });
+    }
+
+    const eventIdParam = req.query.eventId as string | undefined;
+    const targetEvent = await operationsAssistantService.resolveTargetEvent(eventIdParam);
+
+    if (!targetEvent) {
+      return res.json({
+        success: true,
+        report: {
+          event: null,
+          readinessStatus: 'NOT READY',
+          readinessReasons: ['No active event selected.'],
+          metrics: {
+            registrations: 0,
+            selectedChildren: 0,
+            eventChildCapacity: null,
+            placesRemaining: null,
+            checkedIn: 0,
+            pickedUp: 0,
+            approvedVolunteers: 0,
+            volunteersAssigned: 0,
+            volunteersOnDuty: 0,
+            dutyLocations: 0,
+            locationsBelowTarget: 0,
+            selectedChildrenWithoutPasses: 0,
+            openSafetyNotices: 0,
+            unresolvedEscalations: 0,
+            registrationClosingDate: null
+          },
+          needsAttention: [],
+          automationTriggers: [],
+          lastUpdated: new Date().toISOString()
+        }
+      });
+    }
+
+    const report = await operationsAssistantService.getEventReadiness(targetEvent.id);
+    res.json({ success: true, report });
+  } catch (err: any) {
+    console.error('Error fetching operations assistant readiness:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to retrieve event readiness.' });
+  }
+});
+
+// POST /api/admin/operations-assistant/query
+router.post('/operations-assistant/query', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Admin access required.' });
+    }
+
+    const { question, eventId } = req.body;
+    if (!question || typeof question !== 'string' || !question.trim()) {
+      return res.status(400).json({ success: false, error: 'A question is required.' });
+    }
+
+    const result = await operationsAssistantService.processOperationalQuery(question.trim(), eventId, req.user);
+    res.json({ success: true, result });
+  } catch (err: any) {
+    console.error('Error processing operational query:', err);
+    res.status(500).json({ success: false, error: "We couldn't get that information right now. Please try again." });
+  }
+});
+
+// POST /api/admin/operations-assistant/confirm-action (Phase 3A Confirmed Actions)
+router.post('/operations-assistant/confirm-action', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Admin access required.' });
+    }
+
+    const { confirmationToken, eventId } = req.body;
+    if (!confirmationToken || typeof confirmationToken !== 'string') {
+      return res.status(400).json({ success: false, error: 'A valid confirmation token is required.' });
+    }
+
+    const result = await operationsAssistantService.confirmAction(confirmationToken, eventId, req.user);
+    if (!result.success) {
+      return res.status(400).json({ success: false, error: result.message || "We couldn't complete that action. Please try again." });
+    }
+
+    res.json({ success: true, result });
+  } catch (err: any) {
+    console.error('Error confirming operational action:', err);
+    res.status(500).json({ success: false, error: "We couldn't complete that action. Please try again." });
+  }
+});
+
+// POST /api/admin/operations-assistant/cancel-action (Phase 3A)
+router.post('/operations-assistant/cancel-action', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Admin access required.' });
+    }
+
+    const { confirmationToken } = req.body;
+    if (!confirmationToken || typeof confirmationToken !== 'string') {
+      return res.status(400).json({ success: false, error: 'A valid confirmation token is required.' });
+    }
+
+    const result = operationsAssistantService.cancelAction(confirmationToken, req.user);
+    res.json({ success: true, message: result.message });
+  } catch (err: any) {
+    console.error('Error cancelling operational action:', err);
+    res.status(500).json({ success: false, error: "We couldn't cancel the action." });
+  }
+});
+
+export default router;

@@ -1,0 +1,1162 @@
+import { query, queryOne } from '../../../db';
+import { getCurrentEvent, getEventById } from '../../eventService';
+import { getVolunteersNotReportedForDuty } from '../tools/dutyTools';
+import {
+  autoResolveMissingAutomations,
+  AutomationUpsertInput,
+  getAutomationSettingsForEvent,
+  initAutomationSchema,
+  upsertAutomation
+} from './automationPersistence';
+import {
+  AutomationRuleDefinition,
+  AutomationSeverity,
+  PHASE3B_AUTOMATION_RULES
+} from './ruleModel';
+import {
+  ApprovedVolunteerUnassignedSignal,
+  ChildAttendanceStateMismatchSignal,
+  ConfigurationGapSignal,
+  DutyPresenceMismatchSignal,
+  EventSignal,
+  EventStartingSoonSignal,
+  GuardianInformationIncompleteSignal,
+  LocationUnderstaffedSignal,
+  PassNotReadySignal,
+  PickupInformationIncompleteSignal,
+  RegistrationClosingSoonSignal,
+  ReportExpiredSignal,
+  SafetyItemOpenSignal,
+  SelectionCapacityStatusSignal,
+  VolunteerNoShowSignal,
+  VolunteerRegistrationClosingSoonSignal
+} from './signals';
+
+export interface AutomationEngineHealth {
+  lastEvaluationAt: string | null;
+  lastEvaluationDurationMs: number;
+  rulesEvaluatedCount: number;
+  signalsDetectedCount: number;
+  newItemsCount: number;
+  resolvedItemsCount: number;
+  lastError: string | null;
+  failedRules: string[];
+}
+
+const engineHealth: AutomationEngineHealth = {
+  lastEvaluationAt: null,
+  lastEvaluationDurationMs: 0,
+  rulesEvaluatedCount: 0,
+  signalsDetectedCount: 0,
+  newItemsCount: 0,
+  resolvedItemsCount: 0,
+  lastError: null,
+  failedRules: []
+};
+
+let lastFailedSignals: string[] = [];
+
+export function getLastFailedSignals(): string[] {
+  return [...lastFailedSignals];
+}
+
+export function getAutomationEngineHealth(): AutomationEngineHealth {
+  return { ...engineHealth, failedRules: [...engineHealth.failedRules] };
+}
+
+/**
+ * Evaluates all 9 deterministic signals for a given event ID.
+ * All queries are bounded by eventId (no cross-event leaks, no N+1).
+ */
+export async function detectEventSignals(eventId: string): Promise<EventSignal[]> {
+  const event = await getEventById(eventId);
+  if (!event) {
+    return [];
+  }
+
+  const detectedSignals: EventSignal[] = [];
+  const now = Date.now();
+  const nowIso = new Date().toISOString();
+  const oneDayMs = 24 * 60 * 60 * 1000;
+
+  lastFailedSignals = [];
+
+  // 1. REGISTRATION_CLOSING_SOON
+  try {
+    if (event.parent_access_closes_at) {
+      const parentClosesAtTime = new Date(event.parent_access_closes_at).getTime();
+      const diffMs = parentClosesAtTime - now;
+      // Check if open (not closed in the past) and closing within 24 hours
+      if (diffMs > 0 && diffMs <= oneDayMs) {
+        const regCountRes = await queryOne(
+          'SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND COALESCE(is_deleted, 0) = 0',
+          [eventId]
+        );
+        const regSignal: RegistrationClosingSoonSignal = {
+          signal: 'REGISTRATION_CLOSING_SOON',
+          eventId,
+          closesAt: event.parent_access_closes_at,
+          hoursRemaining: Math.max(1, Math.round(diffMs / 3600000)),
+          currentRegistrations: regCountRes?.count || 0,
+          detectedAt: nowIso
+        };
+        detectedSignals.push(regSignal);
+      }
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for REGISTRATION_CLOSING_SOON:', err?.message || 'Error');
+    lastFailedSignals.push('REGISTRATION_CLOSING_SOON');
+  }
+
+  // 2. VOLUNTEER_REGISTRATION_CLOSING_SOON
+  try {
+    if (event.volunteer_registration_closes_at) {
+      const volClosesAtTime = new Date(event.volunteer_registration_closes_at).getTime();
+      const diffMs = volClosesAtTime - now;
+      if (diffMs > 0 && diffMs <= oneDayMs) {
+        const approvedVolRes = await queryOne(
+          "SELECT COUNT(*) as count FROM volunteer_profiles WHERE status = 'approved'",
+          []
+        );
+        const volSignal: VolunteerRegistrationClosingSoonSignal = {
+          signal: 'VOLUNTEER_REGISTRATION_CLOSING_SOON',
+          eventId,
+          closesAt: event.volunteer_registration_closes_at,
+          hoursRemaining: Math.max(1, Math.round(diffMs / 3600000)),
+          currentApproved: approvedVolRes?.count || 0,
+          detectedAt: nowIso
+        };
+        detectedSignals.push(volSignal);
+      }
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for VOLUNTEER_REGISTRATION_CLOSING_SOON:', err?.message || 'Error');
+    lastFailedSignals.push('VOLUNTEER_REGISTRATION_CLOSING_SOON');
+  }
+
+  // 3. LOCATION_UNDERSTAFFED
+  try {
+    const locations = await query(
+      'SELECT id, name, short_name, volunteer_capacity FROM event_locations WHERE event_id = ? AND is_active = 1',
+      [eventId]
+    );
+    const assignments = await query(
+      "SELECT assigned_location_id, responsibility_key, user_id FROM event_duty_assignments WHERE event_id = ? AND status NOT IN ('cancelled', 'ended')",
+      [eventId]
+    );
+
+    for (const loc of locations) {
+      const target = loc.volunteer_capacity || 0;
+      if (target > 0) {
+        const locAssignments = assignments.filter(
+          (a: any) => a.assigned_location_id === loc.id || a.responsibility_key === loc.id
+        );
+        const assignedCount = locAssignments.length;
+        if (assignedCount < target) {
+          const gap = target - assignedCount;
+          const understaffedSignal: LocationUnderstaffedSignal = {
+            signal: 'LOCATION_UNDERSTAFFED',
+            eventId,
+            locationId: loc.id,
+            locationName: loc.name,
+            assigned: assignedCount,
+            assignedCount,
+            required: target,
+            requiredCount: target,
+            gap,
+            detectedAt: nowIso
+          };
+          detectedSignals.push(understaffedSignal);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for LOCATION_UNDERSTAFFED:', err?.message || 'Error');
+    lastFailedSignals.push('LOCATION_UNDERSTAFFED');
+  }
+
+  // 4. VOLUNTEER_NO_SHOW (Canonical no-show resolver, respecting reporting time)
+  try {
+    const notReportedResult = await getVolunteersNotReportedForDuty(eventId);
+    if (notReportedResult.volunteers.length > 0) {
+      // Fetch duty schedule start times for not-reported volunteers in a single query
+      const userIds = notReportedResult.volunteers.map(v => v.user_id);
+      const placeholders = userIds.map(() => '?').join(',');
+      const assignmentTimes = await query(
+        `SELECT user_id, starts_at FROM event_duty_assignments
+         WHERE event_id = ? AND user_id IN (${placeholders}) AND status NOT IN ('cancelled', 'ended')`,
+        [eventId, ...userIds]
+      );
+      const startMap = new Map<string, string>();
+      for (const at of assignmentTimes) {
+        if (at.starts_at) {
+          startMap.set(at.user_id, at.starts_at);
+        }
+      }
+
+      for (const vol of notReportedResult.volunteers) {
+        const scheduledStart = startMap.get(vol.user_id) || null;
+        let hasReliableReportingTime = false;
+        let minutesLate = 0;
+
+        if (scheduledStart) {
+          const startTime = new Date(scheduledStart).getTime();
+          if (!isNaN(startTime)) {
+            hasReliableReportingTime = true;
+            // STRICT RULE: Only flag as no-show if scheduled start has passed!
+            if (now > startTime) {
+              minutesLate = Math.max(1, Math.round((now - startTime) / 60000));
+              const noShowSignal: VolunteerNoShowSignal = {
+                signal: 'VOLUNTEER_NO_SHOW',
+                eventId,
+                userId: vol.user_id,
+                volunteerName: vol.full_name || vol.name,
+                assignedLocationId: vol.assigned_location_id || '',
+                locationName: vol.location_name || vol.duty_location || 'Duty post',
+                scheduledStart,
+                hasReliableReportingTime: true,
+                minutesLate,
+                detectedAt: nowIso
+              };
+              detectedSignals.push(noShowSignal);
+            }
+            // If now <= startTime: volunteer is NOT late yet; do NOT flag premature lateness
+          } else {
+            // Scheduled start is not a valid date string (e.g. 'TBD'): do not fabricate lateness
+            const notOnDutySignal: VolunteerNoShowSignal = {
+              signal: 'VOLUNTEER_NO_SHOW',
+              eventId,
+              userId: vol.user_id,
+              volunteerName: vol.full_name || vol.name,
+              assignedLocationId: vol.assigned_location_id || '',
+              locationName: vol.location_name || vol.duty_location || 'Duty post',
+              scheduledStart: null,
+              hasReliableReportingTime: false,
+              minutesLate: 0,
+              detectedAt: nowIso
+            };
+            detectedSignals.push(notOnDutySignal);
+          }
+        } else {
+          // No reliable expected reporting time: report "Assigned but not currently on duty"
+          const notOnDutySignal: VolunteerNoShowSignal = {
+            signal: 'VOLUNTEER_NO_SHOW',
+            eventId,
+            userId: vol.user_id,
+            volunteerName: vol.full_name || vol.name,
+            assignedLocationId: vol.assigned_location_id || '',
+            locationName: vol.location_name || vol.duty_location || 'Duty post',
+            scheduledStart: null,
+            hasReliableReportingTime: false,
+            minutesLate: 0,
+            detectedAt: nowIso
+          };
+          detectedSignals.push(notOnDutySignal);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for VOLUNTEER_NO_SHOW:', err?.message || 'Error');
+    lastFailedSignals.push('VOLUNTEER_NO_SHOW');
+  }
+
+  // 5. PASS_NOT_READY
+  try {
+    const [selectedRes, withoutPassRes] = await Promise.all([
+      queryOne(
+        "SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready') AND COALESCE(is_deleted, 0) = 0",
+        [eventId]
+      ),
+      queryOne(
+        `SELECT COUNT(*) as count FROM child_event_entries e
+         WHERE e.event_id = ? AND e.status IN ('selected', 'pass_ready') AND COALESCE(e.is_deleted, 0) = 0
+           AND NOT EXISTS (
+             SELECT 1 FROM event_passes p
+             WHERE p.child_event_entry_id = e.id AND p.status = 'active'
+           )`,
+        [eventId]
+      )
+    ]);
+    const selectedCount = selectedRes?.count || 0;
+    const withoutPassCount = withoutPassRes?.count || 0;
+    if (withoutPassCount > 0) {
+      const passSignal: PassNotReadySignal = {
+        signal: 'PASS_NOT_READY',
+        eventId,
+        selectedCount,
+        missingPassCount: withoutPassCount,
+        withoutPassCount,
+        detectedAt: nowIso
+      };
+      detectedSignals.push(passSignal);
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for PASS_NOT_READY:', err?.message || 'Error');
+    lastFailedSignals.push('PASS_NOT_READY');
+  }
+
+  // 6. REPORT_EXPIRED
+  try {
+    const expiredReports = await query(
+      `SELECT gr.id, COALESCE(rj.template_key, rj.report_name, 'operational') as report_type, gr.expires_at
+       FROM generated_reports gr
+       JOIN report_jobs rj ON gr.report_job_id = rj.id
+       WHERE rj.event_id = ? AND gr.expires_at IS NOT NULL AND gr.expires_at < ?`,
+      [eventId, nowIso]
+    );
+    for (const rep of expiredReports) {
+      const repSignal: ReportExpiredSignal = {
+        signal: 'REPORT_EXPIRED',
+        eventId,
+        reportId: rep.id,
+        reportType: rep.report_type || 'operational',
+        expiredAt: rep.expires_at,
+        detectedAt: nowIso
+      };
+      detectedSignals.push(repSignal);
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for REPORT_EXPIRED:', err?.message || 'Error');
+    lastFailedSignals.push('REPORT_EXPIRED');
+  }
+
+  // 7. EVENT_STARTING_SOON
+  try {
+    const eventStart = (event as any).event_start_at || event.starts_at;
+    if (eventStart) {
+      const startTime = new Date(eventStart).getTime();
+      const diffMs = startTime - now;
+      if (diffMs > 0 && diffMs <= oneDayMs) {
+        const eventStartingSignal: EventStartingSoonSignal = {
+          signal: 'EVENT_STARTING_SOON',
+          eventId,
+          startsAt: eventStart,
+          hoursRemaining: Math.max(1, Math.round(diffMs / 3600000)),
+          detectedAt: nowIso
+        };
+        detectedSignals.push(eventStartingSignal);
+      }
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for EVENT_STARTING_SOON:', err?.message || 'Error');
+    lastFailedSignals.push('EVENT_STARTING_SOON');
+  }
+
+  // 8. SAFETY_ITEM_OPEN
+  try {
+    const [openAlertsRes, urgentAlertsRes, openIncidentsRes, activeCyclesRes] = await Promise.all([
+      queryOne("SELECT COUNT(*) as count FROM event_safety_alerts WHERE event_id = ? AND status != 'resolved'", [eventId]),
+      queryOne("SELECT COUNT(*) as count FROM event_safety_alerts WHERE event_id = ? AND status != 'resolved' AND severity = 'urgent'", [eventId]),
+      queryOne("SELECT COUNT(*) as count FROM incident_records WHERE event_id = ? AND status != 'closed'", [eventId]),
+      queryOne("SELECT COUNT(*) as count FROM escalation_cycles WHERE event_id = ? AND status IN ('scheduled', 'processing', 'open')", [eventId])
+    ]);
+    const openAlerts = parseInt(String(openAlertsRes?.count || '0'), 10) || 0;
+    const urgentAlerts = parseInt(String(urgentAlertsRes?.count || '0'), 10) || 0;
+    const openIncidents = parseInt(String(openIncidentsRes?.count || '0'), 10) || 0;
+    const activeEscalations = parseInt(String(activeCyclesRes?.count || '0'), 10) || 0;
+    const totalOpenNotices = openAlerts + openIncidents + activeEscalations;
+
+    if (totalOpenNotices > 0) {
+      const safetySignal: SafetyItemOpenSignal = {
+        signal: 'SAFETY_ITEM_OPEN',
+        eventId,
+        openAlertsCount: openAlerts,
+        openIncidentsCount: openIncidents,
+        activeEscalationsCount: activeEscalations,
+        totalOpenNotices,
+        severity: urgentAlerts > 0 || activeEscalations > 0 ? 'urgent' : 'attention',
+        detectedAt: nowIso
+      };
+      detectedSignals.push(safetySignal);
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for SAFETY_ITEM_OPEN:', err?.message || 'Error');
+    lastFailedSignals.push('SAFETY_ITEM_OPEN');
+  }
+
+  // 9. CONFIGURATION_GAP
+  try {
+    const [ageGroupsCountRes, activeLocationsCountRes] = await Promise.all([
+      queryOne('SELECT COUNT(*) as count FROM event_age_groups WHERE event_id = ?', [eventId]),
+      queryOne('SELECT COUNT(*) as count FROM event_locations WHERE event_id = ? AND is_active = 1', [eventId])
+    ]);
+    const ageGroupsCount = parseInt(String(ageGroupsCountRes?.count || '0'), 10) || 0;
+    const activeLocationsCount = parseInt(String(activeLocationsCountRes?.count || '0'), 10) || 0;
+
+    if (activeLocationsCount === 0) {
+      detectedSignals.push({
+        signal: 'CONFIGURATION_GAP',
+        eventId,
+        gapType: 'no_locations',
+        title: 'No active duty locations configured',
+        details: 'Configure duty posts for team assignments.',
+        detectedAt: nowIso
+      });
+    }
+
+    if (ageGroupsCount === 0) {
+      detectedSignals.push({
+        signal: 'CONFIGURATION_GAP',
+        eventId,
+        gapType: 'no_age_groups',
+        title: 'No age groups configured',
+        details: 'Configure child age groups and capacities.',
+        detectedAt: nowIso
+      });
+    }
+
+    if (!event.capacity || event.capacity <= 0) {
+      detectedSignals.push({
+        signal: 'CONFIGURATION_GAP',
+        eventId,
+        gapType: 'missing_capacity',
+        title: 'Event child capacity is not set',
+        details: 'Set the maximum capacity for attendance control.',
+        detectedAt: nowIso
+      });
+    }
+
+    if (!event.volunteer_registration_closes_at) {
+      detectedSignals.push({
+        signal: 'CONFIGURATION_GAP',
+        eventId,
+        gapType: 'missing_volunteer_registration_deadline',
+        title: 'Volunteer registration needs a closing date',
+        details: 'Set when volunteer registration should close.',
+        detectedAt: nowIso
+      });
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for CONFIGURATION_GAP:', err?.message || 'Error');
+    lastFailedSignals.push('CONFIGURATION_GAP');
+  }
+
+  // 10. CHILD_ATTENDANCE_STATE_MISMATCH
+  try {
+    const mismatchedRows = await query(
+      `SELECT e.id, c.full_name, e.status, e.checked_in_at, e.picked_up_at
+       FROM child_event_entries e
+       JOIN children c ON c.id = e.child_id
+       WHERE e.event_id = ? AND COALESCE(e.is_deleted, 0) = 0
+         AND (
+           (e.status IN ('picked_up', 'checked_out') AND e.checked_in_at IS NULL)
+           OR (e.status = 'inside' AND e.checked_in_at IS NULL)
+           OR (e.status IN ('checked_in', 'inside') AND e.picked_up_at IS NOT NULL)
+         )`,
+      [eventId]
+    );
+
+    if (mismatchedRows && mismatchedRows.length > 0) {
+      const childNames = mismatchedRows.map((r: any) => r.full_name || 'Child');
+      const mismatchSignal: ChildAttendanceStateMismatchSignal = {
+        signal: 'CHILD_ATTENDANCE_STATE_MISMATCH',
+        eventId,
+        mismatchedCount: mismatchedRows.length,
+        childNames,
+        detectedAt: nowIso
+      };
+      detectedSignals.push(mismatchSignal);
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for CHILD_ATTENDANCE_STATE_MISMATCH:', err?.message || 'Error');
+    lastFailedSignals.push('CHILD_ATTENDANCE_STATE_MISMATCH');
+  }
+
+  // 11. DUTY_PRESENCE_MISMATCH
+  try {
+    const presenceMismatches = await query(
+      `SELECT p.user_id, COUNT(*) as active_count
+       FROM event_duty_location_presence p
+       WHERE p.event_id = ? AND p.ended_at IS NULL
+       GROUP BY p.user_id
+       HAVING COUNT(*) > 1`,
+      [eventId]
+    );
+
+    if (presenceMismatches && presenceMismatches.length > 0) {
+      const userIds = presenceMismatches.map((r: any) => r.user_id);
+      const dutySignal: DutyPresenceMismatchSignal = {
+        signal: 'DUTY_PRESENCE_MISMATCH',
+        eventId,
+        conflictingCount: presenceMismatches.length,
+        userIds,
+        detectedAt: nowIso
+      };
+      detectedSignals.push(dutySignal);
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for DUTY_PRESENCE_MISMATCH:', err?.message || 'Error');
+    lastFailedSignals.push('DUTY_PRESENCE_MISMATCH');
+  }
+
+  // 12. APPROVED_VOLUNTEER_UNASSIGNED
+  try {
+    const unassignedVolunteers = await query(
+      `SELECT vp.user_id, vp.full_name
+       FROM volunteer_profiles vp
+       WHERE vp.status IN ('approved', 'active')
+         AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
+         AND NOT EXISTS (
+           SELECT 1 FROM event_duty_assignments a
+           WHERE a.user_id = vp.user_id AND a.event_id = ? AND a.status != 'cancelled'
+         )
+       ORDER BY vp.full_name ASC`,
+      [eventId]
+    );
+
+    if (unassignedVolunteers && unassignedVolunteers.length > 0) {
+      detectedSignals.push({
+        signal: 'APPROVED_VOLUNTEER_UNASSIGNED',
+        eventId,
+        unassignedCount: unassignedVolunteers.length,
+        volunteerNames: unassignedVolunteers.map((v: any) => v.full_name || 'Volunteer'),
+        detectedAt: nowIso
+      });
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for APPROVED_VOLUNTEER_UNASSIGNED:', err?.message || 'Error');
+    lastFailedSignals.push('APPROVED_VOLUNTEER_UNASSIGNED');
+  }
+
+  // 13. PICKUP_INFORMATION_INCOMPLETE
+  try {
+    const missingPickupRows = await query(
+      `SELECT c.full_name
+       FROM child_event_entries e
+       JOIN children c ON c.id = e.child_id
+       LEFT JOIN pickup_people pp ON pp.child_event_entry_id = e.id
+       WHERE e.event_id = ?
+         AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up', 'checked_out')
+         AND COALESCE(e.is_deleted, 0) = 0 AND COALESCE(c.is_deleted, 0) = 0
+         AND (
+           pp.id IS NULL
+           OR pp.full_name IS NULL
+           OR pp.full_name = ''
+           OR pp.phone_number IS NULL
+           OR pp.phone_number = ''
+         )
+       ORDER BY c.full_name ASC`,
+      [eventId]
+    );
+
+    if (missingPickupRows && missingPickupRows.length > 0) {
+      detectedSignals.push({
+        signal: 'PICKUP_INFORMATION_INCOMPLETE',
+        eventId,
+        incompleteCount: missingPickupRows.length,
+        childNames: missingPickupRows.map((r: any) => r.full_name || 'Child'),
+        detectedAt: nowIso
+      });
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for PICKUP_INFORMATION_INCOMPLETE:', err?.message || 'Error');
+    lastFailedSignals.push('PICKUP_INFORMATION_INCOMPLETE');
+  }
+
+  // 14. GUARDIAN_INFORMATION_INCOMPLETE
+  try {
+    const incompleteParents = await query(
+      `SELECT DISTINCT p.full_name
+       FROM parent_profiles p
+       JOIN children c ON c.parent_profile_id = p.id
+       JOIN child_event_entries e ON e.child_id = c.id
+       WHERE e.event_id = ?
+         AND COALESCE(e.is_deleted, 0) = 0 AND COALESCE(c.is_deleted, 0) = 0
+         AND (
+           p.profile_completed_at IS NULL
+           OR p.phone_number IS NULL
+           OR p.phone_number = ''
+           OR p.full_name IS NULL
+           OR p.full_name = ''
+         )
+       ORDER BY p.full_name ASC`,
+      [eventId]
+    );
+
+    if (incompleteParents && incompleteParents.length > 0) {
+      detectedSignals.push({
+        signal: 'GUARDIAN_INFORMATION_INCOMPLETE',
+        eventId,
+        incompleteCount: incompleteParents.length,
+        parentNames: incompleteParents.map((p: any) => p.full_name || 'Guardian'),
+        detectedAt: nowIso
+      });
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for GUARDIAN_INFORMATION_INCOMPLETE:', err?.message || 'Error');
+    lastFailedSignals.push('GUARDIAN_INFORMATION_INCOMPLETE');
+  }
+
+  // 15. SELECTION_CAPACITY_STATUS
+  try {
+    if (event.capacity && event.capacity > 0) {
+      const selectedRes = await queryOne(
+        "SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up', 'checked_out') AND COALESCE(is_deleted, 0) = 0",
+        [eventId]
+      );
+      const selectedCount = selectedRes?.count || 0;
+      const capacity = event.capacity;
+      const remainingCapacity = Math.max(0, capacity - selectedCount);
+      const percentageSelected = Math.round((selectedCount / capacity) * 100);
+
+      // Check awaiting review count
+      const reviewRes = await queryOne(
+        "SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('under_review', 'pending_review', 'submitted', 'draft') AND COALESCE(is_deleted, 0) = 0",
+        [eventId]
+      );
+      const awaitingReviewCount = reviewRes?.count || 0;
+
+      const isOverCapacity = selectedCount > capacity;
+      const hasPendingReviewsAtCapacity = selectedCount >= capacity && awaitingReviewCount > 0;
+
+      if (isOverCapacity || hasPendingReviewsAtCapacity) {
+        const condition = isOverCapacity ? 'over_capacity' : 'capacity_reached_with_pending_reviews';
+        const overCapacityCount = Math.max(0, selectedCount - capacity);
+
+        detectedSignals.push({
+          signal: 'SELECTION_CAPACITY_STATUS',
+          eventId,
+          selectedCount,
+          capacity,
+          remainingCapacity,
+          percentageSelected,
+          awaitingReviewCount,
+          overCapacityCount,
+          condition,
+          detectedAt: nowIso
+        });
+      }
+    }
+  } catch (err: any) {
+    console.warn('[AutomationEngine] Signal detector failed for SELECTION_CAPACITY_STATUS:', err?.message || 'Error');
+    lastFailedSignals.push('SELECTION_CAPACITY_STATUS');
+  }
+
+  return detectedSignals;
+}
+
+/**
+ * Helper to format date in restrained editorial style
+ */
+function formatRestrainedDate(isoString: string): string {
+  try {
+    const d = new Date(isoString);
+    return d.toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch {
+    return isoString;
+  }
+}
+
+function formatHumanExpectedTime(isoString: string): string {
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return isoString;
+    const now = new Date();
+    const isSameDay = d.getFullYear() === now.getFullYear() &&
+                      d.getMonth() === now.getMonth() &&
+                      d.getDate() === now.getDate();
+
+    const timeStr = d.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+
+    if (isSameDay) {
+      return `Expected at ${timeStr}`;
+    }
+
+    const dateStr = d.toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short'
+    });
+    return `Expected ${dateStr} at ${timeStr}`;
+  } catch {
+    return isoString;
+  }
+}
+
+/**
+ * Transforms a factual event signal into an automation item definition.
+ */
+export function buildAutomationItemFromSignal(
+  signal: EventSignal,
+  rule: AutomationRuleDefinition
+): AutomationUpsertInput {
+  const eventId = signal.eventId;
+
+  switch (signal.signal) {
+    case 'LOCATION_UNDERSTAFFED': {
+      const isUrgent = signal.assignedCount === 0;
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'LOCATION_UNDERSTAFFED',
+        fingerprint: `${eventId}:LOCATION_UNDERSTAFFED:${signal.locationId}`,
+        title: `${signal.locationName} needs volunteers`,
+        summary: `${signal.assignedCount} assigned of ${signal.requiredCount}`,
+        description: `${signal.gap} ${signal.gap === 1 ? 'volunteer needed' : 'volunteers needed'} to meet required staffing for ${signal.locationName}.`,
+        severity: isUrgent ? 'urgent' : 'attention',
+        entityType: 'location',
+        entityId: signal.locationId,
+        payload: signal,
+        proposedActionKey: rule.proposedAction?.actionKey,
+        actionTargetRoute: rule.actionTargetRoute,
+        actionTargetLabel: rule.actionTargetLabel,
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+
+    case 'VOLUNTEER_NO_SHOW': {
+      const isUrgent = signal.minutesLate >= 30;
+      let title = `${signal.volunteerName} has not reported for duty`;
+      let summary = `${signal.locationName} · Scheduled reporting time passed`;
+      if (signal.hasReliableReportingTime && signal.scheduledStart) {
+        summary = `${signal.locationName} · ${formatHumanExpectedTime(signal.scheduledStart)}`;
+      } else {
+        title = `${signal.volunteerName} assigned but not currently on duty`;
+        summary = `${signal.locationName} · Not checked in on site`;
+      }
+
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'VOLUNTEER_NO_SHOW',
+        fingerprint: `${eventId}:VOLUNTEER_NO_SHOW:${signal.userId}`,
+        title,
+        summary,
+        description: `Volunteer is assigned to ${signal.locationName} but has no active duty check-in recorded.`,
+        severity: isUrgent ? 'urgent' : signal.hasReliableReportingTime ? 'attention' : 'information',
+        entityType: 'volunteer',
+        entityId: signal.userId,
+        payload: signal,
+        proposedActionKey: rule.proposedAction?.actionKey,
+        actionTargetRoute: rule.actionTargetRoute,
+        actionTargetLabel: 'Review reminder →',
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+
+    case 'REGISTRATION_CLOSING_SOON': {
+      const isUrgent = signal.hoursRemaining <= 2;
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'REGISTRATION_CLOSING_SOON',
+        fingerprint: `${eventId}:REGISTRATION_CLOSING_SOON:window`,
+        title: signal.hoursRemaining <= 1 ? 'Registration closes in less than an hour' : 'Registration closes soon',
+        summary: `Closes ${formatRestrainedDate(signal.closesAt)} · ${signal.currentRegistrations} submitted`,
+        description: `Parent registration window closes in ${signal.hoursRemaining} hours.`,
+        severity: isUrgent ? 'urgent' : 'attention',
+        entityType: 'event',
+        entityId: eventId,
+        payload: signal,
+        actionTargetRoute: rule.actionTargetRoute,
+        actionTargetLabel: rule.actionTargetLabel,
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+
+    case 'VOLUNTEER_REGISTRATION_CLOSING_SOON': {
+      const isUrgent = signal.hoursRemaining <= 2;
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'VOLUNTEER_REGISTRATION_CLOSING_SOON',
+        fingerprint: `${eventId}:VOLUNTEER_REGISTRATION_CLOSING_SOON:window`,
+        title: signal.hoursRemaining <= 1 ? 'Volunteer registration closes soon' : 'Volunteer registration closes tomorrow',
+        summary: `Closes ${formatRestrainedDate(signal.closesAt)}`,
+        description: `Volunteer registration window closes in ${signal.hoursRemaining} hours.`,
+        severity: isUrgent ? 'urgent' : 'attention',
+        entityType: 'event',
+        entityId: eventId,
+        payload: signal,
+        actionTargetRoute: rule.actionTargetRoute,
+        actionTargetLabel: rule.actionTargetLabel,
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+
+    case 'PASS_NOT_READY': {
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'PASS_NOT_READY',
+        fingerprint: `${eventId}:PASS_NOT_READY:summary`,
+        title: `${signal.withoutPassCount} selected ${signal.withoutPassCount === 1 ? 'child still needs a pass' : 'children still need passes'}`,
+        summary: `${signal.selectedCount - signal.withoutPassCount} of ${signal.selectedCount} passes generated`,
+        description: `Digital entry passes have not yet been generated for ${signal.withoutPassCount} selected attendees.`,
+        severity: 'attention',
+        entityType: 'pass',
+        entityId: 'summary',
+        payload: signal,
+        actionTargetRoute: rule.actionTargetRoute,
+        actionTargetLabel: rule.actionTargetLabel,
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+
+    case 'REPORT_EXPIRED': {
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'REPORT_EXPIRED',
+        fingerprint: `${eventId}:REPORT_EXPIRED:${signal.reportId}`,
+        title: 'A report download is no longer available',
+        summary: `Expired ${formatRestrainedDate(signal.expiredAt)}`,
+        description: `Download token expired for ${signal.reportType} report.`,
+        severity: 'information',
+        entityType: 'report',
+        entityId: signal.reportId,
+        payload: signal,
+        proposedActionKey: rule.proposedAction?.actionKey,
+        actionTargetRoute: rule.actionTargetRoute,
+        actionTargetLabel: 'Open Reports →',
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+
+    case 'EVENT_STARTING_SOON': {
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'EVENT_STARTING_SOON',
+        fingerprint: `${eventId}:EVENT_STARTING_SOON:event`,
+        title: signal.hoursRemaining <= 1 ? 'Event starts in less than an hour' : 'Event starts tomorrow',
+        summary: `Starts ${formatRestrainedDate(signal.startsAt)}`,
+        description: `The event begins in ${signal.hoursRemaining} hours. Check location readiness and attendance flow.`,
+        severity: 'information',
+        entityType: 'event',
+        entityId: eventId,
+        payload: signal,
+        actionTargetRoute: rule.actionTargetRoute,
+        actionTargetLabel: rule.actionTargetLabel,
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+
+    case 'SAFETY_ITEM_OPEN': {
+      const count = parseInt(String(signal.totalOpenNotices || '0'), 10) || 0;
+      const title = count === 1 ? '1 safety item needs attention' : `${count} safety items need attention`;
+      const alerts = parseInt(String(signal.openAlertsCount || '0'), 10) || 0;
+      const incidents = parseInt(String(signal.openIncidentsCount || '0'), 10) || 0;
+      const escalations = parseInt(String(signal.activeEscalationsCount || '0'), 10) || 0;
+      const parts: string[] = [];
+      if (alerts > 0) parts.push(`${alerts} ${alerts === 1 ? 'alert' : 'alerts'}`);
+      if (incidents > 0) parts.push(`${incidents} ${incidents === 1 ? 'incident' : 'incidents'}`);
+      if (escalations > 0) parts.push(`${escalations} ${escalations === 1 ? 'escalation' : 'escalations'}`);
+      const summary = parts.length > 0 ? parts.join(' · ') : 'Unresolved safety notices';
+
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'SAFETY_ITEM_OPEN',
+        fingerprint: `${eventId}:SAFETY_ITEM_OPEN:summary`,
+        title,
+        summary,
+        description: 'Unresolved safeguarding items require human review and escalation response.',
+        severity: signal.severity,
+        entityType: 'safety',
+        entityId: 'summary',
+        payload: signal,
+        actionTargetRoute: rule.actionTargetRoute,
+        actionTargetLabel: 'Review safety →',
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+
+    case 'CONFIGURATION_GAP': {
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'CONFIGURATION_GAP',
+        fingerprint: `${eventId}:CONFIGURATION_GAP:${signal.gapType}`,
+        title: signal.title,
+        summary: signal.details,
+        description: signal.details,
+        severity: 'attention',
+        entityType: 'event',
+        entityId: signal.gapType,
+        payload: signal,
+        actionTargetRoute: rule.actionTargetRoute,
+        actionTargetLabel: rule.actionTargetLabel,
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+
+    case 'CHILD_ATTENDANCE_STATE_MISMATCH': {
+      const count = signal.mismatchedCount || 1;
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'CHILD_ATTENDANCE_STATE_MISMATCH',
+        fingerprint: `${eventId}:CHILD_ATTENDANCE_STATE_MISMATCH:summary`,
+        title: count === 1 ? "1 child's attendance status needs review" : `${count} children's attendance status needs review`,
+        summary: signal.childNames.length > 0 ? signal.childNames.slice(0, 3).join(', ') : 'Conflicting check-in or pickup states',
+        description: 'Child attendance lifecycle state is inconsistent (e.g. marked picked up without check-in or marked inside with pickup timestamp).',
+        severity: 'attention',
+        entityType: 'child',
+        entityId: 'summary',
+        payload: signal,
+        actionTargetRoute: rule.actionTargetRoute,
+        actionTargetLabel: rule.actionTargetLabel,
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+
+    case 'DUTY_PRESENCE_MISMATCH': {
+      const count = signal.conflictingCount || 1;
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'DUTY_PRESENCE_MISMATCH',
+        fingerprint: `${eventId}:DUTY_PRESENCE_MISMATCH:summary`,
+        title: count === 1 ? 'An assigned volunteer has conflicting duty presence' : `${count} volunteers have conflicting duty presence`,
+        summary: 'Multiple active location presence sessions detected without ended timestamp',
+        description: 'Assigned volunteers have more than one concurrent active presence session recorded.',
+        severity: 'attention',
+        entityType: 'volunteer',
+        entityId: 'summary',
+        payload: signal,
+        actionTargetRoute: rule.actionTargetRoute,
+        actionTargetLabel: rule.actionTargetLabel,
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+
+    case 'APPROVED_VOLUNTEER_UNASSIGNED': {
+      const count = signal.unassignedCount || 1;
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'APPROVED_VOLUNTEER_UNASSIGNED',
+        fingerprint: `${eventId}:APPROVED_VOLUNTEER_UNASSIGNED:summary`,
+        title: count === 1 ? '1 approved volunteer has not been assigned' : `${count} approved volunteers have not been assigned`,
+        summary: signal.volunteerNames.length > 0 ? signal.volunteerNames.slice(0, 3).join(', ') : 'Unassigned volunteers',
+        description: `${count} approved ${count === 1 ? 'volunteer has' : 'volunteers have'} not been assigned to a duty post for this event.`,
+        severity: 'attention',
+        entityType: 'volunteer',
+        entityId: 'summary',
+        payload: signal,
+        actionTargetRoute: rule.actionTargetRoute,
+        actionTargetLabel: rule.actionTargetLabel,
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+
+    case 'PICKUP_INFORMATION_INCOMPLETE': {
+      const count = signal.incompleteCount || 1;
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'PICKUP_INFORMATION_INCOMPLETE',
+        fingerprint: `${eventId}:PICKUP_INFORMATION_INCOMPLETE:summary`,
+        title: count === 1 ? '1 child is missing pickup information' : `${count} children are missing pickup information`,
+        summary: signal.childNames.length > 0 ? signal.childNames.slice(0, 3).join(', ') : 'Missing authorized pickup person',
+        description: `${count} selected ${count === 1 ? 'child is' : 'children are'} missing authorized pickup person or contact details.`,
+        severity: 'attention',
+        entityType: 'child',
+        entityId: 'summary',
+        payload: signal,
+        actionTargetRoute: rule.actionTargetRoute,
+        actionTargetLabel: rule.actionTargetLabel,
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+
+    case 'GUARDIAN_INFORMATION_INCOMPLETE': {
+      const count = signal.incompleteCount || 1;
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'GUARDIAN_INFORMATION_INCOMPLETE',
+        fingerprint: `${eventId}:GUARDIAN_INFORMATION_INCOMPLETE:summary`,
+        title: count === 1 ? '1 registration is missing required guardian information' : `${count} registrations are missing required guardian information`,
+        summary: signal.parentNames.length > 0 ? signal.parentNames.slice(0, 3).join(', ') : 'Incomplete guardian profile',
+        description: `${count} guardian ${count === 1 ? 'profile has' : 'profiles have'} missing contact or profile details.`,
+        severity: 'attention',
+        entityType: 'parent',
+        entityId: 'summary',
+        payload: signal,
+        actionTargetRoute: rule.actionTargetRoute,
+        actionTargetLabel: rule.actionTargetLabel,
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+
+    case 'SELECTION_CAPACITY_STATUS': {
+      let title = '';
+      let summary = '';
+      let description = '';
+
+      if (signal.condition === 'over_capacity') {
+        const excess = signal.overCapacityCount || (signal.selectedCount - signal.capacity);
+        title = `${excess} more child${excess === 1 ? ' has' : 'ren have'} been selected than the configured event capacity.`;
+        summary = `${signal.selectedCount} selected · Capacity: ${signal.capacity} (+${excess} over)`;
+        description = `${excess} more child${excess === 1 ? ' has' : 'ren have'} been selected than the configured event capacity of ${signal.capacity}.`;
+      } else {
+        title = `Capacity has been reached and ${signal.awaitingReviewCount} child${signal.awaitingReviewCount === 1 ? ' is' : 'ren are'} still awaiting a selection decision.`;
+        summary = `Capacity reached (${signal.selectedCount}/${signal.capacity}) · ${signal.awaitingReviewCount} awaiting review`;
+        description = `Capacity has been reached and ${signal.awaitingReviewCount} child${signal.awaitingReviewCount === 1 ? ' is' : 'ren are'} still awaiting a selection decision.`;
+      }
+
+      return {
+        eventId,
+        ruleId: rule.id,
+        signalType: 'SELECTION_CAPACITY_STATUS',
+        fingerprint: `${eventId}:SELECTION_CAPACITY_STATUS:summary`,
+        title,
+        summary,
+        description,
+        severity: 'attention',
+        entityType: 'event',
+        entityId: 'summary',
+        payload: signal,
+        actionTargetRoute: 'review',
+        actionTargetLabel: 'Review selections',
+        cooldownMinutes: rule.defaultCooldownMinutes
+      };
+    }
+  }
+}
+
+export interface AutomationEvaluationResult {
+  success: boolean;
+  eventId: string | null;
+  signalsDetectedCount: number;
+  newItemsCount: number;
+  resolvedItemsCount: number;
+  durationMs: number;
+  error?: string;
+}
+
+/**
+ * Runs a complete deterministic evaluation cycle for the canonical CURRENT EVENT.
+ * 1. Resolves canonical current event (no open/active fallback).
+ * 2. Evaluates all 9 signals.
+ * 3. Deduplicates and updates active items.
+ * 4. Resolves stale automation items whose factual condition disappeared.
+ */
+export async function evaluateCurrentEventAutomations(
+  targetEventId?: string
+): Promise<AutomationEvaluationResult> {
+  const startTime = Date.now();
+  try {
+    // Check if schema is ready (SQLite bootstraps locally; PostgreSQL expects migration 007)
+    const isReady = await initAutomationSchema();
+    if (!isReady) {
+      return {
+        success: false,
+        eventId: targetEventId || null,
+        signalsDetectedCount: 0,
+        newItemsCount: 0,
+        resolvedItemsCount: 0,
+        durationMs: Date.now() - startTime,
+        error: 'Automation schema missing'
+      };
+    }
+
+    // 1. Resolve canonical current event
+    const event = targetEventId ? await getEventById(targetEventId) : await getCurrentEvent();
+    if (!event) {
+      const durationMs = Date.now() - startTime;
+      engineHealth.lastEvaluationAt = new Date().toISOString();
+      engineHealth.lastEvaluationDurationMs = durationMs;
+      engineHealth.rulesEvaluatedCount = 0;
+      engineHealth.signalsDetectedCount = 0;
+      return {
+        success: true,
+        eventId: null,
+        signalsDetectedCount: 0,
+        newItemsCount: 0,
+        resolvedItemsCount: 0,
+        durationMs
+      };
+    }
+
+    const eventId = event.id;
+    console.log(`[AutomationEngine] Evaluation started for event: ${eventId}`);
+
+    // 2. Fetch event rule settings
+    const settingsMap = await getAutomationSettingsForEvent(eventId);
+
+    // 3. Detect factual signals bounded to eventId (failure isolated per rule)
+    const signals = await detectEventSignals(eventId);
+
+    const activeFingerprints: string[] = [];
+    let newItemsCount = 0;
+
+    // 4. Map signals to rules and persist with deduplication
+    for (const signal of signals) {
+      const rule = PHASE3B_AUTOMATION_RULES.find(r => r.triggerSignal === signal.signal);
+      if (!rule) continue;
+
+      // Check if disabled by Admin (unless mandatory like safety)
+      const isEnabled = settingsMap.has(rule.id) ? settingsMap.get(rule.id)! : rule.isEnabled;
+      if (!isEnabled && !rule.isMandatory) {
+        continue;
+      }
+
+      const input = buildAutomationItemFromSignal(signal, rule);
+      activeFingerprints.push(input.fingerprint);
+
+      const upsertResult = await upsertAutomation(input);
+      if (upsertResult.isNew || upsertResult.reopened) {
+        newItemsCount++;
+      }
+    }
+
+    // 5. Auto-resolve missing conditions
+    const resolvedItemsCount = await autoResolveMissingAutomations(eventId, activeFingerprints);
+
+    const durationMs = Date.now() - startTime;
+
+    // Update internal health
+    engineHealth.lastEvaluationAt = new Date().toISOString();
+    engineHealth.lastEvaluationDurationMs = durationMs;
+    engineHealth.rulesEvaluatedCount = PHASE3B_AUTOMATION_RULES.length;
+    engineHealth.signalsDetectedCount = signals.length;
+    engineHealth.newItemsCount = newItemsCount;
+    engineHealth.resolvedItemsCount = resolvedItemsCount;
+    engineHealth.lastError = null;
+    engineHealth.failedRules = [...lastFailedSignals];
+
+    console.log(
+      `[AutomationEngine] Evaluation completed for event ${eventId}: ` +
+      `${PHASE3B_AUTOMATION_RULES.length} rules checked, ${signals.length} signals, ` +
+      `${newItemsCount} new/updated, ${resolvedItemsCount} resolved in ${durationMs}ms.`
+    );
+    if (lastFailedSignals.length > 0) {
+      console.warn(`[AutomationEngine] Diagnostic warning: failed signal detectors: ${lastFailedSignals.join(', ')}`);
+    }
+
+    return {
+      success: true,
+      eventId,
+      signalsDetectedCount: signals.length,
+      newItemsCount,
+      resolvedItemsCount,
+      durationMs
+    };
+  } catch (err: any) {
+    const durationMs = Date.now() - startTime;
+    console.error('[AutomationEngine] Error during automation evaluation:', err?.message || 'Evaluation error');
+    engineHealth.lastEvaluationAt = new Date().toISOString();
+    engineHealth.lastEvaluationDurationMs = durationMs;
+    engineHealth.lastError = err?.message || 'Evaluation error';
+    return {
+      success: false,
+      eventId: targetEventId || null,
+      signalsDetectedCount: 0,
+      newItemsCount: 0,
+      resolvedItemsCount: 0,
+      durationMs,
+      error: err?.message
+    };
+  }
+}
