@@ -645,7 +645,39 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
     try {
       setNotificationsError(null);
       const data = await api.parent.getNotifications(false, 'parent');
-      const currentNotifications = data || [];
+      const rawNotifications = data || [];
+      const allowedChildIds = new Set((childrenList || []).map((c: any) => c.id || c.childId));
+      const allowedChildNames = (childrenList || []).map((c: any) => (c.fullName || c.name || c.full_name || '').toLowerCase().trim()).filter(Boolean);
+
+      const currentNotifications = rawNotifications.filter((n: any) => {
+        if (n.childId) {
+          return allowedChildIds.has(n.childId);
+        }
+        const titleLower = (n.title || '').toLowerCase().trim();
+        const msgLower = (n.message || '').toLowerCase();
+        const isChildSpecific = 
+          titleLower === 'pass ready' ||
+          titleLower === 'application submitted' ||
+          titleLower === 'new child application' ||
+          titleLower === 'application selected' ||
+          titleLower === 'application under review' ||
+          titleLower === 'application waitlist' ||
+          titleLower === 'application rejected' ||
+          msgLower.includes('event pass is ready') ||
+          msgLower.includes('application has been received') ||
+          msgLower.includes('new application submitted for') ||
+          msgLower.includes('has been selected');
+
+        if (isChildSpecific) {
+          if (allowedChildNames.length === 0) return false;
+          return allowedChildNames.some(name => {
+            const firstName = name.split(' ')[0];
+            return msgLower.includes(name) || (firstName.length >= 3 && msgLower.includes(firstName));
+          });
+        }
+        return true;
+      });
+
       const newUnreadCount = currentNotifications.filter((n: any) => !n.readAt && !n.isRead).length;
       if (newUnreadCount > prevUnreadCountRef.current) {
         soundUtility.playChime();
@@ -2713,6 +2745,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         }}
         role="parent"
         surface="parent"
+        childrenList={childrenList}
         onNavigate={onNavigate}
         onUnreadCountChange={handleUnreadCountChange}
       />

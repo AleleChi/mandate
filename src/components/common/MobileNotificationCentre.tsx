@@ -34,6 +34,7 @@ interface MobileNotificationCentreProps {
   onClose: () => void;
   role: 'volunteer' | 'parent';
   surface?: 'volunteer' | 'parent';
+  childrenList?: any[];
   onNavigate?: (path: string) => void;
   onUnreadCountChange?: (count: number) => void;
 }
@@ -263,6 +264,7 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
   onClose,
   role,
   surface,
+  childrenList = [],
   onNavigate,
   onUnreadCountChange
 }) => {
@@ -278,6 +280,45 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
     onUnreadCountChangeRef.current = onUnreadCountChange;
   });
 
+  const isNotificationAllowedForParent = useCallback((notif: NotificationItem): boolean => {
+    if (role !== 'parent' && surface !== 'parent') return true;
+
+    const allowedChildIds = new Set((childrenList || []).map((c: any) => c.id || c.childId));
+    const allowedChildNames = (childrenList || []).map((c: any) => (c.fullName || c.name || c.full_name || '').toLowerCase().trim()).filter(Boolean);
+
+    // If the notification has an explicit childId, it must belong to one of the parent's children
+    if (notif.childId) {
+      return allowedChildIds.has(notif.childId);
+    }
+
+    const titleLower = (notif.title || '').toLowerCase().trim();
+    const msgLower = (notif.message || '').toLowerCase();
+
+    // Check if the notification is a child-specific pass or application notice
+    const isChildSpecificNotice = 
+      titleLower === 'pass ready' ||
+      titleLower === 'application submitted' ||
+      titleLower === 'new child application' ||
+      titleLower === 'application selected' ||
+      titleLower === 'application under review' ||
+      titleLower === 'application waitlist' ||
+      titleLower === 'application rejected' ||
+      msgLower.includes('event pass is ready') ||
+      msgLower.includes('application has been received') ||
+      msgLower.includes('new application submitted for') ||
+      msgLower.includes('has been selected');
+
+    if (isChildSpecificNotice) {
+      if (allowedChildNames.length === 0) return false;
+      return allowedChildNames.some(name => {
+        const firstName = name.split(' ')[0];
+        return msgLower.includes(name) || (firstName.length >= 3 && msgLower.includes(firstName));
+      });
+    }
+
+    return true;
+  }, [role, surface, childrenList]);
+
   const fetchNotifications = useCallback(async (pageNum = 1, isBackground = false) => {
     if (!isBackground && pageNum === 1) setLoading(true);
     if (pageNum > 1) setLoadingMore(true);
@@ -285,28 +326,29 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
     try {
       const res = await api.parent.getNotificationsPaginated(false, role, pageNum, 25);
       if (res && Array.isArray(res.notifications)) {
+        const filteredNotifications = res.notifications.filter(isNotificationAllowedForParent);
         if (pageNum === 1) {
           setNotifications(prev => {
             if (isBackground && prev.length > 0) {
               const localReadMap = new Map(prev.map(n => [n.id, n.isRead]));
-              return res.notifications.map(n => ({
+              return filteredNotifications.map(n => ({
                 ...n,
                 isRead: localReadMap.has(n.id) ? (localReadMap.get(n.id) || n.isRead) : n.isRead
               }));
             }
-            return res.notifications;
+            return filteredNotifications;
           });
         } else {
           setNotifications(prev => {
             const existingIds = new Set(prev.map(n => n.id));
-            const newItems = res.notifications.filter(n => !existingIds.has(n.id));
+            const newItems = filteredNotifications.filter(n => !existingIds.has(n.id));
             return [...prev, ...newItems];
           });
         }
         setHasMore(Boolean(res.hasMore));
         setPage(pageNum);
 
-        const unread = res.notifications.filter(n => !n.isRead).length;
+        const unread = filteredNotifications.filter(n => !n.isRead).length;
         if (onUnreadCountChangeRef.current) {
           onUnreadCountChangeRef.current(unread);
         }
@@ -317,7 +359,7 @@ export const MobileNotificationCentre: React.FC<MobileNotificationCentreProps> =
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [role]);
+  }, [role, isNotificationAllowedForParent]);
 
   useEffect(() => {
     if (isOpen) {
