@@ -1883,7 +1883,7 @@ function initSqliteSchema(db: Database.Database) {
       ends_at = '2026-11-21',
       minimum_age = 2,
       maximum_age = 14,
-      parent_access_closes_at = '2026-10-17T23:59:00+01:00',
+      parent_access_closes_at = '2026-10-25T23:59:00+01:00',
       status = 'current'
     WHERE id = ?
   `).run(REAL_EVENT_ID);
@@ -3668,7 +3668,7 @@ async function initPostgresSchema(pool: any) {
       'current',
       2,
       14,
-      '2026-10-17T23:59:00+01:00',
+      '2026-10-25T23:59:00+01:00',
       now,
       now
     ]);
