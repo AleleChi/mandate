@@ -1,0 +1,114 @@
+name: Deploy frontend to S3 + CloudFront
+
+on:
+  push:
+    branches:
+      - frontend
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      BUCKET: s3://${{ secrets.PROD_S3_BUCKET }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Vite inlines VITE_* values at build time. Without an API base URL the
+      # app calls relative /api paths, which CloudFront answers with index.html.
+      - name: Check build configuration
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+        run: |
+          if [ -z "$VITE_API_BASE_URL" ]; then
+            echo "::error::Repository variable VITE_API_BASE_URL is not set"
+            exit 1
+          fi
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_PUBLIC_SITE_URL: ${{ vars.VITE_PUBLIC_SITE_URL }}
+
+      # Netlify-only config and the public/ dev note; S3 would serve them as plain files.
+      - name: Remove non-deployable files
+        run: rm -f dist/_headers dist/_redirects dist/README.md
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.PROD_AWS_REGION }}
+
+      # Upload order matters: hashed assets first, index.html last, so a visitor
+      # never receives an index.html that points at chunks not yet uploaded.
+
+      # Content-hashed filenames, safe to cache forever. No --delete: tabs still
+      # running the previous build lazy-load their old chunks from here.
+      - name: Upload hashed assets
+        run: |
+          aws s3 sync dist/assets "$BUCKET/assets" \
+            --cache-control "public, max-age=31536000, immutable"
+
+      - name: Upload static files
+        run: |
+          aws s3 sync dist "$BUCKET" --delete \
+            --exclude "assets/*" \
+            --exclude "index.html" \
+            --exclude "sw.js" \
+            --exclude "service-worker.js" \
+            --exclude "manifest.json" \
+            --exclude "site.webmanifest" \
+            --cache-control "public, max-age=3600"
+
+      - name: Upload web app manifests
+        run: |
+          for f in manifest.json site.webmanifest; do
+            aws s3 cp "dist/$f" "$BUCKET/$f" \
+              --content-type "application/manifest+json; charset=utf-8" \
+              --cache-control "public, max-age=3600"
+          done
+
+      - name: Upload service workers
+        run: |
+          for f in sw.js service-worker.js; do
+            aws s3 cp "dist/$f" "$BUCKET/$f" \
+              --content-type "text/javascript; charset=utf-8" \
+              --cache-control "max-age=0, no-cache, no-store, must-revalidate"
+          done
+
+      - name: Upload index.html
+        run: |
+          aws s3 cp dist/index.html "$BUCKET/index.html" \
+            --content-type "text/html; charset=utf-8" \
+            --cache-control "public, max-age=0, must-revalidate"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ secrets.PROD_DISTRIBUTION_ID }}" \
+            --paths "/*"
