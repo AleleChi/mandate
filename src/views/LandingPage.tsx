@@ -9,6 +9,7 @@ import parentHeroImg from '../assets/images/parent_hero_1783622066454.jpg';
 // Event-Led Landing Components
 import { PublicHeader } from '../components/landing/PublicHeader';
 import { LandingHero } from '../components/landing/LandingHero';
+import { EditorialStatement } from '../components/landing/EditorialStatement';
 import { ChildJourney } from '../components/landing/ChildJourney';
 import { SafetyStory } from '../components/landing/SafetyStory';
 import { AgeGroups } from '../components/landing/AgeGroups';
@@ -291,7 +292,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           onNavigate={onNavigate}
         />
 
-        {/* 3. The Journey: From registration to pickup (Real 5-step sequence with motion) */}
+        {/* 3. Short Factual Introduction: Plain English, no generic stat cards */}
+        <EditorialStatement backgroundImage={assets.experiencePickup} />
+
+        {/* 4. The Journey: From registration to pickup (Real 5-step sequence with motion) */}
         <ChildJourney
           onRegisterClick={handleParentRegisterClick}
           onNavigate={onNavigate}

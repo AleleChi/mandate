@@ -1,4 +1,4 @@
-export const CANONICAL_REGISTRATION_DEADLINE = '2026-10-25T23:59:00+01:00';
+export const CANONICAL_REGISTRATION_DEADLINE = '2026-10-17T23:59:00+01:00';
 
 export interface RegistrationCountdownResult {
   days: number;
