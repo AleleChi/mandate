@@ -6,6 +6,10 @@ interface Props {
   fallbackTitle?: string;
   fallbackDescription?: string;
   onReset?: () => void;
+  // 'page' renders a full-screen fallback for app-level crashes
+  variant?: 'section' | 'page';
+  // The error state clears when this value changes (e.g. the current route)
+  resetKey?: unknown;
 }
 
 interface State {
@@ -28,6 +32,12 @@ export class ErrorBoundary extends React.Component<Props, State> {
     console.error('ErrorBoundary caught an error:', error, errorInfo);
   }
 
+  public componentDidUpdate(prevProps: Props) {
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false, error: null });
+    }
+  }
+
   private handleReset = () => {
     if (this.props.onReset) {
       this.props.onReset();
@@ -41,7 +51,61 @@ export class ErrorBoundary extends React.Component<Props, State> {
     }
   };
 
+  private handleGoHome = () => {
+    if (typeof window !== 'undefined') {
+      window.location.assign('/');
+    }
+  };
+
+  // Plain markup only: the page fallback must not depend on components that could be the source of the crash
+  private renderPageFallback() {
+    return (
+      <div
+        className="min-h-screen bg-[#FAF9F6] dark:bg-[#19191A] text-[#18181B] dark:text-[#F0EBE3] flex items-center justify-center px-4 py-12 font-sans antialiased"
+        id="error-boundary-page-fallback"
+        role="alert"
+      >
+        <div className="w-full max-w-md bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EBE3D3] dark:border-[#302E29] rounded-[24px] sm:rounded-[32px] p-6 sm:p-10 shadow-[0_18px_45px_rgba(15,23,42,0.04)] dark:shadow-none text-center space-y-6">
+          <div className="w-16 h-16 rounded-full bg-[#C59B27]/10 flex items-center justify-center text-[#9A7326] mx-auto">
+            <AlertTriangle className="w-8 h-8 stroke-[1.5]" />
+          </div>
+
+          <div className="space-y-2">
+            <h1 className="type-h1-app text-2xl sm:text-3xl leading-tight tracking-tight">
+              {this.props.fallbackTitle || 'Something went wrong'}
+            </h1>
+            <p className="text-sm text-zinc-600 dark:text-[#B8B0A5] leading-relaxed max-w-[340px] mx-auto pt-1">
+              {this.props.fallbackDescription || "This page couldn't load. Reloading usually fixes it."}
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <button
+              type="button"
+              onClick={this.handleRefresh}
+              className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-medium tracking-wide text-white rounded-xl bg-gradient-to-r from-[#B89047] to-[#C59B27] hover:from-[#A67C2E] hover:to-[#B89047] shadow-sm transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27] focus:ring-offset-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Reload page</span>
+            </button>
+            <button
+              type="button"
+              onClick={this.handleGoHome}
+              className="text-xs font-semibold tracking-wider text-zinc-600 dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] transition-colors cursor-pointer focus:outline-none"
+            >
+              Go to homepage
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   public render() {
+    if (this.state.hasError && this.props.variant === 'page') {
+      return this.renderPageFallback();
+    }
+
     if (this.state.hasError) {
       return (
         <div

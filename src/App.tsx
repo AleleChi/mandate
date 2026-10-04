@@ -41,7 +41,7 @@ import { KoinoniaInlineLoader } from './components/common/KoinoniaInlineLoader';
 import { AppLoadingScreen } from './components/common/AppLoadingScreen';
 import { ModuleLoadingState } from './components/common/ModuleLoadingState';
 import { safeStorage } from './utils/storage';
-import { isValidRoute, getInitialRoute } from './utils/router';
+import { isValidRoute, getInitialRoute, normalizePathname } from './utils/router';
 import { isValidUploadedPhoto } from './utils/validation';
 
 const AdminSignInView = React.lazy(() => import('./views/admin/AdminSignInView').then(m => ({ default: m.AdminSignInView })));
@@ -56,6 +56,8 @@ import { PrivacyPolicyView } from './views/PrivacyPolicyView';
 import { TermsOfServiceView } from './views/TermsOfServiceView';
 import { ChildSafetyView } from './views/ChildSafetyView';
 import { ContactView } from './views/ContactView';
+import { NotFoundView } from './views/NotFoundView';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 // Training & Simulation Mode Views
 const PersistentTrainingBanner = React.lazy(() => import('./views/training/PersistentTrainingBanner').then(m => ({ default: m.PersistentTrainingBanner })));
@@ -283,7 +285,7 @@ export default function App() {
   useEffect(() => {
     const handleLocationChange = () => {
       if (typeof window === 'undefined') return;
-      const pathname = window.location.pathname || '';
+      const pathname = normalizePathname(window.location.pathname || '');
       let hash = (window.location.hash || '').replace(/^#+/, '');
       if (hash && !hash.startsWith('/')) hash = '/' + hash;
 
@@ -319,7 +321,11 @@ export default function App() {
           window.history.replaceState(null, '', '/' + (window.location.search || ''));
         }
         setCurrentRoute('/');
+        return;
       }
+
+      // Case 4: Unknown path, rendered as the not-found page
+      setCurrentRoute(pathname as AppRoute);
     };
 
     handleLocationChange();
@@ -1641,15 +1647,7 @@ export default function App() {
           </VolunteerProtectedRoute>
         );
       default:
-        return (
-          <LandingPage
-            onNavigate={navigate}
-            isMobileLandingView={isMobileLandingView}
-            onToggleMobileView={(mobile) => setIsMobileLandingView(mobile)}
-            parentCtaRoute={pRoute}
-            volunteerCtaRoute={vRoute}
-          />
-        );
+        return <NotFoundView key={cleanRoute} onNavigate={navigate} />;
     }
   };
 
@@ -1672,9 +1670,11 @@ export default function App() {
           </span>
         </div>
       )}
-      <Suspense fallback={<AppLoadingScreen title="Loading module..." />}>
-        {renderCurrentRoute()}
-      </Suspense>
+      <ErrorBoundary variant="page" resetKey={currentRoute}>
+        <Suspense fallback={<AppLoadingScreen title="Loading module..." />}>
+          {renderCurrentRoute()}
+        </Suspense>
+      </ErrorBoundary>
 
       {showPreloader && currentRoute !== '/' && !['/privacy', '/terms', '/child-safety', '/contact'].includes(currentRoute.split('?')[0]) && (
         <AppPreloader 
