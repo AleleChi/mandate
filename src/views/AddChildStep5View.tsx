@@ -1218,7 +1218,7 @@ export const AddChildStep5View: React.FC<AddChildStep5ViewProps> = ({
           <div className="space-y-3 pt-1" data-component-version="parent-review-submit-validation-v1">
             <Button
               type="submit"
-              disabled={isSubmitting || !isConfirmed || validationGroups.length > 0}
+              disabled={isSubmitting || !isConfirmed || hasMissingSteps}
               aria-busy={isSubmitting ? "true" : "false"}
               fullWidth
               size="lg"

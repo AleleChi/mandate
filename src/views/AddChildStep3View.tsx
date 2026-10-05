@@ -224,7 +224,7 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
                 className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C59B27]/50 ${
                   hasAllergies === 'No'
                     ? 'bg-white dark:bg-[#21211E] text-[#9A7326] dark:text-[#D4AF37] shadow-2xs border border-[#D9D6CE]/80 dark:border-[#3A3835]'
-                    : 'text-[#3F3F46] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] border border-transparent'
+                    : 'bg-transparent dark:bg-transparent text-[#3F3F46] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] border border-transparent'
                 }`}
               >
                 No
@@ -238,7 +238,7 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
                 className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C59B27]/50 ${
                   hasAllergies === 'Yes'
                     ? 'bg-white dark:bg-[#21211E] text-[#9A7326] dark:text-[#D4AF37] shadow-2xs border border-[#D9D6CE]/80 dark:border-[#3A3835]'
-                    : 'text-[#3F3F46] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] border border-transparent'
+                    : 'bg-transparent dark:bg-transparent text-[#3F3F46] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] border border-transparent'
                 }`}
               >
                 Yes
@@ -285,7 +285,7 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
                 className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C59B27]/50 ${
                   needsExtraSupport === 'No'
                     ? 'bg-white dark:bg-[#21211E] text-[#9A7326] dark:text-[#D4AF37] shadow-2xs border border-[#D9D6CE]/80 dark:border-[#3A3835]'
-                    : 'text-[#3F3F46] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] border border-transparent'
+                    : 'bg-transparent dark:bg-transparent text-[#3F3F46] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] border border-transparent'
                 }`}
               >
                 No
@@ -299,7 +299,7 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
                 className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C59B27]/50 ${
                   needsExtraSupport === 'Yes'
                     ? 'bg-white dark:bg-[#21211E] text-[#9A7326] dark:text-[#D4AF37] shadow-2xs border border-[#D9D6CE]/80 dark:border-[#3A3835]'
-                    : 'text-[#3F3F46] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] border border-transparent'
+                    : 'bg-transparent dark:bg-transparent text-[#3F3F46] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] border border-transparent'
                 }`}
               >
                 Yes
@@ -335,10 +335,11 @@ export const AddChildStep3View: React.FC<AddChildStep3ViewProps> = ({
 
           {/* Confirmation card */}
           <div
+            style={errors.infoConfirmed ? {} : { backgroundColor: 'var(--bg-surface-secondary)' }}
             className={`p-4 rounded-xl border transition-colors ${
               errors.infoConfirmed
-                ? 'border-red-500 bg-red-50/40 dark:bg-red-950/20 dark:border-red-500/50'
-                : 'bg-[#FAF8F4] dark:bg-[#21211E] border-[#EAE8E1] dark:border-[#302E29]'
+                ? '!bg-red-50 border-red-500 dark:!bg-red-950/20 dark:border-red-500/50'
+                : 'border-[#EAE8E1] dark:border-[#302E29]'
             }`}
           >
             <label className="flex items-start space-x-3 cursor-pointer select-none">
