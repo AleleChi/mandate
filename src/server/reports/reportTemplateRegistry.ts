@@ -13,6 +13,7 @@ import { buildOfflineResilienceReport } from './templates/offlineResilienceRepor
 import { buildTrainingDrillReport } from './templates/trainingDrillReport';
 import { buildCustomEventReport } from './templates/customEventReport';
 import { buildRegistrationSelectionReport } from './templates/registrationSelectionReport';
+import { buildChildrenRegistrationReport } from './templates/childrenRegistrationReport';
 
 export type ReportTemplateBuilder = (
   reportId: string,
@@ -30,8 +31,12 @@ export const TEMPLATE_BUILDER_REGISTRY: Record<string, ReportTemplateBuilder> = 
   'attendance-movement': buildAttendanceDemographicsReport,
   'volunteer-coverage': buildVolunteerTeamReport,
   'care-safety-summary': buildChildSafetyIncidentReport,
+  'children-registration-report': buildChildrenRegistrationReport,
 
   // Versioned & legacy keys
+  'children-registration-report-v1': buildChildrenRegistrationReport,
+  'children_registration_report': buildChildrenRegistrationReport,
+  'children-registration': buildChildrenRegistrationReport,
   'event-executive-report-v1': buildEventExecutiveReport,
   'attendance-demographics-report-v1': buildAttendanceDemographicsReport,
   'child-safety-incident-report-v1': buildChildSafetyIncidentReport,

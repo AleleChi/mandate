@@ -16,6 +16,7 @@ data/*.sqlite-*
 data/*.db
 data/*.db-*
 data/reports/
+data/media/
 uploads/
 
 # Testing & Logs

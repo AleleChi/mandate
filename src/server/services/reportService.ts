@@ -214,6 +214,68 @@ export const REPORT_TEMPLATES = [
     allowedActions: ['preview', 'generate']
   },
   {
+    key: 'children-registration-report',
+    name: 'Children & Registration',
+    description: 'A structured intelligence report covering child registration, age eligibility, application intake, data quality, and health information.',
+    privacy_classification: 'Safeguarding restricted',
+    privacyClassification: 'Safeguarding restricted',
+    category: 'Registration',
+    categoryBadge: 'Registration',
+    reportDomain: 'Registration & Safeguarding',
+    audience: 'Executive Leadership, Registration Leads, Safeguarding Coordinators',
+    includes: [
+      'Executive summary of child intake and registration status',
+      'Programme age cohort distribution (2–3, 4–6, 7–9, 10–12)',
+      'Factual age eligibility analysis and ineligibility breakdown',
+      'Eligible draft applications pending submission',
+      'Registration origin & geographic breakdown (Country, State, City)',
+      'Parent and child profile data quality audit',
+      'Health and safety summary by age cohort',
+      'Restricted administrative medical and allergy register',
+      'Detailed child registration register'
+    ],
+    bestUsedFor: 'Intake tracking, age eligibility verification, geographic origin analysis, data quality audits, and safeguarding preparedness',
+    recommendedSections: [
+      'Executive Summary',
+      'Registration Status',
+      'Age Group Distribution',
+      'Age Eligibility Analysis',
+      'Eligible Pending Submission',
+      'Registration Origin',
+      'Registration Data Quality',
+      'Health & Safety Summary',
+      'Health Detail Register',
+      'Detailed Child Register'
+    ],
+    supportedSections: [
+      'Executive Summary',
+      'Registration Status',
+      'Age Group Distribution',
+      'Age Eligibility Analysis',
+      'Eligible Pending Submission',
+      'Registration Origin',
+      'Registration Data Quality',
+      'Health & Safety Summary',
+      'Health Detail Register',
+      'Detailed Child Register'
+    ],
+    defaultSections: [
+      'Executive Summary',
+      'Registration Status',
+      'Age Group Distribution',
+      'Age Eligibility Analysis',
+      'Eligible Pending Submission',
+      'Registration Origin',
+      'Registration Data Quality',
+      'Health & Safety Summary',
+      'Health Detail Register',
+      'Detailed Child Register'
+    ],
+    availableFilters: { ageGroup: 'All', eligibility: 'All', status: 'All', healthFlag: 'All', country: 'All', state: 'All', city: 'All' },
+    permittedEventTypes: ['production-event'],
+    allowedActions: ['preview', 'generate']
+  },
+  {
     key: 'event-executive-report-v1',
     name: 'Event Executive Report',
     description: 'A concise leadership report covering attendance, safety activity, volunteer coverage, location readiness and the main actions arising from the event.',
@@ -820,6 +882,95 @@ export async function compileReportSnapshot(
       pickupRecords = [];
     }
 
+    let childrenRegistrationData: any = null;
+    if (
+      templateKey === 'children-registration-report' ||
+      templateKey === 'children-registration-report-v1' ||
+      templateKey === 'children_registration_report' ||
+      templateKey === 'children-registration'
+    ) {
+      const allChildrenWithEntries = await query(`
+        SELECT 
+          c.id as child_id,
+          c.full_name as child_name,
+          c.gender as child_gender,
+          c.date_of_birth,
+          c.photo_file_id as child_photo_file_id,
+          c.parent_profile_id,
+          c.created_at as child_created_at,
+          c.updated_at as child_updated_at,
+          cee.id as entry_id,
+          cee.event_id,
+          cee.status as entry_status,
+          cee.school_class,
+          cee.school_name,
+          cee.has_medical_notes,
+          cee.medical_notes,
+          cee.needs_extra_support,
+          cee.support_notes,
+          cee.submitted_at,
+          cee.reviewed_at,
+          cee.decision_at,
+          cee.details_confirmed,
+          cee.created_at as entry_created_at,
+          cee.updated_at as entry_updated_at,
+          pp.id as parent_id,
+          pp.user_id as parent_user_id,
+          pp.full_name as parent_name,
+          pp.phone_number as parent_phone,
+          pp.whatsapp_number as parent_whatsapp,
+          pp.email as parent_email,
+          pp.home_address as parent_address,
+          pp.country as parent_country,
+          pp.country_iso as parent_country_iso,
+          pp.state_region as parent_state,
+          pp.city as parent_city,
+          pp.preferred_contact as parent_preferred_contact,
+          pp.photo_file_id as parent_photo_file_id,
+          pp.is_koinonia_worker as parent_is_worker,
+          pp.department as parent_department,
+          u.email_verified as parent_email_verified
+        FROM children c
+        JOIN parent_profiles pp ON c.parent_profile_id = pp.id
+        JOIN users u ON pp.user_id = u.id
+        LEFT JOIN child_event_entries cee ON c.id = cee.child_id AND cee.event_id = ? AND (cee.is_deleted = 0 OR cee.is_deleted IS NULL)
+        WHERE (c.is_deleted = 0 OR c.is_deleted IS NULL)
+          AND (pp.is_deleted = 0 OR pp.is_deleted IS NULL)
+        ORDER BY c.full_name ASC
+      `, [targetEventId]);
+
+      const allParents = await query(`
+        SELECT 
+          pp.id,
+          pp.user_id,
+          pp.full_name,
+          pp.phone_number,
+          pp.whatsapp_number,
+          pp.email,
+          pp.home_address,
+          pp.country,
+          pp.country_iso,
+          pp.state_region,
+          pp.city,
+          pp.preferred_contact,
+          pp.photo_file_id,
+          pp.is_koinonia_worker,
+          pp.department,
+          u.email_verified
+        FROM parent_profiles pp
+        JOIN users u ON pp.user_id = u.id
+        WHERE (pp.is_deleted = 0 OR pp.is_deleted IS NULL)
+        ORDER BY pp.full_name ASC
+      `);
+
+      childrenRegistrationData = {
+        children: allChildrenWithEntries,
+        parents: allParents,
+        event,
+        filters
+      };
+    }
+
     return {
       event,
       attendanceRecords,
@@ -838,7 +989,8 @@ export async function compileReportSnapshot(
       comparisonData,
       cutoffTime,
       timezone: targetTimezone,
-      filters
+      filters,
+      childrenRegistrationData
     };
   }
 }

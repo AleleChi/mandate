@@ -56,10 +56,10 @@ function getEditorialColor(label: string, index: number): [number, number, numbe
 function getCohortColor(cellText: string): [number, number, number] | null {
   const l = (cellText || '').toLowerCase();
   if (l.includes('under 4')) return [16, 185, 129];
-  if (l.includes('1 to 3') || l.includes('1-3')) return [132, 204, 22];
-  if (l.includes('4 to 6') || l.includes('4-6')) return [197, 155, 39];
-  if (l.includes('7 to 9') || l.includes('7-9')) return [166, 124, 46];
-  if (l.includes('10 to 12') || l.includes('10-12')) return [217, 119, 6];
+  if (l.includes('2–3') || l.includes('2-3') || l.includes('1 to 3') || l.includes('1-3')) return [132, 204, 22];
+  if (l.includes('4 to 6') || l.includes('4-6') || l.includes('4–6')) return [197, 155, 39];
+  if (l.includes('7 to 9') || l.includes('7-9') || l.includes('7–9')) return [166, 124, 46];
+  if (l.includes('10 to 12') || l.includes('10-12') || l.includes('10–12')) return [217, 119, 6];
   if (l.includes('teen') || l.includes('13+')) return [75, 85, 99];
   return null;
 }
@@ -522,8 +522,10 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
       ensureHeight(40);
       currentY = drawEditorialSectionHeading(doc, sec.title, sec.description, marginX, currentY, contentWidth);
 
-      const { headers, rows, caption } = sec.content;
-      currentY = drawEditorialTable(doc, marginX, currentY, contentWidth, headers || [], rows || []);
+      const { headers, rows, caption, colWidths } = sec.content as any;
+      currentY = drawEditorialTable(doc, marginX, currentY, contentWidth, headers || [], rows || [], () => {
+        addNewPage();
+      }, colWidths);
 
       if (caption) {
         doc.setFont('helvetica', 'italic');
@@ -857,47 +859,84 @@ function drawEditorialSectionHeading(
   return headY + 6.5;
 }
 
-// Draw Publication Table (Subtle horizontal rules, no heavy cell boxes)
 function drawEditorialTable(
   doc: jsPDF,
   x: number,
   y: number,
   w: number,
   headers: string[],
-  rows: string[][]
+  rows: string[][],
+  onPageBreak?: () => void,
+  customColWidths?: number[]
 ): number {
   let tableY = y;
-  const colW = w / Math.max(headers.length, 1);
+  const isWide = headers.length >= 8;
+  const isSuperWide = headers.length >= 10;
+  const baseFontSize = isSuperWide ? 5.8 : (isWide ? 6.5 : 7.5);
+  const headerFontSize = isSuperWide ? 5.8 : (isWide ? 6.6 : 7.5);
+  const lineHeight = isSuperWide ? 3.1 : (isWide ? 3.5 : 4.2);
 
-  // Table Header
-  doc.setDrawColor(39, 39, 42);
-  doc.setLineWidth(0.35);
-  doc.line(x, tableY + 5.5, x + w, tableY + 5.5);
+  // Compute column widths and X offsets
+  let colWidths: number[];
+  if (customColWidths && customColWidths.length === headers.length) {
+    const totalCustom = customColWidths.reduce((a, b) => a + b, 0);
+    colWidths = customColWidths.map(cw => (cw / totalCustom) * w);
+  } else {
+    const uniform = w / Math.max(headers.length, 1);
+    colWidths = headers.map(() => uniform);
+  }
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
-  doc.setTextColor(24, 24, 27);
+  const colOffsets: number[] = [0];
+  for (let i = 0; i < headers.length; i++) {
+    colOffsets.push(colOffsets[i] + colWidths[i]);
+  }
 
-  headers.forEach((h, i) => {
-    const isRight = i === headers.length - 1;
-    if (isRight) {
-      doc.text(h.toUpperCase(), x + (i + 1) * colW - 2, tableY + 4, { align: 'right' });
-    } else {
-      doc.text(h.toUpperCase(), x + i * colW + 2, tableY + 4);
-    }
-  });
+  const drawHeader = (currY: number) => {
+    doc.setDrawColor(39, 39, 42);
+    doc.setLineWidth(0.35);
+    doc.line(x, currY + 5.5, x + w, currY + 5.5);
 
-  tableY += 7;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(headerFontSize);
+    doc.setTextColor(24, 24, 27);
+
+    headers.forEach((h, i) => {
+      const isRight = i === headers.length - 1;
+      const colX = x + colOffsets[i];
+      const colW = colWidths[i];
+      if (isRight) {
+        doc.text(h.toUpperCase(), colX + colW - 2, currY + 4, { align: 'right' });
+      } else {
+        doc.text(h.toUpperCase(), colX + 2, currY + 4);
+      }
+    });
+
+    return currY + 7;
+  };
+
+  tableY = drawHeader(tableY);
 
   // Table Rows
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
+  doc.setFontSize(baseFontSize);
 
   rows.forEach((row, rIdx) => {
     // Determine row height by wrapping
-    const cellLines = row.map(cell => doc.splitTextToSize(String(cell || ''), colW - 4));
+    const cellLines = row.map((cell, cellIdx) => {
+      const colW = colWidths[cellIdx] || (w / headers.length);
+      return doc.splitTextToSize(String(cell || ''), Math.max(colW - 3, 5));
+    });
     const maxLines = Math.max(...cellLines.map(l => l.length), 1);
-    const rowH = Math.max(maxLines * 4.2 + 2.5, 6.5);
+    const rowH = Math.max(maxLines * lineHeight + 2.2, 5.5);
+
+    // Check pagination
+    if (tableY + rowH > 270) {
+      if (onPageBreak) {
+        onPageBreak();
+        tableY = 32;
+        tableY = drawHeader(tableY);
+      }
+    }
 
     // Light divider rule between rows
     doc.setDrawColor(240, 240, 242);
@@ -910,6 +949,8 @@ function drawEditorialTable(
       const wrapped = cellLines[cellIdx];
       const isRateCell = isRight && String(cell).includes('%');
       const cohortDot = isFirst ? getCohortColor(String(cell || '')) : null;
+      const colX = x + colOffsets[cellIdx];
+      const colW = colWidths[cellIdx];
 
       if (isRateCell) {
         doc.setFont('helvetica', 'bold');
@@ -924,16 +965,16 @@ function drawEditorialTable(
 
       if (cohortDot) {
         doc.setFillColor(cohortDot[0], cohortDot[1], cohortDot[2]);
-        doc.circle(x + 3.5, tableY + 3.5, 0.9, 'F');
+        doc.circle(colX + 3.5, tableY + 3.2, 0.8, 'F');
       }
 
-      const textOffsetX = (cohortDot && isFirst) ? 6.5 : 2;
+      const textOffsetX = (cohortDot && isFirst) ? 6 : 2;
 
-      wrapped.forEach((lineText, lineIdx) => {
+      wrapped.forEach((lineText: string, lineIdx: number) => {
         if (isRight) {
-          doc.text(lineText, x + (cellIdx + 1) * colW - 2, tableY + 4 + (lineIdx * 4), { align: 'right' });
+          doc.text(lineText, colX + colW - 2, tableY + 3.6 + (lineIdx * lineHeight), { align: 'right' });
         } else {
-          doc.text(lineText, x + cellIdx * colW + textOffsetX, tableY + 4 + (lineIdx * 4));
+          doc.text(lineText, colX + textOffsetX, tableY + 3.6 + (lineIdx * lineHeight));
         }
       });
     });
@@ -941,7 +982,7 @@ function drawEditorialTable(
     tableY += rowH;
   });
 
-  return tableY;
+  return tableY + 4;
 }
 
 // Universal Chart Spec Generator for PDF
