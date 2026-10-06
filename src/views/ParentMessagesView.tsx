@@ -607,25 +607,26 @@ export const ParentMessagesView: React.FC<ParentMessagesViewProps> = ({
         className="w-full max-w-[390px] mx-auto min-h-screen bg-[#FAF8F3] dark:bg-[#1D1D1A] text-[#18181B] dark:text-[#F0EBE3] font-sans selection:bg-[#C59B27]/20 flex flex-col justify-between relative shadow-xl border-x border-[#EAE8E1]/50 dark:border-[#302E29]"
       >
         {/* Thread Header */}
-        <header className="sticky top-0 z-30 bg-[#FAF8F3]/95 dark:bg-[#1D1D1A]/95 backdrop-blur-md border-b border-[#EAE8E1]/60 dark:border-[#302E29] shrink-0">
+        <header className="sticky top-0 z-30 bg-[#FAF8F3]/95 dark:bg-[#1D1D1A]/95 backdrop-blur-md border-b border-[#EAE8E1]/70 dark:border-[#302E29] shrink-0">
           <div className="px-4 h-14 flex items-center justify-between">
             <div className="flex items-center space-x-2.5 min-w-0 flex-1">
               <button
                 type="button"
                 onClick={handleBackToInbox}
-                className="p-1.5 -ml-1 rounded-lg text-[#3F3F46] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer focus:outline-none"
+                className="p-1.5 -ml-1 rounded-xl text-[#3F3F46] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] hover:bg-black/5 dark:hover:bg-white/5 active:scale-95 transition-all cursor-pointer focus:outline-none"
                 aria-label="Back to Messages"
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
               <div className="min-w-0 flex-1">
-                <h1 className="text-xs sm:text-sm font-bold text-[#18181B] dark:text-[#F0EBE3] truncate leading-tight">
+                <h1 className="text-xs sm:text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] truncate leading-tight tracking-tight">
                   {activeThread?.subject || 'Conversation'}
                 </h1>
                 <div className="flex items-center space-x-1.5 mt-0.5 text-[10px]">
                   {childFirstName ? (
-                    <span className="text-[#9A7326] dark:text-[#C59B27] font-semibold truncate">
-                      Registration for {childFirstName}
+                    <span className="inline-flex items-center gap-1.5 font-medium text-[#8C6D23] dark:text-[#C59B27] truncate">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#C59B27] shrink-0" />
+                      <span>Registration for {childFirstName}</span>
                     </span>
                   ) : (
                     <span className="text-[#71717A] dark:text-[#7A7570] truncate">
@@ -746,6 +747,123 @@ export const ParentMessagesView: React.FC<ParentMessagesViewProps> = ({
                 ['Selected', 'Pass ready', 'Checked in', 'Inside', 'Picked up'].includes(targetChild.status)
               );
 
+              if (isReminder) {
+                return (
+                  <div key={msg.id} className="w-full flex justify-center py-1">
+                    <div className="w-full max-w-[96%] sm:max-w-[92%] bg-white dark:bg-[#22211C] rounded-2xl border border-[#EAE5D9] dark:border-[#353229] shadow-[0_4px_20px_-2px_rgba(20,20,20,0.05)] overflow-hidden transition-all">
+                      {/* Subtle Top Luxury Accent */}
+                      <div className="h-[3px] w-full bg-gradient-to-r from-[#B89047] via-[#DFBA5A] to-[#B89047]" />
+
+                      {/* Card Header Bar */}
+                      <div className="px-4 py-3 flex items-center justify-between border-b border-[#F4EFE6] dark:border-[#2C2922]">
+                        <div className="flex items-center space-x-2.5 min-w-0">
+                          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#FAF5E6] to-[#F2E5BD] dark:from-[#2F291C] dark:to-[#3D3524] border border-[#E5D5AE]/80 dark:border-[#4B402B] flex items-center justify-center text-[#9A7326] dark:text-[#D4AF37] shadow-2xs shrink-0">
+                            <Shield className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] tracking-tight truncate">
+                              Koinonia Registration Team
+                            </h3>
+                            <span className="text-[10px] text-[#71717A] dark:text-[#8C857B] block">
+                              {formatMessageTimestamp(msg.created_at)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Status Badge */}
+                        <div className="shrink-0 pl-2">
+                          {isWorkflowB ? (
+                            isSelectedOrBeyond ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
+                                <Check className="w-3 h-3" /> Updated
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-amber-500/10 text-amber-800 dark:text-amber-400 border border-amber-500/20">
+                                Update Required
+                              </span>
+                            )
+                          ) : isAuthoritativeIncomplete ? (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-amber-500/10 text-amber-800 dark:text-amber-400 border border-amber-500/20">
+                              Action Required
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
+                              <Check className="w-3 h-3" /> Submitted
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Card Body - Calm, formatted letter typography */}
+                      <div className="px-4 py-3.5 text-xs sm:text-[13px] text-[#27272A] dark:text-[#E4E4E7] leading-relaxed space-y-2.5">
+                        {msg.body.split(/\n\s*\n/).map((para, pIdx) => (
+                          <p key={pIdx} className="leading-relaxed">
+                            {para.trim()}
+                          </p>
+                        ))}
+                      </div>
+
+                      {/* Action Area - Zero redundancy, ultra-clean */}
+                      <div className="px-4 pb-4 pt-1">
+                        {isWorkflowB ? (
+                          isSelectedOrBeyond ? (
+                            <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-800/40 flex items-center space-x-2 text-xs text-emerald-800 dark:text-emerald-300 font-medium">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <span>Registration details have been updated.</span>
+                            </div>
+                          ) : (
+                            <div className="p-3 rounded-xl bg-[#FAF8F4] dark:bg-[#1A1916] border border-[#EBE6DC] dark:border-[#2C2922] space-y-2.5">
+                              <div className="flex items-center justify-between text-[11px] text-[#71717A] dark:text-[#8C857B] px-0.5">
+                                <span className="flex items-center gap-1.5 text-[#8C6D23] dark:text-[#C59B27] font-medium">
+                                  <AlertCircle className="w-3.5 h-3.5 text-[#B89047]" />
+                                  <span>{targetChild?.name ? `Details needed for ${targetChild.name.split(' ')[0]}` : 'Additional details requested'}</span>
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleResumeApplication(targetChild, payload)}
+                                className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#B89047] via-[#C59B27] to-[#B89047] hover:brightness-105 active:scale-[0.99] text-white font-semibold text-xs transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27]/40"
+                              >
+                                <span>Update Application Details</span>
+                                <ArrowRight className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )
+                        ) : isAuthoritativeIncomplete ? (
+                          <div className="p-3 rounded-xl bg-[#FAF8F4] dark:bg-[#1A1916] border border-[#EBE6DC] dark:border-[#2C2922] space-y-2.5">
+                            <div className="flex items-center justify-between text-[11px] px-0.5">
+                              <span className="flex items-center gap-1.5 text-[#8C6D23] dark:text-[#C59B27] font-medium">
+                                <Clock className="w-3.5 h-3.5 text-[#B89047]" />
+                                <span>Deadline: 17 Oct · 11:59 PM</span>
+                              </span>
+                              <span className="text-[10px] uppercase font-bold tracking-wider text-[#9A7326] dark:text-[#C59B27]">
+                                Draft Incomplete
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleResumeApplication(targetChild, payload)}
+                              className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#B89047] via-[#C59B27] to-[#B89047] hover:brightness-105 active:scale-[0.99] text-white font-semibold text-xs transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27]/40"
+                            >
+                              <span>Continue Application</span>
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-800/40 flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300 font-medium">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <span>Application submitted for review</span>
+                            </div>
+                            <span className="text-[10px] text-emerald-600 font-medium">Complete</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
               return (
                 <div
                   key={msg.id}
@@ -762,81 +880,15 @@ export const ParentMessagesView: React.FC<ParentMessagesViewProps> = ({
                     <span>{formatMessageTimestamp(msg.created_at)}</span>
                   </div>
 
-                  {/* Message Container - Modest radius rounded-lg */}
+                  {/* Message Bubble */}
                   <div
-                    className={`max-w-[85%] rounded-lg px-3.5 py-2.5 text-xs sm:text-sm leading-relaxed transition-all ${
+                    className={`max-w-[82%] rounded-2xl px-4 py-2.5 text-xs sm:text-[13px] leading-relaxed transition-all shadow-2xs ${
                       isParentSender
-                        ? 'bg-[#FAF6EB] dark:bg-[#2A2926] text-[#18181B] dark:text-[#F0EBE3] border border-[#E5D5AE] dark:border-[#3A3835]'
-                        : isReminder
-                        ? 'bg-white dark:bg-[#21211E] text-[#18181B] dark:text-[#F0EBE3] border border-[#C59B27]/50 dark:border-[#C59B27]/40 shadow-xs'
-                        : 'bg-white dark:bg-[#21211E] text-[#18181B] dark:text-[#F0EBE3] border border-[#EAE8E1] dark:border-[#302E29]'
+                        ? 'rounded-tr-xs bg-[#FAF6EB] dark:bg-[#2A2720] text-[#18181B] dark:text-[#F0EBE3] border border-[#E5D5AE]/70 dark:border-[#3D382E]'
+                        : 'rounded-tl-xs bg-white dark:bg-[#22211E] text-[#18181B] dark:text-[#F0EBE3] border border-[#EAE8E1] dark:border-[#302E29]'
                     }`}
                   >
-                    {/* Plain Text Message Content */}
                     <p className="whitespace-pre-wrap break-words">{msg.body}</p>
-
-                    {/* Application Action Block */}
-                    {isReminder && (
-                      <div className="mt-3 pt-3 border-t border-[#EAE8E1] dark:border-[#302E29] space-y-2">
-                        <span className="text-[10px] uppercase font-bold tracking-wider text-[#9A7326] dark:text-[#C59B27] block">
-                          APPLICATION
-                        </span>
-                        {isWorkflowB ? (
-                          isSelectedOrBeyond ? (
-                            <div className="flex items-center space-x-1.5 text-xs text-emerald-700 dark:text-emerald-400 font-medium">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                              <span>Application details updated</span>
-                            </div>
-                          ) : (
-                            <div className="space-y-2">
-                              <div>
-                                <h4 className="text-xs font-bold text-[#18181B] dark:text-[#F0EBE3]">
-                                  Update application details
-                                </h4>
-                                <p className="text-[11px] text-[#71717A] dark:text-[#8C857B] mt-0.5">
-                                  {targetChild?.name ? `Please update the required registration details for ${targetChild.name.split(' ')[0]}.` : "Please update the required registration details."}
-                                </p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => handleResumeApplication(targetChild, payload)}
-                                className="w-full py-2 px-3 rounded-lg bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-bold text-xs transition-all shadow-2xs cursor-pointer flex items-center justify-center space-x-1.5 focus:outline-none focus:ring-1 focus:ring-[#C59B27]/40"
-                              >
-                                <span>Update application details</span>
-                                <ArrowRight className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          )
-                        ) : isAuthoritativeIncomplete ? (
-                          <div className="space-y-2">
-                            <div>
-                              <h4 className="text-xs font-bold text-[#18181B] dark:text-[#F0EBE3]">
-                                Complete your child's application
-                              </h4>
-                              <p className="text-[11px] text-[#71717A] dark:text-[#8C857B] mt-0.5">
-                                {targetChild?.name ? `${targetChild.name.split(' ')[0]}'s registration is still incomplete.` : "Registration is still incomplete."}
-                              </p>
-                              <p className="text-[10px] text-[#71717A] dark:text-[#8C857B] mt-0.5">
-                                Registration closes 17 October 2026 at 11:59 PM.
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleResumeApplication(targetChild, payload)}
-                              className="w-full py-2 px-3 rounded-lg bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-bold text-xs transition-all shadow-2xs cursor-pointer flex items-center justify-center space-x-1.5 focus:outline-none focus:ring-1 focus:ring-[#C59B27]/40"
-                            >
-                              <span>Continue application</span>
-                              <ArrowRight className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center space-x-1.5 text-xs text-emerald-700 dark:text-emerald-400 font-medium">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                            <span>Application submitted</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
                 </div>
               );
@@ -860,31 +912,27 @@ export const ParentMessagesView: React.FC<ParentMessagesViewProps> = ({
         )}
 
         {/* Composer or Resolved State at Bottom */}
-        <footer className="sticky bottom-0 z-30 bg-white/95 dark:bg-[#1D1D1A]/95 backdrop-blur-md border-t border-[#EAE8E1] dark:border-[#302E29] shrink-0">
+        <footer className="sticky bottom-0 z-30 bg-[#FAF8F3]/95 dark:bg-[#1D1D1A]/95 backdrop-blur-md border-t border-[#EAE8E1]/80 dark:border-[#302E29] shrink-0 p-3 sm:p-4">
           {isResolved ? (
-            <div className="py-4 px-4 text-center space-y-0.5">
+            <div className="py-2.5 px-4 text-center">
               <p className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">
                 Conversation resolved
               </p>
-              <p className="text-[11px] text-[#71717A] dark:text-[#7A7570]">
-                Further replies are closed.
+              <p className="text-[11px] text-[#71717A] dark:text-[#7A7570] mt-0.5">
+                This discussion has been marked complete.
               </p>
             </div>
           ) : (
-            <form onSubmit={handleSendMessage} className="p-3 space-y-1.5">
-              <div className="relative">
+            <form onSubmit={handleSendMessage} className="space-y-1">
+              <div className="flex items-end gap-2 bg-white dark:bg-[#23221E] border border-[#E5E1D8] dark:border-[#38352E] focus-within:border-[#C59B27] focus-within:ring-2 focus-within:ring-[#C59B27]/15 rounded-2xl p-1.5 pl-3.5 shadow-xs transition-all">
                 <textarea
                   value={composerText}
                   onChange={(e) => setComposerText(e.target.value)}
                   disabled={isSending}
                   maxLength={5000}
-                  placeholder="Type a reply to the registration team..."
-                  rows={2}
-                  className={`w-full bg-[#FAF9F6] dark:bg-[#262520] border rounded-lg px-3.5 py-2 text-xs sm:text-sm text-[#18181B] dark:text-[#F0EBE3] placeholder:text-[#71717A] dark:placeholder:text-[#7A7570] focus:outline-none transition-colors resize-none leading-relaxed ${
-                    composerText.length > 5000
-                      ? 'border-red-500 focus:border-red-500'
-                      : 'border-[#EAE8E1] dark:border-[#3A3835] focus:border-[#C59B27]'
-                  }`}
+                  placeholder="Reply to the registration team..."
+                  rows={1}
+                  className="flex-1 bg-transparent border-0 resize-none text-xs sm:text-sm text-[#18181B] dark:text-[#F0EBE3] placeholder:text-[#8C877D] dark:placeholder:text-[#7A7570] focus:outline-none py-1.5 max-h-24 leading-relaxed"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
@@ -892,28 +940,28 @@ export const ParentMessagesView: React.FC<ParentMessagesViewProps> = ({
                     }
                   }}
                 />
-              </div>
-
-              <div className="flex items-center justify-between px-1">
-                <span
-                  className={`text-[10px] tracking-tight font-mono ${
-                    composerText.length >= 4900
-                      ? 'text-red-500 font-bold'
-                      : 'text-[#71717A] dark:text-[#7A7570]'
-                  }`}
-                >
-                  {composerText.length} / 5000
-                </span>
 
                 <button
                   type="submit"
                   disabled={isSending || composerText.trim().length === 0 || composerText.length > 5000}
-                  className="px-3.5 py-1.5 rounded-lg bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] disabled:opacity-40 disabled:pointer-events-none text-[#18181B] font-semibold text-xs transition-all shadow-2xs flex items-center space-x-1.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#C59B27]/40"
+                  className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-all cursor-pointer disabled:opacity-30 disabled:pointer-events-none bg-gradient-to-r from-[#B89047] to-[#C59B27] hover:brightness-105 active:scale-95 text-white shadow-xs focus:outline-none focus:ring-1 focus:ring-[#C59B27]/40"
+                  aria-label="Send message"
                 >
-                  <span>{isSending ? 'Sending...' : 'Send'}</span>
-                  <Send className="w-3.5 h-3.5" />
+                  {isSending ? (
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5 ml-0.5" />
+                  )}
                 </button>
               </div>
+
+              {composerText.length >= 4500 && (
+                <div className="text-right px-2">
+                  <span className="text-[10px] text-amber-600 font-mono font-medium">
+                    {5000 - composerText.length} characters left
+                  </span>
+                </div>
+              )}
             </form>
           )}
         </footer>
