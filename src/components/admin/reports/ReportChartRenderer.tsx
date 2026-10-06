@@ -14,7 +14,8 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend
+  Legend,
+  LabelList
 } from 'recharts';
 import { ReportChartSpec } from '../../../types/reports';
 
@@ -151,7 +152,7 @@ export const ReportChartRenderer: React.FC<ReportChartRendererProps> = ({ chart 
   const renderBarChart = (isStacked: boolean = false) => (
     <div className="h-64 w-full my-2">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
+        <BarChart data={chartData} margin={{ top: 24, right: 10, left: -20, bottom: 20 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#F0EFEA" vertical={false} />
           <XAxis
             dataKey="name"
@@ -172,7 +173,17 @@ export const ReportChartRenderer: React.FC<ReportChartRendererProps> = ({ chart 
               stackId={isStacked ? 'stack' : undefined}
               radius={isStacked ? [0, 0, 0, 0] : [4, 4, 0, 0]}
               maxBarSize={48}
-            />
+            >
+              <LabelList
+                dataKey={s.label || s.id}
+                position={isStacked ? 'inside' : 'top'}
+                fill={isStacked ? '#FFFFFF' : '#3F3F46'}
+                fontSize={10}
+                fontWeight={600}
+                formatter={(val: any) => (typeof val === 'number' && val > 0 ? val.toLocaleString() : '')}
+                offset={isStacked ? 0 : 4}
+              />
+            </Bar>
           ))}
         </BarChart>
       </ResponsiveContainer>
@@ -185,7 +196,7 @@ export const ReportChartRenderer: React.FC<ReportChartRendererProps> = ({ chart 
         <BarChart
           layout="vertical"
           data={chartData}
-          margin={{ top: 10, right: 20, left: 20, bottom: 5 }}
+          margin={{ top: 10, right: 36, left: 20, bottom: 5 }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="#F0EFEA" horizontal={false} />
           <XAxis type="number" tick={{ fontSize: 11, fill: '#71717A' }} allowDecimals={false} />
@@ -204,7 +215,17 @@ export const ReportChartRenderer: React.FC<ReportChartRendererProps> = ({ chart 
               fill={getSeriesColor(s.label, idx)}
               radius={[0, 4, 4, 0]}
               maxBarSize={28}
-            />
+            >
+              <LabelList
+                dataKey={s.label || s.id}
+                position="right"
+                fill="#3F3F46"
+                fontSize={10}
+                fontWeight={600}
+                formatter={(val: any) => (typeof val === 'number' && val > 0 ? val.toLocaleString() : '')}
+                offset={6}
+              />
+            </Bar>
           ))}
         </BarChart>
       </ResponsiveContainer>
