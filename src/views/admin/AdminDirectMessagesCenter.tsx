@@ -1020,7 +1020,7 @@ export const AdminDirectMessagesCenter: React.FC<AdminDirectMessagesCenterProps>
 
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] text-zinc-400">
-                        Replies are visible in the user's private Messages portal.
+                        Replies are delivered instantly to the recipient in-app, via Email, and via WhatsApp.
                       </span>
 
                       <Button

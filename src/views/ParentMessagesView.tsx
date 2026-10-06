@@ -1419,6 +1419,11 @@ export const ParentMessagesView: React.FC<ParentMessagesViewProps> = ({
                 />
               </div>
 
+              <div className="p-2.5 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30 flex items-center space-x-2 text-[11px] text-amber-800 dark:text-amber-200">
+                <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-[#C59B27]" />
+                <span>When our team replies, you will be alerted in-app, via email, and via WhatsApp.</span>
+              </div>
+
               {/* Form Buttons */}
               <div className="pt-2 flex items-center justify-end space-x-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
                 <button
