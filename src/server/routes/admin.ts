@@ -3223,15 +3223,17 @@ router.post('/applications/:id/return-to-draft', authMiddleware, async (req: Aut
     const entry = await queryOne(`
       SELECT e.*, 
              c.id as child_id, c.full_name as child_name, c.date_of_birth,
-             p.id as parent_profile_id, p.full_name as parent_name, COALESCE(p.email, u.email) as parent_email, p.phone_number as parent_phone, p.whatsapp_number as parent_whatsapp,
+             p.id as parent_profile_id, p.full_name as parent_name,
+             u.id as user_id, COALESCE(p.email, u.email) as parent_email,
+             p.phone_number as parent_phone, p.whatsapp_number as parent_whatsapp,
              ev.title as event_title, ev.starts_at as event_starts_at
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
       JOIN parent_profiles p ON p.id = c.parent_profile_id
       LEFT JOIN users u ON u.id = p.user_id
       LEFT JOIN events ev ON ev.id = e.event_id
-      WHERE e.id = ?
-    `, [id]);
+      WHERE e.id = ? OR e.child_id = ?
+    `, [id, id]);
 
     if (!entry) {
       return res.status(404).json({ success: false, error: 'Application entry not found.' });
@@ -3264,14 +3266,14 @@ router.post('/applications/:id/return-to-draft', authMiddleware, async (req: Aut
           note_to_team = ?,
           updated_at = ?
       WHERE id = ?
-    `, [auditNote, now, id]);
+    `, [auditNote, now, entry.id]);
 
     // 2. Revoke any existing event pass
     await execute(`
       UPDATE event_passes
       SET status = 'revoked', revoked_at = ?, updated_at = ?
       WHERE child_event_entry_id = ? AND status != 'revoked'
-    `, [now, now, id]);
+    `, [now, now, entry.id]);
 
     // 3. Prepare parent notification text
     const parentFirstName = entry.parent_name?.split(' ')[0] || 'Parent';
@@ -3294,22 +3296,36 @@ We have temporarily reopened your application in draft mode. Please sign in to y
         SELECT id FROM message_threads
         WHERE event_id = ? AND linked_entry_id = ? AND category = 'child_application'
         ORDER BY created_at DESC LIMIT 1
-      `, [entry.event_id, id]);
+      `, [entry.event_id, entry.id]);
 
       let threadId = thread?.id;
+      const preview = finalMessage.slice(0, 100);
       if (!threadId) {
         threadId = `th-${crypto.randomUUID()}`;
         await execute(`
           INSERT INTO message_threads (
-            id, event_id, parent_profile_id, child_id, linked_entry_id, category, subject, status, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, 'child_application', ?, 'open', ?, ?)
-        `, [threadId, entry.event_id, entry.parent_profile_id, entry.child_id, id, subject, now, now]);
+            id, event_id, category, subject, status, linked_child_id, linked_entry_id, created_by_user_id, last_message_at, last_message_preview, created_at, updated_at
+          ) VALUES (?, ?, 'child_application', ?, 'open', ?, ?, ?, ?, ?, ?, ?)
+        `, [threadId, entry.event_id, subject, entry.child_id, entry.id, adminId, now, preview, now, now]);
+
+        if (entry.user_id) {
+          await execute(`
+            INSERT INTO message_thread_participants (id, thread_id, user_id, role, created_at)
+            VALUES (?, ?, ?, 'parent', ?)
+            ON CONFLICT DO NOTHING
+          `, [`part-${crypto.randomUUID()}`, threadId, entry.user_id, now]);
+        }
+        await execute(`
+          INSERT INTO message_thread_participants (id, thread_id, user_id, role, created_at)
+          VALUES (?, ?, ?, 'admin', ?)
+          ON CONFLICT DO NOTHING
+        `, [`part-${crypto.randomUUID()}`, threadId, adminId, now]);
       } else {
         await execute(`
           UPDATE message_threads
-          SET status = 'open', updated_at = ?
+          SET status = 'open', last_message_at = ?, last_message_preview = ?, updated_at = ?
           WHERE id = ?
-        `, [now, threadId]);
+        `, [now, preview, now, threadId]);
       }
 
       const msgId = `msg-${crypto.randomUUID()}`;
@@ -3322,7 +3338,7 @@ We have temporarily reopened your application in draft mode. Please sign in to y
         threadId,
         adminId,
         finalMessage,
-        JSON.stringify({ entryId: id, childId: entry.child_id, reason: effectiveReason }),
+        JSON.stringify({ entryId: entry.id, childId: entry.child_id, reason: effectiveReason }),
         now
       ]);
 
@@ -3343,6 +3359,7 @@ We have temporarily reopened your application in draft mode. Please sign in to y
     }
 
     // 5. Send Transactional Email
+    let emailDeliveryResult: any = null;
     if (notifyEmail && entry.parent_email) {
       const emailHtml = `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 28px; border-radius: 16px; background-color: #FAF9F6;">
@@ -3372,12 +3389,23 @@ We have temporarily reopened your application in draft mode. Please sign in to y
           </p>
         </div>
       `;
-      sendEmail({
-        to: entry.parent_email,
-        subject,
-        text: finalMessage,
-        html: emailHtml
-      }).catch(err => console.error('[ReturnToDraft] Failed to send email:', err));
+      try {
+        emailDeliveryResult = await sendEmail({
+          to: entry.parent_email,
+          subject,
+          text: finalMessage,
+          html: emailHtml
+        });
+        if (!emailDeliveryResult.success) {
+          console.error(`[ReturnToDraft] Email delivery failed for ${entry.parent_email}: provider=${emailDeliveryResult.provider}, error=${emailDeliveryResult.error}`);
+        } else {
+          console.log(`[ReturnToDraft] Email successfully dispatched to ${entry.parent_email} (provider=${emailDeliveryResult.provider}, id=${emailDeliveryResult.id})`);
+        }
+      } catch (emailErr) {
+        console.error('[ReturnToDraft] Unexpected error dispatching email:', emailErr);
+      }
+    } else if (notifyEmail && !entry.parent_email) {
+      console.warn(`[ReturnToDraft] notifyEmail requested but no parent email address was found for entry ${entry.id}`);
     }
 
     // 6. Send WhatsApp if enabled
@@ -3391,11 +3419,12 @@ We have temporarily reopened your application in draft mode. Please sign in to y
     try {
       await execute(`
         INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
-        VALUES (?, ?, 'admin', 'Return application to parent for correction', 'child_event_entry', id, ?, ?)
+        VALUES (?, ?, 'admin', 'Return application to parent for correction', 'child_event_entry', ?, ?, ?)
       `, [
         crypto.randomUUID(),
         adminId,
-        JSON.stringify({ reason: effectiveReason, customMessage: finalMessage, notifyEmail, notifyWhatsApp }),
+        entry.id,
+        JSON.stringify({ reason: effectiveReason, customMessage: finalMessage, notifyEmail, notifyWhatsApp, emailSent: emailDeliveryResult?.success ?? false }),
         now
       ]);
     } catch (auditErr) {
@@ -3405,7 +3434,9 @@ We have temporarily reopened your application in draft mode. Please sign in to y
     return res.json({
       success: true,
       message: 'Application successfully returned to parent for correction.',
-      newStatus: 'incomplete'
+      newStatus: 'incomplete',
+      emailSent: emailDeliveryResult?.success ?? false,
+      emailError: emailDeliveryResult?.success ? undefined : emailDeliveryResult?.error
     });
   } catch (err: any) {
     console.error('Error returning application to parent:', err);

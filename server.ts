@@ -45,6 +45,7 @@ import { startAutomationScheduler } from './src/server/services/operations/autom
 import { parentMessagesRouter, volunteerMessagesRouter, adminMessagesRouter } from './src/server/routes/messages';
 import { parentAnnouncementsRouter, volunteerAnnouncementsRouter, adminAnnouncementsRouter } from './src/server/routes/announcements';
 import { applicationRemindersRouter } from './src/server/routes/applicationReminders';
+import { isEmailConfigured, resolveEmailProvider } from './src/server/services/email';
 
 async function startServer() {
   const app = express();
@@ -116,7 +117,7 @@ async function startServer() {
     runWithRequestOrigin(resolveTrustedRequestOrigin(req.headers), next);
   });
 
-  // API Routes FIRST - Lightweight health check verifying server & database status
+  // API Routes FIRST - Lightweight health check verifying server, database, and email status
   app.get('/api/health', async (req, res) => {
     let dbStatus = 'ok';
     try {
@@ -127,9 +128,18 @@ async function startServer() {
       dbStatus = 'error';
     }
     const isOk = dbStatus === 'ok';
+    const emailConfigured = isEmailConfigured();
+    const emailProvider = resolveEmailProvider();
+    const hasFrom = Boolean(process.env.EMAIL_FROM_ADDRESS || process.env.MAIL_FROM_ADDRESS);
+
     res.status(isOk ? 200 : 503).json({
       status: isOk ? 'ok' : 'degraded',
       database: dbStatus,
+      email: {
+        configured: emailConfigured,
+        provider: emailProvider,
+        senderConfigured: hasFrom
+      },
       timestamp: new Date().toISOString()
     });
   });
@@ -353,6 +363,15 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
+
+    // Validate email configuration on boot
+    const emailConfigured = isEmailConfigured();
+    const emailProvider = resolveEmailProvider();
+    const sender = process.env.EMAIL_FROM_ADDRESS || process.env.MAIL_FROM_ADDRESS;
+    console.log(`[Email Service Status] Provider: "${emailProvider}", Configured: ${emailConfigured ? 'YES' : 'NO'}, Sender: "${sender || 'NOT CONFIGURED'}"`);
+    if (!emailConfigured) {
+      console.warn('[Email Service Warning] Outgoing transactional emails will NOT deliver. Set EMAIL_FROM_ADDRESS and either RESEND_API_KEY (for Resend) or ZEPTOMAIL_SEND_TOKEN (for ZeptoMail) in Render environment variables.');
+    }
 
     // Validate canonical public application URL configuration
     try {
