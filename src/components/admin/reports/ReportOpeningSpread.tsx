@@ -19,6 +19,20 @@ export const ReportOpeningSpread: React.FC<ReportOpeningSpreadProps> = ({ model 
     ? `${startDateStr} – ${endDateStr}`
     : startDateStr;
 
+  const getDrillDownTarget = (label: string): string | null => {
+    const l = (label || '').toLowerCase();
+    if (l.includes('pending submission')) return 'section-sec-eligible-pending';
+    if (l.includes('age eligible') || l.includes('ineligible')) return 'section-sec-age-eligibility';
+    if (l.includes('under review') || l.includes('approved') || l.includes('rejected')) return 'section-sec-registration-status';
+    if (l.includes('child')) return 'section-sec-child-register';
+    if (l.includes('parent')) return 'section-sec-data-quality';
+    return null;
+  };
+
+  const gridColsClass = model.kpis && model.kpis.length > 6
+    ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3 gap-6'
+    : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-8';
+
   return (
     <div className="w-full bg-[#FAF9F5] text-stone-900 p-8 sm:p-14 rounded-xl border border-stone-200/90 shadow-xs space-y-12 print:shadow-none print:rounded-none">
       {/* Header Band */}
@@ -101,7 +115,7 @@ export const ReportOpeningSpread: React.FC<ReportOpeningSpreadProps> = ({ model 
         </div>
       </div>
 
-      {/* Large Data Moments (Section 6 of prompt): Big figures without heavy bordered card boxes */}
+      {/* Large Data Moments: Big figures with optional drill-down navigation */}
       {model.kpis && model.kpis.length > 0 && (
         <div className="pt-8 border-t border-stone-200/90 space-y-6">
           <div className="flex items-center justify-between">
@@ -110,22 +124,37 @@ export const ReportOpeningSpread: React.FC<ReportOpeningSpreadProps> = ({ model 
             </span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-8 py-2">
-            {model.kpis.map((kpi, idx) => (
-              <div key={idx} className="space-y-1.5 border-l border-stone-200/80 pl-3">
-                <span className="text-[10px] font-sans font-semibold uppercase tracking-wider text-stone-500 block">
-                  {kpi.label}
-                </span>
-                <span className="text-3xl sm:text-4xl font-serif font-normal text-stone-900 block tabular-nums tracking-tight">
-                  {formatEditorialNumber(kpi.value)}
-                </span>
-                {kpi.sublabel && (
-                  <span className="text-[11px] font-sans text-stone-500 block leading-snug font-normal">
-                    {kpi.sublabel}
+          <div className={`grid ${gridColsClass} py-2`}>
+            {model.kpis.map((kpi, idx) => {
+              const targetSectionId = getDrillDownTarget(kpi.label);
+              return (
+                <div
+                  key={idx}
+                  onClick={() => {
+                    if (targetSectionId) {
+                      const el = document.getElementById(targetSectionId);
+                      if (el) el.scrollIntoView({ behavior: 'smooth' });
+                    }
+                  }}
+                  className={`space-y-1.5 border-l border-stone-200/80 pl-3 ${
+                    targetSectionId ? 'cursor-pointer hover:border-[#C59B27] group transition-colors' : ''
+                  }`}
+                  title={targetSectionId ? 'Click to inspect detailed section' : undefined}
+                >
+                  <span className="text-[10px] font-sans font-semibold uppercase tracking-wider text-stone-500 group-hover:text-[#C59B27] transition-colors block">
+                    {kpi.label}
                   </span>
-                )}
-              </div>
-            ))}
+                  <span className="text-3xl sm:text-4xl font-serif font-normal text-stone-900 block tabular-nums tracking-tight">
+                    {formatEditorialNumber(kpi.value)}
+                  </span>
+                  {kpi.sublabel && (
+                    <span className="text-[11px] font-sans text-stone-500 block leading-snug font-normal">
+                      {kpi.sublabel}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

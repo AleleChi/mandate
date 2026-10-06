@@ -15,6 +15,14 @@ export const ReportSectionRenderer: React.FC<ReportSectionRendererProps> = ({ se
       {/* Section Divider & Heading */}
       <ReportSectionDivider title={title} description={description} />
 
+      {/* Sensitive Information Banner (Section 11) */}
+      {(title.toLowerCase().includes('sensitive') || title.toLowerCase().includes('health detail')) && (
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-50 border border-amber-300 text-amber-900 text-xs font-sans font-medium shadow-xs">
+          <span className="w-2 h-2 rounded-full bg-amber-600" />
+          <span>Sensitive information — Admin access only</span>
+        </div>
+      )}
+
       {/* Narrative Section */}
       {type === 'narrative' && content && (
         <div className="text-sm sm:text-base text-stone-700 font-sans leading-relaxed space-y-3 max-w-3xl">
@@ -50,10 +58,10 @@ export const ReportSectionRenderer: React.FC<ReportSectionRendererProps> = ({ se
                 const firstCell = String(row[0] || '').toLowerCase();
                 let cohortIndicatorColor: string | null = null;
                 if (firstCell.includes('under 4')) cohortIndicatorColor = '#10B981';
-                else if (firstCell.includes('1 to 3') || firstCell.includes('1-3')) cohortIndicatorColor = '#84CC16';
-                else if (firstCell.includes('4 to 6') || firstCell.includes('4-6')) cohortIndicatorColor = '#C59B27';
-                else if (firstCell.includes('7 to 9') || firstCell.includes('7-9')) cohortIndicatorColor = '#A67C2E';
-                else if (firstCell.includes('10 to 12') || firstCell.includes('10-12')) cohortIndicatorColor = '#D97706';
+                else if (firstCell.includes('2–3') || firstCell.includes('2-3') || firstCell.includes('1 to 3') || firstCell.includes('1-3')) cohortIndicatorColor = '#84CC16';
+                else if (firstCell.includes('4 to 6') || firstCell.includes('4-6') || firstCell.includes('4–6')) cohortIndicatorColor = '#C59B27';
+                else if (firstCell.includes('7 to 9') || firstCell.includes('7-9') || firstCell.includes('7–9')) cohortIndicatorColor = '#A67C2E';
+                else if (firstCell.includes('10 to 12') || firstCell.includes('10-12') || firstCell.includes('10–12')) cohortIndicatorColor = '#D97706';
                 else if (firstCell.includes('teen') || firstCell.includes('13+')) cohortIndicatorColor = '#4B5563';
 
                 return (

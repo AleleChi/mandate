@@ -217,6 +217,61 @@ const CANONICAL_TEMPLATES: ReportTemplate[] = [
       'Aggregated safeguarding & care analysis',
       'Observations and operational appendix'
     ]
+  },
+  {
+    key: 'children-registration-report',
+    name: 'Children & Registration',
+    description: 'Child registration, age eligibility, intake progress, geographic origin, data quality, and health intelligence.',
+    privacyClassification: 'Safeguarding restricted',
+    recommendedSections: [
+      'Executive Summary',
+      'Registration Status',
+      'Age Group Distribution',
+      'Age Eligibility Analysis',
+      'Eligible Pending Submission',
+      'Registration Origin',
+      'Registration Data Quality',
+      'Health & Safety Summary',
+      'Health Detail Register',
+      'Detailed Child Register'
+    ],
+    supportedSections: [
+      'Executive Summary',
+      'Registration Status',
+      'Age Group Distribution',
+      'Age Eligibility Analysis',
+      'Eligible Pending Submission',
+      'Registration Origin',
+      'Registration Data Quality',
+      'Health & Safety Summary',
+      'Health Detail Register',
+      'Detailed Child Register'
+    ],
+    defaultSections: [
+      'Executive Summary',
+      'Registration Status',
+      'Age Group Distribution',
+      'Age Eligibility Analysis',
+      'Eligible Pending Submission',
+      'Registration Origin',
+      'Registration Data Quality',
+      'Health & Safety Summary',
+      'Health Detail Register',
+      'Detailed Child Register'
+    ],
+    reportDomain: 'Registration & Safeguarding',
+    audience: 'Executive Leadership, Registration Leads, Safeguarding Coordinators',
+    includes: [
+      'Total, valid, and age-eligible child headcounts',
+      'Programme age cohort distribution (2–3, 4–6, 7–9, 10–12)',
+      'Factual age eligibility analysis and reasons',
+      'Draft applications pending submission register',
+      'Registration origin & geographic breakdown (Country, State, City)',
+      'Parent and child profile completeness audit',
+      'Health and safety summary by age cohort',
+      'Restricted administrative medical and allergy register',
+      'Detailed child registration register'
+    ]
   }
 ];
 
@@ -400,7 +455,11 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
     const eventName = ev?.title || 'The General Assembly 2026';
     const tm = templates.find(t => t.key === builderTemplate);
     const templateName = tm?.name || 'Management summary';
-    setCustomReportTitle(`${eventName} — ${templateName}`);
+    if (builderTemplate === 'children-registration-report') {
+      setCustomReportTitle(`${eventName} — Children & Registration Report`);
+    } else {
+      setCustomReportTitle(`${eventName} — ${templateName}`);
+    }
   }, [selectedEventId, builderTemplate, availableEvents, templates]);
 
   // Handle template selection from template library
@@ -1180,7 +1239,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
       {activeMainTab === 'template_library' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {templates.slice(0, 6).map((temp) => (
+            {templates.map((temp) => (
               <div 
                 key={temp.key} 
                 className="bg-white dark:bg-[#1D1D1A] p-6 rounded-xl border border-stone-200 dark:border-[#302E29] hover:border-[#C59B27]/40 dark:hover:border-amber-500/40 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between space-y-6"
@@ -1269,7 +1328,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {templates.slice(0, 6).map((temp) => {
+                {templates.map((temp) => {
                   const isSelected = builderTemplate === temp.key;
                   return (
                     <div
