@@ -26,13 +26,13 @@ async function runTests() {
   // Age 2: born 2024-11-21
   const age2 = calculateAgeOnDate('2024-11-21', eventDate);
   assert.strictEqual(age2, 2, 'Age 2 child must calculate as 2');
-  const el2 = checkEventEligibility('2024-11-21', { starts_at: eventDate, minimum_age: 2, maximum_age: 12 });
+  const el2 = checkEventEligibility('2024-11-21', { starts_at: eventDate, minimum_age: 2, maximum_age: 14 });
   assert.strictEqual(el2.eligible, true, 'Age 2 must be eligible');
 
   // Age 3: born 2023-11-21
   const age3 = calculateAgeOnDate('2023-11-21', eventDate);
   assert.strictEqual(age3, 3, 'Age 3 child must calculate as 3');
-  const el3 = checkEventEligibility('2023-11-21', { starts_at: eventDate, minimum_age: 2, maximum_age: 12 });
+  const el3 = checkEventEligibility('2023-11-21', { starts_at: eventDate, minimum_age: 2, maximum_age: 14 });
   assert.strictEqual(el3.eligible, true, 'Age 3 must be eligible');
 
   // Age 4: born 2022-11-21
@@ -58,24 +58,36 @@ async function runTests() {
   // Age 12: born 2014-11-21
   const age12 = calculateAgeOnDate('2014-11-21', eventDate);
   assert.strictEqual(age12, 12, 'Age 12 child must calculate as 12');
-  const el12 = checkEventEligibility('2014-11-21', { starts_at: eventDate, minimum_age: 2, maximum_age: 12 });
+  const el12 = checkEventEligibility('2014-11-21', { starts_at: eventDate, minimum_age: 2, maximum_age: 14 });
   assert.strictEqual(el12.eligible, true, 'Age 12 must be eligible');
+
+  // Age 13: born 2013-11-21
+  const age13 = calculateAgeOnDate('2013-11-21', eventDate);
+  assert.strictEqual(age13, 13, 'Age 13 child must calculate as 13');
+  const el13 = checkEventEligibility('2013-11-21', { starts_at: eventDate, minimum_age: 2, maximum_age: 14 });
+  assert.strictEqual(el13.eligible, true, 'Age 13 must be eligible');
+
+  // Age 14: born 2012-11-21
+  const age14 = calculateAgeOnDate('2012-11-21', eventDate);
+  assert.strictEqual(age14, 14, 'Age 14 child must calculate as 14');
+  const el14 = checkEventEligibility('2012-11-21', { starts_at: eventDate, minimum_age: 2, maximum_age: 14 });
+  assert.strictEqual(el14.eligible, true, 'Age 14 must be eligible');
 
   // Below age range: age 1 (born 2025-11-21)
   const age1 = calculateAgeOnDate('2025-11-21', eventDate);
   assert.strictEqual(age1, 1, 'Age 1 child must calculate as 1');
-  const el1 = checkEventEligibility('2025-11-21', { starts_at: eventDate, minimum_age: 2, maximum_age: 12 });
+  const el1 = checkEventEligibility('2025-11-21', { starts_at: eventDate, minimum_age: 2, maximum_age: 14 });
   assert.strictEqual(el1.eligible, false, 'Age 1 must be ineligible');
   assert.strictEqual(el1.code, 'BELOW_MINIMUM_AGE', 'Code must be BELOW_MINIMUM_AGE');
 
-  // Above age range: age 13 (born 2013-11-21)
-  const age13 = calculateAgeOnDate('2013-11-21', eventDate);
-  assert.strictEqual(age13, 13, 'Age 13 child must calculate as 13');
-  const el13 = checkEventEligibility('2013-11-21', { starts_at: eventDate, minimum_age: 2, maximum_age: 12 });
-  assert.strictEqual(el13.eligible, false, 'Age 13 must be ineligible');
-  assert.strictEqual(el13.code, 'ABOVE_MAXIMUM_AGE', 'Code must be ABOVE_MAXIMUM_AGE');
+  // Above age range: age 15 (born 2011-11-21)
+  const age15 = calculateAgeOnDate('2011-11-21', eventDate);
+  assert.strictEqual(age15, 15, 'Age 15 child must calculate as 15');
+  const el15 = checkEventEligibility('2011-11-21', { starts_at: eventDate, minimum_age: 2, maximum_age: 14 });
+  assert.strictEqual(el15.eligible, false, 'Age 15 must be ineligible');
+  assert.strictEqual(el15.code, 'ABOVE_MAXIMUM_AGE', 'Code must be ABOVE_MAXIMUM_AGE');
 
-  console.log('✓ Age boundary test cases (2, 3, 4, 6, 7, 9, 10, 12, below, above) passed successfully.');
+  console.log('✓ Age boundary test cases (2, 3, 4, 6, 7, 9, 10, 12, 13, 14, below 1, above 15) passed successfully.');
 
   // Test 2: Health Classification Tests (Section 24)
   console.log('\n--- TEST SET 2: HEALTH CLASSIFICATION CASES ---');
@@ -230,13 +242,14 @@ async function runTests() {
   const cohortSumTotal = Number(cohortTotalRow[1]);
   assert.strictEqual(cohortSumTotal, ageEligible, 'Cohort sum total must reconcile with ageEligible');
   
-  // Verify all 4 cohorts exist in rows
-  const cohortNames = cohortRows.slice(0, 4).map((r: any) => r[0]);
+  // Verify all 5 cohorts exist in rows
+  const cohortNames = cohortRows.slice(0, 5).map((r: any) => r[0]);
   assert.ok(cohortNames.some((c: string) => c.includes('2–3')), 'Cohort 2–3 must be present');
   assert.ok(cohortNames.some((c: string) => c.includes('4–6')), 'Cohort 4–6 must be present');
   assert.ok(cohortNames.some((c: string) => c.includes('7–9')), 'Cohort 7–9 must be present');
   assert.ok(cohortNames.some((c: string) => c.includes('10–12')), 'Cohort 10–12 must be present');
-  console.log('✓ Assertion 3 passed: all 4 cohorts (2–3, 4–6, 7–9, 10–12) present and reconcile with eligible count');
+  assert.ok(cohortNames.some((c: string) => c.includes('13–14')), 'Cohort 13–14 must be present');
+  console.log('✓ Assertion 3 passed: all 5 cohorts (2–3, 4–6, 7–9, 10–12, 13–14) present and reconcile with eligible count');
 
   // Assertion 4: Location reconciliation
   const countrySec = doc.sections.find(s => s.id === 'sec-registration-origin-country');

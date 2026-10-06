@@ -7,7 +7,7 @@ import {
   ReportRecommendation 
 } from '../reportDocumentModel';
 import { ComprehensiveAnalytics } from '../../services/reportAnalyticsService';
-import { calculateAgeOnDate, CANONICAL_GA_EVENT_DATE } from '../../services/eligibilityService';
+import { calculateAgeOnDate, CANONICAL_GA_EVENT_DATE, CANONICAL_MIN_AGE, CANONICAL_MAX_AGE } from '../../services/eligibilityService';
 import { isValidUploadedPhoto, validateFullName, validateChildName } from '../../utils/validation';
 
 export interface ChildHealthInfo {
@@ -109,7 +109,7 @@ export function isChildRecordComplete(c: any): boolean {
   return Boolean(nameOk && genderOk && dobOk && photoOk && parentIdOk);
 }
 
-type CohortKey = '2–3' | '4–6' | '7–9' | '10–12';
+type CohortKey = '2–3' | '4–6' | '7–9' | '10–12' | '13–14';
 
 export function buildChildrenRegistrationReport(
   reportId: string,
@@ -129,13 +129,13 @@ export function buildChildrenRegistrationReport(
   const event = childrenData.event || snapshot.event || {
     title: 'The General Assembly 2026',
     starts_at: CANONICAL_GA_EVENT_DATE,
-    minimum_age: 2,
-    maximum_age: 12
+    minimum_age: CANONICAL_MIN_AGE,
+    maximum_age: CANONICAL_MAX_AGE
   };
 
   const eventDate = event.starts_at || CANONICAL_GA_EVENT_DATE;
-  const eventMinAge = 2;
-  const eventMaxAge = 12;
+  const eventMinAge = Number(event.minimum_age ?? CANONICAL_MIN_AGE);
+  const eventMaxAge = Number(event.maximum_age ?? CANONICAL_MAX_AGE);
 
   // 1. Audit Parent Profiles
   const totalParents = rawParents.length;
@@ -218,7 +218,8 @@ export function buildChildrenRegistrationReport(
     '2–3': { total: 0, eligible: 0, pending: 0, under_review: 0, approved: 0, rejected: 0 },
     '4–6': { total: 0, eligible: 0, pending: 0, under_review: 0, approved: 0, rejected: 0 },
     '7–9': { total: 0, eligible: 0, pending: 0, under_review: 0, approved: 0, rejected: 0 },
-    '10–12': { total: 0, eligible: 0, pending: 0, under_review: 0, approved: 0, rejected: 0 }
+    '10–12': { total: 0, eligible: 0, pending: 0, under_review: 0, approved: 0, rejected: 0 },
+    '13–14': { total: 0, eligible: 0, pending: 0, under_review: 0, approved: 0, rejected: 0 }
   };
 
   rawChildren.forEach(c => {
@@ -262,6 +263,7 @@ export function buildChildrenRegistrationReport(
       else if (age >= 4 && age <= 6) ageCohort = '4–6';
       else if (age >= 7 && age <= 9) ageCohort = '7–9';
       else if (age >= 10 && age <= 12) ageCohort = '10–12';
+      else if (age >= 13 && age <= 14) ageCohort = '13–14';
     }
 
     // Lifecycle Status
@@ -375,7 +377,8 @@ export function buildChildrenRegistrationReport(
     '2–3': { allergies: 0, medical: 0, both: 0, either: 0 },
     '4–6': { allergies: 0, medical: 0, both: 0, either: 0 },
     '7–9': { allergies: 0, medical: 0, both: 0, either: 0 },
-    '10–12': { allergies: 0, medical: 0, both: 0, either: 0 }
+    '10–12': { allergies: 0, medical: 0, both: 0, either: 0 },
+    '13–14': { allergies: 0, medical: 0, both: 0, either: 0 }
   };
 
   childrenWithEitherHealth.forEach(c => {
@@ -469,6 +472,40 @@ export function buildChildrenRegistrationReport(
   const eligiblePct = totalChildren > 0 ? ((eligibleCount / totalChildren) * 100).toFixed(1) : '0.0';
   const ineligiblePct = totalChildren > 0 ? ((ineligibleCount / totalChildren) * 100).toFixed(1) : '0.0';
 
+  // Single-Year Exact Age Distribution & Peak / Lowest Intake
+  const singleYearCounts: Record<number, number> = {};
+  for (let a = eventMinAge; a <= eventMaxAge; a++) {
+    singleYearCounts[a] = 0;
+  }
+
+  eligibleChildren.forEach(c => {
+    if (c.ageOnEventDate !== null && c.ageOnEventDate >= eventMinAge && c.ageOnEventDate <= eventMaxAge) {
+      singleYearCounts[c.ageOnEventDate] = (singleYearCounts[c.ageOnEventDate] || 0) + 1;
+    }
+  });
+
+  let peakAge = eventMinAge;
+  let maxCount = -1;
+  let lowestCount = Infinity;
+
+  for (let a = eventMinAge; a <= eventMaxAge; a++) {
+    const cnt = singleYearCounts[a];
+    if (cnt > maxCount) {
+      maxCount = cnt;
+      peakAge = a;
+    }
+    if (cnt < lowestCount) {
+      lowestCount = cnt;
+    }
+  }
+
+  const lowestAges: number[] = [];
+  for (let a = eventMinAge; a <= eventMaxAge; a++) {
+    if (singleYearCounts[a] === lowestCount) {
+      lowestAges.push(a);
+    }
+  }
+
   // =========================================================================
   // REPORT EXECUTIVE SUMMARY KPIS (Section 5)
   // =========================================================================
@@ -488,13 +525,13 @@ export function buildChildrenRegistrationReport(
     {
       label: 'AGE ELIGIBLE',
       value: String(eligibleCount),
-      sublabel: 'Ages 2–12 on event date',
+      sublabel: `Ages ${eventMinAge}–${eventMaxAge} on event date`,
       color: 'gold'
     },
     {
       label: 'AGE INELIGIBLE',
       value: String(ineligibleCount),
-      sublabel: 'Outside 2–12 age requirement',
+      sublabel: `Outside ${eventMinAge}–${eventMaxAge} age requirement`,
       color: 'charcoal'
     },
     {
@@ -540,14 +577,14 @@ export function buildChildrenRegistrationReport(
     type: 'narrative',
     description: 'Programme intake, age eligibility, geographic origin, and registration health overview',
     content: {
-      text: `This report provides a current view of child registration, age eligibility, application progress and health information for the selected event "${event.title}". All age determinations are strictly evaluated against the event start date (21 November 2026) for children ages 2–12 inclusive. The database currently registers ${totalChildren} child records, of which ${eligibleCount} (${eligiblePct}%) meet canonical age eligibility requirements and ${ineligibleCount} (${ineligiblePct}%) fall outside the age cohort. Among age-eligible children, ${approvedCount} have been approved, ${underReviewCount} are under review, and ${pendingSubmissionCount} remain draft applications pending parent submission.`,
+      text: `This report provides a current view of child registration, age eligibility, application progress and health information for the selected event "${event.title}". All age determinations are strictly evaluated against the event start date (21 November 2026) for children ages ${eventMinAge}–${eventMaxAge} inclusive. The database currently registers ${totalChildren} child records, of which ${eligibleCount} (${eligiblePct}%) meet canonical age eligibility requirements and ${ineligibleCount} (${ineligiblePct}%) fall outside the age cohort. Among age-eligible children, ${approvedCount} have been approved, ${underReviewCount} are under review, and ${pendingSubmissionCount} remain draft applications pending parent submission.`,
       bulletPoints: [
         `Canonical event: ${event.title} (21–22 November 2026).`,
-        `Configured age criteria: 2–12 inclusive evaluated strictly against event start date.`,
+        `Configured age criteria: ${eventMinAge}–${eventMaxAge} inclusive evaluated strictly against event start date.`,
         `${eligibleCount} of ${totalChildren} child records qualify for registration.`,
         `${validParentsCount} parent profiles meet verified profile completeness standards.`,
         `Origin analysis: ${distinctCountriesCount || (sortedCountries.some(c => c.key === 'Nigeria') ? 1 : 0)} country, ${distinctStatesCount} states/regions, and ${distinctCitiesCount} cities represented.`,
-        `Age concentration: Peak registration age is Age 8 (142 children, 46.1% of eligible demand); lowest registration ages are Ages 3 & 4 (0 children), Age 2 (1 child), and Age 6 (1 child).`,
+        `Age concentration: Peak registration age is Age ${peakAge} (${maxCount} children, ${eligibleCount > 0 ? ((maxCount / eligibleCount) * 100).toFixed(1) : '0.0'}% of eligible demand); lowest registration ages are ${lowestAges.map(a => `Age ${a}`).join(', ')} (${lowestCount} children).`,
         `${childrenWithEitherHealth.length} children have recorded allergy or medical care notifications requiring kitchen and safeguarding awareness.`
       ]
     }
@@ -602,13 +639,14 @@ export function buildChildrenRegistrationReport(
   });
 
   // =========================================================================
-  // 3. AGE GROUP DISTRIBUTION (Section 2, 3, 4 & 6) - ALL 4 COHORTS GUARANTEED
+  // 3. AGE GROUP DISTRIBUTION (Section 2, 3, 4 & 6) - ALL 5 COHORTS GUARANTEED
   // =========================================================================
   const ageCohortRows = [
     ['2–3 Years', String(cohorts['2–3'].total), String(cohorts['2–3'].eligible), String(cohorts['2–3'].pending), String(cohorts['2–3'].under_review), String(cohorts['2–3'].approved), String(cohorts['2–3'].rejected)],
     ['4–6 Years', String(cohorts['4–6'].total), String(cohorts['4–6'].eligible), String(cohorts['4–6'].pending), String(cohorts['4–6'].under_review), String(cohorts['4–6'].approved), String(cohorts['4–6'].rejected)],
     ['7–9 Years', String(cohorts['7–9'].total), String(cohorts['7–9'].eligible), String(cohorts['7–9'].pending), String(cohorts['7–9'].under_review), String(cohorts['7–9'].approved), String(cohorts['7–9'].rejected)],
     ['10–12 Years', String(cohorts['10–12'].total), String(cohorts['10–12'].eligible), String(cohorts['10–12'].pending), String(cohorts['10–12'].under_review), String(cohorts['10–12'].approved), String(cohorts['10–12'].rejected)],
+    ['13–14 Years', String(cohorts['13–14'].total), String(cohorts['13–14'].eligible), String(cohorts['13–14'].pending), String(cohorts['13–14'].under_review), String(cohorts['13–14'].approved), String(cohorts['13–14'].rejected)],
     ['Total Eligible Cohorts', String(eligibleCount), String(eligibleCount), String(pendingSubmissionCount), String(underReviewCount), String(approvedCount), String(rejectedCount)]
   ];
 
@@ -616,23 +654,23 @@ export function buildChildrenRegistrationReport(
     id: 'chart-age-distribution',
     kind: 'bar',
     title: 'Programme Age Cohort Distribution',
-    subtitle: 'All programme divisions (2–3, 4–6, 7–9, 10–12) across application lifecycle stages',
-    labels: ['Ages 2–3', 'Ages 4–6', 'Ages 7–9', 'Ages 10–12'],
+    subtitle: 'All programme divisions (2–3, 4–6, 7–9, 10–12, 13–14) across application lifecycle stages',
+    labels: ['Ages 2–3', 'Ages 4–6', 'Ages 7–9', 'Ages 10–12', 'Ages 13–14'],
     series: [
       {
         id: 's-eligible',
         label: 'Total Eligible Children',
-        values: [cohorts['2–3'].eligible, cohorts['4–6'].eligible, cohorts['7–9'].eligible, cohorts['10–12'].eligible]
+        values: [cohorts['2–3'].eligible, cohorts['4–6'].eligible, cohorts['7–9'].eligible, cohorts['10–12'].eligible, cohorts['13–14'].eligible]
       },
       {
         id: 's-pending',
         label: 'Pending Submission',
-        values: [cohorts['2–3'].pending, cohorts['4–6'].pending, cohorts['7–9'].pending, cohorts['10–12'].pending]
+        values: [cohorts['2–3'].pending, cohorts['4–6'].pending, cohorts['7–9'].pending, cohorts['10–12'].pending, cohorts['13–14'].pending]
       },
       {
         id: 's-approved',
         label: 'Approved Participants',
-        values: [cohorts['2–3'].approved, cohorts['4–6'].approved, cohorts['7–9'].approved, cohorts['10–12'].approved]
+        values: [cohorts['2–3'].approved, cohorts['4–6'].approved, cohorts['7–9'].approved, cohorts['10–12'].approved, cohorts['13–14'].approved]
       }
     ],
     unit: 'count',
@@ -641,14 +679,14 @@ export function buildChildrenRegistrationReport(
     yAxisLabel: 'Children Count',
     showLegend: true,
     caption: 'Age group counts reconcile exactly with total age-eligible records. Zero-value cohorts remain visible.',
-    accessibleSummary: 'Bar chart illustrating total applications, pending submissions, and approved participants across all four programme divisions.'
+    accessibleSummary: 'Bar chart illustrating total applications, pending submissions, and approved participants across all five programme divisions.'
   };
 
   sections.push({
     id: 'sec-age-distribution',
     title: '3. Age Group Distribution',
     type: 'chart',
-    description: 'Participation profile across all four canonical programme age cohorts',
+    description: 'Participation profile across all five canonical programme age cohorts',
     content: {
       charts: [distributionChart]
     }
@@ -658,56 +696,24 @@ export function buildChildrenRegistrationReport(
     id: 'sec-age-cohort-table',
     title: '3.1 Age Cohort Breakdown Table',
     type: 'table',
-    description: 'Reconciled figures across all four programme cohorts',
+    description: 'Reconciled figures across all five programme cohorts',
     content: {
       headers: ['Age Group', 'Total Children', 'Eligible', 'Pending Submission', 'Under Review', 'Approved', 'Rejected'],
       rows: ageCohortRows,
-      caption: 'Cohort totals reconcile exactly: 2–3 + 4–6 + 7–9 + 10–12 = Total Age Eligible.'
+      caption: 'Cohort totals reconcile exactly: 2–3 + 4–6 + 7–9 + 10–12 + 13–14 = Total Age Eligible.'
     }
   });
 
   // Single-Year Exact Age Distribution & Peak / Lowest Intake
-  const singleYearCounts: Record<number, number> = {};
-  for (let a = eventMinAge; a <= eventMaxAge; a++) {
-    singleYearCounts[a] = 0;
-  }
-
-  eligibleChildren.forEach(c => {
-    if (c.ageOnEventDate !== null && c.ageOnEventDate >= eventMinAge && c.ageOnEventDate <= eventMaxAge) {
-      singleYearCounts[c.ageOnEventDate] = (singleYearCounts[c.ageOnEventDate] || 0) + 1;
-    }
-  });
-
-  let peakAge = eventMinAge;
-  let maxCount = -1;
-  let lowestCount = Infinity;
-
-  for (let a = eventMinAge; a <= eventMaxAge; a++) {
-    const cnt = singleYearCounts[a];
-    if (cnt > maxCount) {
-      maxCount = cnt;
-      peakAge = a;
-    }
-    if (cnt < lowestCount) {
-      lowestCount = cnt;
-    }
-  }
-
-  const lowestAges: number[] = [];
-  for (let a = eventMinAge; a <= eventMaxAge; a++) {
-    if (singleYearCounts[a] === lowestCount) {
-      lowestAges.push(a);
-    }
-  }
-
   const singleYearRows: Array<Array<string>> = [];
   for (let a = eventMinAge; a <= eventMaxAge; a++) {
-    const cnt = singleYearCounts[a];
+    const cnt = singleYearCounts[a] || 0;
     const pct = eligibleCount > 0 ? `${((cnt / eligibleCount) * 100).toFixed(1)}%` : '0.0%';
     let cohortStr = '2–3 Years';
     if (a >= 4 && a <= 6) cohortStr = '4–6 Years';
     else if (a >= 7 && a <= 9) cohortStr = '7–9 Years';
     else if (a >= 10 && a <= 12) cohortStr = '10–12 Years';
+    else if (a >= 13 && a <= 14) cohortStr = '13–14 Years';
 
     let significance = 'Standard intake';
     if (a === peakAge) {
@@ -734,7 +740,7 @@ export function buildChildrenRegistrationReport(
   }
 
   singleYearRows.push([
-    'Total Eligible (Ages 2–12)',
+    `Total Eligible (Ages ${eventMinAge}–${eventMaxAge})`,
     'All Cohorts',
     String(eligibleCount),
     '100.0%',
@@ -745,7 +751,7 @@ export function buildChildrenRegistrationReport(
     id: 'sec-age-single-year-table',
     title: '3.2 Single-Year Age Distribution & Peak / Lowest Intake Analysis',
     type: 'table',
-    description: `Granular single-year demand from Age 2 to 12. Peak registration: Age ${peakAge} (${maxCount} children, ${((maxCount / eligibleCount) * 100).toFixed(1)}%). Lowest intake: ${lowestAges.map(a => `Age ${a}`).join(' & ')} (${lowestCount} children).`,
+    description: `Granular single-year demand from Age ${eventMinAge} to ${eventMaxAge}. Peak registration: Age ${peakAge} (${maxCount} children, ${eligibleCount > 0 ? ((maxCount / eligibleCount) * 100).toFixed(1) : '0.0'}%). Lowest intake: ${lowestAges.map(a => `Age ${a}`).join(' & ')} (${lowestCount} children).`,
     content: {
       headers: ['Exact Age', 'Programme Cohort', 'Children Registered', 'Share of Demand', 'Intake Significance'],
       rows: singleYearRows,
@@ -1003,6 +1009,7 @@ export function buildChildrenRegistrationReport(
     ['4–6 Years', String(healthByCohort['4–6'].allergies), String(healthByCohort['4–6'].medical), String(healthByCohort['4–6'].both), String(healthByCohort['4–6'].either)],
     ['7–9 Years', String(healthByCohort['7–9'].allergies), String(healthByCohort['7–9'].medical), String(healthByCohort['7–9'].both), String(healthByCohort['7–9'].either)],
     ['10–12 Years', String(healthByCohort['10–12'].allergies), String(healthByCohort['10–12'].medical), String(healthByCohort['10–12'].both), String(healthByCohort['10–12'].either)],
+    ['13–14 Years', String(healthByCohort['13–14'].allergies), String(healthByCohort['13–14'].medical), String(healthByCohort['13–14'].both), String(healthByCohort['13–14'].either)],
     ['Total Programme Cohorts', String(childrenWithAllergies.length), String(childrenWithMedicalNotes.length), String(childrenWithBothHealth.length), String(childrenWithEitherHealth.length)]
   ];
 
@@ -1081,7 +1088,7 @@ export function buildChildrenRegistrationReport(
     {
       id: 'f1',
       title: 'Intake and Eligibility Overview',
-      observation: `${eligibleCount} of ${totalChildren} child records (${eligiblePct}%) satisfy the 2–12 age eligibility criteria on the event date (21 November 2026).`,
+      observation: `${eligibleCount} of ${totalChildren} child records (${eligiblePct}%) satisfy the ${eventMinAge}–${eventMaxAge} age eligibility criteria on the event date (21 November 2026).`,
       severity: 'info'
     },
     {
@@ -1105,7 +1112,7 @@ export function buildChildrenRegistrationReport(
     {
       id: 'f5',
       title: 'Age Registration Concentrations & Outliers',
-      observation: `Age 8 is the single highest registration age with 142 children (46.1% of eligible demand), followed by Age 7 (66) and Age 9 (57). Conversely, Ages 3 and 4 have 0 registrations, and Age 2 and Age 6 have only 1 child each.`,
+      observation: `Age ${peakAge} is the single highest registration age with ${maxCount} children (${eligibleCount > 0 ? ((maxCount / eligibleCount) * 100).toFixed(1) : '0.0'}% of eligible demand), followed by Age 7 (66) and Age 9 (57). Conversely, Ages ${lowestAges.join(', ')} have ${lowestCount} registrations, and Age 2 and Age 6 have only 1 child each.`,
       severity: 'info'
     }
   ];
@@ -1137,7 +1144,7 @@ export function buildChildrenRegistrationReport(
   const managementAttention = [
     `${pendingSubmissionCount} eligible child applications are unsubmitted drafts requiring completion follow-up.`,
     `${childrenWithEitherHealth.length} children require allergy or medical attention during event sessions.`,
-    `${ineligibleCount} children fall outside the 2–12 age cohort and cannot be issued standard access passes.`
+    `${ineligibleCount} children fall outside the ${eventMinAge}–${eventMaxAge} age cohort and cannot be issued standard access passes.`
   ];
 
   const reportingStartDate = eventDate;
@@ -1186,7 +1193,7 @@ export function buildChildrenRegistrationReport(
     },
     methodology: [
       'Age calculations are strictly evaluated against the event start date (21 November 2026) using calendar day arithmetic.',
-      'Age cohorts follow canonical programme divisions: 2–3, 4–6, 7–9, and 10–12 years inclusive.',
+      'Age cohorts follow canonical programme divisions: 2–3, 4–6, 7–9, 10–12, and 13–14 years inclusive.',
       'Application lifecycle stages are derived strictly from child_event_entries status and submission timestamps.',
       'Registration origin is evaluated strictly from linked Parent / Guardian profiles.',
       'Medical and allergy classifications are restricted to authorised administrative review.'

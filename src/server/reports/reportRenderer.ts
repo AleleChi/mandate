@@ -60,7 +60,7 @@ function getCohortColor(cellText: string): [number, number, number] | null {
   if (l.includes('4 to 6') || l.includes('4-6') || l.includes('4–6')) return [197, 155, 39];
   if (l.includes('7 to 9') || l.includes('7-9') || l.includes('7–9')) return [166, 124, 46];
   if (l.includes('10 to 12') || l.includes('10-12') || l.includes('10–12')) return [217, 119, 6];
-  if (l.includes('teen') || l.includes('13+')) return [75, 85, 99];
+  if (l.includes('13–14') || l.includes('13-14') || l.includes('teen') || l.includes('13+')) return [139, 92, 246];
   return null;
 }
 

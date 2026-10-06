@@ -225,7 +225,7 @@ export const REPORT_TEMPLATES = [
     audience: 'Executive Leadership, Registration Leads, Safeguarding Coordinators',
     includes: [
       'Executive summary of child intake and registration status',
-      'Programme age cohort distribution (2–3, 4–6, 7–9, 10–12)',
+      'Programme age cohort distribution (2–3, 4–6, 7–9, 10–12, 13–14)',
       'Factual age eligibility analysis and ineligibility breakdown',
       'Eligible draft applications pending submission',
       'Registration origin & geographic breakdown (Country, State, City)',
