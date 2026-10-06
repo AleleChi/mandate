@@ -1,4 +1,4 @@
-import crypto from 'crypto';
+﻿import crypto from 'crypto';
 import { execute, query, queryOne } from '../db';
 import {
   emitSSEEventToUser,
@@ -202,6 +202,10 @@ export async function notifyCompletionReminderSent(params: {
       action: 'View'
     });
 
+    // Resolve linked child for parent_notifications child_id column
+    const threadRow = await queryOne('SELECT linked_child_id FROM message_threads WHERE id = ?', [threadId]);
+    const linkedChildId = threadRow?.linked_child_id || null;
+
     await execute(`
       INSERT OR IGNORE INTO notifications (
         id, title, message, type, audience_role, audience_scope,
@@ -216,6 +220,23 @@ export async function notifyCompletionReminderSent(params: {
       adminUserId,
       now,
       metadataJson
+    ]);
+
+    // Also write to parent_notifications — /api/parent/notifications reads ONLY this table.
+    // Without this row the parent bell badge never increments.
+    const pNotifId = `pnotif-rem-${messageId}`;
+    await execute(`
+      INSERT OR IGNORE INTO parent_notifications (
+        id, parent_id, event_id, child_id, title, message, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [
+      pNotifId,
+      parentProfileId,
+      eventId || null,
+      linkedChildId,
+      title,
+      message,
+      now
     ]);
 
     // Emit SSE strictly to that Parent user
