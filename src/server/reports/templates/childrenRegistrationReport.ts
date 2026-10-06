@@ -111,6 +111,59 @@ export function isChildRecordComplete(c: any): boolean {
 
 type CohortKey = '2–3' | '4–6' | '7–9' | '10–12' | '13–14';
 
+export function normalizeStateName(rawState?: string | null): string {
+  if (!rawState) return 'Location not provided';
+  const trimmed = rawState.trim();
+  if (!trimmed || trimmed === '—' || trimmed.toLowerCase() === 'none') return 'Location not provided';
+
+  // Lowercase and remove punctuation except spaces (e.g. "F.C.T." -> "f c t")
+  const clean = trimmed.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // Strip trailing "state" if present e.g. "nasarawa state" -> "nasarawa", "lagos state" -> "lagos"
+  const withoutStateSuffix = clean.replace(/\s+state$/, '').trim();
+
+  // FCT / Abuja matches (Federal Capital Territory)
+  if (
+    withoutStateSuffix === 'fct' ||
+    withoutStateSuffix === 'f c t' ||
+    withoutStateSuffix === 'abuja' ||
+    withoutStateSuffix === 'fct abuja' ||
+    withoutStateSuffix === 'abuja fct' ||
+    withoutStateSuffix === 'f c t abuja' ||
+    withoutStateSuffix === 'federal capital territory' ||
+    withoutStateSuffix === 'federal capital terroty' ||
+    withoutStateSuffix.includes('federal capital') ||
+    withoutStateSuffix.startsWith('fct ') ||
+    withoutStateSuffix.endsWith(' fct')
+  ) {
+    return 'Federal Capital Territory (FCT)';
+  }
+
+  // Proper title casing for all other states (e.g. "NASARAWA" -> "Nasarawa", "LAGOS" -> "Lagos")
+  const words = withoutStateSuffix.split(/\s+/).filter(Boolean).map(w => {
+    return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+  });
+  return words.join(' ') || 'Location not provided';
+}
+
+export function normalizeCountryName(rawCountry?: string | null): string {
+  if (!rawCountry) return 'Location not provided';
+  const trimmed = rawCountry.trim();
+  if (!trimmed || trimmed === '—' || trimmed.toLowerCase() === 'none') return 'Location not provided';
+  const clean = trimmed.toLowerCase();
+  if (clean === 'nigeria' || clean === 'ng' || clean === 'nga') return 'Nigeria';
+  const words = trimmed.split(/\s+/).filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  return words.join(' ') || 'Location not provided';
+}
+
+export function normalizeCityName(rawCity?: string | null): string {
+  if (!rawCity) return 'Location not provided';
+  const trimmed = rawCity.trim();
+  if (!trimmed || trimmed === '—' || trimmed.toLowerCase() === 'none') return 'Location not provided';
+  const words = trimmed.split(/\s+/).filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  return words.join(' ') || 'Location not provided';
+}
+
 export function buildChildrenRegistrationReport(
   reportId: string,
   snapshot: any,
@@ -153,21 +206,25 @@ export function buildChildrenRegistrationReport(
     if (isValid) validParentsCount++;
     parentValidityMap.set(p.id, isValid);
 
-    const country = (p.country || '').trim();
-    const state = (p.state_region || '').trim();
-    const city = (p.city || '').trim();
+    const rawCountry = (p.country || '').trim();
+    const rawState = (p.state_region || '').trim();
+    const rawCity = (p.city || '').trim();
 
-    if (!country) parentsMissingCountry++;
-    if (!state) parentsMissingState++;
-    if (!city) parentsMissingCity++;
+    if (!rawCountry) parentsMissingCountry++;
+    if (!rawState) parentsMissingState++;
+    if (!rawCity) parentsMissingCity++;
 
-    const isComplete = Boolean(country && state && city);
+    const isComplete = Boolean(rawCountry && rawState && rawCity);
     if (isComplete) parentsWithCompleteLocation++;
 
+    const country = rawCountry ? normalizeCountryName(rawCountry) : 'Location not provided';
+    const state = rawState ? normalizeStateName(rawState) : 'Location not provided';
+    const city = rawCity ? normalizeCityName(rawCity) : 'Location not provided';
+
     parentLocationMap.set(p.id, {
-      country: country || 'Location not provided',
-      state: state || 'Location not provided',
-      city: city || 'Location not provided',
+      country,
+      state,
+      city,
       isComplete
     });
   });
@@ -230,11 +287,15 @@ export function buildChildrenRegistrationReport(
     const isParentValid = parentValidityMap.get(parentId) || false;
     if (isParentValid) childrenAttachedToValidParentsCount++;
 
+    const rawChildCtry = (c.parent_country || '').trim();
+    const rawChildSt = (c.parent_state || '').trim();
+    const rawChildCty = (c.parent_city || '').trim();
+
     const parentLoc = parentLocationMap.get(parentId) || {
-      country: (c.parent_country || '').trim() || 'Location not provided',
-      state: (c.parent_state || '').trim() || 'Location not provided',
-      city: (c.parent_city || '').trim() || 'Location not provided',
-      isComplete: Boolean((c.parent_country || '').trim() && (c.parent_state || '').trim() && (c.parent_city || '').trim())
+      country: rawChildCtry ? normalizeCountryName(rawChildCtry) : 'Location not provided',
+      state: rawChildSt ? normalizeStateName(rawChildSt) : 'Location not provided',
+      city: rawChildCty ? normalizeCityName(rawChildCty) : 'Location not provided',
+      isComplete: Boolean(rawChildCtry && rawChildSt && rawChildCty)
     };
 
     if (parentLoc.isComplete) childrenWithCompleteLocation++;
@@ -519,7 +580,7 @@ export function buildChildrenRegistrationReport(
     {
       label: 'VALID CHILD RECORDS',
       value: String(validChildrenCount),
-      sublabel: 'Passed profile integrity',
+      sublabel: 'Complete profiles with photos',
       color: 'charcoal'
     },
     {
@@ -531,31 +592,31 @@ export function buildChildrenRegistrationReport(
     {
       label: 'AGE INELIGIBLE',
       value: String(ineligibleCount),
-      sublabel: `Outside ${eventMinAge}–${eventMaxAge} age requirement`,
+      sublabel: `Outside ${eventMinAge}–${eventMaxAge} age range`,
       color: 'charcoal'
     },
     {
       label: 'ELIGIBLE — PENDING SUBMISSION',
       value: String(pendingSubmissionCount),
-      sublabel: 'Draft / unsubmitted applications',
+      sublabel: 'Drafts waiting for parent submission',
       color: 'amber'
     },
     {
       label: 'UNDER REVIEW',
       value: String(underReviewCount),
-      sublabel: 'Submitted for evaluation',
+      sublabel: 'Submitted and being reviewed',
       color: 'charcoal'
     },
     {
       label: 'APPROVED',
       value: String(approvedCount),
-      sublabel: 'Selected & accepted participants',
+      sublabel: 'Approved participants',
       color: 'green'
     },
     {
       label: 'REJECTED',
       value: String(rejectedCount),
-      sublabel: 'Application declined',
+      sublabel: 'Declined applications',
       color: 'red'
     },
     {
@@ -575,17 +636,17 @@ export function buildChildrenRegistrationReport(
     id: 'sec-executive-summary',
     title: '1. Executive Summary',
     type: 'narrative',
-    description: 'Programme intake, age eligibility, geographic origin, and registration health overview',
+    description: 'Overview of registrations, age qualification, locations, and health notes',
     content: {
-      text: `This report provides a current view of child registration, age eligibility, application progress and health information for the selected event "${event.title}". All age determinations are strictly evaluated against the event start date (21 November 2026) for children ages ${eventMinAge}–${eventMaxAge} inclusive. The database currently registers ${totalChildren} child records, of which ${eligibleCount} (${eligiblePct}%) meet canonical age eligibility requirements and ${ineligibleCount} (${ineligiblePct}%) fall outside the age cohort. Among age-eligible children, ${approvedCount} have been approved, ${underReviewCount} are under review, and ${pendingSubmissionCount} remain draft applications pending parent submission.`,
+      text: `This report provides an up-to-date overview of child registrations, age eligibility, application progress, and health notes for "${event.title}". All children are evaluated for the event (21 November 2026) based on the required age range of ${eventMinAge}–${eventMaxAge} years inclusive. The database currently registers ${totalChildren} child records, of which ${eligibleCount} (${eligiblePct}%) meet the age requirement and ${ineligibleCount} (${ineligiblePct}%) fall outside the age range. Among eligible children, ${approvedCount} are approved, ${underReviewCount} are under review, and ${pendingSubmissionCount} are draft applications waiting for parent submission.`,
       bulletPoints: [
-        `Canonical event: ${event.title} (21–22 November 2026).`,
-        `Configured age criteria: ${eventMinAge}–${eventMaxAge} inclusive evaluated strictly against event start date.`,
-        `${eligibleCount} of ${totalChildren} child records qualify for registration.`,
-        `${validParentsCount} parent profiles meet verified profile completeness standards.`,
-        `Origin analysis: ${distinctCountriesCount || (sortedCountries.some(c => c.key === 'Nigeria') ? 1 : 0)} country, ${distinctStatesCount} states/regions, and ${distinctCitiesCount} cities represented.`,
-        `Age concentration: Peak registration age is Age ${peakAge} (${maxCount} children, ${eligibleCount > 0 ? ((maxCount / eligibleCount) * 100).toFixed(1) : '0.0'}% of eligible demand); lowest registration ages are ${lowestAges.map(a => `Age ${a}`).join(', ')} (${lowestCount} children).`,
-        `${childrenWithEitherHealth.length} children have recorded allergy or medical care notifications requiring kitchen and safeguarding awareness.`
+        `Event: ${event.title} (21–22 November 2026).`,
+        `Age requirement: Ages ${eventMinAge}–${eventMaxAge} inclusive on the event start date.`,
+        `${eligibleCount} of ${totalChildren} children qualify for the programme.`,
+        `${validParentsCount} parent profiles have complete contact and residential information.`,
+        `Locations represented: ${distinctCountriesCount || (sortedCountries.some(c => c.key === 'Nigeria') ? 1 : 0)} country, ${distinctStatesCount} states/regions, and ${distinctCitiesCount} cities.`,
+        `Turnout by age: Highest registration is Age ${peakAge} (${maxCount} children, ${eligibleCount > 0 ? ((maxCount / eligibleCount) * 100).toFixed(1) : '0.0'}% of eligible children); lowest registration is ${lowestAges.map(a => `Age ${a}`).join(', ')} (${lowestCount} children).`,
+        `${childrenWithEitherHealth.length} children have recorded dietary, allergy, or medical care notes for event safety.`
       ]
     }
   });
@@ -598,31 +659,31 @@ export function buildChildrenRegistrationReport(
       'Eligible — Pending submission',
       String(pendingSubmissionCount),
       eligibleCount > 0 ? `${Math.round((pendingSubmissionCount / eligibleCount) * 100)}%` : '0%',
-      'Draft / unsubmitted application awaiting parent completion'
+      'Draft started by parent, waiting for final submission'
     ],
     [
       'Submitted / Under review',
       String(underReviewCount),
       eligibleCount > 0 ? `${Math.round((underReviewCount / eligibleCount) * 100)}%` : '0%',
-      'Passed submission rules, currently in review workflow'
+      'Submitted by parent, currently being reviewed by the registration team'
     ],
     [
       'Approved',
       String(approvedCount),
       eligibleCount > 0 ? `${Math.round((approvedCount / eligibleCount) * 100)}%` : '0%',
-      'Selected and pass authorized'
+      'Accepted and attendance pass confirmed'
     ],
     [
       'Rejected',
       String(rejectedCount),
       eligibleCount > 0 ? `${Math.round((rejectedCount / eligibleCount) * 100)}%` : '0%',
-      'Application evaluated and rejected'
+      'Application reviewed and declined'
     ],
     [
-      'Total Age Eligible (Reconciliation)',
+      'Total Eligible Children',
       String(eligibleCount),
       '100%',
-      'Reconciliation total: Pending + Under Review + Approved + Rejected = Eligible'
+      'All eligible children across all application stages'
     ]
   ];
 
@@ -630,11 +691,11 @@ export function buildChildrenRegistrationReport(
     id: 'sec-registration-status',
     title: '2. Registration Status',
     type: 'table',
-    description: 'Application intake breakdown by authoritative lifecycle status and reconciliation',
+    description: 'Breakdown of applications by current progress and status',
     content: {
-      headers: ['Lifecycle Stage', 'Applications', 'Share of Demand', 'Workflow State'],
+      headers: ['Application Stage', 'Children', '% of Total', 'Current Status'],
       rows: regStatusRows,
-      caption: 'Applications strictly classified by backend verification rules. Incomplete drafts are not marked as rejected.'
+      caption: 'Summary of all registered children by current application status. Unsubmitted drafts remain open for parents to complete.'
     }
   });
 
@@ -653,8 +714,8 @@ export function buildChildrenRegistrationReport(
   const distributionChart: ReportChartSpec = {
     id: 'chart-age-distribution',
     kind: 'bar',
-    title: 'Programme Age Cohort Distribution',
-    subtitle: 'All programme divisions (2–3, 4–6, 7–9, 10–12, 13–14) across application lifecycle stages',
+    title: 'Children by Age Group',
+    subtitle: 'All age groups (2–3, 4–6, 7–9, 10–12, 13–14) by application status',
     labels: ['Ages 2–3', 'Ages 4–6', 'Ages 7–9', 'Ages 10–12', 'Ages 13–14'],
     series: [
       {
@@ -675,18 +736,18 @@ export function buildChildrenRegistrationReport(
     ],
     unit: 'count',
     valueFormat: 'integer',
-    xAxisLabel: 'Programme Cohort',
+    xAxisLabel: 'Age Group',
     yAxisLabel: 'Children Count',
     showLegend: true,
-    caption: 'Age group counts reconcile exactly with total age-eligible records. Zero-value cohorts remain visible.',
-    accessibleSummary: 'Bar chart illustrating total applications, pending submissions, and approved participants across all five programme divisions.'
+    caption: 'Age group counts match total eligible children. All age groups are shown.',
+    accessibleSummary: 'Bar chart showing eligible children, pending submissions, and approved participants across all age groups.'
   };
 
   sections.push({
     id: 'sec-age-distribution',
-    title: '3. Age Group Distribution',
+    title: '3. Age Group Breakdown',
     type: 'chart',
-    description: 'Participation profile across all five canonical programme age cohorts',
+    description: 'Number of children registered across each programme age group',
     content: {
       charts: [distributionChart]
     }
@@ -694,13 +755,13 @@ export function buildChildrenRegistrationReport(
 
   sections.push({
     id: 'sec-age-cohort-table',
-    title: '3.1 Age Cohort Breakdown Table',
+    title: '3.1 Age Group Summary Table',
     type: 'table',
-    description: 'Reconciled figures across all five programme cohorts',
+    description: 'Summary figures across all five age groups',
     content: {
-      headers: ['Age Group', 'Total Children', 'Eligible', 'Pending Submission', 'Under Review', 'Approved', 'Rejected'],
+      headers: ['Age Group', 'Total Registered', 'Age Eligible', 'Pending Submission', 'Under Review', 'Approved', 'Rejected'],
       rows: ageCohortRows,
-      caption: 'Cohort totals reconcile exactly: 2–3 + 4–6 + 7–9 + 10–12 + 13–14 = Total Age Eligible.'
+      caption: 'Combined totals across all age groups: 2–3 + 4–6 + 7–9 + 10–12 + 13–14 = Total Eligible Children.'
     }
   });
 
@@ -715,19 +776,19 @@ export function buildChildrenRegistrationReport(
     else if (a >= 10 && a <= 12) cohortStr = '10–12 Years';
     else if (a >= 13 && a <= 14) cohortStr = '13–14 Years';
 
-    let significance = 'Standard intake';
+    let significance = 'Standard Turnout';
     if (a === peakAge) {
-      significance = 'Peak Intake (Highest Demand)';
+      significance = 'Highest Registration (Peak)';
     } else if (cnt === 0) {
-      significance = 'Floor Intake (Zero Registrations)';
+      significance = 'No Registrations Yet';
     } else if (lowestAges.includes(a)) {
-      significance = 'Floor Intake (Lowest Demand)';
+      significance = 'Lowest Registration';
     } else if (cnt >= 50) {
-      significance = 'High Intake';
+      significance = 'High Turnout';
     } else if (cnt >= 10) {
-      significance = 'Moderate Intake';
+      significance = 'Moderate Turnout';
     } else {
-      significance = 'Low Intake';
+      significance = 'Low Turnout';
     }
 
     singleYearRows.push([
@@ -744,18 +805,18 @@ export function buildChildrenRegistrationReport(
     'All Cohorts',
     String(eligibleCount),
     '100.0%',
-    `Peak: Age ${peakAge} (${maxCount} children) · Lowest: ${lowestAges.map(a => `Age ${a}`).join(', ')} (${lowestCount} children)`
+    `Highest: Age ${peakAge} (${maxCount} children) · Lowest: ${lowestAges.map(a => `Age ${a}`).join(', ')} (${lowestCount} children)`
   ]);
 
   sections.push({
     id: 'sec-age-single-year-table',
-    title: '3.2 Single-Year Age Distribution & Peak / Lowest Intake Analysis',
+    title: '3.2 Exact Age Breakdown (Highest & Lowest Registrations)',
     type: 'table',
-    description: `Granular single-year demand from Age ${eventMinAge} to ${eventMaxAge}. Peak registration: Age ${peakAge} (${maxCount} children, ${eligibleCount > 0 ? ((maxCount / eligibleCount) * 100).toFixed(1) : '0.0'}%). Lowest intake: ${lowestAges.map(a => `Age ${a}`).join(' & ')} (${lowestCount} children).`,
+    description: `Breakdown by individual age from Age ${eventMinAge} to ${eventMaxAge}. Highest registration: Age ${peakAge} (${maxCount} children, ${eligibleCount > 0 ? ((maxCount / eligibleCount) * 100).toFixed(1) : '0.0'}%). Lowest registration: ${lowestAges.map(a => `Age ${a}`).join(' & ')} (${lowestCount} children).`,
     content: {
-      headers: ['Exact Age', 'Programme Cohort', 'Children Registered', 'Share of Demand', 'Intake Significance'],
+      headers: ['Exact Age', 'Age Group', 'Children Registered', '% of Total', 'Turnout Level'],
       rows: singleYearRows,
-      caption: `Distribution highlights registration demand concentrations. Age ${peakAge} represents the single highest intake age across all participants.`
+      caption: `Individual age breakdown shows registration distribution. Age ${peakAge} has the highest number of registered children.`
     }
   });
 
@@ -771,20 +832,20 @@ export function buildChildrenRegistrationReport(
         c.parentCity,
         c.parentState,
         c.parentCountry,
-        'Ineligible',
+        'Outside Age Range',
         c.eligibilityReason
       ])
-    : [['None', '—', '—', '—', '—', '—', '—', 'Eligible', 'No ineligible child records in active database']];
+    : [['None', '—', '—', '—', '—', '—', '—', 'Eligible', 'No children outside age range']];
 
   sections.push({
     id: 'sec-age-eligibility',
-    title: '4. Age Eligibility Analysis',
+    title: '4. Age Eligibility Check',
     type: 'table',
-    description: `Eligibility breakdown: ${eligibleCount} Eligible (${eligiblePct}%) vs ${ineligibleCount} Ineligible (${ineligiblePct}%)`,
+    description: `Age qualification: ${eligibleCount} Eligible (${eligiblePct}%) vs ${ineligibleCount} Outside Age Range (${ineligiblePct}%)`,
     content: {
       headers: ['Child', 'Date of Birth', 'Age on Event', 'Parent / Guardian', 'City', 'State / Region', 'Country', 'Eligibility', 'Reason'],
       rows: ineligibleTableRows,
-      caption: `Displaying ${ineligibleChildren.length > 100 ? 'first 100 of ' : ''}${ineligibleCount} ineligible records. Reasons are factual based on the canonical 2–12 age window.`
+      caption: `Displaying ${ineligibleChildren.length > 100 ? 'first 100 of ' : ''}${ineligibleCount} records outside the required 2–14 age range. Explanations are based on the child's birth date.`
     }
   });
 
@@ -800,7 +861,7 @@ export function buildChildrenRegistrationReport(
         c.parentCity,
         c.parentState,
         c.parentCountry,
-        'Draft / Incomplete',
+        'Draft (Waiting for Parent)',
         formatDateSafe(c.lastUpdated),
         c.missingStateSummary
       ])
@@ -808,13 +869,13 @@ export function buildChildrenRegistrationReport(
 
   sections.push({
     id: 'sec-eligible-pending',
-    title: '5. Eligible but Pending Submission',
+    title: '5. Registered Children Awaiting Parent Submission',
     type: 'table',
-    description: `Total Eligible Pending Submission: ${pendingSubmissionCount} child records. Excludes all age-ineligible records.`,
+    description: `Total eligible children with incomplete or unsubmitted drafts: ${pendingSubmissionCount}. (Excludes children outside the 2–14 age range).`,
     content: {
-      headers: ['Child', 'Age', 'Cohort', 'Parent / Guardian', 'City', 'State / Region', 'Country', 'Status', 'Last Updated', 'Missing Details / State'],
+      headers: ['Child', 'Age', 'Age Group', 'Parent / Guardian', 'City', 'State / Region', 'Country', 'Status', 'Last Updated', 'What is Needed to Complete'],
       rows: pendingSubmissionRows,
-      caption: `Displaying ${eligiblePendingSubmission.length > 150 ? 'first 150 of ' : ''}${pendingSubmissionCount} eligible children awaiting parent submission.`
+      caption: `Displaying ${eligiblePendingSubmission.length > 150 ? 'first 150 of ' : ''}${pendingSubmissionCount} eligible children waiting for parents to complete and submit their registration.`
     }
   });
 
@@ -857,37 +918,37 @@ export function buildChildrenRegistrationReport(
 
   sections.push({
     id: 'sec-registration-origin-country',
-    title: '6. Registration Origin — Country Distribution',
+    title: '6. Where Families Are Coming From — Countries',
     type: 'table',
-    description: `Geographic profile based on parent residence. ${distinctCountriesCount || (sortedCountries.some(c => c.key === 'Nigeria') ? 1 : 0)} country represented; ${childrenWithCompleteLocation} children with complete location, ${childrenWithIncompleteLocation} missing location.`,
+    description: `Geographic profile based on parent addresses. ${distinctCountriesCount || (sortedCountries.some(c => c.key === 'Nigeria') ? 1 : 0)} country represented; ${childrenWithCompleteLocation} children with complete address details, ${childrenWithIncompleteLocation} with address details pending.`,
     content: {
-      headers: ['Country', 'Children', 'Eligible', 'Pending Submission', 'Under Review', 'Approved', 'Rejected', 'Share of Total'],
+      headers: ['Country', 'Children', 'Eligible', 'Pending Submission', 'Under Review', 'Approved', 'Rejected', '% of Total'],
       rows: countryTableRows,
-      caption: 'Registration origin is derived strictly from verified Parent / Guardian residential profiles. Exact street addresses are omitted.'
+      caption: 'Locations are based on residential details provided by parents. Exact street addresses are omitted for privacy.'
     }
   });
 
   sections.push({
     id: 'sec-registration-origin-state',
-    title: '6.1 Registration Origin — State & Region Distribution',
+    title: '6.1 States & Regions Breakdown',
     type: 'table',
-    description: `State/regional distribution across registrations (${distinctStatesCount} states/regions recorded)`,
+    description: `Distribution of registered families across states and regions (${distinctStatesCount} states/regions recorded)`,
     content: {
-      headers: ['State / Region', 'Children', 'Eligible', 'Pending', 'Under Review', 'Approved', 'Rejected', 'Percentage'],
+      headers: ['State / Region', 'Children', 'Eligible', 'Pending Submission', 'Under Review', 'Approved', 'Rejected', 'Percentage'],
       rows: stateTableRows,
-      caption: 'Missing states are classified as "Location not provided" without combining with known regions.'
+      caption: 'Unspecified locations are shown as "Location not provided". Variations of the Federal Capital Territory (FCT, Abuja) are unified.'
     }
   });
 
   sections.push({
     id: 'sec-registration-origin-city',
-    title: '6.2 Registration Origin — City Distribution',
+    title: '6.2 Cities Breakdown',
     type: 'table',
-    description: `City-level distribution across parent registrations (${distinctCitiesCount} cities recorded)`,
+    description: `Distribution of registered families across cities and towns (${distinctCitiesCount} cities recorded)`,
     content: {
-      headers: ['City', 'State / Region', 'Country', 'Children', 'Eligible', 'Pending', 'Under Review', 'Approved', 'Rejected'],
+      headers: ['City', 'State / Region', 'Country', 'Children', 'Eligible', 'Pending Submission', 'Under Review', 'Approved', 'Rejected'],
       rows: cityTableRows,
-      caption: 'Complete municipality distribution of registered families.'
+      caption: 'City distribution of registered families based on profile entries.'
     }
   });
 
@@ -898,8 +959,8 @@ export function buildChildrenRegistrationReport(
   const originChart: ReportChartSpec = {
     id: 'chart-origin-distribution',
     kind: 'bar',
-    title: 'Top Registration Origins by State / Region',
-    subtitle: 'Child count distribution across primary parent residential territories',
+    title: 'Top States & Regions by Registration',
+    subtitle: 'Number of registered children across primary residential states and territories',
     labels: topStateLabels,
     series: [
       {
@@ -913,91 +974,91 @@ export function buildChildrenRegistrationReport(
     xAxisLabel: 'State / Region',
     yAxisLabel: 'Children Count',
     showLegend: false,
-    caption: 'Distribution reflects current residential data provided on parent profiles.',
-    accessibleSummary: 'Horizontal bar chart illustrating parent residence distribution by territory.'
+    caption: 'Locations reflect residential data provided on parent profiles. FCT and Abuja entries are unified.',
+    accessibleSummary: 'Bar chart showing child registration counts by state and territory.'
   };
 
   sections.push({
     id: 'sec-registration-origin-chart',
-    title: '6.3 Geographic Distribution Visual',
+    title: '6.3 Top States & Regions (Chart)',
     type: 'chart',
-    description: 'Visual distribution of parent origin and residence',
+    description: 'Visual overview of where registered families reside',
     content: {
       charts: [originChart]
     }
   });
 
   // =========================================================================
-  // 7. REGISTRATION DATA QUALITY (Section 9 & 15)
+  // 7. PROFILE & RECORD COMPLETENESS
   // =========================================================================
   const dataQualityRows = [
     [
-      'Parent profile completeness',
+      'Parent contact and profile details',
       String(totalParents),
       String(validParentsCount),
       String(incompleteParentsCount),
       totalParents > 0 ? `${Math.round((validParentsCount / totalParents) * 100)}% complete` : '—'
     ],
     [
-      'Child record completeness',
+      'Child details and photos',
       String(totalChildren),
       String(validChildrenCount),
       String(incompleteChildrenCount),
       totalChildren > 0 ? `${Math.round((validChildrenCount / totalChildren) * 100)}% complete` : '—'
     ],
     [
-      'Children attached to valid parents',
+      'Children linked to complete parent profiles',
       String(totalChildren),
       String(childrenAttachedToValidParentsCount),
       String(childrenAttachedToIncompleteParentsCount),
-      totalChildren > 0 ? `${Math.round((childrenAttachedToValidParentsCount / totalChildren) * 100)}% valid parent link` : '—'
+      totalChildren > 0 ? `${Math.round((childrenAttachedToValidParentsCount / totalChildren) * 100)}% complete` : '—'
     ],
     [
-      'Parents with complete location data',
+      'Parents with city and state provided',
       String(totalParents),
       String(parentsWithCompleteLocation),
       String(totalParents - parentsWithCompleteLocation),
-      totalParents > 0 ? `${Math.round((parentsWithCompleteLocation / totalParents) * 100)}% complete location` : '—'
+      totalParents > 0 ? `${Math.round((parentsWithCompleteLocation / totalParents) * 100)}% complete` : '—'
     ],
     [
-      'Parents missing country',
+      'Parents without country',
       String(totalParents),
       String(totalParents - parentsMissingCountry),
       String(parentsMissingCountry),
       totalParents > 0 ? `${Math.round((parentsMissingCountry / totalParents) * 100)}% missing` : '—'
     ],
     [
-      'Parents missing state/region',
+      'Parents without state or region',
       String(totalParents),
       String(totalParents - parentsMissingState),
       String(parentsMissingState),
       totalParents > 0 ? `${Math.round((parentsMissingState / totalParents) * 100)}% missing` : '—'
     ],
     [
-      'Parents missing city',
+      'Parents without city or town',
       String(totalParents),
       String(totalParents - parentsMissingCity),
       String(parentsMissingCity),
       totalParents > 0 ? `${Math.round((parentsMissingCity / totalParents) * 100)}% missing` : '—'
     ],
     [
-      'Children linked to complete location parents',
+      'Children with full family location',
       String(totalChildren),
       String(childrenWithCompleteLocation),
       String(childrenWithIncompleteLocation),
-      totalChildren > 0 ? `${Math.round((childrenWithCompleteLocation / totalChildren) * 100)}% complete location` : '—'
+      totalChildren > 0 ? `${Math.round((childrenWithCompleteLocation / totalChildren) * 100)}% complete` : '—'
     ]
   ];
 
   sections.push({
     id: 'sec-data-quality',
-    title: '7. Registration Data Quality',
+    title: '7. Profile & Record Completeness',
     type: 'table',
-    description: 'Integrity compliance evaluated against canonical parent, child, and location validation rules',
+    description: 'Overview of completed contact details, addresses, and photos across parent and child records',
     content: {
-      headers: ['Data Domain', 'Total Records', 'Valid / Complete', 'Incomplete', 'Integrity Rate'],
+      headers: ['Record Type', 'Total Records', 'Completed', 'Needs Attention', 'Completion Rate'],
       rows: dataQualityRows,
-      caption: 'Valid parent profiles require verified phone, home address, residential details, and compulsory profile photo. Child records require valid name, gender, DOB, and child photo.'
+      caption: 'Complete parent profiles include phone number, home address, and photo. Complete child records include full name, gender, date of birth, and photo.'
     }
   });
 
@@ -1017,11 +1078,11 @@ export function buildChildrenRegistrationReport(
     id: 'sec-health-summary',
     title: '8. Health & Safety Summary',
     type: 'table',
-    description: `Safeguarding awareness: ${childrenWithEitherHealth.length} children with medical/allergy notes across cohorts`,
+    description: `Health awareness: ${childrenWithEitherHealth.length} children with allergy or medical notes across all age groups`,
     content: {
-      headers: ['Age Cohort', 'Children with Allergies', 'Children with Medical Notes', 'Children with Both', 'Children with Either'],
+      headers: ['Age Group', 'Children with Allergies', 'Children with Medical Notes', 'Children with Both', 'Children with Either'],
       rows: healthSummaryRows,
-      caption: 'Restricted safeguarding aggregate figures. Kitchen and first aid coordinators receive anonymised summaries only.'
+      caption: 'Confidential health summary. Kitchen and first aid coordinators receive anonymized summaries only to ensure child safety.'
     }
   });
 
@@ -1043,13 +1104,13 @@ export function buildChildrenRegistrationReport(
 
   sections.push({
     id: 'sec-health-detail-register',
-    title: '9. Health Detail Register — Sensitive Information (Admin Access Only)',
+    title: '9. Medical & Allergy Notes (Confidential — Admin Access Only)',
     type: 'table',
-    description: 'Sensitive medical and allergy registers. Admin-only access. Do not expose in public, volunteer, or parent reporting.',
+    description: 'Sensitive medical and allergy registers for administrative and medical coordination. Confidential access only.',
     content: {
-      headers: ['Child', 'Age', 'Cohort', 'Application Status', 'Parent / Guardian', 'Allergies', 'Medical Notes'],
+      headers: ['Child', 'Age', 'Age Group', 'Application Status', 'Parent / Guardian', 'Allergies', 'Medical Notes'],
       rows: healthDetailRows,
-      caption: 'Sensitive information — Admin access only. Empty entries are excluded.'
+      caption: 'Confidential health information — Admin access only. Empty entries are excluded.'
     }
   });
 
@@ -1061,7 +1122,7 @@ export function buildChildrenRegistrationReport(
     c.dateOfBirth,
     c.ageOnEventDate !== null ? `${c.ageOnEventDate} yrs` : '—',
     c.ageCohort || 'Out of range',
-    c.isEligible ? 'Eligible' : 'Ineligible',
+    c.isEligible ? 'Eligible' : 'Outside Age Range',
     c.applicationStatusLabel,
     c.applicationStatus === 'approved' ? 'Approved' : (c.applicationStatus === 'rejected' ? 'Rejected' : (c.applicationStatus === 'under_review' ? 'In Review' : 'Pending')),
     c.parentName,
@@ -1073,13 +1134,13 @@ export function buildChildrenRegistrationReport(
 
   sections.push({
     id: 'sec-child-register',
-    title: '10. Detailed Child Register',
+    title: '10. Complete Children List',
     type: 'table',
-    description: `Structured register of children (${processedChildren.length} total entries recorded)`,
+    description: `Complete list of registered children (${processedChildren.length} total entries recorded)`,
     content: {
-      headers: ['Child', 'Date of Birth', 'Age on Event', 'Cohort', 'Eligibility', 'Application Status', 'Review Status', 'Parent / Guardian', 'City', 'State / Region', 'Country', 'Health Flag'],
+      headers: ['Child Name', 'Date of Birth', 'Age on Event', 'Age Group', 'Eligibility', 'Application Stage', 'Current Status', 'Parent / Guardian', 'City', 'State / Region', 'Country', 'Health Note'],
       rows: childRegisterRows.length > 0 ? childRegisterRows : [['No child records in database.', '—', '—', '—', '—', '—', '—', '—', '—', '—', '—', 'None']],
-      caption: `Showing ${processedChildren.length > 150 ? 'first 150 of ' : ''}${processedChildren.length} child records. Health flag indicates presence of allergy or care notifications without disclosing private medical text.`
+      caption: `Showing ${processedChildren.length > 150 ? 'first 150 of ' : ''}${processedChildren.length} child records. Health note indicates whether allergy or medical care is needed without disclosing private medical text.`
     }
   });
 
@@ -1087,32 +1148,32 @@ export function buildChildrenRegistrationReport(
   const findings: ReportFinding[] = [
     {
       id: 'f1',
-      title: 'Intake and Eligibility Overview',
-      observation: `${eligibleCount} of ${totalChildren} child records (${eligiblePct}%) satisfy the ${eventMinAge}–${eventMaxAge} age eligibility criteria on the event date (21 November 2026).`,
+      title: 'Registration and Age Qualification Overview',
+      observation: `${eligibleCount} of ${totalChildren} registered children (${eligiblePct}%) meet the ${eventMinAge}–${eventMaxAge} age requirement on the date of the event (21 November 2026).`,
       severity: 'info'
     },
     {
       id: 'f2',
-      title: 'Eligible Applications Pending Submission',
-      observation: `${pendingSubmissionCount} children are age-eligible but remain in draft or unsubmitted state, representing the largest intake opportunity before registration closure.`,
+      title: 'Draft Registrations Waiting for Parent Submission',
+      observation: `${pendingSubmissionCount} children meet the age requirement but their parents have not yet submitted the final application. This represents the largest group to follow up with before registration closes.`,
       severity: pendingSubmissionCount > 50 ? 'attention' : 'info'
     },
     {
       id: 'f3',
-      title: 'Safeguarding and Care Readiness',
-      observation: `${childrenWithEitherHealth.length} children have recorded dietary, allergy, or special medical support notices requiring operational coordination.`,
+      title: 'Health, Allergy & Care Preparedness',
+      observation: `${childrenWithEitherHealth.length} children have recorded food allergies or medical care notes that the kitchen and first aid teams need to be prepared for.`,
       severity: 'info'
     },
     {
       id: 'f4',
-      title: 'Geographic and Origin Demographics',
-      observation: `Registrations originate from ${distinctCountriesCount || (sortedCountries.some(c => c.key === 'Nigeria') ? 1 : 0)} country, ${distinctStatesCount} states/regions, and ${distinctCitiesCount} cities, with ${childrenWithCompleteLocation} children linked to fully documented residential profiles.`,
+      title: 'Where Registered Families Are Coming From',
+      observation: `Families are attending from ${distinctCountriesCount || (sortedCountries.some(c => c.key === 'Nigeria') ? 1 : 0)} country, ${distinctStatesCount} states/regions, and ${distinctCitiesCount} cities, with the Federal Capital Territory (FCT) being the primary location.`,
       severity: 'info'
     },
     {
       id: 'f5',
-      title: 'Age Registration Concentrations & Outliers',
-      observation: `Age ${peakAge} is the single highest registration age with ${maxCount} children (${eligibleCount > 0 ? ((maxCount / eligibleCount) * 100).toFixed(1) : '0.0'}% of eligible demand), followed by Age 7 (66) and Age 9 (57). Conversely, Ages ${lowestAges.join(', ')} have ${lowestCount} registrations, and Age 2 and Age 6 have only 1 child each.`,
+      title: 'Ages with Highest and Lowest Registrations',
+      observation: `Age ${peakAge} has the highest number of children registered with ${maxCount} children (${eligibleCount > 0 ? ((maxCount / eligibleCount) * 100).toFixed(1) : '0.0'}% of all eligible children). The lowest registrations are at ${lowestAges.map(a => `Age ${a}`).join(', ')} with ${lowestCount} children.`,
       severity: 'info'
     }
   ];
@@ -1120,31 +1181,31 @@ export function buildChildrenRegistrationReport(
   const recommendations: ReportRecommendation[] = [
     {
       id: 'r1',
-      action: 'Targeted Outreach for Draft Application Completion',
-      rationale: `${pendingSubmissionCount} eligible children have initiated registrations but not submitted final applications. Direct reminder notices should be dispatched to parents.`,
+      action: 'Send Friendly Reminders to Parents with Draft Applications',
+      rationale: `${pendingSubmissionCount} eligible children have started registrations that are not yet submitted. A quick reminder message will help parents complete and submit them on time.`,
       priority: 'high',
       responsibility: 'Registration Coordinators'
     },
     {
       id: 'r2',
-      action: 'Brief Safeguarding & Kitchen Leads on Care Flags',
-      rationale: `${childrenWithEitherHealth.length} registered children have dietary or medical notifications requiring cross-departmental awareness before check-in.`,
+      action: 'Brief Kitchen and First Aid Teams on Special Care Notes',
+      rationale: `${childrenWithEitherHealth.length} registered children have dietary restrictions or medical care notes that team leads should review before check-in begins.`,
       priority: 'high',
-      responsibility: 'Safeguarding & Logistics Leads'
+      responsibility: 'Kitchen & First Aid Leads'
     },
     {
       id: 'r3',
-      action: 'Follow Up Incomplete Parent Profile Records',
-      rationale: `${incompleteParentsCount} parent accounts have missing contact details or unconfirmed photos needed for authorized check-in and pickup security.`,
+      action: 'Reach Out to Parents with Incomplete Contact Details',
+      rationale: `${incompleteParentsCount} parent accounts are missing phone numbers or photos needed for secure check-in and child pickup.`,
       priority: 'medium',
       responsibility: 'Parent Support Team'
     }
   ];
 
   const managementAttention = [
-    `${pendingSubmissionCount} eligible child applications are unsubmitted drafts requiring completion follow-up.`,
-    `${childrenWithEitherHealth.length} children require allergy or medical attention during event sessions.`,
-    `${ineligibleCount} children fall outside the ${eventMinAge}–${eventMaxAge} age cohort and cannot be issued standard access passes.`
+    `${pendingSubmissionCount} eligible children have draft applications waiting for parents to submit.`,
+    `${childrenWithEitherHealth.length} children have allergy or medical notes that event teams need to be aware of.`,
+    `${ineligibleCount} children fall outside the required ${eventMinAge}–${eventMaxAge} age range.`
   ];
 
   const reportingStartDate = eventDate;
@@ -1155,7 +1216,7 @@ export function buildChildrenRegistrationReport(
     templateKey: 'children-registration-report',
     templateVersion: 1,
     reportTitle: 'The General Assembly — Children & Registration Report',
-    reportDescription: `Authoritative registration, age eligibility, intake progress, geographic origin, data quality, and health intelligence for ${event.title || 'The General Assembly 2026'}`,
+    reportDescription: `Comprehensive registration, age eligibility, intake progress, location breakdown, profile completeness, and health summary for ${event.title || 'The General Assembly 2026'}`,
     coverStyle: 'charcoal',
     coverSubtitle: 'Children & Teens Session 2026',
     eventContext: {
@@ -1189,17 +1250,17 @@ export function buildChildrenRegistrationReport(
     dataQuality: {
       score: validChildrenCount > 0 ? Math.round((validChildrenCount / totalChildren) * 100) : 95,
       status: 'High confidence',
-      notes: 'All age eligibility evaluations derived directly from database date-of-birth records evaluated against the event start date. Profile validity follows canonical platform rules.'
+      notes: 'All age eligibility evaluations are calculated directly from birth dates against the event start date. Profile completeness follows standard platform rules.'
     },
     methodology: [
-      'Age calculations are strictly evaluated against the event start date (21 November 2026) using calendar day arithmetic.',
-      'Age cohorts follow canonical programme divisions: 2–3, 4–6, 7–9, 10–12, and 13–14 years inclusive.',
-      'Application lifecycle stages are derived strictly from child_event_entries status and submission timestamps.',
-      'Registration origin is evaluated strictly from linked Parent / Guardian profiles.',
-      'Medical and allergy classifications are restricted to authorised administrative review.'
+      'Age calculations are evaluated as of the event start date (21 November 2026).',
+      'Age groups follow five programme divisions: 2–3, 4–6, 7–9, 10–12, and 13–14 years inclusive.',
+      'Application stages reflect real-time submission and review progress.',
+      'Locations are based on residential information provided on parent profiles.',
+      'Medical and allergy details are restricted to authorized team leads for child safety.'
     ],
     limitations: [
-      'Children without a provided date of birth are classified as ineligible until verified.',
+      'Children without a provided date of birth cannot be verified for age eligibility.',
       'Draft applications reflect real-time unsubmitted states and may change as parents update profiles.'
     ]
   };

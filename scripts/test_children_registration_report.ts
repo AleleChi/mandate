@@ -8,6 +8,9 @@ import {
   classifyChildHealth, 
   isParentProfileComplete, 
   isChildRecordComplete,
+  normalizeStateName,
+  normalizeCountryName,
+  normalizeCityName,
   buildChildrenRegistrationReport
 } from '../src/server/reports/templates/childrenRegistrationReport';
 import { calculateAgeOnDate, checkEventEligibility } from '../src/server/services/eligibilityService';
@@ -158,6 +161,24 @@ async function runTests() {
   assert.strictEqual(isChildRecordComplete(incompleteChildSample), false, 'Incomplete child record must be invalid');
 
   console.log('✓ Parent and child profile validity predicates passed successfully.');
+
+  // Test 3.5: State Normalization for FCT / Abuja
+  console.log('\n--- TEST SET 3.5: GEOGRAPHIC STATE NORMALIZATION (FCT / ABUJA) ---');
+  assert.strictEqual(normalizeStateName('FCT'), 'Federal Capital Territory (FCT)');
+  assert.strictEqual(normalizeStateName('fct'), 'Federal Capital Territory (FCT)');
+  assert.strictEqual(normalizeStateName('f.c.t'), 'Federal Capital Territory (FCT)');
+  assert.strictEqual(normalizeStateName('F.C.T.'), 'Federal Capital Territory (FCT)');
+  assert.strictEqual(normalizeStateName('Abuja'), 'Federal Capital Territory (FCT)');
+  assert.strictEqual(normalizeStateName('ABUJA'), 'Federal Capital Territory (FCT)');
+  assert.strictEqual(normalizeStateName('Federal Capital Territory'), 'Federal Capital Territory (FCT)');
+  assert.strictEqual(normalizeStateName('federal capital terroty'), 'Federal Capital Territory (FCT)');
+  assert.strictEqual(normalizeStateName('FCT Abuja'), 'Federal Capital Territory (FCT)');
+  assert.strictEqual(normalizeStateName('Nasarawa'), 'Nasarawa');
+  assert.strictEqual(normalizeStateName('NASARAWA'), 'Nasarawa');
+  assert.strictEqual(normalizeStateName('Lagos State'), 'Lagos');
+  assert.strictEqual(normalizeStateName(''), 'Location not provided');
+  assert.strictEqual(normalizeStateName(null), 'Location not provided');
+  console.log('✓ State normalization correctly maps FCT / Abuja variations to "Federal Capital Territory (FCT)".');
 
   // Test 4: Live Snapshot Compilation & Full Document Model Test (Section 23 & 25)
   console.log('\n--- TEST SET 4: LIVE REPORT SNAPSHOT & CONSISTENCY ASSERTIONS ---');
