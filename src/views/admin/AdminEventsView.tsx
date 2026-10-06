@@ -66,11 +66,11 @@ interface EventData {
 }
 
 const defaultAgeGroups: AgeGroup[] = [
-  { label: 'Below', minAge: 0, maxAge: 1, capacity: 20, manualReview: true },
-  { label: 'Ages 1', minAge: 1, maxAge: 3, capacity: 50, manualReview: true },
-  { label: 'Ages 4', minAge: 4, maxAge: 6, capacity: 60, manualReview: false },
-  { label: 'Ages 7', minAge: 7, maxAge: 9, capacity: 80, manualReview: false },
-  { label: 'Ages 10', minAge: 10, maxAge: 12, capacity: 100, manualReview: false }
+  { label: '2–3', minAge: 2, maxAge: 3, capacity: 50, manualReview: false },
+  { label: '4–6', minAge: 4, maxAge: 6, capacity: 60, manualReview: false },
+  { label: '7–9', minAge: 7, maxAge: 9, capacity: 80, manualReview: false },
+  { label: '10–12', minAge: 10, maxAge: 12, capacity: 100, manualReview: false },
+  { label: '13–14', minAge: 13, maxAge: 14, capacity: 50, manualReview: false }
 ];
 
 interface AdminEventsViewProps {
@@ -1137,7 +1137,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                     className="h-3.5 w-3.5 rounded-sm border-zinc-300 dark:border-[#3D3B35] text-[#C59B27] focus:ring-[#C59B27]/40 cursor-pointer bg-transparent"
                   />
                   <label htmlFor="allow-overlapping-ages" className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium select-none cursor-pointer">
-                    Allow overlapping age ranges (e.g. Below 0-1 and Ages 1-3)
+                    Allow overlapping age ranges (e.g. Ages 2-3 and Ages 3-5)
                   </label>
                 </div>
               </div>

@@ -574,13 +574,18 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
   };
 
   const getSuggestedGroup = () => {
-    const age = app.child.age;
-    if (age < 1) return 'Below 1';
-    if (age < 3) return 'Ages 1 to 2';
-    if (age < 6) return 'Ages 3 to 5';
-    if (age < 10) return 'Ages 6 to 9';
-    if (age < 13) return 'Ages 10 to 12';
-    return 'Teens';
+    if (app.child?.ageGroup && app.child.ageGroup !== 'Age review needed' && !app.child.ageGroup.includes('Review Needed')) {
+      return app.child.ageGroup.replace('to', '–');
+    }
+    const age = app.child?.age;
+    if (typeof age !== 'number' || isNaN(age) || age < 2 || age > 14) {
+      return 'Age review needed';
+    }
+    if (age <= 3) return '2–3';
+    if (age <= 6) return '4–6';
+    if (age <= 9) return '7–9';
+    if (age <= 12) return '10–12';
+    return '13–14';
   };
 
   return (

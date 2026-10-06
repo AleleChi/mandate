@@ -37,6 +37,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
   const [dbStats, setDbStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   
   // View states
   const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(null);
@@ -73,17 +74,20 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
     else setRefreshing(true);
 
     try {
-      const res = await api.admin.getApplications();
+      const res = await api.admin.getApplications({ limit: 1000 });
       if (res.success) {
         setApplications(res.applications || []);
         if (res.stats) {
           setDbStats(res.stats);
         }
+        setFetchError(null);
       }
     } catch (err: any) {
       console.error('[AdminReviewBoardView - fetchApplications Error]:', err);
       const parsed = extractApiError(err);
-      showError('Fetch Failed', parsed.message || 'Could not load registration records.');
+      const errMsg = parsed.message || 'Could not load registration records.';
+      setFetchError(errMsg);
+      showError('Fetch Failed', errMsg);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -137,7 +141,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
   // Enrich applications with contextual attention conditions and sibling relationships
   const enrichedApplications = useMemo(() => {
     return applications.map(app => {
-      const isBelowAge = (app.child?.age !== undefined && app.child?.age !== null) ? app.child.age < 1 : false;
+      const isBelowAge = (app.child?.age !== undefined && app.child?.age !== null) ? (app.child.age < 2 || app.child.age > 14) : false;
       const isMissingPickupPhoto = app.pickupPeople && app.pickupPeople.length > 0 && app.pickupPeople.some((p: any) => !p.photoUrl);
       const isMissingChildPhoto = !app.child?.photoUrl;
       const hasMedicalNotes = !!app.hasMedicalNotes || !!app.medicalNotes;
@@ -210,20 +214,20 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
 
   // Capacity Limits and real progress values
   const capacityStats = useMemo(() => {
-    const limits = {
-      under1: 10,
-      toddler: 30,
-      preschool: 40,
-      primary: 50,
-      preteen: 40
+    const limits: Record<string, number> = {
+      '2–3': 30,
+      '4–6': 40,
+      '7–9': 50,
+      '10–12': 40,
+      '13–14': 30
     };
 
-    const counts = {
-      under1: 0,
-      toddler: 0,
-      preschool: 0,
-      primary: 0,
-      preteen: 0
+    const counts: Record<string, number> = {
+      '2–3': 0,
+      '4–6': 0,
+      '7–9': 0,
+      '10–12': 0,
+      '13–14': 0
     };
 
     enrichedApplications.forEach(app => {
@@ -231,25 +235,26 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
       if (!isSelected) return;
 
       const age = app.child?.age;
-      if (age < 1) {
-        counts.under1++;
-      } else if (age >= 1 && age <= 3) {
-        counts.toddler++;
+      if (typeof age !== 'number' || isNaN(age)) return;
+      if (age >= 2 && age <= 3) {
+        counts['2–3']++;
       } else if (age >= 4 && age <= 6) {
-        counts.preschool++;
+        counts['4–6']++;
       } else if (age >= 7 && age <= 9) {
-        counts.primary++;
+        counts['7–9']++;
       } else if (age >= 10 && age <= 12) {
-        counts.preteen++;
+        counts['10–12']++;
+      } else if (age >= 13 && age <= 14) {
+        counts['13–14']++;
       }
     });
 
     return [
-      { id: 'under1', label: 'Under 1 year', current: counts.under1, limit: limits.under1 },
-      { id: 'toddler', label: 'Toddlers (ages 1–3)', current: counts.toddler, limit: limits.toddler },
-      { id: 'preschool', label: 'Pre-school (ages 4–6)', current: counts.preschool, limit: limits.preschool },
-      { id: 'primary', label: 'Primary (ages 7–9)', current: counts.primary, limit: limits.primary },
-      { id: 'preteen', label: 'Pre-teens (ages 10–12)', current: counts.preteen, limit: limits.preteen }
+      { id: '2–3', label: 'Ages 2–3', current: counts['2–3'], limit: limits['2–3'] },
+      { id: '4–6', label: 'Ages 4–6', current: counts['4–6'], limit: limits['4–6'] },
+      { id: '7–9', label: 'Ages 7–9', current: counts['7–9'], limit: limits['7–9'] },
+      { id: '10–12', label: 'Ages 10–12', current: counts['10–12'], limit: limits['10–12'] },
+      { id: '13–14', label: 'Ages 13–14', current: counts['13–14'], limit: limits['13–14'] }
     ];
   }, [enrichedApplications]);
 
@@ -590,6 +595,22 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
             fullCard
             centered
           />
+        </div>
+      ) : fetchError && applications.length === 0 ? (
+        <div className="bg-rose-50/70 dark:bg-red-950/20 border border-rose-200 dark:border-red-900/40 rounded-2xl p-6 text-center space-y-3">
+          <div className="text-sm font-semibold text-rose-800 dark:text-red-400">
+            Failed to load registrations
+          </div>
+          <p className="text-xs text-rose-600 dark:text-red-300 max-w-md mx-auto">
+            {fetchError}
+          </p>
+          <button
+            type="button"
+            onClick={() => fetchApplications(false)}
+            className="px-4 py-2 text-xs font-semibold bg-[#C59B27] hover:bg-[#b58c22] text-white rounded-xl transition-colors cursor-pointer"
+          >
+            Retry
+          </button>
         </div>
       ) : (
         <>
