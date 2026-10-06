@@ -1,13 +1,27 @@
-﻿import crypto from 'crypto';
+import crypto from 'crypto';
 import { execute, query, queryOne } from '../db';
 import {
   emitSSEEventToUser,
   emitSSEEventToRoles,
   emitSSEEventToAudience
 } from './sse';
+import { sendEmail } from './email';
+import { sendWhatsApp } from './notifications';
+import { buildPublicAppUrl } from '../utils/urlHelper';
+
+function escapeHtml(str: string): string {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 
 /**
- * Creates in-app notification and emits SSE events when a new direct message is created
+ * Creates in-app notification and emits SSE events when a new direct message is created,
+ * and automatically dispatches Email and WhatsApp when an Admin replies to a Parent or Volunteer.
  */
 export async function notifyMessageCreated(params: {
   threadId: string;
@@ -54,7 +68,7 @@ export async function notifyMessageCreated(params: {
           threadId
         });
 
-        // Safe idempotent insert
+        // Safe idempotent insert into notifications table
         await execute(`
           INSERT OR IGNORE INTO notifications (
             id, title, message, type, audience_role, audience_scope,
@@ -73,6 +87,31 @@ export async function notifyMessageCreated(params: {
           metadataJson
         ]);
 
+        // If parent, also insert into parent_notifications for bell badge & notification history
+        let parentProfileId = recipient.parent_profile_id;
+        if (isParent) {
+          if (!parentProfileId) {
+            const pProfile = await queryOne('SELECT id FROM parent_profiles WHERE user_id = ?', [recipient.user_id]);
+            parentProfileId = pProfile?.id || null;
+          }
+          if (parentProfileId) {
+            const pNotifId = `pnotif-msg-${messageId}`;
+            await execute(`
+              INSERT OR IGNORE INTO parent_notifications (
+                id, parent_id, event_id, child_id, title, message, created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            `, [
+              pNotifId,
+              parentProfileId,
+              resolvedEventId,
+              thread.linked_child_id || null,
+              title,
+              message,
+              now
+            ]);
+          }
+        }
+
         // Emit SSE to recipient user only (MINIMIZED PAYLOAD: No private body or child data)
         emitSSEEventToUser(recipient.user_id, 'message.created', {
           threadId,
@@ -86,6 +125,161 @@ export async function notifyMessageCreated(params: {
           notificationId: notifId,
           timestamp: now
         });
+
+        // Fetch message details for external dispatch (Email & WhatsApp)
+        const messageRow = await queryOne('SELECT body, message_type FROM messages WHERE id = ?', [messageId]);
+        const messageBody = messageRow?.body || '';
+
+        let childName: string | null = null;
+        if (thread.linked_child_id) {
+          const childRow = await queryOne('SELECT full_name FROM children WHERE id = ?', [thread.linked_child_id]);
+          childName = childRow?.full_name || null;
+        }
+
+        let eventTitle: string | null = null;
+        if (resolvedEventId) {
+          const eventRow = await queryOne('SELECT title FROM events WHERE id = ?', [resolvedEventId]);
+          eventTitle = eventRow?.title || null;
+        }
+
+        const threadSubject = thread.subject || 'Registration Inquiry';
+
+        if (isParent) {
+          // Resolve parent contact info
+          const parent = await queryOne(`
+            SELECT p.id as parent_id, p.full_name, p.phone_number, p.whatsapp_number,
+                   COALESCE(p.email, u.email) as effective_email
+            FROM parent_profiles p
+            LEFT JOIN users u ON u.id = p.user_id
+            WHERE p.user_id = ? OR p.id = ?
+          `, [recipient.user_id, parentProfileId || '']);
+
+          let parentEmail = parent?.effective_email;
+          if (!parentEmail) {
+            const u = await queryOne('SELECT email FROM users WHERE id = ?', [recipient.user_id]);
+            parentEmail = u?.email;
+          }
+
+          const parentFullName = parent?.full_name || 'Parent';
+          const parentFirstName = parentFullName.trim().split(' ')[0] || 'Parent';
+          const targetPhone = parent?.whatsapp_number || parent?.phone_number;
+          const portalUrl = buildPublicAppUrl(`/parent/messages/${threadId}`);
+
+          // Dispatch Email to Parent
+          if (parentEmail) {
+            const emailSubject = `New message from Koinonia: ${threadSubject}`;
+            const childContextText = childName ? ` (Child: <strong>${escapeHtml(childName)}</strong>)` : '';
+            const eventContextText = eventTitle ? ` &bull; <em>${escapeHtml(eventTitle)}</em>` : '';
+
+            const emailHtml = `
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 28px; border-radius: 16px; background-color: #FAF9F6;">
+                <div style="text-align: center; margin-bottom: 24px;">
+                  <span style="font-family: serif; font-size: 22px; font-weight: bold; color: #18181B; letter-spacing: 2px;">KOINONIA</span>
+                  <div style="width: 44px; height: 2px; background-color: #C59B27; margin: 8px auto 0;"></div>
+                </div>
+                <h2 style="font-size: 18px; color: #18181B; margin-top: 0; font-weight: 600;">Response from Registration Team</h2>
+                <p style="font-size: 14px; color: #3F3F46;">Hello ${escapeHtml(parentFirstName)},</p>
+                <p style="font-size: 14px; color: #3F3F46; line-height: 1.6;">
+                  The Koinonia Registration Team has sent a response to your message regarding <strong>${escapeHtml(threadSubject)}</strong>${childContextText}${eventContextText}:
+                </p>
+                <div style="background-color: #F4EFE6; border-left: 4px solid #C59B27; padding: 16px 20px; border-radius: 8px; margin: 20px 0; font-size: 14px; color: #27272A; line-height: 1.6; white-space: pre-wrap;">${escapeHtml(messageBody)}</div>
+                <p style="font-size: 14px; color: #3F3F46; line-height: 1.6;">
+                  You can view the full conversation and reply at any time in your Parent Portal.
+                </p>
+                <div style="text-align: center; margin: 28px 0;">
+                  <a href="${portalUrl}" style="display: inline-block; background-color: #C59B27; color: #FFFFFF; font-weight: 600; font-size: 14px; padding: 12px 28px; border-radius: 10px; text-decoration: none;">
+                    Open Conversation in Portal
+                  </a>
+                </div>
+                <hr style="border: 0; border-top: 1px solid #EAE8E1; margin: 24px 0;">
+                <p style="font-size: 11px; color: #71717A; text-align: center;">
+                  This is an official administrative response regarding your Koinonia Children and Teens registration.
+                </p>
+              </div>
+            `;
+
+            const plainTextMessage = `Hello ${parentFirstName},
+
+The Koinonia Registration Team has replied to your message regarding "${threadSubject}"${childName ? ` (${childName})` : ''}:
+
+"${messageBody}"
+
+You can view and reply to this message directly in the Parent Portal:
+${portalUrl}
+
+Thank you,
+Koinonia Children and Teens Ministry`;
+
+            sendEmail({
+              to: parentEmail,
+              subject: emailSubject,
+              text: plainTextMessage,
+              html: emailHtml
+            }).catch(err => console.error('[notifyMessageCreated] Failed to dispatch email to parent:', err));
+          }
+
+          // Dispatch WhatsApp to Parent
+          if (targetPhone) {
+            const snippet = messageBody.length > 280 ? `${messageBody.substring(0, 277)}...` : messageBody;
+            const waText = `Hello ${parentFirstName},\n\nThe Koinonia Registration Team has replied to your inquiry ("${threadSubject}"${childName ? ` for ${childName}` : ''}):\n\n"${snippet}"\n\nYou can read and reply in your Parent Portal here:\n${portalUrl}`;
+
+            sendWhatsApp(targetPhone, waText).catch(err => console.error('[notifyMessageCreated] Failed to dispatch WhatsApp to parent:', err));
+          }
+        } else if (recipient.role === 'volunteer') {
+          // Volunteer contact lookup
+          const volunteer = await queryOne(`
+            SELECT v.*, u.email as user_email
+            FROM volunteer_profiles v
+            LEFT JOIN users u ON u.id = v.user_id
+            WHERE v.user_id = ?
+          `, [recipient.user_id]);
+
+          const volEmail = volunteer?.user_email;
+          const volPhone = volunteer?.whatsapp || volunteer?.phone;
+          const volFullName = volunteer?.full_name || 'Volunteer';
+          const volFirstName = volFullName.trim().split(' ')[0] || 'Volunteer';
+          const volPortalUrl = buildPublicAppUrl(`/volunteer/messages/${threadId}`);
+
+          if (volEmail) {
+            const volSubject = `New message from Koinonia Team: ${threadSubject}`;
+            const volHtml = `
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 28px; border-radius: 16px; background-color: #FAF9F6;">
+                <div style="text-align: center; margin-bottom: 24px;">
+                  <span style="font-family: serif; font-size: 22px; font-weight: bold; color: #18181B; letter-spacing: 2px;">KOINONIA</span>
+                  <div style="width: 44px; height: 2px; background-color: #C59B27; margin: 8px auto 0;"></div>
+                </div>
+                <h2 style="font-size: 18px; color: #18181B; margin-top: 0; font-weight: 600;">Response from Koinonia Team</h2>
+                <p style="font-size: 14px; color: #3F3F46;">Hello ${escapeHtml(volFirstName)},</p>
+                <p style="font-size: 14px; color: #3F3F46; line-height: 1.6;">
+                  The Koinonia Team has responded to your message regarding <strong>${escapeHtml(threadSubject)}</strong>:
+                </p>
+                <div style="background-color: #F4EFE6; border-left: 4px solid #C59B27; padding: 16px 20px; border-radius: 8px; margin: 20px 0; font-size: 14px; color: #27272A; line-height: 1.6; white-space: pre-wrap;">${escapeHtml(messageBody)}</div>
+                <div style="text-align: center; margin: 28px 0;">
+                  <a href="${volPortalUrl}" style="display: inline-block; background-color: #C59B27; color: #FFFFFF; font-weight: 600; font-size: 14px; padding: 12px 28px; border-radius: 10px; text-decoration: none;">
+                    Open Conversation in Volunteer Portal
+                  </a>
+                </div>
+                <hr style="border: 0; border-top: 1px solid #EAE8E1; margin: 24px 0;">
+                <p style="font-size: 11px; color: #71717A; text-align: center;">
+                  Koinonia Children and Teens Ministry
+                </p>
+              </div>
+            `;
+
+            sendEmail({
+              to: volEmail,
+              subject: volSubject,
+              text: `Hello ${volFirstName},\n\nThe Koinonia Team responded to "${threadSubject}":\n\n"${messageBody}"\n\n${volPortalUrl}`,
+              html: volHtml
+            }).catch(err => console.error('[notifyMessageCreated] Failed to dispatch email to volunteer:', err));
+          }
+
+          if (volPhone) {
+            const snippet = messageBody.length > 280 ? `${messageBody.substring(0, 277)}...` : messageBody;
+            const waText = `Hello ${volFirstName},\n\nThe Koinonia Team has replied to your message ("${threadSubject}"):\n\n"${snippet}"\n\nYou can read and reply here:\n${volPortalUrl}`;
+            sendWhatsApp(volPhone, waText).catch(err => console.error('[notifyMessageCreated] Failed to dispatch WhatsApp to volunteer:', err));
+          }
+        }
       }
     } else {
       // Parent or Volunteer sent message -> Notify Admins

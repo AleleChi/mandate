@@ -3223,11 +3223,12 @@ router.post('/applications/:id/return-to-draft', authMiddleware, async (req: Aut
     const entry = await queryOne(`
       SELECT e.*, 
              c.id as child_id, c.full_name as child_name, c.date_of_birth,
-             p.id as parent_profile_id, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.whatsapp_number as parent_whatsapp,
+             p.id as parent_profile_id, p.full_name as parent_name, COALESCE(p.email, u.email) as parent_email, p.phone_number as parent_phone, p.whatsapp_number as parent_whatsapp,
              ev.title as event_title, ev.starts_at as event_starts_at
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
       JOIN parent_profiles p ON p.id = c.parent_profile_id
+      LEFT JOIN users u ON u.id = p.user_id
       LEFT JOIN events ev ON ev.id = e.event_id
       WHERE e.id = ?
     `, [id]);
