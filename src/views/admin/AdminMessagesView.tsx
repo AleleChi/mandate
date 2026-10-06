@@ -32,10 +32,14 @@ import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoad
 import { safeStorage } from '../../utils/storage';
 import { buildFrontendParentStatusUrl, buildFrontendParentPassUrl, resolveMessageTokens } from '../../utils/urlHelper';
 
+import { AdminDirectMessagesCenter } from './AdminDirectMessagesCenter';
+
 interface AdminMessagesViewProps {
   onBackToOverview: () => void;
   onNavigate: (route: string) => void;
   adminUser?: any;
+  currentRoute?: string;
+  initialThreadId?: string;
 }
 
 interface EventOption {
@@ -445,7 +449,13 @@ export function evaluateSendButtonState(params: {
   return { isEnabled: true, blockerReason: null };
 }
 
-export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: AdminMessagesViewProps) {
+export function AdminMessagesView({
+  onBackToOverview,
+  onNavigate,
+  adminUser,
+  currentRoute,
+  initialThreadId
+}: AdminMessagesViewProps) {
   const { showSuccess, showError } = useNotification();
   const isSuperAdmin = adminUser?.role === 'super_admin';
   const [initialLoading, setInitialLoading] = useState(true);
@@ -456,8 +466,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
   const [events, setEvents] = useState<EventOption[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string>('event-ga-2026');
 
-  // Main navigation tabs: 'updates' = Inbox, 'broadcast' = Send Announcement
-  const [activeTab, setActiveTab] = useState<'updates' | 'broadcast'>('updates');
+  // Main navigation tabs: 'direct' = Direct Messages, 'updates' = Broadcast Log, 'broadcast' = Send Announcement
+  const [activeTab, setActiveTab] = useState<'direct' | 'updates' | 'broadcast'>('direct');
 
   // Inbox state
   const [updates, setUpdates] = useState<any[]>([]);
@@ -1715,6 +1725,17 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
       {/* 2. RESTRAINED TAB NAVIGATION */}
       <div className="flex border-b border-[#EAE8E1] dark:border-[#302E29] space-x-6">
         <button
+          id="tab-messages-direct"
+          onClick={() => setActiveTab('direct')}
+          className={`pb-3 text-xs font-semibold tracking-wide transition-all border-b-2 cursor-pointer focus:outline-none flex items-center space-x-1.5 ${
+            activeTab === 'direct'
+              ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3]'
+              : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5]'
+          }`}
+        >
+          <span>Direct Messages</span>
+        </button>
+        <button
           id="tab-messages-inbox"
           onClick={() => setActiveTab('updates')}
           className={`pb-3 text-xs font-semibold tracking-wide transition-all border-b-2 cursor-pointer focus:outline-none ${
@@ -1723,7 +1744,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
               : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5]'
           }`}
         >
-          Inbox
+          <span>Broadcast Log</span>
         </button>
         <button
           id="tab-messages-compose"
@@ -1734,11 +1755,18 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
               : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5]'
           }`}
         >
-          Send Announcement
+          <span>Send Announcement</span>
         </button>
       </div>
 
-      {activeTab === 'updates' ? (
+      {activeTab === 'direct' ? (
+        <AdminDirectMessagesCenter
+          adminUser={adminUser}
+          currentRoute={currentRoute}
+          initialThreadId={initialThreadId}
+          onNavigate={onNavigate}
+        />
+      ) : activeTab === 'updates' ? (
         <div className="space-y-6">
           {/* 3. RESTRAINED SUMMARY METRICS ROW */}
           <div className="space-y-3">

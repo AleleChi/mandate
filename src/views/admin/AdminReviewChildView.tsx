@@ -26,6 +26,7 @@ import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { EventPassPreviewCard } from '../../components/common/EventPassPreviewCard';
 import { SafeImage } from '../../components/common/SafeImage';
+import { CompletionReminderModal } from '../../components/admin/CompletionReminderModal';
 
 interface AdminReviewChildViewProps {
   applicationId: string;
@@ -63,6 +64,9 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
   const [isReopenModalOpen, setIsReopenModalOpen] = useState(false);
   const [reopenReason, setReopenReason] = useState('');
   const [reopening, setReopening] = useState(false);
+
+  // Completion reminder modal state
+  const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
 
   // Edit child details modal state
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -575,7 +579,8 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
     if (age < 3) return 'Ages 1 to 2';
     if (age < 6) return 'Ages 3 to 5';
     if (age < 10) return 'Ages 6 to 9';
-    return 'Teens (Ages 10+)';
+    if (age < 13) return 'Ages 10 to 12';
+    return 'Teens';
   };
 
   return (
@@ -717,9 +722,9 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                 <span className="font-medium text-zinc-900 dark:text-[#F0EBE3] mt-1 block">{app.child.relationship || 'Child'}</span>
               </div>
               <div>
-                <span className="text-zinc-500 dark:text-[#7A7570] font-medium block">School</span>
+                <span className="text-zinc-500 dark:text-[#7A7570] font-medium block">Class</span>
                 <span className="font-medium text-zinc-900 dark:text-[#F0EBE3] mt-1 block">
-                  {app.schoolClass ? `${app.schoolClass} (${app.schoolName || 'N/A'})` : (app.schoolName || 'Not stated')}
+                  {app.schoolClass || 'Not stated'}
                 </span>
               </div>
             </div>
@@ -1117,7 +1122,7 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
             {/* 2.5 INCOMPLETE / DRAFT APPLICATION */}
             {!isRemoved && !isAttendingChild && (app.status === 'incomplete' || app.status === 'draft') && (
               <div className="space-y-4">
-                <div className="bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-900/40 rounded-xl p-4 text-xs text-amber-900 dark:text-amber-200 leading-relaxed space-y-2">
+                <div className="bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-900/40 rounded-xl p-4 text-xs text-amber-900 dark:text-amber-200 leading-relaxed space-y-3">
                   <div className="flex items-center space-x-2 font-semibold text-xs text-amber-800 dark:text-amber-300">
                     <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
                     <span>Application Draft in Progress</span>
@@ -1127,6 +1132,18 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                   </p>
                   <div className="pt-1 text-[11px] text-zinc-500 dark:text-[#7A7570]">
                     Review and approval actions (Select, Admit, Waiting list) are disabled until the parent completes all mandatory registration details and submits the application.
+                  </div>
+                  <div className="pt-2">
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      onClick={() => setIsReminderModalOpen(true)}
+                      className="text-xs font-semibold px-3 py-2 rounded-xl inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Clock className="w-3.5 h-3.5 mr-1" />
+                      <span>Contact parent / Send completion reminder</span>
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -1139,6 +1156,30 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                   <p className="font-semibold text-xs text-[#8C6D23] dark:text-[#C59B27]">Awaiting decision</p>
                   <p>Choose an outcome when you have finished reviewing the registration.</p>
                 </div>
+
+                {app.blockingAttention && (
+                  <div className="bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-xl p-3.5 space-y-2.5 text-xs text-amber-900 dark:text-amber-200">
+                    <div className="flex items-center space-x-2 font-semibold text-xs text-amber-800 dark:text-amber-300">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>Decision Blocked — Missing Information</span>
+                    </div>
+                    <p className="text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+                      {app.needsAttentionSummary || 'This registration is missing required details. Selection and waiting list decisions are blocked until required information is provided.'}
+                    </p>
+                    <div className="pt-1">
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        onClick={() => setIsReminderModalOpen(true)}
+                        className="text-xs font-semibold px-3 py-2 rounded-xl inline-flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Clock className="w-3.5 h-3.5 mr-1" />
+                        <span>Request missing information</span>
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 
                 {app.child.needsAgeReview && (
                   <div className="bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/40 rounded-xl p-3.5 space-y-2">
@@ -1164,7 +1205,9 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                 <div className="space-y-2.5">
                   <Button
                     type="button"
+                    disabled={app.blockingAttention}
                     onClick={() => {
+                      if (app.blockingAttention) return;
                       if (app.child.needsAgeReview && !ageChecked) {
                         showError('Action Blocked', 'Please confirm that you have checked the child\'s age group first.');
                         return;
@@ -1173,7 +1216,10 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                       setIsSelectModalOpen(true);
                     }}
                     variant="primary"
-                    className="w-full p-3 text-left rounded-xl flex items-center justify-between font-semibold text-xs cursor-pointer"
+                    className={`w-full p-3 text-left rounded-xl flex items-center justify-between font-semibold text-xs ${
+                      app.blockingAttention ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                    }`}
+                    title={app.blockingAttention ? 'Selection is blocked because this registration needs attention.' : undefined}
                   >
                     <span>Select for event</span>
                     <CheckCircle2 className="w-4 h-4 text-white" />
@@ -1181,11 +1227,16 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
 
                   <Button
                     type="button"
+                    disabled={app.blockingAttention}
                     onClick={() => {
+                      if (app.blockingAttention) return;
                       setDecision('waiting_list');
                       setIsWaitlistModalOpen(true);
                     }}
-                    className="w-full p-3 text-left rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] hover:border-zinc-300 dark:hover:border-[#C59B27]/50 bg-white dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] flex items-center justify-between font-medium text-xs cursor-pointer"
+                    className={`w-full p-3 text-left rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] hover:border-zinc-300 dark:hover:border-[#C59B27]/50 bg-white dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] flex items-center justify-between font-medium text-xs ${
+                      app.blockingAttention ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                    }`}
+                    title={app.blockingAttention ? 'Waiting list is blocked because this registration needs attention.' : undefined}
                   >
                     <span>Move to waiting list</span>
                     <Hourglass className="w-4 h-4 text-zinc-500 dark:text-[#7A7570]" />
@@ -1214,12 +1265,31 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                   <p>This child has been selected. You can now generate their digital event pass.</p>
                 </div>
 
+                {app.blockingAttention && (
+                  <div className="bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-xl p-3.5 space-y-2 text-xs text-amber-900 dark:text-amber-200">
+                    <div className="flex items-center space-x-2 font-semibold text-xs text-amber-800 dark:text-amber-300">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>Pass Issuance Blocked</span>
+                    </div>
+                    <p className="text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+                      {app.needsAttentionSummary || 'Required information is missing. An event pass cannot be issued until details are provided.'}
+                    </p>
+                  </div>
+                )}
+
                 <div className="space-y-2.5">
                   <Button
                     type="button"
-                    onClick={() => setIsGeneratePassModalOpen(true)}
+                    disabled={app.blockingAttention}
+                    onClick={() => {
+                      if (app.blockingAttention) return;
+                      setIsGeneratePassModalOpen(true);
+                    }}
                     variant="primary"
-                    className="w-full p-3 text-left rounded-xl flex items-center justify-between font-semibold text-xs cursor-pointer"
+                    className={`w-full p-3 text-left rounded-xl flex items-center justify-between font-semibold text-xs ${
+                      app.blockingAttention ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                    }`}
+                    title={app.blockingAttention ? 'Pass issuance is blocked because this registration needs attention.' : undefined}
                   >
                     <span>Issue digital event pass</span>
                     <QrCode className="w-4 h-4 text-white" />
@@ -1227,11 +1297,16 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
 
                   <Button
                     type="button"
+                    disabled={app.blockingAttention}
                     onClick={() => {
+                      if (app.blockingAttention) return;
                       setDecision('waiting_list');
                       setIsWaitlistModalOpen(true);
                     }}
-                    className="w-full p-3 text-left rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] hover:border-zinc-300 dark:hover:border-[#C59B27]/50 bg-white dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] flex items-center justify-between font-medium text-xs cursor-pointer"
+                    className={`w-full p-3 text-left rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] hover:border-zinc-300 dark:hover:border-[#C59B27]/50 bg-white dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] flex items-center justify-between font-medium text-xs ${
+                      app.blockingAttention ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                    }`}
+                    title={app.blockingAttention ? 'Waiting list is blocked because this registration needs attention.' : undefined}
                   >
                     <span>Move to waiting list</span>
                     <Hourglass className="w-4 h-4 text-zinc-500 dark:text-[#7A7570]" />
@@ -2278,7 +2353,7 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-medium text-zinc-600 dark:text-[#B8B0A5] block">School class / grade</label>
+                  <label className="text-xs font-medium text-zinc-600 dark:text-[#B8B0A5] block">Class</label>
                   <input
                     type="text"
                     placeholder="e.g. Primary 2"
@@ -2471,6 +2546,20 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
             </form>
           </div>
         </div>
+      )}
+
+      {/* Completion Reminder Modal for Incomplete Draft */}
+      {isReminderModalOpen && (
+        <CompletionReminderModal
+          isOpen={isReminderModalOpen}
+          entryId={app.id}
+          childName={app.child?.fullName || 'Child'}
+          parentName={app.parent?.fullName || 'Parent'}
+          onClose={() => setIsReminderModalOpen(false)}
+          onSuccess={async () => {
+            await fetchDetails();
+          }}
+        />
       )}
 
     </div>

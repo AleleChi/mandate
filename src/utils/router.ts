@@ -7,6 +7,7 @@ export const isValidRoute = (route: string): boolean => {
   if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/status')) return true;
   if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/edit')) return true;
   if (cleanRoute.startsWith('/parent/children/') && cleanRoute.endsWith('/pass')) return true;
+  if (cleanRoute === '/parent/messages' || cleanRoute.startsWith('/parent/messages/')) return true;
   if (cleanRoute.startsWith('/volunteer/')) return true;
   if (cleanRoute.startsWith('/admin/')) return true;
   if (cleanRoute === '/admin') return true;
@@ -36,6 +37,7 @@ export const isValidRoute = (route: string): boolean => {
     '/parent/children/review-sent',
     '/parent/status',
     '/parent/passes',
+    '/parent/messages',
     '/admin/sign-in',
     '/admin/forgot-password',
     '/admin/reset-password',

@@ -1,6 +1,119 @@
 export type AppRoute = string;
 
-export type BottomNavTab = 'Home' | 'Children' | 'Status' | 'Passes' | 'Profile';
+export type BottomNavTab = 'Home' | 'Children' | 'Status' | 'Passes' | 'Messages' | 'Profile';
+
+export interface ParentMessageThread {
+  id: string;
+  event_id: string | null;
+  category: 'general' | 'child_application' | 'attendance' | 'safety' | string;
+  subject: string;
+  status: 'open' | 'resolved';
+  created_by_user_id: string;
+  created_by_role: string;
+  linked_child_id: string | null;
+  linked_entry_id: string | null;
+  last_message_at: string;
+  last_message_preview: string;
+  created_at: string;
+  updated_at: string;
+  my_last_read_at?: string | null;
+  unread_count?: number;
+  is_unread?: boolean;
+}
+
+export interface AdminMessageThread extends ParentMessageThread {
+  participant_name?: string | null;
+  participant_role?: 'parent' | 'volunteer' | string;
+  participant_user_id?: string;
+  child_full_name?: string | null;
+  entry_status?: string | null;
+}
+
+export interface AdminMessageParticipant {
+  id: string;
+  thread_id: string;
+  user_id: string;
+  role: string;
+  user_email: string;
+  full_name?: string | null;
+  last_read_at?: string | null;
+}
+
+export interface ParentMessage {
+  id: string;
+  thread_id: string;
+  sender_user_id: string;
+  sender_role: 'admin' | 'super_admin' | 'parent' | 'volunteer' | string;
+  message_type: 'standard' | 'system' | 'application_completion_reminder' | 'broadcast' | string;
+  body: string;
+  action_type?: string | null;
+  action_payload_json?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type VolunteerCategory =
+  | 'general_support'
+  | 'duty_support'
+  | 'training_support'
+  | 'technical_support';
+
+export interface VolunteerMessageThread {
+  id: string;
+  event_id: string | null;
+  category: VolunteerCategory | string;
+  subject: string;
+  status: 'open' | 'resolved';
+  created_by_user_id: string;
+  created_by_role: string;
+  last_message_at: string;
+  last_message_preview: string;
+  created_at: string;
+  updated_at: string;
+  my_last_read_at?: string | null;
+  unread_count?: number;
+  is_unread?: boolean;
+}
+
+export interface VolunteerMessage {
+  id: string;
+  thread_id: string;
+  sender_user_id: string;
+  sender_role: 'admin' | 'super_admin' | 'volunteer' | string;
+  message_type: 'standard' | 'system' | string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export const ALLOWED_ANNOUNCEMENT_AUDIENCES = [
+  'all_parents',
+  'all_volunteers',
+  'everyone',
+  'selected_parent',
+  'selected_volunteer'
+] as const;
+
+export type AnnouncementAudienceType = typeof ALLOWED_ANNOUNCEMENT_AUDIENCES[number];
+
+export interface Announcement {
+  id: string;
+  event_id?: string | null;
+  title: string;
+  body: string;
+  audience_type: AnnouncementAudienceType;
+  target_user_id?: string | null;
+  created_by_user_id?: string | null;
+  published_at: string;
+  created_at: string;
+  is_read?: boolean;
+  read_at?: string | null;
+  total_reads?: number;
+  target_user_email?: string | null;
+  target_parent_name?: string | null;
+  target_volunteer_name?: string | null;
+}
+
 
 export interface ChildItem {
   id: string;

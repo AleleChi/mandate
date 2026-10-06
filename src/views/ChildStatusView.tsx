@@ -10,12 +10,14 @@ import {
   Users,
   Activity,
   QrCode,
+  MessageSquare,
   User
 } from 'lucide-react';
 import { AppRoute, ChildItem, BottomNavTab, ParentProfile } from '../types';
 import { REAL_ASSETS } from '../config/assets';
 import { resolveMediaUrl } from '../utils/mediaUrl';
 import { api } from '../services/api';
+import { useRealtimeSubscription, useRealtimeResync } from '../services/realtime';
 
 interface ChildStatusViewProps {
   childId?: string;
@@ -235,6 +237,34 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
     }
   };
 
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0);
+
+  const fetchUnreadMessages = React.useCallback(async () => {
+    try {
+      const [msgRes, ancRes] = await Promise.all([
+        api.parent.messages.getUnreadCount(),
+        api.parent.announcements.getUnreadCount()
+      ]);
+      const mCount = Number(msgRes?.unreadThreadCount ?? msgRes?.unreadCount ?? 0);
+      const aCount = Number(ancRes?.unreadCount ?? 0);
+      setUnreadMessagesCount(mCount + aCount);
+    } catch {
+      // Fallback silently
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUnreadMessages();
+  }, [fetchUnreadMessages]);
+
+  useRealtimeSubscription(['message.created', 'announcement.published', 'notification.created'], () => {
+    fetchUnreadMessages();
+  });
+
+  useRealtimeResync(() => {
+    fetchUnreadMessages();
+  });
+
   const handleTabChange = (tab: BottomNavTab) => {
     if (tab === 'Home') onNavigate('/parent/home');
     else if (tab === 'Children') onNavigate('/parent/children');
@@ -242,6 +272,7 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
       // already on status
     }
     else if (tab === 'Passes') onNavigate('/parent/passes');
+    else if (tab === 'Messages') onNavigate('/parent/messages');
     else if (tab === 'Profile') onNavigate('/parent/profile');
   };
 
@@ -690,6 +721,7 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
             { label: 'Children' as BottomNavTab, icon: <Users className="w-5 h-5" /> },
             { label: 'Status' as BottomNavTab, icon: <Activity className="w-5 h-5" /> },
             { label: 'Passes' as BottomNavTab, icon: <QrCode className="w-5 h-5" /> },
+            { label: 'Messages' as BottomNavTab, icon: <MessageSquare className="w-5 h-5" />, badge: unreadMessagesCount },
             { label: 'Profile' as BottomNavTab, icon: <User className="w-5 h-5" /> }
           ].map((item) => {
             const isActive = item.label === 'Status';
@@ -705,11 +737,16 @@ export const ChildStatusView: React.FC<ChildStatusViewProps> = ({
                 }`}
               >
                 <div
-                  className={`p-1 rounded-lg transition-transform ${
+                  className={`relative p-1 rounded-lg transition-transform ${
                     isActive ? 'bg-[#FAF6EB] dark:bg-[#262520] scale-110 text-[#C59B27] dark:text-[#D4AF37]' : ''
                   }`}
                 >
                   {item.icon}
+                  {item.badge && item.badge > 0 ? (
+                    <span className="absolute -top-1 -right-1.5 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-[#E07A5F] text-[9px] font-bold text-white shadow-sm ring-1 ring-white">
+                      {item.badge > 99 ? '99+' : item.badge}
+                    </span>
+                  ) : null}
                 </div>
                 <span className="text-[10px] mt-0.5 tracking-tight">{item.label}</span>
               </button>

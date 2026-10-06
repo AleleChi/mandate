@@ -2,6 +2,7 @@
 
 import { safeStorage } from '../utils/storage';
 import { buildApiUrl, getApiBaseUrl } from '../utils/urlHelper';
+import { ParentMessageThread, ParentMessage, AdminMessageThread, AdminMessageParticipant, VolunteerMessageThread, VolunteerMessage, Announcement } from '../types';
 
 const TOKEN_KEY = 'koinonia_token';
 
@@ -433,6 +434,158 @@ export const api = {
         method: 'PATCH',
         body: JSON.stringify(payload)
       });
+    },
+
+    messages: {
+      async listThreads(params?: { page?: number; limit?: number; category?: string; status?: string }) {
+        const q = new URLSearchParams();
+        if (params?.page) q.append('page', String(params.page));
+        if (params?.limit) q.append('limit', String(params.limit));
+        if (params?.category) q.append('category', params.category);
+        if (params?.status) q.append('status', params.status);
+        const qs = q.toString() ? `?${q.toString()}` : '';
+        return api.request<{
+          success: boolean;
+          threads: ParentMessageThread[];
+          pagination: { page: number; limit: number; total: number; totalPages: number; hasMore: boolean };
+        }>(`/api/parent/messages${qs}`);
+      },
+
+      async getUnreadCount() {
+        return api.request<{
+          success: boolean;
+          unreadThreadCount: number;
+          unreadMessageCount: number;
+          unreadCount: number;
+        }>('/api/parent/messages/unread-count');
+      },
+
+      async createThread(payload: {
+        category: 'general_support' | 'registration_support' | 'child_application';
+        subject: string;
+        body: string;
+        linkedChildId?: string | null;
+        linkedEntryId?: string | null;
+        eventId?: string | null;
+      }) {
+        return api.request<{
+          success: boolean;
+          thread: ParentMessageThread;
+          message: ParentMessage;
+          isReused?: boolean;
+        }>('/api/parent/messages', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+
+      async getThread(threadId: string) {
+        return api.request<{
+          success: boolean;
+          thread: ParentMessageThread;
+          participants: any[];
+        }>(`/api/parent/messages/${encodeURIComponent(threadId)}`);
+      },
+
+      async getMessages(threadId: string, params?: { page?: number; limit?: number }) {
+        const q = new URLSearchParams();
+        if (params?.page) q.append('page', String(params.page));
+        if (params?.limit) q.append('limit', String(params.limit));
+        const qs = q.toString() ? `?${q.toString()}` : '';
+        return api.request<{
+          success: boolean;
+          messages: ParentMessage[];
+          pagination: { page: number; limit: number; total: number; totalPages: number; hasMore: boolean };
+        }>(`/api/parent/messages/${encodeURIComponent(threadId)}/messages${qs}`);
+      },
+
+      async sendMessage(threadId: string, body: string) {
+        return api.request<{
+          success: boolean;
+          message: ParentMessage;
+        }>(`/api/parent/messages/${encodeURIComponent(threadId)}/messages`, {
+          method: 'POST',
+          body: JSON.stringify({ body })
+        });
+      },
+
+      async markRead(threadId: string) {
+        return api.request<{
+          success: boolean;
+          markedRead: boolean;
+        }>(`/api/parent/messages/${encodeURIComponent(threadId)}/read`, {
+          method: 'POST'
+        });
+      }
+    },
+
+    async getThreads(params?: { page?: number; limit?: number; category?: string; status?: string }) {
+      return api.parent.messages.listThreads(params);
+    },
+    async getThread(threadId: string) {
+      return api.parent.messages.getThread(threadId);
+    },
+    async getThreadMessages(threadId: string, params?: { page?: number; limit?: number }) {
+      return api.parent.messages.getMessages(threadId, params);
+    },
+    async sendMessage(threadId: string, body: string) {
+      return api.parent.messages.sendMessage(threadId, body);
+    },
+    async markThreadRead(threadId: string) {
+      return api.parent.messages.markRead(threadId);
+    },
+    async getUnreadMessageCount() {
+      return api.parent.messages.getUnreadCount();
+    },
+    async createThread(payload: {
+      category: 'general_support' | 'registration_support' | 'child_application';
+      subject: string;
+      body: string;
+      linkedChildId?: string | null;
+      linkedEntryId?: string | null;
+      eventId?: string | null;
+    }) {
+      return api.parent.messages.createThread(payload);
+    },
+
+    announcements: {
+      async list(params?: { page?: number; limit?: number }) {
+        const q = new URLSearchParams();
+        if (params?.page) q.append('page', String(params.page));
+        if (params?.limit) q.append('limit', String(params.limit));
+        const qs = q.toString() ? `?${q.toString()}` : '';
+        return api.request<{
+          success: boolean;
+          announcements: Announcement[];
+          total: number;
+          page: number;
+          limit: number;
+          totalPages: number;
+        }>(`/api/parent/announcements${qs}`);
+      },
+
+      async get(id: string) {
+        return api.request<{
+          success: boolean;
+          announcement: Announcement;
+        }>(`/api/parent/announcements/${encodeURIComponent(id)}`);
+      },
+
+      async getUnreadCount() {
+        return api.request<{
+          success: boolean;
+          unreadCount: number;
+        }>('/api/parent/announcements/unread-count');
+      },
+
+      async markRead(id: string) {
+        return api.request<{
+          success: boolean;
+          read_at: string;
+        }>(`/api/parent/announcements/${encodeURIComponent(id)}/read`, {
+          method: 'POST'
+        });
+      }
     }
   },
 
@@ -671,6 +824,122 @@ export const api = {
       return api.request<{ success: boolean; message: string }>(`/api/volunteer/safety-alerts/${id}/escalate`, {
         method: 'POST'
       });
+    },
+
+    messages: {
+      async listThreads(params?: { page?: number; limit?: number; category?: string; status?: string }) {
+        const q = new URLSearchParams();
+        if (params?.page) q.append('page', String(params.page));
+        if (params?.limit) q.append('limit', String(params.limit));
+        if (params?.category) q.append('category', params.category);
+        if (params?.status) q.append('status', params.status);
+        const qs = q.toString() ? `?${q.toString()}` : '';
+        return api.request<{
+          success: boolean;
+          threads: VolunteerMessageThread[];
+          pagination: { page: number; limit: number; total: number; totalPages: number; hasMore: boolean };
+        }>(`/api/volunteer/messages${qs}`);
+      },
+
+      async getUnreadCount() {
+        return api.request<{
+          success: boolean;
+          unreadThreadCount: number;
+          unreadMessageCount: number;
+          unreadCount: number;
+        }>('/api/volunteer/messages/unread-count');
+      },
+
+      async createThread(payload: { category: string; subject: string; body: string; eventId?: string }) {
+        return api.request<{
+          success: boolean;
+          thread: VolunteerMessageThread;
+          message: VolunteerMessage;
+          isReused?: boolean;
+        }>('/api/volunteer/messages', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+
+      async getThread(threadId: string) {
+        return api.request<{
+          success: boolean;
+          thread: VolunteerMessageThread;
+          participants: any[];
+        }>(`/api/volunteer/messages/${encodeURIComponent(threadId)}`);
+      },
+
+      async getMessages(threadId: string, params?: { page?: number; limit?: number }) {
+        const q = new URLSearchParams();
+        if (params?.page) q.append('page', String(params.page));
+        if (params?.limit) q.append('limit', String(params.limit));
+        const qs = q.toString() ? `?${q.toString()}` : '';
+        return api.request<{
+          success: boolean;
+          messages: VolunteerMessage[];
+          pagination: { page: number; limit: number; total: number; totalPages: number; hasMore: boolean };
+        }>(`/api/volunteer/messages/${encodeURIComponent(threadId)}/messages${qs}`);
+      },
+
+      async sendMessage(threadId: string, body: string) {
+        return api.request<{
+          success: boolean;
+          message: VolunteerMessage;
+        }>(`/api/volunteer/messages/${encodeURIComponent(threadId)}/messages`, {
+          method: 'POST',
+          body: JSON.stringify({ body })
+        });
+      },
+
+      async markRead(threadId: string) {
+        return api.request<{
+          success: boolean;
+          markedRead: boolean;
+        }>(`/api/volunteer/messages/${encodeURIComponent(threadId)}/read`, {
+          method: 'POST'
+        });
+      }
+    },
+
+    announcements: {
+      async list(params?: { page?: number; limit?: number }) {
+        const q = new URLSearchParams();
+        if (params?.page) q.append('page', String(params.page));
+        if (params?.limit) q.append('limit', String(params.limit));
+        const qs = q.toString() ? `?${q.toString()}` : '';
+        return api.request<{
+          success: boolean;
+          announcements: Announcement[];
+          total: number;
+          page: number;
+          limit: number;
+          totalPages: number;
+        }>(`/api/volunteer/announcements${qs}`);
+      },
+
+      async get(id: string) {
+        return api.request<{
+          success: boolean;
+          announcement: Announcement;
+        }>(`/api/volunteer/announcements/${encodeURIComponent(id)}`);
+      },
+
+      async getUnreadCount() {
+        return api.request<{
+          success: boolean;
+          unreadCount: number;
+        }>('/api/volunteer/announcements/unread-count');
+      },
+
+      async markRead(id: string) {
+        return api.request<{
+          success: boolean;
+          read_at: string;
+        }>(`/api/volunteer/announcements/${encodeURIComponent(id)}/read`, {
+          method: 'POST'
+        });
+      }
     }
   },
 
@@ -1160,6 +1429,80 @@ export const api = {
         body: JSON.stringify(payload)
       });
     },
+    async previewCompletionReminder(entryId: string) {
+      return api.request<{
+        success: boolean;
+        eligible: boolean;
+        canSend: boolean;
+        entryId: string;
+        childId?: string;
+        child?: { id: string; firstName: string };
+        parent?: { id: string; firstName: string };
+        childFirstName?: string;
+        parentFirstName?: string;
+        registrationDeadline?: string;
+        subject: string;
+        prefilledBody?: string;
+        body?: string;
+        lastReminderSentAt: string | null;
+        cooldownEndsAt: string | null;
+        reason?: string;
+        missingSections?: string[];
+        whatsapp?: {
+          eligible: boolean;
+          reason?: string;
+          phone: string | null;
+          consentStatus: string;
+          lastSentAt: string | null;
+          cooldownEndsAt: string | null;
+          canSend: boolean;
+          defaultBody: string;
+        };
+      }>(`/api/admin/applications/${encodeURIComponent(entryId)}/completion-reminder`);
+    },
+    async sendCompletionReminder(entryId: string, body?: string, channel: 'portal' | 'whatsapp' | 'both' = 'portal', whatsappBody?: string) {
+      return api.request<{
+        success: boolean;
+        messageId?: string;
+        threadId?: string;
+        lastReminderSentAt?: string;
+        lastWhatsAppSentAt?: string;
+        cooldownEndsAt?: string;
+        channels?: {
+          portal?: {
+            success: boolean;
+            messageId?: string;
+            threadId?: string;
+            error?: string;
+            cooldownEndsAt?: string;
+          };
+          whatsapp?: {
+            success: boolean;
+            deliveryLogId?: string;
+            providerMessageId?: string;
+            status?: string;
+            error?: string;
+            cooldownEndsAt?: string;
+          };
+        };
+        portal?: {
+          sent: boolean;
+          messageId?: string;
+          threadId?: string;
+          error?: string;
+        };
+        whatsapp?: {
+          sent: boolean;
+          status?: string;
+          error?: string;
+          skipped?: boolean;
+          reason?: string;
+        };
+      }>(`/api/admin/applications/${encodeURIComponent(entryId)}/completion-reminder`, {
+        method: 'POST',
+        body: JSON.stringify({ body, channel, whatsappBody })
+      });
+    },
     async removeChild(id: string, reason: string) {
       return api.request<any>(`/api/admin/applications/${id}/remove`, {
         method: 'POST',
@@ -1509,6 +1852,161 @@ export const api = {
         errorMessage?: string | null;
         lastUpdated?: string;
       }>(`/api/admin/messages/campaign-status/${campaignId}`);
+    },
+    messages: {
+      async listThreads(params?: {
+        page?: number;
+        limit?: number;
+        status?: string;
+        category?: string;
+        participantRole?: string;
+        unreadOnly?: boolean;
+        search?: string;
+      }) {
+        const queryParams = new URLSearchParams();
+        if (params?.page) queryParams.append('page', params.page.toString());
+        if (params?.limit) queryParams.append('limit', params.limit.toString());
+        if (params?.status) queryParams.append('status', params.status);
+        if (params?.category) queryParams.append('category', params.category);
+        if (params?.participantRole) queryParams.append('participantRole', params.participantRole);
+        if (params?.unreadOnly) queryParams.append('unreadOnly', '1');
+        if (params?.search) queryParams.append('search', params.search);
+        const qs = queryParams.toString() ? `?${queryParams.toString()}` : '';
+        return api.request<{
+          success: boolean;
+          threads: AdminMessageThread[];
+          pagination: {
+            page: number;
+            limit: number;
+            total: number;
+            totalCount: number;
+            totalPages: number;
+            hasMore: boolean;
+          };
+        }>(`/api/admin/messages/threads${qs}`);
+      },
+      async getUnreadCount() {
+        return api.request<{
+          success: boolean;
+          unreadThreadCount: number;
+          unreadMessageCount: number;
+          unreadCount: number;
+        }>('/api/admin/messages/unread-count');
+      },
+      async getThread(threadId: string) {
+        return api.request<{
+          success: boolean;
+          thread: AdminMessageThread;
+          participants: AdminMessageParticipant[];
+        }>(`/api/admin/messages/threads/${encodeURIComponent(threadId)}`);
+      },
+      async getMessages(threadId: string, params?: { page?: number; limit?: number }) {
+        const queryParams = new URLSearchParams();
+        if (params?.page) queryParams.append('page', params.page.toString());
+        if (params?.limit) queryParams.append('limit', params.limit.toString());
+        const qs = queryParams.toString() ? `?${queryParams.toString()}` : '';
+        return api.request<{
+          success: boolean;
+          messages: ParentMessage[];
+          pagination: {
+            page: number;
+            limit: number;
+            total: number;
+            totalPages: number;
+            hasMore: boolean;
+          };
+        }>(`/api/admin/messages/threads/${encodeURIComponent(threadId)}/messages${qs}`);
+      },
+      async sendMessage(threadId: string, body: string) {
+        return api.request<{
+          success: boolean;
+          message: ParentMessage;
+          thread: AdminMessageThread;
+        }>(`/api/admin/messages/threads/${encodeURIComponent(threadId)}/messages`, {
+          method: 'POST',
+          body: JSON.stringify({ body })
+        });
+      },
+      async markRead(threadId: string) {
+        return api.request<{
+          success: boolean;
+          markedReadAt: string;
+        }>(`/api/admin/messages/threads/${encodeURIComponent(threadId)}/read`, {
+          method: 'POST'
+        });
+      },
+      async resolveThread(threadId: string) {
+        return api.request<{
+          success: boolean;
+          threadId: string;
+          status: string;
+        }>(`/api/admin/messages/threads/${encodeURIComponent(threadId)}/resolve`, {
+          method: 'POST'
+        });
+      },
+      async reopenThread(threadId: string) {
+        return api.request<{
+          success: boolean;
+          threadId: string;
+          status: string;
+        }>(`/api/admin/messages/threads/${encodeURIComponent(threadId)}/reopen`, {
+          method: 'POST'
+        });
+      }
+    },
+
+    announcements: {
+      async list(params?: { page?: number; limit?: number }) {
+        const q = new URLSearchParams();
+        if (params?.page) q.append('page', String(params.page));
+        if (params?.limit) q.append('limit', String(params.limit));
+        const qs = q.toString() ? `?${q.toString()}` : '';
+        return api.request<{
+          success: boolean;
+          announcements: Announcement[];
+          total: number;
+          page: number;
+          limit: number;
+          totalPages: number;
+        }>(`/api/admin/announcements${qs}`);
+      },
+
+      async get(id: string) {
+        return api.request<{
+          success: boolean;
+          announcement: Announcement;
+        }>(`/api/admin/announcements/${encodeURIComponent(id)}`);
+      },
+
+      async create(data: {
+        title: string;
+        body: string;
+        audience_type: string;
+        target_user_id?: string | null;
+        event_id?: string | null;
+      }) {
+        return api.request<{
+          success: boolean;
+          announcement: Announcement;
+        }>('/api/admin/announcements', {
+          method: 'POST',
+          body: JSON.stringify(data)
+        });
+      },
+
+      async getRecipients(params: { role: 'parent' | 'volunteer'; query?: string }) {
+        const q = new URLSearchParams();
+        q.append('role', params.role);
+        if (params.query) q.append('query', params.query);
+        return api.request<{
+          success: boolean;
+          recipients: Array<{ id: string; name: string; email: string }>;
+        }>(`/api/admin/announcements/recipients?${q.toString()}`);
+      },
+
+      async searchRecipients(params: { role: 'parent' | 'volunteer'; query?: string }) {
+        return api.admin.announcements.getRecipients(params);
+      }
     },
     async getMessagesSettings() {
       return api.request<{

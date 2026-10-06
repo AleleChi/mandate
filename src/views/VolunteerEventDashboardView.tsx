@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   LogOut, QrCode, Search, BarChart3, User, RefreshCw, AlertTriangle, 
   ShieldCheck, Check, Home, Camera, CameraOff, X, Phone, MessageCircle, 
   ArrowRight, Sparkles, UserCheck, UserX, Clock, ChevronLeft, Calendar, Heart, Info, Keyboard,
   Settings, ChevronRight, Users, LogIn, History, MapPin, Bell, ShieldAlert, Smartphone, ChevronDown, Shield, CheckCircle2,
-  HelpCircle, Tag, Plus
+  HelpCircle, Tag, Plus, MessageSquare
 } from 'lucide-react';
 import { WristbandAssignmentDesk } from '../components/wristbands/WristbandAssignmentDesk';
 import { AppRoute } from '../types';
@@ -14,6 +14,8 @@ import { useNotification } from '../context/NotificationContext';
 import { Button } from '../components/common/Button';
 import { BrowserQRCodeReader } from '@zxing/browser';
 import { VolunteerProfileView } from './volunteer/VolunteerProfileView';
+import { VolunteerMessagesView } from './volunteer/VolunteerMessagesView';
+import { useRealtimeSubscription, useRealtimeResync } from '../services/realtime';
 import { DeviceReadinessView } from '../components/volunteer/DeviceReadinessView';
 import { SafeImage } from '../components/common/SafeImage';
 import { resolveMediaUrl } from '../utils/mediaUrl';
@@ -286,6 +288,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   // Real-time volunteer notification states
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [showNotifPanel, setShowNotifPanel] = useState(false);
   const [showReadinessModal, setShowReadinessModal] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(() => {
@@ -1466,6 +1469,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   // Run on mount or route transition
   useEffect(() => {
     fetchCurrentDutyLocation();
+    // Fetch combined unread count (threads + announcements)
+    Promise.all([
+      api.volunteer.messages.getUnreadCount(),
+      api.volunteer.announcements.getUnreadCount()
+    ]).then(([msgRes, ancRes]) => {
+      const msgCount = (msgRes && msgRes.success) ? (msgRes.unreadCount ?? msgRes.unreadThreadCount ?? 0) : 0;
+      const ancCount = (ancRes && ancRes.success) ? (ancRes.unreadCount ?? 0) : 0;
+      setUnreadMessagesCount(msgCount + ancCount);
+    }).catch(() => {});
+
     if (cleanRoute === '/volunteer/pickup') {
       fetchPickupData();
     } else if (cleanRoute === '/volunteer/reports') {
@@ -1475,6 +1488,25 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       fetchHistory();
     }
   }, [cleanRoute]);
+
+  const fetchVolunteerUnread = useCallback(() => {
+    Promise.all([
+      api.volunteer.messages.getUnreadCount(),
+      api.volunteer.announcements.getUnreadCount()
+    ]).then(([msgRes, ancRes]) => {
+      const msgCount = (msgRes && msgRes.success) ? (msgRes.unreadCount ?? msgRes.unreadThreadCount ?? 0) : 0;
+      const ancCount = (ancRes && ancRes.success) ? (ancRes.unreadCount ?? 0) : 0;
+      setUnreadMessagesCount(msgCount + ancCount);
+    }).catch(() => {});
+  }, []);
+
+  useRealtimeSubscription(['message.created', 'announcement.published', 'notification.created'], () => {
+    fetchVolunteerUnread();
+  });
+
+  useRealtimeResync(() => {
+    fetchVolunteerUnread();
+  });
 
   // Outbox initialization, multi-tab coordination, and automatic sync processing
   useEffect(() => {
@@ -2754,7 +2786,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     cleanRoute === '/volunteer/pickup' ||
     cleanRoute === '/volunteer/profile' ||
     cleanRoute === '/volunteer/wristbands' ||
-    cleanRoute === '/volunteer/readiness';
+    cleanRoute === '/volunteer/readiness' ||
+    cleanRoute.startsWith('/volunteer/messages/');
 
   return (
     <div className="min-h-screen bg-[#FAF9F6] dark:bg-[#19191A] font-sans flex flex-col" data-view-version="volunteer-dashboard-v9-handover-mobile-app">
@@ -2799,6 +2832,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       } else {
                         onNavigate('/volunteer/event');
                       }
+                    } else if (cleanRoute.startsWith('/volunteer/messages/')) {
+                      onNavigate('/volunteer/messages');
                     } else {
                       onNavigate('/volunteer/event');
                     }
@@ -7633,6 +7668,18 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         </div>
       )}
 
+      {(cleanRoute === '/volunteer/messages' || cleanRoute.startsWith('/volunteer/messages/')) && (
+        /* ==================== 5B. VOLUNTEER MESSAGES VIEW ==================== */
+        <div className="w-full px-4 sm:px-5">
+          <VolunteerMessagesView
+            currentRoute={currentRoute}
+            onNavigate={onNavigate}
+            volunteerProfile={volunteerProfile}
+            onUnreadCountChange={(count) => setUnreadMessagesCount(count)}
+          />
+        </div>
+      )}
+
       {cleanRoute === '/volunteer/team-alerts' && (
         /* ==================== 6. VOLUNTEER TEAM SAFETY ALERTS VIEW ==================== */
         <div className="w-full px-4 sm:px-5 text-zinc-900 dark:text-[#F0EBE3] pt-6 sm:pt-8 pb-24 flex-1" data-component-version="volunteer-team-alerts-v2-calm">
@@ -8094,6 +8141,22 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               isActive: cleanRoute === '/volunteer/team-alerts' || cleanRoute === '/volunteer/safety',
               onClick: () => onNavigate('/volunteer/team-alerts'),
               id: 'tab-volunteer-safety'
+            },
+            {
+              label: 'Messages',
+              icon: (
+                <div className="relative flex items-center justify-center">
+                  <MessageSquare className="w-5 h-5 stroke-[1.75]" />
+                  {unreadMessagesCount > 0 && (
+                    <span className="absolute -top-1 -right-1.5 min-w-[14px] h-[14px] px-0.5 text-[9px] font-sans font-bold leading-none text-white bg-[#C59B27] rounded-full flex items-center justify-center">
+                      {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
+                    </span>
+                  )}
+                </div>
+              ),
+              isActive: cleanRoute === '/volunteer/messages' || cleanRoute.startsWith('/volunteer/messages/'),
+              onClick: () => onNavigate('/volunteer/messages'),
+              id: 'tab-volunteer-messages'
             },
           ].map((item) => {
             return (

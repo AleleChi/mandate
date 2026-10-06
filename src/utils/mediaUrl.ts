@@ -1,4 +1,6 @@
 import { getApiBaseUrl } from './urlHelper';
+import parentHeroImg from '../assets/images/parent_hero_1783622066454.jpg';
+import volunteerHeroImg from '../assets/images/volunteer_hero_1783622081200.jpg';
 
 // Proof string as required by Phase 3 rules
 export const SAFE_MEDIA_URL_RESOLVER_VERSION = "safe-media-url-resolver-v3-secure";
@@ -67,6 +69,15 @@ export function resolveMediaUrl(input?: string | null, fallback?: string): strin
   }
 
   const trimmed = input.trim();
+  const lower = trimmed.toLowerCase();
+
+  // Known static bundled assets that must map directly to Vite imports
+  if (lower.startsWith('parent_hero') || lower.includes('parent_hero_')) {
+    return parentHeroImg;
+  }
+  if (lower.startsWith('volunteer_hero') || lower.includes('volunteer_hero_')) {
+    return volunteerHeroImg;
+  }
 
   // A. STATIC BUNDLED ASSETS: Return directly as frontend asset path without backend URL manipulation
   if (isStaticBundledAsset(trimmed)) {
@@ -74,9 +85,6 @@ export function resolveMediaUrl(input?: string | null, fallback?: string): strin
       ? trimmed
       : `/${trimmed}`;
   }
-
-  const lower = trimmed.toLowerCase();
-
   // Rule 7: Prevent path traversal
   if (
     trimmed.includes('../') || 

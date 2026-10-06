@@ -4,13 +4,14 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { Button } from '../components/common/Button';
 import { EventPassPreviewCard } from '../components/common/EventPassPreviewCard';
 import { BrandLogo } from '../components/common/BrandLogo';
-import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell, ArrowLeft, Check, AlertCircle, Menu, Fingerprint, MapPin, RefreshCw, CheckCircle2, Phone, Copy } from 'lucide-react';
+import { Calendar, Clock, Plus, ShieldCheck, QrCode, Home, Users, Activity, MessageSquare, User, Info, X, MessageCircle, Mail, Smile, Ticket, HelpCircle, Shield, ChevronRight, Lock, LogOut, Bell, ArrowLeft, Check, AlertCircle, Menu, Fingerprint, MapPin, RefreshCw, CheckCircle2, Phone, Copy } from 'lucide-react';
 import { REAL_ASSETS } from '../config/assets';
 import { useNotification } from '../context/NotificationContext';
 import { ThemeSwitcher } from '../components/common/ThemeSwitcher';
 import { api } from '../services/api';
 import { soundUtility } from '../utils/sound';
 import { subscribeUserToPush, getPushNotificationStatus, GranularPushStatus } from '../utils/pushSubscription';
+import { useRealtimeSubscription, useRealtimeResync } from '../services/realtime';
 import { resolveMediaUrl } from '../utils/mediaUrl';
 import { SafeImage } from '../components/common/SafeImage';
 import { DeviceSecuritySettings } from '../components/common/DeviceSecuritySettings';
@@ -633,6 +634,33 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
   const unreadCount = notifications.filter(n => !n.readAt && !n.isRead).length;
   const prevUnreadCountRef = React.useRef(unreadCount);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0);
+
+  const fetchUnreadMessages = React.useCallback(async () => {
+    try {
+      const [msgRes, ancRes] = await Promise.all([
+        api.parent.messages.getUnreadCount(),
+        api.parent.announcements.getUnreadCount()
+      ]);
+      const mCount = Number(msgRes?.unreadThreadCount ?? msgRes?.unreadCount ?? 0);
+      const aCount = Number(ancRes?.unreadCount ?? 0);
+      setUnreadMessagesCount(mCount + aCount);
+    } catch {
+      // Fallback silently if offline or token expired
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUnreadMessages();
+  }, [fetchUnreadMessages]);
+
+  useRealtimeSubscription(['message.created', 'announcement.published', 'notification.created'], () => {
+    fetchUnreadMessages();
+  });
+
+  useRealtimeResync(() => {
+    fetchUnreadMessages();
+  });
 
   const handleUnreadCountChange = React.useCallback((count: number) => {
     prevUnreadCountRef.current = count;
@@ -763,6 +791,10 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
       onNavigate('/parent/status');
       return;
     }
+    if (tab === 'Messages') {
+      onNavigate('/parent/messages');
+      return;
+    }
     setActiveTab(tab);
     try {
       const pathMap: Record<BottomNavTab, string> = {
@@ -770,6 +802,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         Children: '/parent/children',
         Status: '/parent/status',
         Passes: '/parent/passes',
+        Messages: '/parent/messages',
         Profile: '/parent/profile'
       };
       if (onNavigate) {
@@ -2595,6 +2628,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
             { label: 'Children' as BottomNavTab, icon: <Users className="w-5 h-5" /> },
             { label: 'Status' as BottomNavTab, icon: <Activity className="w-5 h-5" /> },
             { label: 'Passes' as BottomNavTab, icon: <QrCode className="w-5 h-5" /> },
+            { label: 'Messages' as BottomNavTab, icon: <MessageSquare className="w-5 h-5" />, badge: unreadMessagesCount },
             { label: 'Profile' as BottomNavTab, icon: <User className="w-5 h-5" /> }
           ].map((item) => {
             const isActive = activeTab === item.label;
@@ -2610,13 +2644,18 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 }`}
               >
                 <div
-                  className={`p-1 rounded-lg transition-transform ${
+                  className={`relative p-1 rounded-lg transition-transform ${
                     isActive ? 'bg-[#FAF6EB] dark:bg-[#262520] scale-110 text-[#C59B27] dark:text-[#D4AF37]' : ''
                   }`}
                 >
                   {item.icon}
+                  {item.badge && item.badge > 0 ? (
+                    <span className="absolute -top-1 -right-1.5 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-[#E07A5F] text-[9px] font-bold text-white shadow-sm ring-1 ring-white">
+                      {item.badge > 99 ? '99+' : item.badge}
+                    </span>
+                  ) : null}
                 </div>
-                <span className="text-[11px] mt-0.5 tracking-tight">{item.label}</span>
+                <span className="text-[10px] mt-0.5 tracking-tight">{item.label}</span>
               </button>
             );
           })}

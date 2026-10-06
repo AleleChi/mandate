@@ -17,6 +17,7 @@ import { ForgotPasswordView } from './views/ForgotPasswordView';
 import { NewPasswordView } from './views/NewPasswordView';
 import { ProfileSetupView } from './views/ProfileSetupView';
 import { ParentHomeView } from './views/ParentHomeView';
+import { ParentMessagesView } from './views/ParentMessagesView';
 const VolunteerSignInView = React.lazy(() => import('./views/VolunteerSignInView').then(m => ({ default: m.VolunteerSignInView })));
 const VolunteerCreateAccountView = React.lazy(() => import('./views/VolunteerCreateAccountView').then(m => ({ default: m.VolunteerCreateAccountView })));
 const VolunteerVerifyEmailView = React.lazy(() => import('./views/VolunteerVerifyEmailView').then(m => ({ default: m.VolunteerVerifyEmailView })));
@@ -1167,6 +1168,23 @@ export default function App() {
       );
     }
 
+    if (cleanRoute === '/parent/messages' || cleanRoute.startsWith('/parent/messages/')) {
+      const parts = cleanRoute.split('/');
+      const threadIdParam = parts.length >= 4 && parts[3] ? parts[3] : undefined;
+      return (
+        <ProtectedRoute requiresCompletedProfile={true}>
+          <ParentMessagesView
+            onNavigate={navigate}
+            parentProfile={parentProfile}
+            childrenList={childrenList}
+            initialThreadId={threadIdParam}
+            onResumeChildDraft={handleResumeChildDraft}
+            onSignOut={handleSignOut}
+          />
+        </ProtectedRoute>
+      );
+    }
+
     if (cleanRoute === '/admin/team-alerts') {
       return (
         <AdminProtectedRoute>
@@ -1272,7 +1290,7 @@ export default function App() {
                           ? 'attendance'
                           : cleanRoute === '/admin/reports' || cleanRoute.startsWith('/admin/reports/')
                             ? 'reports'
-                            : cleanRoute === '/admin/messages'
+                            : cleanRoute === '/admin/messages' || cleanRoute.startsWith('/admin/messages/')
                               ? 'messages'
                               : cleanRoute === '/admin/volunteers'
                                 ? 'volunteers'
@@ -1322,6 +1340,23 @@ export default function App() {
     }
     if (cleanRoute === '/contact') {
       return <ContactView onNavigate={navigate} />;
+    }
+
+    if (cleanRoute.startsWith('/volunteer/messages/')) {
+      return (
+        <VolunteerProtectedRoute>
+          <VolunteerEventDashboardView
+            onNavigate={navigate}
+            volunteerProfile={volunteerProfile}
+            onSignOut={handleSignOut}
+            isOffline={isOffline}
+            hasParentProfile={!!parentProfile && !!parentProfile.email}
+            currentRoute={currentRoute}
+            onSwitchExperience={handleSwitchExperience}
+            isSwitchingExperience={isSwitchingExperience}
+          />
+        </VolunteerProtectedRoute>
+      );
     }
 
     switch (cleanRoute) {
@@ -1541,6 +1576,18 @@ export default function App() {
             />
           </ProtectedRoute>
         );
+      case '/parent/messages':
+        return (
+          <ProtectedRoute requiresCompletedProfile={true}>
+            <ParentMessagesView
+              onNavigate={navigate}
+              parentProfile={parentProfile}
+              childrenList={childrenList}
+              onResumeChildDraft={handleResumeChildDraft}
+              onSignOut={handleSignOut}
+            />
+          </ProtectedRoute>
+        );
       case '/parent/volunteer-request':
         return (
           <ProtectedRoute requiresCompletedProfile={true}>
@@ -1632,6 +1679,7 @@ export default function App() {
       case '/volunteer/team-alerts':
       case '/volunteer/readiness':
       case '/volunteer/wristbands':
+      case '/volunteer/messages':
         return (
           <VolunteerProtectedRoute>
             <VolunteerEventDashboardView
@@ -1683,10 +1731,11 @@ export default function App() {
         />
       )}
 
-      {/* Screen Navigator strictly restricted: suppressed on ALL Parent & Volunteer experiences */}
+      {/* Screen Navigator strictly restricted: suppressed on ALL Parent, Volunteer, and Admin messaging experiences */}
       {import.meta.env.DEV && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
        currentRoute.startsWith('/admin') &&
-       !currentRoute.split('?')[0].startsWith('/admin/wristbands') && (
+       !currentRoute.split('?')[0].startsWith('/admin/wristbands') &&
+       !currentRoute.split('?')[0].startsWith('/admin/messages') && (
         <DevNavigator
           currentRoute={currentRoute}
           onNavigate={navigate}

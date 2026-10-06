@@ -24,6 +24,8 @@ import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { AdminSelectionCheckbox } from '../../components/common/AdminSelectionCheckbox';
 import { AdminReviewChildView } from './AdminReviewChildView';
+import { CompletionReminderModal } from '../../components/admin/CompletionReminderModal';
+import { BulkCompletionReminderModal } from '../../components/admin/BulkCompletionReminderModal';
 
 interface AdminApplicationsViewProps {
   onBackToOverview?: () => void;
@@ -45,7 +47,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   
   // Tab Filters matching human workflow
-  const [activeTab, setActiveTab] = useState<'under_review' | 'selected' | 'waiting_list' | 'not_selected' | 'needs_attention' | 'removed'>('under_review');
+  const [activeTab, setActiveTab] = useState<'under_review' | 'selected' | 'waiting_list' | 'not_selected' | 'needs_attention' | 'removed' | 'incomplete'>('under_review');
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -59,7 +61,8 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
     selected: 0,
     waitingList: 0,
     notSelected: 0,
-    removed: 0
+    removed: 0,
+    incomplete: 0
   });
 
   // Selection & bulk actions
@@ -87,6 +90,15 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
   const [modalBulkDeleteOpen, setModalBulkDeleteOpen] = useState(false);
   const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
 
+  // Modals for application completion reminders
+  const [singleReminderModalOpen, setSingleReminderModalOpen] = useState(false);
+  const [singleReminderEntry, setSingleReminderEntry] = useState<{
+    id: string;
+    childName: string;
+    parentName: string;
+  } | null>(null);
+  const [bulkReminderModalOpen, setBulkReminderModalOpen] = useState(false);
+
   // Drilldown to Child Review Detail Page
   const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(null);
 
@@ -109,7 +121,8 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
             selected: res.stats.selected || 0,
             waitingList: res.stats.waitingList || 0,
             notSelected: res.stats.notSelected || 0,
-            removed: res.stats.removed || 0
+            removed: res.stats.removed || 0,
+            incomplete: res.stats.incomplete || 0
           });
         }
         if (res.pagination) {
@@ -158,6 +171,10 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
   }, [applications, selectedIds]);
 
   // Eligibility calculations for bulk actions
+  const eligibleIncompleteApps = useMemo(() => {
+    return selectedApps.filter(a => a.isIncomplete);
+  }, [selectedApps]);
+
   const eligibleSelectApps = useMemo(() => {
     return selectedApps.filter(a => 
       !['selected', 'pass_ready'].includes(a.status) &&
@@ -554,12 +571,77 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
   }
 
   // Format Presentation Helpers
+  const formatDobHelper = (dobVal?: string | null) => {
+    if (!dobVal || !String(dobVal).trim()) return 'Date not recorded';
+    const clean = String(dobVal).trim();
+    const d = new Date(clean.includes('T') ? clean : `${clean}T00:00:00`);
+    if (isNaN(d.getTime())) return 'Date not recorded';
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+
+  const formatShortDate = (dateVal?: string | null) => {
+    if (!dateVal) return '';
+    const d = new Date(dateVal);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  };
+
+  const renderReminderStatusBadge = (app: any) => {
+    const portalSent = !!app.lastReminderSentAt;
+    const whatsappSent = !!app.lastWhatsAppSentAt;
+
+    if (portalSent && whatsappSent) {
+      return (
+        <span className="text-[10px] text-[#A67C1E] dark:text-[#D4AF37] font-medium block">
+          Both sent
+        </span>
+      );
+    }
+    if (portalSent) {
+      const d = new Date(app.lastReminderSentAt);
+      const str = !isNaN(d.getTime())
+        ? `${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })}`
+        : '';
+      return (
+        <span className="text-[10px] text-[#A67C1E] dark:text-[#D4AF37] font-medium block">
+          Portal sent{str ? ` · ${str}` : ''}
+        </span>
+      );
+    }
+    if (whatsappSent) {
+      const d = new Date(app.lastWhatsAppSentAt);
+      const str = !isNaN(d.getTime())
+        ? `${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })}`
+        : '';
+      return (
+        <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-medium block">
+          WhatsApp sent{str ? ` · ${str}` : ''}
+        </span>
+      );
+    }
+    return (
+      <span className="text-[10px] text-zinc-400 block">
+        Not sent
+      </span>
+    );
+  };
+
   const renderReviewStatusBadge = (app: any) => {
     if (app.isDeleted || app.status === 'removed') {
       return (
         <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-100 text-zinc-600 border border-zinc-200">
           Removed
         </span>
+      );
+    }
+    if (app.isIncomplete || app.status === 'incomplete' || app.status === 'draft') {
+      return (
+        <div className="space-y-1">
+          <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200/60">
+            Incomplete
+          </span>
+          {renderReminderStatusBadge(app)}
+        </div>
       );
     }
     if (app.status === 'under_review' || app.status === 'review_reopened') {
@@ -728,6 +810,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
             { id: 'waiting_list', label: 'Waiting list', count: stats.waitingList },
             { id: 'not_selected', label: 'Not selected', count: stats.notSelected },
             { id: 'needs_attention', label: 'Needs attention', count: null },
+            { id: 'incomplete', label: 'Incomplete', count: stats.incomplete },
             { id: 'removed', label: 'Removed', count: stats.removed },
           ].map((tab) => (
             <button
@@ -837,6 +920,17 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                 >
                   Reopen review ({eligibleReopenApps.length})
                 </Button>
+
+                {/* Secondary: Send completion reminders */}
+                {eligibleIncompleteApps.length > 0 && (
+                  <Button
+                    type="button"
+                    onClick={() => setBulkReminderModalOpen(true)}
+                    className="text-xs font-semibold px-3 py-1.5 bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/30 hover:bg-amber-500/20 rounded-xl cursor-pointer"
+                  >
+                    Send completion reminders ({eligibleIncompleteApps.length})
+                  </Button>
+                )}
 
                 {/* More ▾ Menu */}
                 <div className="relative">
@@ -1045,7 +1139,18 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                               <div className="flex items-center space-x-1.5 text-xs text-zinc-500">
                                 <span>{app.child?.gender ? app.child.gender.charAt(0).toUpperCase() + app.child.gender.slice(1).toLowerCase() : ''}</span>
                                 {app.child?.gender && <span>·</span>}
-                                <span>{app.child?.ageGroup ? app.child.ageGroup.replace('to', '–') : (app.child?.age ? `Age ${app.child.age}` : '')}</span>
+                                <span>{app.child?.age !== undefined && app.child?.age !== null ? (app.child.age === 0 ? 'Under 1 yr' : `${app.child.age} yrs`) : ''}</span>
+                                {app.child?.age !== undefined && app.child?.ageGroup && <span>·</span>}
+                                <span>{app.child?.ageGroup ? (app.child.ageGroup.toLowerCase().startsWith('ages') || app.child.ageGroup.toLowerCase() === 'teens' ? app.child.ageGroup : `Ages ${app.child.ageGroup}`) : ''}</span>
+                              </div>
+                              <div className="text-[11px] text-zinc-400">
+                                <span>DOB: </span>
+                                <span className={!(app.dob || app.dateOfBirth || app.child?.dob || app.child?.dateOfBirth) ? 'italic' : 'font-medium text-zinc-600 dark:text-zinc-300'}>
+                                  {formatDobHelper(app.dob || app.dateOfBirth || app.child?.dob || app.child?.dateOfBirth)}
+                                </span>
+                                {app.isIncomplete && app.updatedAt && (
+                                  <span className="ml-1.5">· Updated {formatShortDate(app.updatedAt)}</span>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -1119,13 +1224,33 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
 
                         {/* Action */}
                         <td className="py-3.5 px-4 text-right">
-                          <button
-                            onClick={() => setSelectedApplicationId(app.id)}
-                            className="text-xs font-semibold text-[#C59B27] hover:text-[#B08921] transition-colors cursor-pointer inline-flex items-center gap-1"
-                          >
-                            <span>Review details</span>
-                            <ArrowRight className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            {app.isIncomplete && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSingleReminderEntry({
+                                    id: app.id,
+                                    childName: app.child?.fullName || 'Child',
+                                    parentName: app.parent?.fullName || 'Parent'
+                                  });
+                                  setSingleReminderModalOpen(true);
+                                }}
+                                className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 transition-colors cursor-pointer inline-flex items-center gap-1 border border-amber-500/30"
+                                title={app.lastReminderSentAt ? `Last reminder sent: ${new Date(app.lastReminderSentAt).toLocaleString()}` : 'Send completion reminder'}
+                              >
+                                <Clock className="w-3.5 h-3.5" />
+                                <span>Remind</span>
+                              </button>
+                            )}
+                            <button
+                              onClick={() => setSelectedApplicationId(app.id)}
+                              className="text-xs font-semibold text-[#C59B27] hover:text-[#B08921] transition-colors cursor-pointer inline-flex items-center gap-1"
+                            >
+                              <span>Review details</span>
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1773,6 +1898,39 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* 14. COMPLETION REMINDER MODALS */}
+      {singleReminderModalOpen && singleReminderEntry && (
+        <CompletionReminderModal
+          isOpen={singleReminderModalOpen}
+          entryId={singleReminderEntry.id}
+          childName={singleReminderEntry.childName}
+          parentName={singleReminderEntry.parentName}
+          onClose={() => {
+            setSingleReminderModalOpen(false);
+            setSingleReminderEntry(null);
+          }}
+          onSuccess={() => {
+            fetchApplications(currentPage, true);
+          }}
+        />
+      )}
+
+      {bulkReminderModalOpen && eligibleIncompleteApps.length > 0 && (
+        <BulkCompletionReminderModal
+          isOpen={bulkReminderModalOpen}
+          applications={eligibleIncompleteApps.map((a) => ({
+            id: a.id,
+            childName: a.child?.fullName || 'Child',
+            parentName: a.parent?.fullName || 'Parent'
+          }))}
+          onClose={() => setBulkReminderModalOpen(false)}
+          onSuccess={() => {
+            setSelectedIds([]);
+            fetchApplications(currentPage, true);
+          }}
+        />
       )}
 
     </div>

@@ -9,13 +9,15 @@ import {
   ChevronRight, 
   CheckSquare, 
   Square,
-  Loader2
+  Loader2,
+  Clock
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { AdminReviewChildView } from './AdminReviewChildView';
+import { CompletionReminderModal } from '../../components/admin/CompletionReminderModal';
 
 interface AdminReviewBoardViewProps {
   onBackToOverview: () => void;
@@ -32,6 +34,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
 }) => {
   const { showError, showSuccess } = useNotification();
   const [applications, setApplications] = useState<any[]>([]);
+  const [dbStats, setDbStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
@@ -58,6 +61,10 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
   const [bulkNote, setBulkNote] = useState('');
   const isFetchingRef = useRef(false);
 
+  // Completion Reminder Modal State
+  const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
+  const [reminderTarget, setReminderTarget] = useState<{ id: string; childName: string; parentName: string } | null>(null);
+
   const fetchApplications = async (silent = false) => {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
@@ -69,6 +76,9 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
       const res = await api.admin.getApplications();
       if (res.success) {
         setApplications(res.applications || []);
+        if (res.stats) {
+          setDbStats(res.stats);
+        }
       }
     } catch (err: any) {
       console.error('[AdminReviewBoardView - fetchApplications Error]:', err);
@@ -171,8 +181,8 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
         notSelectedCount++;
       }
 
-      // Attention condition: age review, medical/support notes, or missing required photos
-      if (app.flags.belowAge || app.flags.medicalNotes || app.flags.extraSupport || app.flags.missingChildPhoto || app.flags.missingPickupPhoto) {
+      // Attention condition: authoritative needsAttention from server, age review, medical/support notes, or missing photos
+      if (app.needsAttention || app.flags.belowAge || app.flags.medicalNotes || app.flags.extraSupport || app.flags.missingChildPhoto || app.flags.missingPickupPhoto) {
         needsAttentionCount++;
       }
     });
@@ -185,6 +195,18 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
       needsAttention: needsAttentionCount
     };
   }, [enrichedApplications]);
+
+  // Authoritative DB metrics with fallback to enriched applications client metrics
+  const displayStats = useMemo(() => {
+    return {
+      incomplete: dbStats?.incomplete ?? enrichedApplications.filter(a => a.status === 'incomplete' || a.status === 'draft' || a.isIncomplete).length,
+      underReview: dbStats?.sentReview ?? metrics.underReview,
+      selected: dbStats?.selected ?? metrics.selected,
+      waitingList: dbStats?.waitingList ?? metrics.waitingList,
+      notSelected: dbStats?.notSelected ?? metrics.notSelected,
+      needsAttention: dbStats?.needsAttention ?? metrics.needsAttention
+    };
+  }, [dbStats, enrichedApplications, metrics]);
 
   // Capacity Limits and real progress values
   const capacityStats = useMemo(() => {
@@ -237,7 +259,9 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
 
     // Status filter
     if (statusFilter !== 'all') {
-      if (statusFilter === 'under_review') {
+      if (statusFilter === 'incomplete') {
+        list = list.filter(app => app.status === 'incomplete' || app.status === 'draft' || app.isIncomplete);
+      } else if (statusFilter === 'under_review') {
         list = list.filter(app => app.status === 'under_review' || app.status === 'review_reopened');
       } else if (statusFilter === 'selected') {
         list = list.filter(app => ['selected', 'pass_ready', 'checked_in', 'picked_up'].includes(app.status));
@@ -248,12 +272,20 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
 
     // Flag filters
     if (flagFilter !== 'all') {
-      if (flagFilter === 'below_age') {
-        list = list.filter(app => app.flags.belowAge);
-      } else if (flagFilter === 'missing_child_photo') {
-        list = list.filter(app => app.flags.missingChildPhoto);
+      if (flagFilter === 'any') {
+        list = list.filter(app => app.needsAttention || app.flags.belowAge || app.flags.missingChildPhoto || app.flags.missingPickupPhoto || app.flags.medicalNotes || app.flags.extraSupport);
+      } else if (flagFilter === 'missing_pickup_person') {
+        list = list.filter(app => app.needsAttentionReasons?.includes('MISSING_PICKUP_PERSON') || (!app.pickupPeople || app.pickupPeople.length === 0));
       } else if (flagFilter === 'missing_pickup_photo') {
-        list = list.filter(app => app.flags.missingPickupPhoto);
+        list = list.filter(app => app.needsAttentionReasons?.includes('MISSING_PICKUP_PHOTO') || app.needsAttentionReasons?.includes('INVALID_PICKUP_PHOTO') || app.flags.missingPickupPhoto);
+      } else if (flagFilter === 'missing_parent_photo') {
+        list = list.filter(app => app.needsAttentionReasons?.includes('MISSING_PARENT_PHOTO'));
+      } else if (flagFilter === 'missing_child_photo') {
+        list = list.filter(app => app.needsAttentionReasons?.includes('MISSING_CHILD_PHOTO') || app.flags.missingChildPhoto);
+      } else if (flagFilter === 'missing_required') {
+        list = list.filter(app => app.needsAttentionReasons?.includes('MISSING_REQUIRED_FIELD'));
+      } else if (flagFilter === 'age_issue' || flagFilter === 'below_age') {
+        list = list.filter(app => app.needsAttentionReasons?.includes('AGE_NOT_ELIGIBLE') || app.needsAttentionReasons?.includes('DOB_MISSING') || app.flags.belowAge);
       } else if (flagFilter === 'medical_or_support') {
         list = list.filter(app => app.flags.medicalNotes || app.flags.extraSupport);
       } else if (flagFilter === 'duplicate_contact') {
@@ -358,8 +390,121 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
     return `Submitted ${monthDay} · ${time}`;
   };
 
+  const formatDobDisplay = (dobVal?: string | null) => {
+    if (!dobVal || !String(dobVal).trim()) return 'Date not recorded';
+    const clean = String(dobVal).trim();
+    const d = new Date(clean.includes('T') ? clean : `${clean}T00:00:00`);
+    if (isNaN(d.getTime())) return 'Date not recorded';
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+
+  const formatShortDateTime = (dateVal?: string | null) => {
+    if (!dateVal) return '';
+    const d = new Date(dateVal);
+    if (isNaN(d.getTime())) return '';
+    const dayMonth = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+    return `${dayMonth} ${time}`;
+  };
+
+  const formatAgeGroupClean = (group?: string) => {
+    if (!group) return '';
+    const trimmed = group.trim();
+    if (trimmed.toLowerCase().startsWith('ages') || trimmed.toLowerCase() === 'teens' || trimmed.toLowerCase().startsWith('teens')) {
+      return trimmed;
+    }
+    return `Ages ${trimmed}`;
+  };
+
+  const renderReminderStatusText = (app: any) => {
+    const portalSent = !!app.lastReminderSentAt;
+    const whatsappSent = !!app.lastWhatsAppSentAt;
+
+    if (portalSent && whatsappSent) {
+      return (
+        <p className="text-[11px] text-[#A67C1E] dark:text-[#D4AF37] font-medium flex items-center gap-1">
+          <span>Both sent</span>
+          <span className="text-zinc-400 dark:text-zinc-500 text-[10px]">
+            (Portal {formatShortDateTime(app.lastReminderSentAt)} · WA {formatShortDateTime(app.lastWhatsAppSentAt)})
+          </span>
+        </p>
+      );
+    }
+    if (portalSent) {
+      return (
+        <p className="text-[11px] text-[#A67C1E] dark:text-[#D4AF37] font-medium">
+          Portal sent · {formatShortDateTime(app.lastReminderSentAt)}
+        </p>
+      );
+    }
+    if (whatsappSent) {
+      return (
+        <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
+          WhatsApp sent · {formatShortDateTime(app.lastWhatsAppSentAt)}
+        </p>
+      );
+    }
+    return (
+      <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
+        Reminder: Not sent
+      </p>
+    );
+  };
+
+  const renderApplicationDateLine = (app: any) => {
+    const rawDob = app.dob || app.dateOfBirth || app.date_of_birth || app.child?.dob || app.child?.dateOfBirth || app.child?.date_of_birth;
+    const hasValidDob = rawDob && String(rawDob).trim() && !isNaN(new Date(String(rawDob).includes('T') ? String(rawDob).trim() : `${String(rawDob).trim()}T00:00:00`).getTime());
+    const dobText = hasValidDob ? formatDobDisplay(rawDob) : 'DOB missing';
+
+    const isDraft = app.isIncomplete || app.status === 'incomplete' || app.status === 'draft';
+    const submissionText = isDraft
+      ? 'Draft · Not submitted'
+      : (app.submittedAt ? formatSubmittedDate(app.submittedAt) : 'Submitted');
+
+    if (isDraft) {
+      const updatedFormatted = formatShortDateTime(app.updatedAt);
+      return (
+        <div className="space-y-0.5 pt-0.5">
+          <p className="text-xs text-zinc-500 dark:text-[#8E877D] flex items-center flex-wrap gap-x-2">
+            <span className="font-medium text-amber-700 dark:text-amber-400">
+              {submissionText}
+            </span>
+            <span className="text-zinc-300 dark:text-zinc-600">·</span>
+            <span>
+              DOB: <span className={!hasValidDob ? 'text-amber-600 dark:text-amber-400 italic' : 'font-medium text-zinc-700 dark:text-[#D1CBC0]'}>{dobText}</span>
+            </span>
+            {updatedFormatted && (
+              <span className="text-zinc-400 dark:text-[#6E6A63] text-[11px]">
+                (Updated {updatedFormatted})
+              </span>
+            )}
+          </p>
+          {renderReminderStatusText(app)}
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-0.5 pt-0.5">
+        <p className="text-xs text-zinc-400 dark:text-[#7A7570] flex items-center flex-wrap gap-x-2">
+          <span>{submissionText}</span>
+          <span className="text-zinc-300 dark:text-zinc-600">·</span>
+          <span>
+            DOB: <span className={!hasValidDob ? 'text-amber-600 dark:text-amber-400 italic' : 'text-zinc-600 dark:text-[#D1CBC0]'}>{dobText}</span>
+          </span>
+        </p>
+      </div>
+    );
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
+      case 'incomplete':
+      case 'draft':
+        return {
+          label: 'Incomplete',
+          className: 'bg-amber-50 text-amber-800 border border-amber-200/70 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900/40'
+        };
       case 'under_review':
       case 'review_reopened':
         return {
@@ -452,13 +597,22 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
             className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-xs"
             data-component-version="admin-review-summary-strip"
           >
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-y-4 sm:gap-y-0 sm:divide-x divide-[#EAE8E1] dark:sm:divide-[#302E29]">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-y-4 sm:gap-y-0 sm:divide-x divide-[#EAE8E1] dark:sm:divide-[#302E29]">
               <div className="sm:px-4 first:sm:pl-0">
+                <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
+                  Incomplete
+                </span>
+                <span className="text-2xl font-semibold text-amber-700 dark:text-amber-400 block mt-1">
+                  {displayStats.incomplete}
+                </span>
+              </div>
+
+              <div className="sm:px-4">
                 <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
                   Awaiting review
                 </span>
                 <span className="text-2xl font-semibold text-[#18181B] dark:text-[#F0EBE3] block mt-1">
-                  {metrics.underReview}
+                  {displayStats.underReview}
                 </span>
               </div>
 
@@ -467,7 +621,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                   Selected
                 </span>
                 <span className="text-2xl font-semibold text-[#18181B] dark:text-[#F0EBE3] block mt-1">
-                  {metrics.selected}
+                  {displayStats.selected}
                 </span>
               </div>
 
@@ -476,7 +630,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                   Waiting list
                 </span>
                 <span className="text-2xl font-semibold text-[#18181B] dark:text-[#F0EBE3] block mt-1">
-                  {metrics.waitingList}
+                  {displayStats.waitingList}
                 </span>
               </div>
 
@@ -485,7 +639,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                   Not selected
                 </span>
                 <span className="text-2xl font-semibold text-[#18181B] dark:text-[#F0EBE3] block mt-1">
-                  {metrics.notSelected}
+                  {displayStats.notSelected}
                 </span>
               </div>
 
@@ -493,8 +647,8 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                 <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
                   Needs attention
                 </span>
-                <span className={`text-2xl font-semibold block mt-1 ${metrics.needsAttention > 0 ? 'text-amber-800 dark:text-amber-400' : 'text-zinc-500 dark:text-[#7A7570]'}`}>
-                  {metrics.needsAttention}
+                <span className={`text-2xl font-semibold block mt-1 ${displayStats.needsAttention > 0 ? 'text-amber-800 dark:text-amber-400' : 'text-zinc-500 dark:text-[#7A7570]'}`}>
+                  {displayStats.needsAttention}
                 </span>
               </div>
             </div>
@@ -534,6 +688,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                   className="w-full text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] p-2.5 text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
                 >
                   <option value="all">All statuses</option>
+                  <option value="incomplete">Incomplete draft</option>
                   <option value="under_review">Awaiting review</option>
                   <option value="selected">Selected</option>
                   <option value="waiting_list">Waiting list</option>
@@ -552,9 +707,13 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                   className="w-full text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] p-2.5 text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
                 >
                   <option value="all">All registrations</option>
-                  <option value="below_age">Age needs review</option>
-                  <option value="missing_child_photo">Photo needed</option>
-                  <option value="missing_pickup_photo">Pickup photo needed</option>
+                  <option value="any">Any needs attention</option>
+                  <option value="missing_pickup_person">Missing pickup person</option>
+                  <option value="missing_pickup_photo">Missing pickup photo</option>
+                  <option value="missing_parent_photo">Missing parent photo</option>
+                  <option value="missing_child_photo">Missing child photo</option>
+                  <option value="missing_required">Missing required fields</option>
+                  <option value="age_issue">Age not eligible / DOB missing</option>
                   <option value="medical_or_support">Care & medical notes</option>
                   <option value="duplicate_contact">Sibling registrations</option>
                 </select>
@@ -728,9 +887,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                       ? (app.child.age === 0 ? 'Under 1 year' : `${app.child.age} years`)
                       : 'Age not stated';
                     
-                    const ageGroupClean = app.child?.ageGroup 
-                      ? (app.child.ageGroup.toLowerCase().startsWith('ages') ? app.child.ageGroup : `Ages ${app.child.ageGroup}`) 
-                      : '';
+                    const ageGroupClean = formatAgeGroupClean(app.child?.ageGroup);
 
                     return (
                       <div 
@@ -799,12 +956,15 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                                 ) : null}
                               </p>
 
-                              <p className="text-xs text-zinc-400 dark:text-[#7A7570] pt-0.5">
-                                {formatSubmittedDate(app.submittedAt)}
-                              </p>
+                              {renderApplicationDateLine(app)}
 
                               {/* Attention Notices */}
                               <div className="flex flex-wrap gap-1.5 pt-2">
+                                {(app.needsAttention || app.blockingAttention) && (
+                                  <span className="bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40 text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0">
+                                    Needs attention
+                                  </span>
+                                )}
                                 {app.flags.belowAge && (
                                   <span className="bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40 text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0">
                                     Age needs review
@@ -839,24 +999,45 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                             </div>
                           </div>
 
-                          {/* Status Badge & Review Action */}
-                          <div className="flex flex-col items-end justify-between gap-3 shrink-0 self-stretch">
-                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusInfo.className}`}>
-                              {statusInfo.label}
-                            </span>
+                            {/* Status Badge & Actions */}
+                            <div className="flex flex-col items-end justify-between gap-3 shrink-0 self-stretch">
+                              <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusInfo.label === 'Incomplete' ? 'bg-amber-50 text-amber-800 border border-amber-200/80' : statusInfo.className}`}>
+                                {statusInfo.label}
+                              </span>
 
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedApplicationId(app.id);
-                              }}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] transition-colors cursor-pointer mt-auto"
-                            >
-                              <span>{app.status === 'under_review' ? 'Review' : 'View review'}</span>
-                              <ChevronRight className="w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570]" />
-                            </button>
-                          </div>
+                              <div className="flex items-center gap-1.5 mt-auto">
+                                {((app.isIncomplete || app.status === 'incomplete' || app.status === 'draft') || app.blockingAttention) && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setReminderTarget({
+                                        id: app.id,
+                                        childName: app.child?.fullName || 'Child',
+                                        parentName: app.parent?.fullName || 'Parent'
+                                      });
+                                      setIsReminderModalOpen(true);
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-amber-200/80 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100/80 text-xs font-semibold text-amber-800 dark:text-amber-300 transition-colors cursor-pointer"
+                                    title={app.blockingAttention && !(app.isIncomplete || app.status === 'incomplete' || app.status === 'draft') ? "Contact parent about missing required information" : "Send completion reminder"}
+                                  >
+                                    <Clock className="w-3.5 h-3.5" />
+                                    <span>{app.blockingAttention && !(app.isIncomplete || app.status === 'incomplete' || app.status === 'draft') ? 'Contact' : 'Remind'}</span>
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedApplicationId(app.id);
+                                  }}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] transition-colors cursor-pointer"
+                                >
+                                  <span>{app.status === 'under_review' ? 'Review' : (app.isIncomplete || app.status === 'incomplete' || app.status === 'draft') ? 'View draft' : 'View review'}</span>
+                                  <ChevronRight className="w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570]" />
+                                </button>
+                              </div>
+                            </div>
 
                         </div>
                       </div>
@@ -919,12 +1100,6 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                         </span>
                       </div>
                       <div className="flex justify-between items-center py-1.5">
-                        <span className="text-zinc-500 dark:text-[#7A7570]">School</span>
-                        <span className="font-medium text-[#18181B] dark:text-[#F0EBE3] truncate max-w-[150px]">
-                          {activeSelectedChild.schoolName || 'Not stated'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1.5">
                         <span className="text-zinc-500 dark:text-[#7A7570]">Parent / guardian</span>
                         <span className="font-medium text-[#18181B] dark:text-[#F0EBE3] truncate max-w-[150px]">
                           {activeSelectedChild.parent?.fullName || 'Not stated'}
@@ -953,16 +1128,92 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                       </div>
                     )}
 
-                    <Button
-                      type="button"
-                      variant="primary"
-                      size="sm"
-                      fullWidth
-                      onClick={() => setSelectedApplicationId(activeSelectedChild.id)}
-                      className="py-2.5 text-xs font-semibold"
-                    >
-                      Review registration
-                    </Button>
+                    {activeSelectedChild.blockingAttention && (
+                      <div className="bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900/60 rounded-xl p-3 text-xs text-amber-900 dark:text-amber-200 space-y-1.5">
+                        <div className="flex items-center gap-1.5 font-semibold text-amber-800 dark:text-amber-300">
+                          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span>Decision Blocked</span>
+                        </div>
+                        <p className="text-[11px] leading-relaxed text-amber-800/90 dark:text-amber-300/90">
+                          {activeSelectedChild.needsAttentionSummary || 'Required information is missing. Selection and waiting list decisions are blocked until details are provided.'}
+                        </p>
+                      </div>
+                    )}
+
+                    {(activeSelectedChild.isIncomplete || activeSelectedChild.status === 'incomplete' || activeSelectedChild.status === 'draft') ? (
+                      <div className="space-y-2">
+                        <Button
+                          type="button"
+                          variant="primary"
+                          size="sm"
+                          fullWidth
+                          onClick={() => {
+                            setReminderTarget({
+                              id: activeSelectedChild.id,
+                              childName: activeSelectedChild.child?.fullName || 'Child',
+                              parentName: activeSelectedChild.parent?.fullName || 'Parent'
+                            });
+                            setIsReminderModalOpen(true);
+                          }}
+                          className="py-2.5 text-xs font-semibold cursor-pointer"
+                        >
+                          <Clock className="w-3.5 h-3.5 mr-1.5" />
+                          <span>Contact parent / Send reminder</span>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          fullWidth
+                          onClick={() => setSelectedApplicationId(activeSelectedChild.id)}
+                          className="py-2 text-xs font-medium cursor-pointer"
+                        >
+                          View draft details
+                        </Button>
+                      </div>
+                    ) : activeSelectedChild.blockingAttention ? (
+                      <div className="space-y-2">
+                        <Button
+                          type="button"
+                          variant="primary"
+                          size="sm"
+                          fullWidth
+                          onClick={() => {
+                            setReminderTarget({
+                              id: activeSelectedChild.id,
+                              childName: activeSelectedChild.child?.fullName || 'Child',
+                              parentName: activeSelectedChild.parent?.fullName || 'Parent'
+                            });
+                            setIsReminderModalOpen(true);
+                          }}
+                          className="py-2.5 text-xs font-semibold cursor-pointer"
+                        >
+                          <Clock className="w-3.5 h-3.5 mr-1.5" />
+                          <span>Contact parent / Request missing details</span>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          fullWidth
+                          onClick={() => setSelectedApplicationId(activeSelectedChild.id)}
+                          className="py-2 text-xs font-medium cursor-pointer"
+                        >
+                          Review registration
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        fullWidth
+                        onClick={() => setSelectedApplicationId(activeSelectedChild.id)}
+                        className="py-2.5 text-xs font-semibold"
+                      >
+                        Review registration
+                      </Button>
+                    )}
                   </div>
                 ) : (
                   <div className="text-center py-8 px-4 space-y-2">
@@ -1173,6 +1424,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                   className="w-full text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] p-2.5 text-zinc-800 dark:text-[#F0EBE3] focus:outline-none"
                 >
                   <option value="all">All statuses</option>
+                  <option value="incomplete">Incomplete draft</option>
                   <option value="under_review">Awaiting review</option>
                   <option value="selected">Selected</option>
                   <option value="waiting_list">Waiting list</option>
@@ -1191,9 +1443,13 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                   className="w-full text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] p-2.5 text-zinc-800 dark:text-[#F0EBE3] focus:outline-none"
                 >
                   <option value="all">All registrations</option>
-                  <option value="below_age">Age needs review</option>
-                  <option value="missing_child_photo">Photo needed</option>
-                  <option value="missing_pickup_photo">Pickup photo needed</option>
+                  <option value="any">Any needs attention</option>
+                  <option value="missing_pickup_person">Missing pickup person</option>
+                  <option value="missing_pickup_photo">Missing pickup photo</option>
+                  <option value="missing_parent_photo">Missing parent photo</option>
+                  <option value="missing_child_photo">Missing child photo</option>
+                  <option value="missing_required">Missing required fields</option>
+                  <option value="age_issue">Age not eligible / DOB missing</option>
                   <option value="medical_or_support">Care & medical notes</option>
                   <option value="duplicate_contact">Sibling registrations</option>
                 </select>
@@ -1232,6 +1488,23 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Completion Reminder Modal */}
+      {isReminderModalOpen && reminderTarget && (
+        <CompletionReminderModal
+          isOpen={isReminderModalOpen}
+          entryId={reminderTarget.id}
+          childName={reminderTarget.childName}
+          parentName={reminderTarget.parentName}
+          onClose={() => {
+            setIsReminderModalOpen(false);
+            setReminderTarget(null);
+          }}
+          onSuccess={async () => {
+            await fetchApplications(true);
+          }}
+        />
       )}
 
     </div>

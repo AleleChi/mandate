@@ -124,6 +124,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
     pickedUp: 0
   });
   const [recentSubmissions, setRecentSubmissions] = useState<any[]>([]);
+  const [unreadDirectMessagesCount, setUnreadDirectMessagesCount] = useState<number>(0);
 
   // Password change states
   const [automationActionModalState, setAutomationActionModalState] = useState<{
@@ -1060,6 +1061,13 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       if (readinessRes && readinessRes.success && readinessRes.report) {
         setReadinessReport(readinessRes.report);
       }
+
+      // Fetch unread direct messages count for admin sidebar
+      api.admin.messages.getUnreadCount().then((unreadRes) => {
+        if (unreadRes && unreadRes.success && typeof unreadRes.unreadCount === 'number') {
+          setUnreadDirectMessagesCount(unreadRes.unreadCount);
+        }
+      }).catch(() => {});
     } catch (err: any) {
       if (err.name === 'AbortError') {
         // Stale request successfully aborted, do nothing
@@ -1405,6 +1413,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                 {item.id === 'review' && stats.pendingVolunteers > 0 && (
                   <span className="ml-auto bg-[#C59B27] text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
                     {stats.pendingVolunteers}
+                  </span>
+                )}
+                {item.id === 'messages' && unreadDirectMessagesCount > 0 && (
+                  <span className="ml-auto bg-[#C59B27] text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                    {unreadDirectMessagesCount}
                   </span>
                 )}
               </button>
@@ -3662,6 +3675,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               onBackToOverview={() => handleTabChange('overview')}
               onNavigate={onNavigate}
               adminUser={adminUser}
+              currentRoute={currentRoute}
             />
           )}
 
