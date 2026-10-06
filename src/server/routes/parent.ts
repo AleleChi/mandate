@@ -892,12 +892,31 @@ async function performSaveDraftInternal(req: AuthenticatedRequest, draft: any, c
     }
 
     const pickupType = draft.pickup?.pickupType || draft.pickup?.mode || draft.pickupType || 'parent';
-    const pickupPhoto = draft.pickup?.pickupPersonPhoto || draft.pickup?.pickupPersonPhotoUrl || draft.pickup?.photo_url || draft.pickupPersonPhotoUrl || '';
-    const pickupName = draft.pickup?.pickupPersonFullName || draft.pickup?.full_name || draft.pickupPersonFullName || '';
-    const pickupRel = draft.pickup?.pickupPersonRelationship || draft.pickup?.relationship_to_child || draft.pickupPersonRelationship || '';
+    let pickupPhoto = draft.pickup?.pickupPersonPhoto || draft.pickup?.pickupPersonPhotoUrl || draft.pickup?.photo_url || draft.pickupPersonPhotoUrl || '';
+    let pickupName = draft.pickup?.pickupPersonFullName || draft.pickup?.full_name || draft.pickupPersonFullName || '';
+    let pickupRel = draft.pickup?.pickupPersonRelationship || draft.pickup?.relationship_to_child || draft.pickupPersonRelationship || '';
     let pickupPhone = draft.pickup?.pickupPersonPhone || draft.pickup?.phone_number || draft.pickupPersonPhone || '';
     let pickupWa = draft.pickup?.pickupPersonWhatsApp || draft.pickup?.whatsapp_number || draft.pickupPersonWhatsapp || '';
-    const pickupAppr = draft.pickup?.approvedByParent || draft.pickup?.approved_by_parent || draft.pickupPersonApproved ? 1 : 0;
+    let pickupAppr = draft.pickup?.approvedByParent || draft.pickup?.approved_by_parent || draft.pickupPersonApproved ? 1 : 0;
+
+    if (pickupType === 'parent' && req.parentProfile) {
+      if (!pickupPhoto && req.parentProfile.photo_file_id) {
+        pickupPhoto = req.parentProfile.photo_file_id;
+      }
+      if (!pickupName && req.parentProfile.full_name) {
+        pickupName = req.parentProfile.full_name;
+      }
+      if (!pickupPhone && req.parentProfile.phone_number) {
+        pickupPhone = req.parentProfile.phone_number;
+      }
+      if (!pickupWa && req.parentProfile.whatsapp_number) {
+        pickupWa = req.parentProfile.whatsapp_number;
+      }
+      if (!pickupRel) {
+        pickupRel = 'Parent';
+      }
+      pickupAppr = 1;
+    }
 
     if (pickupPhone && pickupPhone.trim()) {
       const countryForPickup = inferCountryIsoFromE164(pickupPhone) || draft.pickup?.pickupPersonCountryIso || draft.pickupPersonCountryIso || 'NG';
@@ -1075,13 +1094,13 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
     },
     pickup: {
       pickupType: pickup.pickup_type,
-      pickupPersonPhoto: pickup.photo_file_id,
-      pickupPersonFullName: pickup.full_name,
-      pickupPersonRelationship: pickup.relationship_to_child,
-      pickupPersonPhone: pickup.phone_number,
+      pickupPersonPhoto: pickup.photo_file_id || (pickup.pickup_type === 'parent' ? req.parentProfile.photo_file_id : ''),
+      pickupPersonFullName: pickup.full_name || (pickup.pickup_type === 'parent' ? req.parentProfile.full_name : ''),
+      pickupPersonRelationship: pickup.relationship_to_child || (pickup.pickup_type === 'parent' ? 'Parent' : ''),
+      pickupPersonPhone: pickup.phone_number || (pickup.pickup_type === 'parent' ? req.parentProfile.phone_number : ''),
       pickupPersonCountryIso: req.body?.pickup?.pickupPersonCountryIso || req.body?.pickupPersonCountryIso || inferCountryIsoFromE164(pickup.phone_number) || 'NG',
-      pickupPersonWhatsApp: pickup.whatsapp_number,
-      approvedByParent: Boolean(pickup.approved_by_parent)
+      pickupPersonWhatsApp: pickup.whatsapp_number || (pickup.pickup_type === 'parent' ? req.parentProfile.whatsapp_number : ''),
+      approvedByParent: Boolean(pickup.approved_by_parent || pickup.pickup_type === 'parent')
     },
     review: {
       detailsConfirmed: true

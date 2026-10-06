@@ -11,6 +11,7 @@
     "migrate:production:gallery": "tsx scripts/run-production-migration.ts",
     "migrate:production:duty": "tsx scripts/run-event-duty-migration.ts",
     "migrate:production:whatsapp": "tsx scripts/run-whatsapp-delivery-migration.ts",
+    "migrate:production:messaging": "tsx scripts/run-017-messaging-migration.ts",
     "worker:whatsapp": "tsx scripts/run-whatsapp-worker.ts"
   },
   "dependencies": {

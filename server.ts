@@ -42,6 +42,9 @@ import { processQueuedWhatsAppJobs, isWhatsAppInProcessWorkerEnabled } from './s
 import automationsRouter from './src/server/routes/admin/automations';
 import { initAutomationSchema } from './src/server/services/operations/automation/automationPersistence';
 import { startAutomationScheduler } from './src/server/services/operations/automation/automationScheduler';
+import { parentMessagesRouter, volunteerMessagesRouter, adminMessagesRouter } from './src/server/routes/messages';
+import { parentAnnouncementsRouter, volunteerAnnouncementsRouter, adminAnnouncementsRouter } from './src/server/routes/announcements';
+import { applicationRemindersRouter } from './src/server/routes/applicationReminders';
 
 async function startServer() {
   const app = express();
@@ -202,6 +205,19 @@ async function startServer() {
       res.status(500).json({ error: 'Internal server error' });
     }
   });
+
+  // Direct Messaging (Phase B Core)
+  app.use('/api/parent/messages', parentMessagesRouter);
+  app.use('/api/volunteer/messages', volunteerMessagesRouter);
+  app.use('/api/admin/messages', adminMessagesRouter);
+
+  // Announcements & Broadcasts (Phase G)
+  app.use('/api/parent/announcements', parentAnnouncementsRouter);
+  app.use('/api/volunteer/announcements', volunteerAnnouncementsRouter);
+  app.use('/api/admin/announcements', adminAnnouncementsRouter);
+
+  // Application Completion Reminders (Phase C)
+  app.use('/api/admin/applications', applicationRemindersRouter);
 
   app.use('/api/parent', parentRoutes);
   app.use('/api/media', mediaRoutes);

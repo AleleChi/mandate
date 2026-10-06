@@ -1075,13 +1075,13 @@ export function validatePickupPerson(pickup: any, defaultCountry = 'NG'): { vali
       }
     }
 
-    const photoVal = pickup?.pickupPersonPhoto || pickup?.pickupPersonPhotoFileId;
-    if (!photoVal || !photoVal.trim()) {
+    const photoVal = pickup?.pickupPersonPhoto || pickup?.pickupPersonPhotoFileId || pickup?.photo_file_id || pickup?.photo;
+    if (!isValidUploadedPhoto(photoVal)) {
       errors.pickupPersonPhoto = {
         valid: false,
         code: 'PICKUP_PHOTO_REQUIRED',
         field: 'pickupPersonPhoto',
-        message: 'Photo is required.'
+        message: 'A clear photo of the authorised pickup person is required.'
       };
     }
 
@@ -1106,6 +1106,16 @@ export function validatePickupPerson(pickup: any, defaultCountry = 'NG'): { vali
  */
 export function validateChildDraftStep(draft: any, parentProfile: any): { valid: boolean; errors: { [key: string]: ValidationResult } } {
   const errors: { [key: string]: ValidationResult } = {};
+
+  // STEP 0: Parent profile requirements
+  if (!isValidUploadedPhoto(parentProfile?.photo_file_id || parentProfile?.photoUrl)) {
+    errors.parentPhoto = {
+      valid: false,
+      code: 'PARENT_PHOTO_REQUIRED',
+      field: 'parentPhoto',
+      message: 'Parent profile photo is required.'
+    };
+  }
 
   // STEP 1: Child details
   const nameVal = draft.childDetails?.fullName || draft.fullName;
@@ -1136,8 +1146,8 @@ export function validateChildDraftStep(draft: any, parentProfile: any): { valid:
     errors.childRelationship = { ...relationshipRes, message: 'Relationship to child is required.' };
   }
 
-  const childPhotoVal = draft.childDetails?.photo || draft.photoUrl || draft.photoFileId;
-  if (!childPhotoVal || !childPhotoVal.trim()) {
+  const childPhotoVal = draft.childDetails?.photo || draft.photoUrl || draft.photoFileId || draft.childDetails?.photoFileId;
+  if (!isValidUploadedPhoto(childPhotoVal)) {
     errors.childPhoto = {
       valid: false,
       code: 'CHILD_PHOTO_REQUIRED',

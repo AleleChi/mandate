@@ -48,6 +48,9 @@ import {
   generateCodeOnlyWristbandBatch,
   markCodeOnlyWristbandsReady
 } from '../services/wristbandService';
+import { isAuthoritativeIncomplete } from '../services/applicationReminderService';
+import { evaluateApplicationNeedsAttention, REASON_LABELS } from '../services/applicationNeedsAttentionService';
+import { calculateAgeOnDate, CANONICAL_GA_EVENT_DATE } from '../services/eligibilityService';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -94,25 +97,28 @@ async function resolveAdminEvent(explicitEventId?: string | null): Promise<Event
   return await getCurrentEvent();
 }
 
-function getChildAge(c: any): number {
-  let age = -1;
+function getChildAge(c: any, referenceDate?: string | Date | null): number {
   if (c.date_of_birth) {
-    try {
-      const dob = new Date(c.date_of_birth);
-      if (!isNaN(dob.getTime())) {
-        const now = new Date();
-        age = now.getFullYear() - dob.getFullYear();
-        const m = now.getMonth() - dob.getMonth();
-        if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) {
-          age--;
-        }
-      }
-    } catch (_) {}
+    const age = calculateAgeOnDate(c.date_of_birth, referenceDate || CANONICAL_GA_EVENT_DATE);
+    if (age !== null) return age;
   }
-  if (age < 0 && c.calculated_age !== null && c.calculated_age !== undefined) {
-    age = Number(c.calculated_age);
+  if (c.calculated_age !== null && c.calculated_age !== undefined && !isNaN(Number(c.calculated_age))) {
+    return Number(c.calculated_age);
   }
-  return age;
+  return -1;
+}
+
+export function deriveAgeGroup(age: number | null, storedGroup?: string | null): string {
+  if (age === null || age < 0) {
+    return storedGroup || 'Not specified';
+  }
+  if (age < 2) return 'Below 2';
+  if (age <= 3) return 'Early Years';
+  if (age <= 6) return '4–6 Years';
+  if (age <= 9) return '7–9 Years';
+  if (age <= 12) return '10–12 Years';
+  if (age <= 14) return '13–14 Years';
+  return 'Above 14';
 }
 
 // Canonical statuses representing genuine completed/submitted registrations
@@ -1691,16 +1697,22 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
     const offset = (page - 1) * limit;
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
+    const needsAttentionReason = typeof req.query.needsAttentionReason === 'string'
+      ? req.query.needsAttentionReason.trim()
+      : (typeof req.query.issue === 'string' ? req.query.issue.trim() : '');
 
     if (!eventId) {
       return res.json({
         success: true,
         applications: [],
         stats: {
+          total: 0,
+          incomplete: 0,
           sentReview: 0,
           selected: 0,
           waitingList: 0,
           notSelected: 0,
+          needsAttention: 0,
           removed: 0
         },
         pagination: {
@@ -1728,13 +1740,37 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
       } else if (status === 'review' || status === 'under_review') {
         whereClauses.push(`e.status = 'under_review' AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
       } else if (status === 'needs_attention') {
-        whereClauses.push(`(e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1 OR NOT EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id)) AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND e.status != 'removed'`);
+        const needsAttnBase = `(e.is_deleted = 0 OR e.is_deleted IS NULL) AND e.status != 'removed'`;
+        if (needsAttentionReason === 'missing_pickup_person') {
+          whereClauses.push(`${needsAttnBase} AND NOT EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id)`);
+        } else if (needsAttentionReason === 'missing_pickup_photo') {
+          whereClauses.push(`${needsAttnBase} AND EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id AND (pp.photo_file_id IS NULL OR pp.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files m WHERE m.id = pp.photo_file_id AND m.secure_url IS NOT NULL AND m.secure_url != '' AND m.secure_url NOT LIKE 'blob:%' AND m.secure_url NOT LIKE 'data:%' AND m.secure_url NOT LIKE '%placeholder%' AND m.secure_url NOT LIKE '%default_avatar%')))` );
+        } else if (needsAttentionReason === 'missing_child_photo') {
+          whereClauses.push(`${needsAttnBase} AND (c.photo_file_id IS NULL OR c.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files cm WHERE cm.id = c.photo_file_id AND cm.secure_url IS NOT NULL AND cm.secure_url != '' AND cm.secure_url NOT LIKE 'blob:%' AND cm.secure_url NOT LIKE 'data:%' AND cm.secure_url NOT LIKE '%placeholder%' AND cm.secure_url NOT LIKE '%default_avatar%'))`);
+        } else if (needsAttentionReason === 'missing_parent_photo') {
+          whereClauses.push(`${needsAttnBase} AND (p.photo_file_id IS NULL OR p.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files pm WHERE pm.id = p.photo_file_id AND pm.secure_url IS NOT NULL AND pm.secure_url != '' AND pm.secure_url NOT LIKE 'blob:%' AND pm.secure_url NOT LIKE 'data:%' AND pm.secure_url NOT LIKE '%placeholder%' AND pm.secure_url NOT LIKE '%default_avatar%'))`);
+        } else if (needsAttentionReason === 'age_issue' || needsAttentionReason === 'age_not_eligible') {
+          whereClauses.push(`${needsAttnBase} AND (c.date_of_birth IS NULL OR c.date_of_birth = '' OR c.needs_age_review = 1 OR CAST(strftime('%Y', '2026-11-21') AS INTEGER) - CAST(strftime('%Y', c.date_of_birth) AS INTEGER) - (CASE WHEN strftime('%m-%d', '2026-11-21') < strftime('%m-%d', c.date_of_birth) THEN 1 ELSE 0 END) < 2 OR CAST(strftime('%Y', '2026-11-21') AS INTEGER) - CAST(strftime('%Y', c.date_of_birth) AS INTEGER) - (CASE WHEN strftime('%m-%d', '2026-11-21') < strftime('%m-%d', c.date_of_birth) THEN 1 ELSE 0 END) > 14)`);
+        } else {
+          whereClauses.push(`${needsAttnBase} AND (
+            e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1
+            OR c.date_of_birth IS NULL OR c.date_of_birth = ''
+            OR CAST(strftime('%Y', '2026-11-21') AS INTEGER) - CAST(strftime('%Y', c.date_of_birth) AS INTEGER) - (CASE WHEN strftime('%m-%d', '2026-11-21') < strftime('%m-%d', c.date_of_birth) THEN 1 ELSE 0 END) < 2
+            OR CAST(strftime('%Y', '2026-11-21') AS INTEGER) - CAST(strftime('%Y', c.date_of_birth) AS INTEGER) - (CASE WHEN strftime('%m-%d', '2026-11-21') < strftime('%m-%d', c.date_of_birth) THEN 1 ELSE 0 END) > 14
+            OR NOT EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id)
+            OR EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id AND (pp.photo_file_id IS NULL OR pp.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files m WHERE m.id = pp.photo_file_id AND m.secure_url IS NOT NULL AND m.secure_url != '' AND m.secure_url NOT LIKE 'blob:%' AND m.secure_url NOT LIKE 'data:%' AND m.secure_url NOT LIKE '%placeholder%' AND m.secure_url NOT LIKE '%default_avatar%')))
+            OR (c.photo_file_id IS NULL OR c.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files cm WHERE cm.id = c.photo_file_id AND cm.secure_url IS NOT NULL AND cm.secure_url != '' AND cm.secure_url NOT LIKE 'blob:%' AND cm.secure_url NOT LIKE 'data:%' AND cm.secure_url NOT LIKE '%placeholder%' AND cm.secure_url NOT LIKE '%default_avatar%'))
+            OR (p.photo_file_id IS NULL OR p.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files pm WHERE pm.id = p.photo_file_id AND pm.secure_url IS NOT NULL AND pm.secure_url != '' AND pm.secure_url NOT LIKE 'blob:%' AND pm.secure_url NOT LIKE 'data:%' AND pm.secure_url NOT LIKE '%placeholder%' AND pm.secure_url NOT LIKE '%default_avatar%'))
+          )`);
+        }
       } else if (status === 'selected') {
         whereClauses.push(`e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up') AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
       } else if (status === 'waiting_list') {
         whereClauses.push(`e.status = 'waiting_list' AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
       } else if (status === 'not_selected') {
         whereClauses.push(`e.status = 'not_selected' AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
+      } else if (status === 'incomplete' || status === 'draft') {
+        whereClauses.push(`e.status IN ('incomplete', 'draft') AND e.submitted_at IS NULL AND (e.details_confirmed = 0 OR e.details_confirmed IS NULL) AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND e.status != 'removed'`);
       } else {
         whereClauses.push(`e.status = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
         params.push(status);
@@ -1743,6 +1779,20 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
       whereClauses.push(`e.status IN ('under_review', 'selected', 'pass_ready', 'waiting_list', 'not_selected') AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
     } else {
       whereClauses.push(`(e.is_deleted = 0 OR e.is_deleted IS NULL) AND e.status != 'removed'`);
+    }
+
+    if (needsAttentionReason && status !== 'needs_attention' && needsAttentionReason !== 'all') {
+      if (needsAttentionReason === 'missing_pickup_person') {
+        whereClauses.push(`NOT EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id)`);
+      } else if (needsAttentionReason === 'missing_pickup_photo') {
+        whereClauses.push(`EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id AND (pp.photo_file_id IS NULL OR pp.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files m WHERE m.id = pp.photo_file_id AND m.secure_url IS NOT NULL AND m.secure_url != '' AND m.secure_url NOT LIKE 'blob:%' AND m.secure_url NOT LIKE 'data:%' AND m.secure_url NOT LIKE '%placeholder%' AND m.secure_url NOT LIKE '%default_avatar%')))` );
+      } else if (needsAttentionReason === 'missing_child_photo') {
+        whereClauses.push(`(c.photo_file_id IS NULL OR c.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files cm WHERE cm.id = c.photo_file_id AND cm.secure_url IS NOT NULL AND cm.secure_url != '' AND cm.secure_url NOT LIKE 'blob:%' AND cm.secure_url NOT LIKE 'data:%' AND cm.secure_url NOT LIKE '%placeholder%' AND cm.secure_url NOT LIKE '%default_avatar%'))`);
+      } else if (needsAttentionReason === 'missing_parent_photo') {
+        whereClauses.push(`(p.photo_file_id IS NULL OR p.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files pm WHERE pm.id = p.photo_file_id AND pm.secure_url IS NOT NULL AND pm.secure_url != '' AND pm.secure_url NOT LIKE 'blob:%' AND pm.secure_url NOT LIKE 'data:%' AND pm.secure_url NOT LIKE '%placeholder%' AND pm.secure_url NOT LIKE '%default_avatar%'))`);
+      } else if (needsAttentionReason === 'age_issue' || needsAttentionReason === 'age_not_eligible') {
+        whereClauses.push(`(c.date_of_birth IS NULL OR c.date_of_birth = '' OR c.needs_age_review = 1 OR CAST(strftime('%Y', '2026-11-21') AS INTEGER) - CAST(strftime('%Y', c.date_of_birth) AS INTEGER) - (CASE WHEN strftime('%m-%d', '2026-11-21') < strftime('%m-%d', c.date_of_birth) THEN 1 ELSE 0 END) < 2 OR CAST(strftime('%Y', '2026-11-21') AS INTEGER) - CAST(strftime('%Y', c.date_of_birth) AS INTEGER) - (CASE WHEN strftime('%m-%d', '2026-11-21') < strftime('%m-%d', c.date_of_birth) THEN 1 ELSE 0 END) > 14)`);
+      }
     }
 
     const whereSql = whereClauses.join(' AND ');
@@ -1764,6 +1814,35 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
         e.id as entry_id,
         e.child_id,
         e.status,
+        e.details_confirmed,
+        e.created_at as entry_created_at,
+        e.updated_at as entry_updated_at,
+        (
+          SELECT m.created_at
+          FROM messages m
+          JOIN message_threads t ON t.id = m.thread_id
+          WHERE t.linked_entry_id = e.id
+            AND m.message_type IN ('application_completion_reminder', 'application_correction_required')
+          ORDER BY m.created_at DESC
+          LIMIT 1
+        ) as last_reminder_sent_at,
+        (
+          SELECT m.message_type
+          FROM messages m
+          JOIN message_threads t ON t.id = m.thread_id
+          WHERE t.linked_entry_id = e.id
+            AND m.message_type IN ('application_completion_reminder', 'application_correction_required')
+          ORDER BY m.created_at DESC
+          LIMIT 1
+        ) as last_reminder_type,
+        (
+          SELECT COALESCE(l.sent_at, l.created_at)
+          FROM whatsapp_delivery_logs l
+          WHERE l.child_event_entry_id = e.id
+            AND l.status IN ('sent', 'delivered', 'read')
+          ORDER BY COALESCE(l.sent_at, l.created_at) DESC
+          LIMIT 1
+        ) as last_whatsapp_sent_at,
         e.school_class,
         e.school_name,
         e.previous_children_programme,
@@ -1833,10 +1912,23 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
 
         const pass = eventPasses.find((p: any) => p.child_event_entry_id === app.entry_id);
 
+        const childAge = getChildAge(app, CANONICAL_GA_EVENT_DATE);
+        const childAgeGroup = deriveAgeGroup(childAge, app.age_group);
+        const attnResult = evaluateApplicationNeedsAttention(app, entryPickups, CANONICAL_GA_EVENT_DATE);
+
         return {
           id: app.entry_id,
           childId: app.child_id,
           status: app.status,
+          isIncomplete: isAuthoritativeIncomplete(app),
+          needsAttention: attnResult.needsAttention,
+          needsAttentionReasons: attnResult.reasons,
+          blockingAttention: attnResult.blocking,
+          needsAttentionSummary: attnResult.summary,
+          lastReminderSentAt: app.last_reminder_sent_at || null,
+          lastReminderType: app.last_reminder_type || null,
+          lastWhatsAppSentAt: app.last_whatsapp_sent_at || null,
+          updatedAt: app.entry_updated_at || app.entry_created_at || null,
           checkedInAt: app.checked_in_at,
           pickedUpAt: app.picked_up_at,
           isDeleted: app.is_deleted === 1,
@@ -1852,12 +1944,17 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
           needsExtraSupport: app.needs_extra_support === 1,
           supportNotes: app.support_notes,
           submittedAt: app.submitted_at,
+          dob: app.date_of_birth || null,
+          dateOfBirth: app.date_of_birth || null,
+          date_of_birth: app.date_of_birth || null,
           child: {
             fullName: app.child_name,
             gender: app.gender,
-            dob: app.date_of_birth,
-            age: app.calculated_age,
-            ageGroup: app.age_group,
+            dob: app.date_of_birth || null,
+            dateOfBirth: app.date_of_birth || null,
+            date_of_birth: app.date_of_birth || null,
+            age: childAge >= 0 ? childAge : app.calculated_age,
+            ageGroup: childAgeGroup,
             relationship: app.relationship_to_child,
             needsAgeReview: app.needs_age_review === 1,
             photoUrl: app.child_photo_url
@@ -1882,15 +1979,38 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
     const statWaitingList = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'waiting_list' AND (is_deleted = 0 OR is_deleted IS NULL)`, [eventId]))?.count || 0;
     const statNotSelected = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'not_selected' AND (is_deleted = 0 OR is_deleted IS NULL)`, [eventId]))?.count || 0;
     const statRemoved = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND (is_deleted = 1 OR status = 'removed')`, [eventId]))?.count || 0;
+    const statIncomplete = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('incomplete', 'draft') AND submitted_at IS NULL AND (details_confirmed = 0 OR details_confirmed IS NULL) AND (is_deleted = 0 OR is_deleted IS NULL) AND status != 'removed'`, [eventId]))?.count || 0;
+    const statTotal = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND (is_deleted = 0 OR is_deleted IS NULL) AND status != 'removed'`, [eventId]))?.count || 0;
+    const statNeedsAttention = (await queryOne(`
+      SELECT COUNT(DISTINCT e.id) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND e.status != 'removed'
+        AND (
+          c.date_of_birth IS NULL OR c.date_of_birth = '' OR c.needs_age_review = 1
+          OR CAST(strftime('%Y', '2026-11-21') AS INTEGER) - CAST(strftime('%Y', c.date_of_birth) AS INTEGER) - (CASE WHEN strftime('%m-%d', '2026-11-21') < strftime('%m-%d', c.date_of_birth) THEN 1 ELSE 0 END) < 2
+          OR CAST(strftime('%Y', '2026-11-21') AS INTEGER) - CAST(strftime('%Y', c.date_of_birth) AS INTEGER) - (CASE WHEN strftime('%m-%d', '2026-11-21') < strftime('%m-%d', c.date_of_birth) THEN 1 ELSE 0 END) > 14
+          OR NOT EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id)
+          OR EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id AND (pp.photo_file_id IS NULL OR pp.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files m WHERE m.id = pp.photo_file_id AND m.secure_url IS NOT NULL AND m.secure_url != '' AND m.secure_url NOT LIKE 'blob:%' AND m.secure_url NOT LIKE 'data:%' AND m.secure_url NOT LIKE '%placeholder%' AND m.secure_url NOT LIKE '%default_avatar%')))
+          OR (c.photo_file_id IS NULL OR c.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files cm WHERE cm.id = c.photo_file_id AND cm.secure_url IS NOT NULL AND cm.secure_url != '' AND cm.secure_url NOT LIKE 'blob:%' AND cm.secure_url NOT LIKE 'data:%' AND cm.secure_url NOT LIKE '%placeholder%' AND cm.secure_url NOT LIKE '%default_avatar%'))
+          OR (p.photo_file_id IS NULL OR p.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files pm WHERE pm.id = p.photo_file_id AND pm.secure_url IS NOT NULL AND pm.secure_url != '' AND pm.secure_url NOT LIKE 'blob:%' AND pm.secure_url NOT LIKE 'data:%' AND pm.secure_url NOT LIKE '%placeholder%' AND pm.secure_url NOT LIKE '%default_avatar%'))
+        )
+    `, [eventId]))?.count || 0;
 
     return res.json({ 
       success: true, 
       applications: formatted,
       stats: {
+        total: statTotal,
+        incomplete: statIncomplete,
         sentReview: statSentReview,
         selected: statSelected,
         waitingList: statWaitingList,
         notSelected: statNotSelected,
+        needsAttention: statNeedsAttention,
         removed: statRemoved
       },
       pagination: {
@@ -2197,6 +2317,8 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
         e.checked_in_at,
         e.picked_up_at,
         c.full_name as child_name,
+        c.date_of_birth,
+        c.calculated_age,
         c.age_group,
         c.needs_age_review,
         p.full_name as parent_name,
@@ -2220,11 +2342,11 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
     }
 
     if (status === 'inside') {
-      queryStr += " AND e.status IN ('checked_in', 'inside') AND e.checked_in_at IS NOT NULL AND e.picked_up_at IS NULL";
+      queryStr += " AND ((e.status IN ('checked_in', 'inside') OR e.checked_in_at IS NOT NULL) AND e.status != 'picked_up' AND e.picked_up_at IS NULL)";
     } else if (status === 'picked_up') {
-      queryStr += " AND e.status = 'picked_up' AND e.picked_up_at IS NOT NULL";
+      queryStr += " AND (e.status = 'picked_up' OR e.picked_up_at IS NOT NULL)";
     } else if (status === 'not_arrived') {
-      queryStr += " AND (e.status IN ('selected', 'pass_ready') OR e.checked_in_at IS NULL)";
+      queryStr += " AND (e.status IN ('selected', 'pass_ready') AND e.checked_in_at IS NULL)";
     } else if (status === 'needs_attention') {
       queryStr += " AND (e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1)";
     }
@@ -2234,23 +2356,26 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
     const childrenRows = await query(queryStr, queryParams);
 
     const rows = childrenRows.map((app: any) => {
+      const isPickedUp = app.status === 'picked_up' || Boolean(app.picked_up_at);
+      const isInside = !isPickedUp && (app.status === 'inside' || app.status === 'checked_in' || Boolean(app.checked_in_at));
+      const hasNeedsAttention = app.has_medical_notes === 1 || app.needs_extra_support === 1 || app.needs_age_review === 1;
+
       let rowStatus: 'checked_in' | 'picked_up' | 'not_arrived' | 'needs_attention' = 'not_arrived';
       let rowLocation: 'inside' | 'picked_up' | 'not_arrived' | null = 'not_arrived';
 
-      if (app.status === 'picked_up' && app.picked_up_at) {
+      if (isPickedUp) {
         rowStatus = 'picked_up';
         rowLocation = 'picked_up';
-      } else if ((app.status === 'checked_in' || app.status === 'inside') && app.checked_in_at && !app.picked_up_at) {
+      } else if (isInside) {
         rowStatus = 'checked_in';
         rowLocation = 'inside';
       } else {
-        const needsAttention = app.has_medical_notes === 1 || app.needs_extra_support === 1 || app.needs_age_review === 1;
-        if (needsAttention) {
-          rowStatus = 'needs_attention';
-        } else {
-          rowStatus = 'not_arrived';
-        }
+        rowStatus = 'not_arrived';
         rowLocation = 'not_arrived';
+      }
+
+      if (hasNeedsAttention && (status === 'needs_attention' || (!isInside && !isPickedUp))) {
+        rowStatus = 'needs_attention';
       }
 
       let notesSummary = 'No care note';
@@ -2261,33 +2386,28 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       }
 
       // Only current lifecycle activity should be reported
-      const lastActAt = (rowStatus === 'picked_up' ? app.picked_up_at : (rowStatus === 'checked_in' ? app.checked_in_at : null)) || null;
+      const lastActAt = (isPickedUp ? app.picked_up_at : (isInside ? app.checked_in_at : null)) || null;
       const lastActLabel = lastActAt ? formatTime(lastActAt) : 'No activity';
 
-      const rawAgeGroup = app.age_group || '';
-      const needsAgeReview = app.needs_age_review === 1 || rawAgeGroup.includes('Review Needed');
-      let cleanAgeGroupLabel = rawAgeGroup.replace(/\s*\(Review Needed\)/gi, '').trim();
-      if (cleanAgeGroupLabel === 'Under 4' || !cleanAgeGroupLabel) {
-        const chAge = getChildAge(app);
-        if (chAge < 1) cleanAgeGroupLabel = 'Below 1';
-        else if (chAge <= 3) cleanAgeGroupLabel = 'Ages 1 to 3';
-        else if (chAge <= 6) cleanAgeGroupLabel = 'Ages 4 to 6';
-        else if (chAge <= 9) cleanAgeGroupLabel = 'Ages 7 to 9';
-        else if (chAge <= 12) cleanAgeGroupLabel = 'Ages 10 to 12';
-        else cleanAgeGroupLabel = 'Teens';
-      } else if (cleanAgeGroupLabel === 'Ages 4-6') {
-        cleanAgeGroupLabel = 'Ages 4 to 6';
-      } else if (cleanAgeGroupLabel === 'Ages 7-9') {
-        cleanAgeGroupLabel = 'Ages 7 to 9';
-      } else if (cleanAgeGroupLabel === 'Ages 10-12') {
-        cleanAgeGroupLabel = 'Ages 10 to 12';
+      const chAge = getChildAge(app, CANONICAL_GA_EVENT_DATE);
+      let cleanAgeGroupLabel = '';
+      if (chAge >= 2 && chAge <= 3) cleanAgeGroupLabel = 'Early Years';
+      else if (chAge >= 4 && chAge <= 6) cleanAgeGroupLabel = '4–6 Years';
+      else if (chAge >= 7 && chAge <= 9) cleanAgeGroupLabel = '7–9 Years';
+      else if (chAge >= 10 && chAge <= 12) cleanAgeGroupLabel = '10–12 Years';
+      else if (chAge >= 13 && chAge <= 14) cleanAgeGroupLabel = '13–14 Years';
+      else {
+        cleanAgeGroupLabel = deriveAgeGroup(chAge, app.age_group);
       }
+
+      const needsAgeReview = app.needs_age_review === 1 || Boolean(app.age_group && app.age_group.includes('Review Needed'));
 
       return {
         id: app.entry_id,
         childId: app.child_id,
         applicationId: app.entry_id,
         childName: app.child_name,
+        age: chAge >= 0 ? chAge : null,
         ageGroup: cleanAgeGroupLabel,
         needsAgeReview,
         parentName: app.parent_name,
@@ -2332,11 +2452,11 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
           max: Number(g.max_age)
         }))
       : [
-          { key: 'Below 1', label: 'Below 1', min: 0, max: 0 },
-          { key: 'Ages 1 to 3', label: 'Ages 1 to 3', min: 1, max: 3 },
-          { key: 'Ages 4 to 6', label: 'Ages 4 to 6', min: 4, max: 6 },
-          { key: 'Ages 7 to 9', label: 'Ages 7 to 9', min: 7, max: 9 },
-          { key: 'Ages 10 to 12', label: 'Ages 10 to 12', min: 10, max: 12 }
+          { key: 'Early Years', label: 'Early Years', min: 2, max: 3 },
+          { key: '4–6 Years', label: '4–6 Years', min: 4, max: 6 },
+          { key: '7–9 Years', label: '7–9 Years', min: 7, max: 9 },
+          { key: '10–12 Years', label: '10–12 Years', min: 10, max: 12 },
+          { key: '13–14 Years', label: '13–14 Years', min: 13, max: 14 }
         ];
 
     const ageGroupsMap = new Map<string, any>();
@@ -2352,7 +2472,7 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
     }
 
     for (const entry of allEntriesForAgeGroups) {
-      const age = getChildAge(entry);
+      const age = getChildAge(entry, CANONICAL_GA_EVENT_DATE);
       let matchedCohort = canonicalCohorts.find(c => age >= c.min && age <= c.max);
       if (!matchedCohort && entry.age_group) {
         const cleanAg = entry.age_group.replace(/\s*\(Review Needed\)/gi, '').trim();
@@ -2362,14 +2482,19 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
           return norm === cNorm || norm.includes(cNorm) || cNorm.includes(norm);
         });
       }
-      const groupKey = matchedCohort ? matchedCohort.key : canonicalCohorts[0].key;
+      const groupKey = matchedCohort ? matchedCohort.key : (
+        age < 2 ? canonicalCohorts[0].key : canonicalCohorts[canonicalCohorts.length - 1].key
+      );
       const statsObj = ageGroupsMap.get(groupKey);
       if (statsObj) {
         statsObj.expected++;
-        if (entry.status === 'picked_up' && entry.picked_up_at) {
+        const isPickedUp = entry.status === 'picked_up' || Boolean(entry.picked_up_at);
+        const isInside = !isPickedUp && (entry.status === 'inside' || entry.status === 'checked_in' || Boolean(entry.checked_in_at));
+
+        if (isPickedUp) {
           statsObj.checkedIn++;
           statsObj.pickedUp++;
-        } else if ((entry.status === 'checked_in' || entry.status === 'inside') && entry.checked_in_at && !entry.picked_up_at) {
+        } else if (isInside) {
           statsObj.checkedIn++;
           statsObj.inside++;
         } else {
@@ -2591,10 +2716,39 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
     const pass = await queryOne('SELECT pass_reference, status, issued_at, revoked_at FROM event_passes WHERE child_event_entry_id = ? ORDER BY created_at DESC LIMIT 1', [id]);
     const passReference = pass ? pass.pass_reference : undefined;
 
+    const childAge = getChildAge(app, CANONICAL_GA_EVENT_DATE);
+    const childAgeGroup = deriveAgeGroup(childAge, app.age_group);
+    const attnResult = evaluateApplicationNeedsAttention(app, formattedPickups, CANONICAL_GA_EVENT_DATE);
+    const lastReminder = await queryOne(`
+      SELECT m.created_at, m.message_type
+      FROM messages m
+      JOIN message_threads t ON t.id = m.thread_id
+      WHERE t.linked_entry_id = ?
+        AND m.message_type IN ('application_completion_reminder', 'application_correction_required')
+      ORDER BY m.created_at DESC
+      LIMIT 1
+    `, [id]);
+    const lastWhatsApp = await queryOne(`
+      SELECT COALESCE(sent_at, created_at) as sent_at
+      FROM whatsapp_delivery_logs
+      WHERE child_event_entry_id = ?
+        AND status IN ('sent', 'delivered', 'read')
+      ORDER BY COALESCE(sent_at, created_at) DESC
+      LIMIT 1
+    `, [id]);
+
     const applicationDetails = {
       id: app.entry_id,
       childId: app.child_id,
       status: app.status,
+      isIncomplete: isAuthoritativeIncomplete(app),
+      needsAttention: attnResult.needsAttention,
+      needsAttentionReasons: attnResult.reasons,
+      blockingAttention: attnResult.blocking,
+      needsAttentionSummary: attnResult.summary,
+      lastReminderSentAt: lastReminder?.created_at || null,
+      lastReminderType: lastReminder?.message_type || null,
+      lastWhatsAppSentAt: lastWhatsApp?.sent_at || null,
       checkedInAt: app.checked_in_at,
       pickedUpAt: app.picked_up_at,
       hasPass: !!pass,
@@ -2614,12 +2768,17 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
       supportNotes: app.support_notes,
       submittedAt: app.submitted_at,
       reviewedAt: app.reviewed_at,
+      dob: app.date_of_birth || null,
+      dateOfBirth: app.date_of_birth || null,
+      date_of_birth: app.date_of_birth || null,
       child: {
         fullName: app.child_name,
         gender: app.gender,
-        dob: app.date_of_birth,
-        age: app.calculated_age,
-        ageGroup: app.age_group,
+        dob: app.date_of_birth || null,
+        dateOfBirth: app.date_of_birth || null,
+        date_of_birth: app.date_of_birth || null,
+        age: childAge >= 0 ? childAge : app.calculated_age,
+        ageGroup: childAgeGroup,
         relationship: app.relationship_to_child,
         needsAgeReview: app.needs_age_review === 1,
         photoUrl: app.child_photo_url
@@ -2680,6 +2839,23 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
         error: 'Cannot review an incomplete application draft.',
         message: 'Cannot review an incomplete application draft.'
       });
+    }
+
+    if (['selected', 'pass_ready', 'waiting_list'].includes(status)) {
+      const rawPickups = await query<any>(
+        'SELECT p.*, m.secure_url as photo_url FROM pickup_people p LEFT JOIN media_files m ON m.id = p.photo_file_id WHERE p.child_event_entry_id = ? OR (p.child_id = ? AND p.event_id = ?)',
+        [id, app.child_id, app.event_id]
+      );
+      const attnCheck = evaluateApplicationNeedsAttention(app, rawPickups, CANONICAL_GA_EVENT_DATE);
+      if (attnCheck.blocking) {
+        return res.status(400).json({
+          success: false,
+          code: 'APPLICATION_BLOCKING_ATTENTION',
+          error: `Cannot proceed with decision: ${attnCheck.summary}. Mandatory information must be completed before making a final decision.`,
+          message: `Cannot proceed with decision: ${attnCheck.summary}. Mandatory information must be completed before making a final decision.`,
+          reasons: attnCheck.reasons
+        });
+      }
     }
 
     const now = new Date().toISOString();
@@ -2967,6 +3143,22 @@ router.post('/applications/bulk-review', authMiddleware, async (req: Authenticat
           reason: `Child is currently in an event attendance state (${app.status}). Attendance records cannot be altered by registration review.`
         });
         continue;
+      }
+
+      if (['selected', 'waiting_list'].includes(decision)) {
+        const rawPickups = await query<any>(
+          'SELECT p.*, m.secure_url as photo_url FROM pickup_people p LEFT JOIN media_files m ON m.id = p.photo_file_id WHERE p.child_event_entry_id = ? OR (p.child_id = ? AND p.event_id = ?)',
+          [id, app.child_id, app.event_id]
+        );
+        const attnCheck = evaluateApplicationNeedsAttention(app, rawPickups, CANONICAL_GA_EVENT_DATE);
+        if (attnCheck.blocking) {
+          failures.push({
+            id,
+            childName: app.child_name,
+            reason: `Mandatory requirements missing: ${attnCheck.summary}`
+          });
+          continue;
+        }
       }
 
       let finalDecision = decision;

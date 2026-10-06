@@ -110,7 +110,17 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
            OR visible_to_event_team = 1
         ORDER BY created_at DESC
       `);
-      notifications = rawNotifs.map((n: any) => ({
+      const filteredVolunteerNotifs = rawNotifs.filter((n: any) => {
+        if (n.audience_scope === 'individual') {
+          let meta: any = null;
+          try { meta = n.metadata_json ? JSON.parse(n.metadata_json) : null; } catch (_) {}
+          if (meta && meta.targetUserId && meta.targetUserId !== userId) {
+            return false;
+          }
+        }
+        return true;
+      });
+      notifications = filteredVolunteerNotifs.map((n: any) => ({
         id: `notifications:${n.id}`,
         rawId: n.id,
         source: 'notifications',

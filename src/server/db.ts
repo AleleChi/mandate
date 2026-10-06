@@ -983,6 +983,82 @@ function initSqliteSchema(db: Database.Database) {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS message_threads (
+      id TEXT PRIMARY KEY,
+      event_id TEXT REFERENCES events(id) ON DELETE SET NULL,
+      category TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      linked_child_id TEXT REFERENCES children(id) ON DELETE SET NULL,
+      linked_entry_id TEXT REFERENCES child_event_entries(id) ON DELETE SET NULL,
+      created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      last_message_at TEXT NOT NULL,
+      last_message_preview TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_message_threads_event ON message_threads(event_id);
+    CREATE INDEX IF NOT EXISTS idx_message_threads_child ON message_threads(linked_child_id);
+    CREATE INDEX IF NOT EXISTS idx_message_threads_entry ON message_threads(linked_entry_id);
+    CREATE INDEX IF NOT EXISTS idx_message_threads_last_msg ON message_threads(last_message_at DESC);
+
+    CREATE TABLE IF NOT EXISTS message_thread_participants (
+      id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL REFERENCES message_threads(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role TEXT NOT NULL,
+      last_read_at TEXT,
+      is_archived INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      UNIQUE(thread_id, user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_thread_participants_user ON message_thread_participants(user_id);
+    CREATE INDEX IF NOT EXISTS idx_thread_participants_thread ON message_thread_participants(thread_id);
+
+    CREATE TABLE IF NOT EXISTS messages (
+      id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL REFERENCES message_threads(id) ON DELETE CASCADE,
+      sender_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      sender_role TEXT NOT NULL,
+      message_type TEXT NOT NULL DEFAULT 'standard',
+      body TEXT NOT NULL,
+      action_type TEXT,
+      action_payload_json TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_messages_thread_created ON messages(thread_id, created_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_messages_type_created ON messages(message_type, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS announcements (
+      id TEXT PRIMARY KEY,
+      event_id TEXT REFERENCES events(id) ON DELETE SET NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      audience_type TEXT NOT NULL,
+      target_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      published_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_announcements_audience ON announcements(audience_type, published_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_announcements_target_user ON announcements(target_user_id);
+
+    CREATE TABLE IF NOT EXISTS announcement_reads (
+      id TEXT PRIMARY KEY,
+      announcement_id TEXT NOT NULL REFERENCES announcements(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      read_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(announcement_id, user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_announcement_reads_user ON announcement_reads(user_id);
   `);
 
   // Run safe column migrations for existing SQLite databases
