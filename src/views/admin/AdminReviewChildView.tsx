@@ -16,6 +16,7 @@ import {
   X,
   XCircle,
   ChevronDown,
+  ChevronRight,
   QrCode,
   RotateCcw,
   Trash2
@@ -26,6 +27,7 @@ import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { EventPassPreviewCard } from '../../components/common/EventPassPreviewCard';
 import { SafeImage } from '../../components/common/SafeImage';
+import { PhotoUploadBox } from '../../components/common/PhotoUploadBox';
 import { CompletionReminderModal } from '../../components/admin/CompletionReminderModal';
 
 interface AdminReviewChildViewProps {
@@ -74,6 +76,8 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
     fullName: '',
     gender: 'Male',
     dateOfBirth: '',
+    photoUrl: '',
+    photoFileId: '',
     schoolClass: '',
     schoolName: '',
     hasMedicalNotes: false,
@@ -88,6 +92,14 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
     pickupPersonRelationship: '',
     pickupPersonPhone: ''
   });
+
+  // Return to parent for correction states
+  const [isReturnToParentModalOpen, setIsReturnToParentModalOpen] = useState(false);
+  const [returnReason, setReturnReason] = useState('Child photo is missing or needs a clearer face photo');
+  const [returnCustomMessage, setReturnCustomMessage] = useState('');
+  const [notifyParentEmail, setNotifyParentEmail] = useState(true);
+  const [notifyParentWhatsApp, setNotifyParentWhatsApp] = useState(true);
+  const [returningToParent, setReturningToParent] = useState(false);
 
   // Remove child state
   const [isRemoveModalOpen, setIsRemoveModalOpen] = useState(false);
@@ -150,6 +162,8 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
           fullName: res.application.child.fullName || '',
           gender: res.application.child.gender || 'Male',
           dateOfBirth: res.application.child.dob || '',
+          photoUrl: res.application.child?.photoUrl || '',
+          photoFileId: res.application.child?.photoFileId || '',
           schoolClass: res.application.schoolClass || '',
           schoolName: res.application.schoolName || '',
           hasMedicalNotes: !!res.application.hasMedicalNotes,
@@ -328,6 +342,35 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
     }
   };
 
+  const handleConfirmReturnToParent = async () => {
+    setReturningToParent(true);
+    try {
+      const res = await api.admin.returnApplicationToDraft(applicationId, {
+        reason: returnReason || 'Child photo is missing or needs a clearer face photo',
+        customMessage: returnCustomMessage,
+        notifyEmail: notifyParentEmail,
+        notifyWhatsApp: notifyParentWhatsApp
+      });
+
+      if (res.success) {
+        showSuccess(
+          'Returned for Correction',
+          `Application for ${app?.child?.fullName || 'the child'} has been moved to draft and the parent has been notified.`
+        );
+        setIsReturnToParentModalOpen(false);
+        await fetchDetails();
+        onSave();
+      } else {
+        showError('Action Failed', res.message || 'Could not return application to parent.');
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Action Failed', parsed.message || 'An error occurred while returning the application.');
+    } finally {
+      setReturningToParent(false);
+    }
+  };
+
   const handleConfirmRemove = async () => {
     setRemoving(true);
     try {
@@ -471,6 +514,8 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
         fullName: editForm.fullName,
         gender: editForm.gender,
         dateOfBirth: editForm.dateOfBirth,
+        photoUrl: editForm.photoUrl,
+        photoFileId: editForm.photoFileId,
         schoolClass: editForm.schoolClass,
         schoolName: editForm.schoolName,
         hasMedicalNotes: editForm.hasMedicalNotes,
@@ -659,17 +704,39 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
 
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
               <div className="shrink-0">
-                <SafeImage
-                  src={app.child.photoUrl}
-                  alt={app.child.fullName}
-                  className="w-20 h-24 rounded-xl object-cover border border-[#EAE8E1] dark:border-[#3A3835]"
-                  containerClassName="w-20 h-24 rounded-xl"
-                  fallbackComponent={
-                    <div className="w-20 h-24 rounded-xl bg-zinc-100 dark:bg-[#262520] border border-zinc-200 dark:border-[#3A3835] flex items-center justify-center text-zinc-500 dark:text-[#7A7570] font-semibold text-xl">
-                      <span>{app.child.fullName?.charAt(0) || 'C'}</span>
-                    </div>
-                  }
-                />
+                <div className="relative group">
+                  <SafeImage
+                    src={app.child.photoUrl}
+                    alt={app.child.fullName}
+                    className="w-20 h-24 rounded-xl object-cover border border-[#EAE8E1] dark:border-[#3A3835]"
+                    containerClassName="w-20 h-24 rounded-xl"
+                    fallbackComponent={
+                      <div className="w-20 h-24 rounded-xl bg-zinc-100 dark:bg-[#262520] border border-zinc-200 dark:border-[#3A3835] flex flex-col items-center justify-center text-zinc-400 dark:text-[#7A7570] text-xs gap-1">
+                        <span className="font-semibold text-lg">{app.child.fullName?.charAt(0) || 'C'}</span>
+                        <span className="text-[10px] text-zinc-400 dark:text-[#605B54]">No photo</span>
+                      </div>
+                    }
+                  />
+                  {!isRemoved && (
+                    <button
+                      type="button"
+                      onClick={() => setIsEditModalOpen(true)}
+                      className="absolute bottom-1 right-1 p-1 bg-white/95 dark:bg-[#21211E]/95 hover:bg-white dark:hover:bg-[#262520] border border-zinc-200 dark:border-[#3A3835] text-zinc-600 dark:text-[#F0EBE3] rounded-md shadow-xs cursor-pointer transition-all hover:scale-105"
+                      title={app.child.photoUrl ? 'Change photo' : 'Upload photo'}
+                    >
+                      <Edit className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+                {!app.child?.photoUrl && !isRemoved && (
+                  <button
+                    type="button"
+                    onClick={() => setIsEditModalOpen(true)}
+                    className="mt-1.5 text-[11px] text-[#C59B27] hover:underline font-medium block text-center cursor-pointer mx-auto"
+                  >
+                    + Add photo
+                  </button>
+                )}
               </div>
 
               <div className="flex-1 text-center sm:text-left space-y-2">
@@ -1258,6 +1325,27 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                     <span>Mark as not selected</span>
                     <X className="w-4 h-4 text-red-500 dark:text-red-400" />
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const pFirstName = app?.parent?.fullName?.split(' ')[0] || 'Parent';
+                      const cFirstName = app?.child?.fullName?.split(' ')[0] || 'your child';
+                      const defaultReason = !app?.child?.photoUrl 
+                        ? 'Child photo is missing or needs a clearer face photo' 
+                        : (app?.needsAttentionSummary || 'Application details require update');
+                      setReturnReason(defaultReason);
+                      setReturnCustomMessage(`Hello ${pFirstName},\n\nWe noticed that ${cFirstName}'s registration needs an update:\n• ${defaultReason}\n\nWe have temporarily reopened your application in draft mode. Please sign in to your Parent account, update the required information, and re-submit.`);
+                      setIsReturnToParentModalOpen(true);
+                    }}
+                    className="w-full p-2.5 text-left rounded-xl border border-amber-200/80 dark:border-amber-900/40 hover:border-amber-300 dark:hover:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300 hover:bg-amber-100/60 dark:hover:bg-amber-950/30 flex items-center justify-between font-medium text-xs cursor-pointer transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <RotateCcw className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                      <span>Return to parent for correction</span>
+                    </div>
+                    <ChevronRight className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
+                  </button>
                 </div>
               </div>
             )}
@@ -1509,6 +1597,28 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                               Reset & remove
                             </button>
                           </>
+                        )}
+
+                        {/* Return to parent for correction */}
+                        {!isAttendingChild && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsDecisionMoreOpen(false);
+                              const pFirstName = app?.parent?.fullName?.split(' ')[0] || 'Parent';
+                              const cFirstName = app?.child?.fullName?.split(' ')[0] || 'your child';
+                              const defaultReason = !app?.child?.photoUrl 
+                                ? 'Child photo is missing or needs a clearer face photo' 
+                                : (app?.needsAttentionSummary || 'Application details require update');
+                              setReturnReason(defaultReason);
+                              setReturnCustomMessage(`Hello ${pFirstName},\n\nWe noticed that ${cFirstName}'s registration needs an update:\n• ${defaultReason}\n\nWe have temporarily reopened your application in draft mode. Please sign in to your Parent account, update the required information, and re-submit.`);
+                              setIsReturnToParentModalOpen(true);
+                            }}
+                            className="w-full text-left px-3 py-2 text-xs font-medium text-amber-800 dark:text-amber-400 hover:bg-amber-50/60 dark:hover:bg-amber-950/40 rounded-lg cursor-pointer transition-colors flex items-center justify-between"
+                          >
+                            <span>Return to parent for correction</span>
+                            <RotateCcw className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                          </button>
                         )}
 
                         <div className="border-t border-[#EAE8E1] dark:border-[#302E29] my-1" />
@@ -2322,6 +2432,24 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
             </div>
 
             <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+              {/* Photo Upload section */}
+              <div className="flex flex-col items-center justify-center p-3 bg-zinc-50 dark:bg-[#1D1D1A] rounded-xl border border-zinc-200/80 dark:border-[#302E29]">
+                <PhotoUploadBox
+                  value={editForm.photoUrl || editForm.photoFileId || ''}
+                  onUploaded={(savedRef) => {
+                    setEditForm(prev => ({
+                      ...prev,
+                      photoUrl: savedRef,
+                      photoFileId: savedRef
+                    }));
+                  }}
+                  label="Child photo"
+                  helperText="Upload or update child headshot (JPG, PNG, WebP)"
+                  purpose="child_photo"
+                  sizeVariant="w-24"
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2 space-y-1">
                   <label className="text-xs font-medium text-zinc-600 dark:text-[#B8B0A5] block">Full name</label>
@@ -2565,6 +2693,161 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
             await fetchDetails();
           }}
         />
+      )}
+
+      {/* RETURN TO PARENT FOR CORRECTION MODAL */}
+      {isReturnToParentModalOpen && (
+        <div className="fixed inset-0 bg-black/40 dark:bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 max-w-lg w-full shadow-xl space-y-5 animate-scale-in text-zinc-800 dark:text-[#F0EBE3] max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between border-b border-[#EAE8E1]/80 dark:border-[#302E29] pb-3">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 flex items-center justify-center text-amber-700 dark:text-amber-400">
+                    <RotateCcw className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3]">
+                    Return to parent for correction
+                  </h3>
+                </div>
+                <p className="text-xs text-zinc-500 dark:text-[#7A7570] pl-9">
+                  Reset application to draft so the parent can update details and re-submit.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsReturnToParentModalOpen(false)}
+                className="text-zinc-400 hover:text-zinc-600 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Child & Parent Summary Card */}
+            <div className="p-3 bg-zinc-50 dark:bg-[#1D1D1A] rounded-xl border border-zinc-200/80 dark:border-[#302E29] space-y-1.5 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-zinc-500 dark:text-[#7A7570]">Child:</span>
+                <span className="font-semibold text-zinc-900 dark:text-[#F0EBE3]">{app?.child?.fullName}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-zinc-500 dark:text-[#7A7570]">Parent / Guardian:</span>
+                <span className="font-medium text-zinc-800 dark:text-[#E0DBD3]">{app?.parent?.fullName} ({app?.parent?.phone || app?.parent?.email})</span>
+              </div>
+            </div>
+
+            {/* Reason Presets */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-zinc-700 dark:text-[#E0DBD3] block">
+                Reason for returning application
+              </label>
+              <div className="grid grid-cols-1 gap-2">
+                {[
+                  'Child photo is missing or needs a clearer face photo',
+                  'Authorised pickup person details or photo required',
+                  'Date of birth or age group needs review',
+                  'Other information needs correction'
+                ].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => {
+                      setReturnReason(preset);
+                      const pFirstName = app?.parent?.fullName?.split(' ')[0] || 'Parent';
+                      const cFirstName = app?.child?.fullName?.split(' ')[0] || 'your child';
+                      setReturnCustomMessage(`Hello ${pFirstName},\n\nWe noticed that ${cFirstName}'s registration needs an update:\n• ${preset}\n\nWe have temporarily reopened your application in draft mode. Please sign in to your Parent account, update the required information, and re-submit.`);
+                    }}
+                    className={`text-left p-2.5 rounded-xl border text-xs font-medium transition-colors cursor-pointer flex items-center justify-between ${
+                      returnReason === preset
+                        ? 'border-[#C59B27] bg-[#FAF6EB] dark:bg-[#C59B27]/10 text-[#8B6B1B] dark:text-[#DEB23F]'
+                        : 'border-zinc-200 dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] hover:bg-zinc-50 dark:hover:bg-[#2A2926]'
+                    }`}
+                  >
+                    <span>{preset}</span>
+                    {returnReason === preset && <Check className="w-3.5 h-3.5 text-[#C59B27] shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Editable Message to Parent */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-zinc-700 dark:text-[#E0DBD3] flex items-center justify-between">
+                <span>Message to parent</span>
+                <span className="text-[11px] font-normal text-zinc-400 dark:text-[#7A7570]">Sent via notification & message</span>
+              </label>
+              <textarea
+                rows={4}
+                value={returnCustomMessage}
+                onChange={(e) => setReturnCustomMessage(e.target.value)}
+                placeholder="Enter instructions for the parent..."
+                className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-[#3A3835] bg-white dark:bg-[#262520] text-xs text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] placeholder:text-zinc-400"
+              />
+            </div>
+
+            {/* Notification Channels */}
+            <div className="space-y-2 pt-2 border-t border-[#EAE8E1]/80 dark:border-[#302E29]">
+              <span className="text-xs font-semibold text-zinc-700 dark:text-[#E0DBD3] block">
+                Notification channels
+              </span>
+              <div className="space-y-2 text-xs">
+                <label className="flex items-center gap-2.5 text-zinc-700 dark:text-[#B8B0A5] select-none cursor-not-allowed opacity-90">
+                  <input type="checkbox" checked disabled className="w-4 h-4 rounded text-[#C59B27]" />
+                  <span>In-app message & alert (Always sent)</span>
+                </label>
+                {app?.parent?.email && (
+                  <label className="flex items-center gap-2.5 text-zinc-700 dark:text-[#B8B0A5] select-none cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={notifyParentEmail}
+                      onChange={(e) => setNotifyParentEmail(e.target.checked)}
+                      className="w-4 h-4 rounded text-[#C59B27]"
+                    />
+                    <span>Email notification ({app.parent.email})</span>
+                  </label>
+                )}
+                {(app?.parent?.phone || app?.parent?.whatsapp) && (
+                  <label className="flex items-center gap-2.5 text-zinc-700 dark:text-[#B8B0A5] select-none cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={notifyParentWhatsApp}
+                      onChange={(e) => setNotifyParentWhatsApp(e.target.checked)}
+                      className="w-4 h-4 rounded text-[#C59B27]"
+                    />
+                    <span>WhatsApp message ({app.parent.whatsapp || app.parent.phone})</span>
+                  </label>
+                )}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#EAE8E1]/80 dark:border-[#302E29]">
+              <button
+                type="button"
+                onClick={() => setIsReturnToParentModalOpen(false)}
+                className="px-4 py-2 border border-zinc-200 dark:border-[#3A3835] bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#F0EBE3] text-xs font-medium rounded-xl cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={returningToParent}
+                onClick={handleConfirmReturnToParent}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-xl flex items-center gap-2 cursor-pointer transition-colors shadow-none"
+              >
+                {returningToParent ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Returning...</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Return to parent for correction</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

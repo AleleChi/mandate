@@ -1586,6 +1586,17 @@ export const api = {
         body: JSON.stringify({ reason })
       });
     },
+    async returnApplicationToDraft(id: string, payload: {
+      reason?: string;
+      customMessage?: string;
+      notifyEmail?: boolean;
+      notifyWhatsApp?: boolean;
+    }) {
+      return api.request<{ success: boolean; message: string; newStatus: string }>(`/api/admin/applications/${id}/return-to-draft`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
     async bulkReviewApplications(payload: { applicationIds: string[]; decision: string; note?: string }) {
       return api.request<any>('/api/admin/applications/bulk-review', {
         method: 'POST',
