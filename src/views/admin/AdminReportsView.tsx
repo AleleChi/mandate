@@ -263,7 +263,7 @@ const CANONICAL_TEMPLATES: ReportTemplate[] = [
     audience: 'Executive Leadership, Registration Leads, Safeguarding Coordinators',
     includes: [
       'Total, valid, and age-eligible child headcounts',
-      'Programme age cohort distribution (2–3, 4–6, 7–9, 10–12)',
+      'Programme age cohort distribution (2–3, 4–6, 7–9, 10–12, 13–14)',
       'Factual age eligibility analysis and reasons',
       'Draft applications pending submission register',
       'Registration origin & geographic breakdown (Country, State, City)',

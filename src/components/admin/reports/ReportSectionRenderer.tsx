@@ -62,7 +62,7 @@ export const ReportSectionRenderer: React.FC<ReportSectionRendererProps> = ({ se
                 else if (firstCell.includes('4 to 6') || firstCell.includes('4-6') || firstCell.includes('4–6')) cohortIndicatorColor = '#C59B27';
                 else if (firstCell.includes('7 to 9') || firstCell.includes('7-9') || firstCell.includes('7–9')) cohortIndicatorColor = '#A67C2E';
                 else if (firstCell.includes('10 to 12') || firstCell.includes('10-12') || firstCell.includes('10–12')) cohortIndicatorColor = '#D97706';
-                else if (firstCell.includes('teen') || firstCell.includes('13+')) cohortIndicatorColor = '#4B5563';
+                else if (firstCell.includes('13–14') || firstCell.includes('13-14') || firstCell.includes('teen') || firstCell.includes('13+')) cohortIndicatorColor = '#8B5CF6';
 
                 return (
                   <tr key={rIdx} className="hover:bg-stone-50/70 transition-colors">
