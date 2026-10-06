@@ -9,7 +9,7 @@ import { normalizePhoneNumberToE164 } from '../utils/phone';
 import { buildParentStatusUrl } from '../utils/urlHelper';
 import { getPassesForParent, issuePassForChild, isChildPassAuthorized } from '../services/passService';
 import { getCurrentEvent, getCurrentEventId, getEventById } from '../services/eventService';
-import { checkEventEligibility } from '../services/eligibilityService';
+import { checkEventEligibility, resolveCanonicalAgeGroup, CANONICAL_GA_EVENT_DATE } from '../services/eligibilityService';
 
 const router = Router();
 router.use(authMiddleware);
@@ -25,33 +25,14 @@ router.use((req: AuthenticatedRequest, res: Response, next) => {
   next();
 });
 
-function calculateAgeAndGroup(dobStr: string) {
-  if (!dobStr) return { calculatedAge: 0, ageGroup: 'Not specified', needsAgeReview: false };
-  const dob = new Date(dobStr);
-  const now = new Date();
-  let age = now.getFullYear() - dob.getFullYear();
-  const m = now.getMonth() - dob.getMonth();
-  if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) {
-    age--;
-  }
-  let ageGroup = 'Ages 4 to 6';
-  let needsAgeReview = false;
-  if (age < 1) {
-    ageGroup = 'Below 1';
-    needsAgeReview = true;
-  } else if (age < 4) {
-    ageGroup = 'Ages 1 to 3';
-    needsAgeReview = true;
-  } else if (age >= 4 && age <= 6) {
-    ageGroup = 'Ages 4 to 6';
-  } else if (age >= 7 && age <= 9) {
-    ageGroup = 'Ages 7 to 9';
-  } else if (age >= 10 && age <= 12) {
-    ageGroup = 'Ages 10 to 12';
-  } else {
-    ageGroup = 'Teens';
-  }
-  return { calculatedAge: age, ageGroup, needsAgeReview };
+function calculateAgeAndGroup(dobStr: string, referenceDate: string | Date = CANONICAL_GA_EVENT_DATE) {
+  if (!dobStr) return { calculatedAge: 0, ageGroup: 'Not specified', needsAgeReview: true };
+  const res = resolveCanonicalAgeGroup(dobStr, referenceDate);
+  return {
+    calculatedAge: res.age ?? 0,
+    ageGroup: res.label,
+    needsAgeReview: res.isOutOfRange
+  };
 }
 
 async function resolvePhotoUrlAsync(photoRef?: string | null): Promise<string> {
@@ -291,9 +272,9 @@ async function mapChildToFrontend(
 
   const { calculatedAge, ageGroup: calcAgeGroup } = calculateAgeAndGroup(childRow.date_of_birth);
   const rawChildGroup = (childRow.age_group || '').replace(/\s*\(Review Needed\)/gi, '').trim();
-  const effectiveAgeGroup = rawChildGroup === 'Under 4'
-    ? (calculatedAge < 1 ? 'Below 1' : 'Ages 1 to 3')
-    : (rawChildGroup || calcAgeGroup);
+  const effectiveAgeGroup = rawChildGroup && !rawChildGroup.includes('Under') && !rawChildGroup.includes('Ages 1') && !rawChildGroup.includes('Below')
+    ? rawChildGroup
+    : calcAgeGroup;
   const effectiveAge = childRow.calculated_age !== null && childRow.calculated_age !== undefined ? childRow.calculated_age : calculatedAge;
 
   const eventForEligibility = currentEventId ? await getEventById(currentEventId) : await getCurrentEvent();

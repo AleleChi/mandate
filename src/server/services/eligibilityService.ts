@@ -56,6 +56,109 @@ export const CANONICAL_GA_EVENT_DATE = '2026-11-21';
 export const CANONICAL_MIN_AGE = 2;
 export const CANONICAL_MAX_AGE = 14;
 
+export const CANONICAL_PROGRAMME_AGE_GROUPS = [
+  { key: '2–3', label: '2–3', minAge: 2, maxAge: 3 },
+  { key: '4–6', label: '4–6', minAge: 4, maxAge: 6 },
+  { key: '7–9', label: '7–9', minAge: 7, maxAge: 9 },
+  { key: '10–12', label: '10–12', minAge: 10, maxAge: 12 },
+  { key: '13–14', label: '13–14', minAge: 13, maxAge: 14 }
+] as const;
+
+export type CanonicalAgeGroupKey = '2–3' | '4–6' | '7–9' | '10–12' | '13–14';
+
+export interface CanonicalAgeGroupResolution {
+  group: CanonicalAgeGroupKey | null;
+  label: string;
+  isOutOfRange: boolean;
+  age: number | null;
+}
+
+/**
+ * Authoritative Server-Side Age Group Resolver for Koinonia 2026.
+ * Resolves child age group strictly against canonical event date (or specified event date).
+ * Age boundaries (inclusive):
+ * - 2 to 3   -> '2–3'
+ * - 4 to 6   -> '4–6'
+ * - 7 to 9   -> '7–9'
+ * - 10 to 12 -> '10–12'
+ * - 13 to 14 -> '13–14'
+ * - < 2 or > 14 (or missing DOB/age) -> OUT_OF_RANGE ('Age review needed')
+ */
+export function resolveCanonicalAgeGroup(
+  dobOrAge: string | number | null | undefined,
+  referenceDate: string | Date = CANONICAL_GA_EVENT_DATE
+): CanonicalAgeGroupResolution {
+  let calculatedAge: number | null = null;
+
+  if (typeof dobOrAge === 'number') {
+    calculatedAge = !isNaN(dobOrAge) && dobOrAge >= 0 ? dobOrAge : null;
+  } else if (typeof dobOrAge === 'string' && dobOrAge.trim()) {
+    const trimmed = dobOrAge.trim();
+    if (/^\d+$/.test(trimmed)) {
+      calculatedAge = parseInt(trimmed, 10);
+    } else {
+      calculatedAge = calculateAgeOnDate(trimmed, referenceDate);
+    }
+  }
+
+  if (calculatedAge === null || calculatedAge < 2 || calculatedAge > 14) {
+    return {
+      group: null,
+      label: 'Age review needed',
+      isOutOfRange: true,
+      age: calculatedAge
+    };
+  }
+
+  if (calculatedAge >= 2 && calculatedAge <= 3) {
+    return { group: '2–3', label: '2–3', isOutOfRange: false, age: calculatedAge };
+  }
+  if (calculatedAge >= 4 && calculatedAge <= 6) {
+    return { group: '4–6', label: '4–6', isOutOfRange: false, age: calculatedAge };
+  }
+  if (calculatedAge >= 7 && calculatedAge <= 9) {
+    return { group: '7–9', label: '7–9', isOutOfRange: false, age: calculatedAge };
+  }
+  if (calculatedAge >= 10 && calculatedAge <= 12) {
+    return { group: '10–12', label: '10–12', isOutOfRange: false, age: calculatedAge };
+  }
+  if (calculatedAge >= 13 && calculatedAge <= 14) {
+    return { group: '13–14', label: '13–14', isOutOfRange: false, age: calculatedAge };
+  }
+
+  return {
+    group: null,
+    label: 'Age review needed',
+    isOutOfRange: true,
+    age: calculatedAge
+  };
+}
+
+/**
+ * Calculates portable YYYY-MM-DD DOB cutoffs for SQL date comparison across PostgreSQL and SQLite.
+ * Eliminates non-portable database functions like strftime().
+ * - Too young if child DOB > minAgeDobCutoff (born after (eventYear - minAge)-eventMonth-eventDay)
+ * - Too old if child DOB <= maxAgeDobCutoff (born on or before (eventYear - (maxAge + 1))-eventMonth-eventDay)
+ */
+export function getDobCutoffsForEvent(
+  eventDateStr: string = CANONICAL_GA_EVENT_DATE,
+  minAge: number = CANONICAL_MIN_AGE,
+  maxAge: number = CANONICAL_MAX_AGE
+): { minAgeDobCutoff: string; maxAgeDobCutoff: string } {
+  const parts = parseCalendarDateParts(eventDateStr);
+  const year = parts ? parts.year : 2026;
+  const month = parts ? String(parts.month).padStart(2, '0') : '11';
+  const day = parts ? String(parts.day).padStart(2, '0') : '21';
+
+  const minYear = year - minAge;
+  const maxYear = year - (maxAge + 1);
+
+  return {
+    minAgeDobCutoff: `${minYear}-${month}-${day}`,
+    maxAgeDobCutoff: `${maxYear}-${month}-${day}`
+  };
+}
+
 /**
  * Accurately calculates child's age in completed years on a specific target date (e.g. event start date).
  * Uses strict calendar-date semantics to prevent timezone parsing from shifting birthdays by one day.

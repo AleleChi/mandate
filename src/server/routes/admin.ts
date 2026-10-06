@@ -50,7 +50,15 @@ import {
 } from '../services/wristbandService';
 import { isAuthoritativeIncomplete } from '../services/applicationReminderService';
 import { evaluateApplicationNeedsAttention, REASON_LABELS } from '../services/applicationNeedsAttentionService';
-import { calculateAgeOnDate, CANONICAL_GA_EVENT_DATE } from '../services/eligibilityService';
+import {
+  calculateAgeOnDate,
+  CANONICAL_GA_EVENT_DATE,
+  CANONICAL_MIN_AGE,
+  CANONICAL_MAX_AGE,
+  resolveCanonicalAgeGroup,
+  getDobCutoffsForEvent,
+  CANONICAL_PROGRAMME_AGE_GROUPS
+} from '../services/eligibilityService';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -110,15 +118,10 @@ function getChildAge(c: any, referenceDate?: string | Date | null): number {
 
 export function deriveAgeGroup(age: number | null, storedGroup?: string | null): string {
   if (age === null || age < 0) {
-    return storedGroup || 'Not specified';
+    return 'Age review needed';
   }
-  if (age < 2) return 'Below 2';
-  if (age <= 3) return 'Early Years';
-  if (age <= 6) return '4–6 Years';
-  if (age <= 9) return '7–9 Years';
-  if (age <= 12) return '10–12 Years';
-  if (age <= 14) return '13–14 Years';
-  return 'Above 14';
+  const resolution = resolveCanonicalAgeGroup(age);
+  return resolution.label;
 }
 
 // Canonical statuses representing genuine completed/submitted registrations
@@ -1691,9 +1694,13 @@ router.post('/volunteers', authMiddleware, async (req: AuthenticatedRequest, res
 // GET list of child applications
 router.get('/applications', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const eventId = await resolveAdminEventId(req.query.eventId as string);
+    const event = await resolveAdminEvent(req.query.eventId as string);
+    const eventId = event?.id || null;
+    const eventDate = event?.starts_at || (event as any)?.event_start_at || CANONICAL_GA_EVENT_DATE;
     const page = parseInt(req.query.page as string, 10) || 1;
-    const limit = parseInt(req.query.limit as string, 10) || 25;
+    const limit = req.query.limit
+      ? parseInt(req.query.limit as string, 10)
+      : (req.query.page ? 25 : 1000);
     const offset = (page - 1) * limit;
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
@@ -1724,6 +1731,13 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
       });
     }
 
+    const { minAgeDobCutoff, maxAgeDobCutoff } = getDobCutoffsForEvent(
+      eventDate,
+      event?.minimum_age !== null && event?.minimum_age !== undefined ? Number(event.minimum_age) : 2,
+      event?.maximum_age !== null && event?.maximum_age !== undefined ? Number(event.maximum_age) : 14
+    );
+    const ageConditionSql = `(c.date_of_birth IS NULL OR c.date_of_birth = '' OR c.needs_age_review = 1 OR c.date_of_birth > '${minAgeDobCutoff}' OR c.date_of_birth <= '${maxAgeDobCutoff}')`;
+
     // Build WHERE clauses
     const whereClauses = ['e.event_id = ?'];
     const params: any[] = [eventId];
@@ -1750,13 +1764,11 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
         } else if (needsAttentionReason === 'missing_parent_photo') {
           whereClauses.push(`${needsAttnBase} AND (p.photo_file_id IS NULL OR p.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files pm WHERE pm.id = p.photo_file_id AND pm.secure_url IS NOT NULL AND pm.secure_url != '' AND pm.secure_url NOT LIKE 'blob:%' AND pm.secure_url NOT LIKE 'data:%' AND pm.secure_url NOT LIKE '%placeholder%' AND pm.secure_url NOT LIKE '%default_avatar%'))`);
         } else if (needsAttentionReason === 'age_issue' || needsAttentionReason === 'age_not_eligible') {
-          whereClauses.push(`${needsAttnBase} AND (c.date_of_birth IS NULL OR c.date_of_birth = '' OR c.needs_age_review = 1 OR CAST(strftime('%Y', '2026-11-21') AS INTEGER) - CAST(strftime('%Y', c.date_of_birth) AS INTEGER) - (CASE WHEN strftime('%m-%d', '2026-11-21') < strftime('%m-%d', c.date_of_birth) THEN 1 ELSE 0 END) < 2 OR CAST(strftime('%Y', '2026-11-21') AS INTEGER) - CAST(strftime('%Y', c.date_of_birth) AS INTEGER) - (CASE WHEN strftime('%m-%d', '2026-11-21') < strftime('%m-%d', c.date_of_birth) THEN 1 ELSE 0 END) > 14)`);
+          whereClauses.push(`${needsAttnBase} AND ${ageConditionSql}`);
         } else {
           whereClauses.push(`${needsAttnBase} AND (
             e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1
-            OR c.date_of_birth IS NULL OR c.date_of_birth = ''
-            OR CAST(strftime('%Y', '2026-11-21') AS INTEGER) - CAST(strftime('%Y', c.date_of_birth) AS INTEGER) - (CASE WHEN strftime('%m-%d', '2026-11-21') < strftime('%m-%d', c.date_of_birth) THEN 1 ELSE 0 END) < 2
-            OR CAST(strftime('%Y', '2026-11-21') AS INTEGER) - CAST(strftime('%Y', c.date_of_birth) AS INTEGER) - (CASE WHEN strftime('%m-%d', '2026-11-21') < strftime('%m-%d', c.date_of_birth) THEN 1 ELSE 0 END) > 14
+            OR ${ageConditionSql}
             OR NOT EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id)
             OR EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id AND (pp.photo_file_id IS NULL OR pp.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files m WHERE m.id = pp.photo_file_id AND m.secure_url IS NOT NULL AND m.secure_url != '' AND m.secure_url NOT LIKE 'blob:%' AND m.secure_url NOT LIKE 'data:%' AND m.secure_url NOT LIKE '%placeholder%' AND m.secure_url NOT LIKE '%default_avatar%')))
             OR (c.photo_file_id IS NULL OR c.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files cm WHERE cm.id = c.photo_file_id AND cm.secure_url IS NOT NULL AND cm.secure_url != '' AND cm.secure_url NOT LIKE 'blob:%' AND cm.secure_url NOT LIKE 'data:%' AND cm.secure_url NOT LIKE '%placeholder%' AND cm.secure_url NOT LIKE '%default_avatar%'))
@@ -1791,7 +1803,7 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
       } else if (needsAttentionReason === 'missing_parent_photo') {
         whereClauses.push(`(p.photo_file_id IS NULL OR p.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files pm WHERE pm.id = p.photo_file_id AND pm.secure_url IS NOT NULL AND pm.secure_url != '' AND pm.secure_url NOT LIKE 'blob:%' AND pm.secure_url NOT LIKE 'data:%' AND pm.secure_url NOT LIKE '%placeholder%' AND pm.secure_url NOT LIKE '%default_avatar%'))`);
       } else if (needsAttentionReason === 'age_issue' || needsAttentionReason === 'age_not_eligible') {
-        whereClauses.push(`(c.date_of_birth IS NULL OR c.date_of_birth = '' OR c.needs_age_review = 1 OR CAST(strftime('%Y', '2026-11-21') AS INTEGER) - CAST(strftime('%Y', c.date_of_birth) AS INTEGER) - (CASE WHEN strftime('%m-%d', '2026-11-21') < strftime('%m-%d', c.date_of_birth) THEN 1 ELSE 0 END) < 2 OR CAST(strftime('%Y', '2026-11-21') AS INTEGER) - CAST(strftime('%Y', c.date_of_birth) AS INTEGER) - (CASE WHEN strftime('%m-%d', '2026-11-21') < strftime('%m-%d', c.date_of_birth) THEN 1 ELSE 0 END) > 14)`);
+        whereClauses.push(ageConditionSql);
       }
     }
 
@@ -1990,9 +2002,7 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
         AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
         AND e.status != 'removed'
         AND (
-          c.date_of_birth IS NULL OR c.date_of_birth = '' OR c.needs_age_review = 1
-          OR CAST(strftime('%Y', '2026-11-21') AS INTEGER) - CAST(strftime('%Y', c.date_of_birth) AS INTEGER) - (CASE WHEN strftime('%m-%d', '2026-11-21') < strftime('%m-%d', c.date_of_birth) THEN 1 ELSE 0 END) < 2
-          OR CAST(strftime('%Y', '2026-11-21') AS INTEGER) - CAST(strftime('%Y', c.date_of_birth) AS INTEGER) - (CASE WHEN strftime('%m-%d', '2026-11-21') < strftime('%m-%d', c.date_of_birth) THEN 1 ELSE 0 END) > 14
+          ${ageConditionSql}
           OR NOT EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id)
           OR EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id AND (pp.photo_file_id IS NULL OR pp.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files m WHERE m.id = pp.photo_file_id AND m.secure_url IS NOT NULL AND m.secure_url != '' AND m.secure_url NOT LIKE 'blob:%' AND m.secure_url NOT LIKE 'data:%' AND m.secure_url NOT LIKE '%placeholder%' AND m.secure_url NOT LIKE '%default_avatar%')))
           OR (c.photo_file_id IS NULL OR c.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files cm WHERE cm.id = c.photo_file_id AND cm.secure_url IS NOT NULL AND cm.secure_url != '' AND cm.secure_url NOT LIKE 'blob:%' AND cm.secure_url NOT LIKE 'data:%' AND cm.secure_url NOT LIKE '%placeholder%' AND cm.secure_url NOT LIKE '%default_avatar%'))
@@ -2021,7 +2031,14 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
       }
     });
   } catch (err: any) {
-    console.error('Error fetching applications list:', err);
+    console.error('[AdminReview /applications Fetch Error]:', {
+      route: req.originalUrl || '/api/admin/applications',
+      eventId: req.query.eventId || 'current',
+      adminUserId: req.user?.id,
+      adminRole: req.user?.role,
+      errorMessage: err?.message,
+      errorCode: err?.code
+    });
     return res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch child applications.' });
   }
 });
@@ -2261,7 +2278,10 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
 
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
 
-    const eventId = await resolveAdminEventId(req.query.eventId as string);
+    const currentEvent = await resolveAdminEvent(req.query.eventId as string);
+    const eventId = currentEvent?.id;
+    const eventDate = currentEvent?.starts_at || CANONICAL_GA_EVENT_DATE;
+    const { minAgeDobCutoff, maxAgeDobCutoff } = getDobCutoffsForEvent(eventDate, CANONICAL_MIN_AGE, CANONICAL_MAX_AGE);
     const status = typeof req.query.status === 'string' ? req.query.status : 'all';
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
 
@@ -2348,7 +2368,7 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
     } else if (status === 'not_arrived') {
       queryStr += " AND (e.status IN ('selected', 'pass_ready') AND e.checked_in_at IS NULL)";
     } else if (status === 'needs_attention') {
-      queryStr += " AND (e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1)";
+      queryStr += ` AND (e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1 OR (c.date_of_birth IS NOT NULL AND (c.date_of_birth > '${minAgeDobCutoff}' OR c.date_of_birth <= '${maxAgeDobCutoff}')))`;
     }
 
     queryStr += ` ORDER BY c.full_name ASC`;
@@ -2358,7 +2378,11 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
     const rows = childrenRows.map((app: any) => {
       const isPickedUp = app.status === 'picked_up' || Boolean(app.picked_up_at);
       const isInside = !isPickedUp && (app.status === 'inside' || app.status === 'checked_in' || Boolean(app.checked_in_at));
-      const hasNeedsAttention = app.has_medical_notes === 1 || app.needs_extra_support === 1 || app.needs_age_review === 1;
+      const ageRes = resolveCanonicalAgeGroup(app.date_of_birth || getChildAge(app, eventDate), eventDate);
+      const chAge = ageRes.age !== null ? ageRes.age : getChildAge(app, eventDate);
+      const cleanAgeGroupLabel = ageRes.label;
+      const needsAgeReview = app.needs_age_review === 1 || ageRes.isOutOfRange || Boolean(app.age_group && app.age_group.includes('Review Needed'));
+      const hasNeedsAttention = app.has_medical_notes === 1 || app.needs_extra_support === 1 || needsAgeReview;
 
       let rowStatus: 'checked_in' | 'picked_up' | 'not_arrived' | 'needs_attention' = 'not_arrived';
       let rowLocation: 'inside' | 'picked_up' | 'not_arrived' | null = 'not_arrived';
@@ -2389,19 +2413,6 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       const lastActAt = (isPickedUp ? app.picked_up_at : (isInside ? app.checked_in_at : null)) || null;
       const lastActLabel = lastActAt ? formatTime(lastActAt) : 'No activity';
 
-      const chAge = getChildAge(app, CANONICAL_GA_EVENT_DATE);
-      let cleanAgeGroupLabel = '';
-      if (chAge >= 2 && chAge <= 3) cleanAgeGroupLabel = 'Early Years';
-      else if (chAge >= 4 && chAge <= 6) cleanAgeGroupLabel = '4–6 Years';
-      else if (chAge >= 7 && chAge <= 9) cleanAgeGroupLabel = '7–9 Years';
-      else if (chAge >= 10 && chAge <= 12) cleanAgeGroupLabel = '10–12 Years';
-      else if (chAge >= 13 && chAge <= 14) cleanAgeGroupLabel = '13–14 Years';
-      else {
-        cleanAgeGroupLabel = deriveAgeGroup(chAge, app.age_group);
-      }
-
-      const needsAgeReview = app.needs_age_review === 1 || Boolean(app.age_group && app.age_group.includes('Review Needed'));
-
       return {
         id: app.entry_id,
         childId: app.child_id,
@@ -2420,12 +2431,15 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       };
     });
 
-    // 3. Compute Age Group statistical breakdown from database using canonical event age groups
+    // 3. Compute Age Group statistical breakdown from database using canonical programme age groups
     const allEntriesForAgeGroups = await query(`
       SELECT 
+        e.id as entry_id,
         e.status,
         e.checked_in_at,
         e.picked_up_at,
+        e.has_medical_notes,
+        e.needs_extra_support,
         c.age_group,
         c.calculated_age,
         c.date_of_birth,
@@ -2438,29 +2452,16 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
         AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
     `, [eventId]);
 
-    // Query canonical age groups configured for this event
-    const dbConfiguredGroups = await query(
-      'SELECT id, label, min_age, max_age, sort_order FROM event_age_groups WHERE event_id = ? ORDER BY sort_order ASC, min_age ASC',
-      [eventId]
-    );
+    const ageGroupsMap = new Map<string, {
+      ageGroup: string;
+      expected: number;
+      checkedIn: number;
+      inside: number;
+      pickedUp: number;
+      notArrived: number;
+    }>();
 
-    const canonicalCohorts = (dbConfiguredGroups && dbConfiguredGroups.length > 0)
-      ? dbConfiguredGroups.map((g: any) => ({
-          key: g.label,
-          label: g.label,
-          min: Number(g.min_age),
-          max: Number(g.max_age)
-        }))
-      : [
-          { key: 'Early Years', label: 'Early Years', min: 2, max: 3 },
-          { key: '4–6 Years', label: '4–6 Years', min: 4, max: 6 },
-          { key: '7–9 Years', label: '7–9 Years', min: 7, max: 9 },
-          { key: '10–12 Years', label: '10–12 Years', min: 10, max: 12 },
-          { key: '13–14 Years', label: '13–14 Years', min: 13, max: 14 }
-        ];
-
-    const ageGroupsMap = new Map<string, any>();
-    for (const cohort of canonicalCohorts) {
+    for (const cohort of CANONICAL_PROGRAMME_AGE_GROUPS) {
       ageGroupsMap.set(cohort.key, {
         ageGroup: cohort.label,
         expected: 0,
@@ -2471,21 +2472,21 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
+    let dynamicAttentionCount = 0;
     for (const entry of allEntriesForAgeGroups) {
-      const age = getChildAge(entry, CANONICAL_GA_EVENT_DATE);
-      let matchedCohort = canonicalCohorts.find(c => age >= c.min && age <= c.max);
-      if (!matchedCohort && entry.age_group) {
-        const cleanAg = entry.age_group.replace(/\s*\(Review Needed\)/gi, '').trim();
-        const norm = cleanAg.toLowerCase().replace(/[^a-z0-9]/g, '');
-        matchedCohort = canonicalCohorts.find(c => {
-          const cNorm = c.label.toLowerCase().replace(/[^a-z0-9]/g, '');
-          return norm === cNorm || norm.includes(cNorm) || cNorm.includes(norm);
-        });
+      const ageRes = resolveCanonicalAgeGroup(entry.date_of_birth || getChildAge(entry, eventDate), eventDate);
+      const isAttention = entry.has_medical_notes === 1 || entry.needs_extra_support === 1 || entry.needs_age_review === 1 || ageRes.isOutOfRange;
+      if (isAttention) {
+        dynamicAttentionCount++;
       }
-      const groupKey = matchedCohort ? matchedCohort.key : (
-        age < 2 ? canonicalCohorts[0].key : canonicalCohorts[canonicalCohorts.length - 1].key
-      );
-      const statsObj = ageGroupsMap.get(groupKey);
+
+      // OUT-OF-RANGE / LEGACY CHILDREN:
+      // Exclude out-of-range child from valid 2–14 age-group aggregation so they do not distort totals!
+      if (ageRes.isOutOfRange || !ageRes.group) {
+        continue;
+      }
+
+      const statsObj = ageGroupsMap.get(ageRes.group);
       if (statsObj) {
         statsObj.expected++;
         const isPickedUp = entry.status === 'picked_up' || Boolean(entry.picked_up_at);
@@ -2503,6 +2504,12 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       }
     }
     const ageGroups = Array.from(ageGroupsMap.values());
+
+    const sumExpected = ageGroups.reduce((acc, curr) => acc + curr.expected, 0);
+    const sumCheckedIn = ageGroups.reduce((acc, curr) => acc + curr.checkedIn, 0);
+    const sumInside = ageGroups.reduce((acc, curr) => acc + curr.inside, 0);
+    const sumPickedUp = ageGroups.reduce((acc, curr) => acc + curr.pickedUp, 0);
+    const sumNotArrived = ageGroups.reduce((acc, curr) => acc + curr.notArrived, 0);
 
     // 4. Fetch Recent Scans logs (max 10) - strictly limited to current active lifecycle
     const recentScansRows = await query(`
@@ -2577,12 +2584,12 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
     return res.json({
       success: true,
       stats: {
-        expected: summaryStats.selected,
-        checkedIn: summaryStats.checkedIn,
-        inside: summaryStats.inside,
-        pickedUp: summaryStats.pickedUp,
-        notArrived: Math.max(0, summaryStats.selected - summaryStats.checkedIn),
-        needsAttention: summaryStats.needsAttention
+        expected: sumExpected,
+        checkedIn: sumCheckedIn,
+        inside: sumInside,
+        pickedUp: sumPickedUp,
+        notArrived: sumNotArrived,
+        needsAttention: Math.max(summaryStats.needsAttention, dynamicAttentionCount)
       },
       rows,
       ageGroups,
@@ -2592,7 +2599,14 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       nextCursor: null
     });
   } catch (err: any) {
-    console.error('Error in /api/admin/attendance:', err);
+    console.error('Error in /api/admin/attendance:', {
+      route: '/api/admin/attendance',
+      eventId: req.query?.eventId,
+      adminId: req.user?.id,
+      adminRole: req.user?.role,
+      message: err.message,
+      stack: err.stack
+    });
     return res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch attendance records.' });
   }
 });
@@ -3455,12 +3469,11 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
     `, [eventId]) : [];
 
     const ageGroupsList = [
-      { min: 0, max: 0, displayLabel: 'Below 1' },
-      { min: 1, max: 3, displayLabel: 'Ages 1 to 3' },
-      { min: 4, max: 6, displayLabel: 'Ages 4 to 6' },
-      { min: 7, max: 9, displayLabel: 'Ages 7 to 9' },
-      { min: 10, max: 12, displayLabel: 'Ages 10 to 12' },
-      { min: 13, max: 999, displayLabel: 'Teens' }
+      { min: 2, max: 3, displayLabel: '2–3' },
+      { min: 4, max: 6, displayLabel: '4–6' },
+      { min: 7, max: 9, displayLabel: '7–9' },
+      { min: 10, max: 12, displayLabel: '10–12' },
+      { min: 13, max: 14, displayLabel: '13–14' }
     ];
 
     const demographics = ageGroupsList.map(g => {
@@ -3697,12 +3710,11 @@ router.get('/reports/demographics', async (req: AuthenticatedRequest, res: Respo
     `, [eventId]);
 
     const ageGroupsList = [
-      { key: 'below_1', min: 0, max: 0, displayLabel: 'Below 1' },
-      { key: 'ages_1_3', min: 1, max: 3, displayLabel: 'Ages 1 to 3' },
-      { key: 'ages_4_6', min: 4, max: 6, displayLabel: 'Ages 4 to 6' },
-      { key: 'ages_7_9', min: 7, max: 9, displayLabel: 'Ages 7 to 9' },
-      { key: 'ages_10_12', min: 10, max: 12, displayLabel: 'Ages 10 to 12' },
-      { key: 'teens', min: 13, max: 999, displayLabel: 'Teens' }
+      { key: '2_3', min: 2, max: 3, displayLabel: '2–3' },
+      { key: '4_6', min: 4, max: 6, displayLabel: '4–6' },
+      { key: '7_9', min: 7, max: 9, displayLabel: '7–9' },
+      { key: '10_12', min: 10, max: 12, displayLabel: '10–12' },
+      { key: '13_14', min: 13, max: 14, displayLabel: '13–14' }
     ];
 
     let totalChildren = 0;
@@ -5173,12 +5185,11 @@ router.get('/reports', async (req: AuthenticatedRequest, res: Response) => {
     `, [eventId]);
 
     const ageGroupsList = [
-      { min: 0, max: 0, displayLabel: 'Below 1' },
-      { min: 1, max: 3, displayLabel: 'Ages 1 to 3' },
-      { min: 4, max: 6, displayLabel: 'Ages 4 to 6' },
-      { min: 7, max: 9, displayLabel: 'Ages 7 to 9' },
-      { min: 10, max: 12, displayLabel: 'Ages 10 to 12' },
-      { min: 13, max: 999, displayLabel: 'Teens' }
+      { min: 2, max: 3, displayLabel: '2–3' },
+      { min: 4, max: 6, displayLabel: '4–6' },
+      { min: 7, max: 9, displayLabel: '7–9' },
+      { min: 10, max: 12, displayLabel: '10–12' },
+      { min: 13, max: 14, displayLabel: '13–14' }
     ];
 
     // Care & Attention items
@@ -10726,32 +10737,10 @@ router.put('/applications/:id', authMiddleware, async (req: AuthenticatedRequest
     let ageGroup = null;
     let needsAgeReview = 0;
     if (dateOfBirth) {
-      const dobDate = new Date(dateOfBirth);
-      const today = new Date();
-      let age = today.getFullYear() - dobDate.getFullYear();
-      const m = today.getMonth() - dobDate.getMonth();
-      if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) {
-        age--;
-      }
-      calculatedAge = age;
-
-      // Determine age group
-      if (age < 1) {
-        ageGroup = 'Below 1';
-      } else if (age < 3) {
-        ageGroup = 'Ages 1 to 2';
-      } else if (age < 6) {
-        ageGroup = 'Ages 3 to 5';
-      } else if (age < 10) {
-        ageGroup = 'Ages 6 to 9';
-      } else {
-        ageGroup = 'Teens (Ages 10+)';
-      }
-
-      // Under 1 year check for event
-      if (age < 1) {
-        needsAgeReview = 1;
-      }
+      const ageRes = resolveCanonicalAgeGroup(dateOfBirth, CANONICAL_GA_EVENT_DATE);
+      calculatedAge = ageRes.age;
+      ageGroup = ageRes.label;
+      needsAgeReview = ageRes.isOutOfRange ? 1 : 0;
     }
 
     // Update children table

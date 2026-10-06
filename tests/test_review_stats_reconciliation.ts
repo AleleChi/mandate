@@ -1,5 +1,6 @@
 import { query, queryOne, execute } from '../src/server/db';
 import { getCurrentEvent } from '../src/server/services/eventService';
+import { getDobCutoffsForEvent, CANONICAL_MIN_AGE, CANONICAL_MAX_AGE, CANONICAL_GA_EVENT_DATE } from '../src/server/services/eligibilityService';
 
 async function runReviewStatsReconciliationTests() {
   console.log('================================================================');
@@ -56,6 +57,9 @@ async function runReviewStatsReconciliationTests() {
     WHERE event_id = ? AND (is_deleted = 0 OR is_deleted IS NULL) AND status != 'removed'
   `, [eventId]))?.count || 0;
 
+  const eventDate = currentEvent.starts_at || CANONICAL_GA_EVENT_DATE;
+  const { minAgeDobCutoff, maxAgeDobCutoff } = getDobCutoffsForEvent(eventDate, CANONICAL_MIN_AGE, CANONICAL_MAX_AGE);
+
   const statNeedsAttention = (await queryOne(`
     SELECT COUNT(DISTINCT e.id) as count
     FROM child_event_entries e
@@ -66,8 +70,8 @@ async function runReviewStatsReconciliationTests() {
       AND e.status != 'removed'
       AND (
         c.date_of_birth IS NULL OR c.date_of_birth = '' OR c.needs_age_review = 1
-        OR CAST(strftime('%Y', '2026-11-21') AS INTEGER) - CAST(strftime('%Y', c.date_of_birth) AS INTEGER) - (CASE WHEN strftime('%m-%d', '2026-11-21') < strftime('%m-%d', c.date_of_birth) THEN 1 ELSE 0 END) < 2
-        OR CAST(strftime('%Y', '2026-11-21') AS INTEGER) - CAST(strftime('%Y', c.date_of_birth) AS INTEGER) - (CASE WHEN strftime('%m-%d', '2026-11-21') < strftime('%m-%d', c.date_of_birth) THEN 1 ELSE 0 END) > 14
+        OR c.date_of_birth > '${minAgeDobCutoff}'
+        OR c.date_of_birth <= '${maxAgeDobCutoff}'
         OR NOT EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id)
         OR EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id AND (pp.photo_file_id IS NULL OR pp.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files m WHERE m.id = pp.photo_file_id AND m.secure_url IS NOT NULL AND m.secure_url != '' AND m.secure_url NOT LIKE 'blob:%' AND m.secure_url NOT LIKE 'data:%' AND m.secure_url NOT LIKE '%placeholder%' AND m.secure_url NOT LIKE '%default_avatar%')))
         OR (c.photo_file_id IS NULL OR c.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files cm WHERE cm.id = c.photo_file_id AND cm.secure_url IS NOT NULL AND cm.secure_url != '' AND cm.secure_url NOT LIKE 'blob:%' AND cm.secure_url NOT LIKE 'data:%' AND cm.secure_url NOT LIKE '%placeholder%' AND cm.secure_url NOT LIKE '%default_avatar%'))
