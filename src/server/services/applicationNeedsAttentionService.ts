@@ -44,26 +44,42 @@ export function evaluateApplicationNeedsAttention(
   }
 
   // 2. CHILD PHOTO
-  const childPhoto = app.child_photo_file_id ||
-                     app.child_photo_url ||
-                     app.childPhoto ||
-                     app.photo_file_id ||
-                     app.child?.photoFileId ||
-                     app.child?.photo_file_id ||
+  let childPhoto = app.child_photo_url ||
                      app.child?.photoUrl ||
-                     app.child?.photo_url;
+                     app.child?.photo_url ||
+                     app.childPhoto;
+
+  if (!childPhoto) {
+    // If a join explicitly returned empty/null child_photo_url despite child_photo_file_id existing,
+    // the media file does not exist or has no valid delivery URL. Do NOT let a dangling file ID bypass check.
+    const hasJoinedUrlProp = Object.prototype.hasOwnProperty.call(app, 'child_photo_url');
+    if (!hasJoinedUrlProp || (app.child_photo_url !== null && app.child_photo_url !== '')) {
+      childPhoto = app.child_photo_file_id ||
+                   app.photo_file_id ||
+                   app.child?.photoFileId ||
+                   app.child?.photo_file_id;
+    }
+  }
+
   if (!isValidUploadedPhoto(childPhoto)) {
     reasons.push('MISSING_CHILD_PHOTO');
   }
 
   // 3. PARENT PHOTO
-  const parentPhoto = app.parent_photo_file_id ||
-                      app.parent_photo_url ||
-                      app.parentPhoto ||
-                      app.parent?.photoFileId ||
-                      app.parent?.photo_file_id ||
+  let parentPhoto = app.parent_photo_url ||
                       app.parent?.photoUrl ||
-                      app.parent?.photo_url;
+                      app.parent?.photo_url ||
+                      app.parentPhoto;
+
+  if (!parentPhoto) {
+    const hasJoinedParentProp = Object.prototype.hasOwnProperty.call(app, 'parent_photo_url');
+    if (!hasJoinedParentProp || (app.parent_photo_url !== null && app.parent_photo_url !== '')) {
+      parentPhoto = app.parent_photo_file_id ||
+                    app.parent?.photoFileId ||
+                    app.parent?.photo_file_id;
+    }
+  }
+
   if (!isValidUploadedPhoto(parentPhoto)) {
     reasons.push('MISSING_PARENT_PHOTO');
   }

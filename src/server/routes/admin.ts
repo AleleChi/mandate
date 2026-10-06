@@ -85,6 +85,27 @@ async function resolveAdminEventId(explicitEventId?: string | null): Promise<str
 }
 
 /**
+ * Resolves a media file reference (UUID, API URL, or Cloudinary URL) to a media_files ID.
+ */
+async function resolveToMediaFileId(photoRef?: string | null): Promise<string> {
+  if (!photoRef) return '';
+  const ref = String(photoRef).trim();
+  if (!ref) return '';
+  if (!ref.startsWith('http://') && !ref.startsWith('https://') && !ref.startsWith('/') && !ref.startsWith('data:')) {
+    return ref;
+  }
+  const fileIdMatch = ref.match(/\/api\/media\/files\/([a-zA-Z0-9-]+)/);
+  if (fileIdMatch && fileIdMatch[1]) {
+    return fileIdMatch[1];
+  }
+  const matchingMedia = await queryOne('SELECT id FROM media_files WHERE secure_url = ? OR file_url = ? OR optimized_url = ?', [ref, ref, ref]);
+  if (matchingMedia && matchingMedia.id) {
+    return matchingMedia.id;
+  }
+  return ref;
+}
+
+/**
  * Resolves the operational event record for Admin routes.
  * 1. If explicitEventId is provided, validates that the event exists; throws 404 if not found.
  * 2. Otherwise resolves canonical current event via getCurrentEvent().
@@ -2664,7 +2685,7 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
         c.needs_age_review,
         c.photo_file_id as child_photo_file_id,
         c.photo_file_id,
-        m.secure_url as child_photo_url,
+        COALESCE(m.optimized_url, m.secure_url, m.file_url) as child_photo_url,
         p.id as parent_id,
         p.full_name as parent_name,
         p.phone_number,
@@ -2674,7 +2695,7 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
         p.department as parent_department,
         p.home_address as parent_address,
         p.photo_file_id as parent_photo_file_id,
-        pm.secure_url as parent_photo_url
+        COALESCE(pm.optimized_url, pm.secure_url, pm.file_url) as parent_photo_url
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
       JOIN parent_profiles p ON p.id = c.parent_profile_id
@@ -2836,7 +2857,8 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
         ageGroup: childAgeGroup,
         relationship: app.relationship_to_child,
         needsAgeReview: effectiveNeedsAgeReview,
-        photoUrl: app.child_photo_url
+        photoUrl: app.child_photo_url || (app.child_photo_file_id ? (String(app.child_photo_file_id).startsWith('http') || String(app.child_photo_file_id).startsWith('/') ? String(app.child_photo_file_id) : `/api/media/files/${app.child_photo_file_id}`) : ''),
+        photoFileId: app.child_photo_file_id || ''
       },
       parent: {
         id: app.parent_id,
@@ -3184,6 +3206,209 @@ router.post('/applications/:id/reopen-review', async (req: AuthenticatedRequest,
   } catch (err: any) {
     console.error('Error reopening application review:', err);
     return res.status(500).json({ success: false, error: 'Failed to reopen application review.' });
+  }
+});
+
+// POST return child application to draft / parent for correction
+router.post('/applications/:id/return-to-draft', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const {
+      reason,
+      customMessage,
+      notifyEmail = true,
+      notifyWhatsApp = true
+    } = req.body;
+
+    const entry = await queryOne(`
+      SELECT e.*, 
+             c.id as child_id, c.full_name as child_name, c.date_of_birth,
+             p.id as parent_profile_id, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.whatsapp_number as parent_whatsapp,
+             ev.title as event_title, ev.starts_at as event_starts_at
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      LEFT JOIN events ev ON ev.id = e.event_id
+      WHERE e.id = ?
+    `, [id]);
+
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Application entry not found.' });
+    }
+
+    // Disallow returning if child is already checked in, inside, or picked up
+    if (['checked_in', 'inside', 'picked_up', 'checked_out'].includes(entry.status)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot return an application for a child who has already arrived or checked in.'
+      });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user?.id || 'admin';
+    const effectiveReason = (reason && String(reason).trim()) ? String(reason).trim() : 'Child photo is missing or needs updating';
+
+    // 1. Update child_event_entries table: reset to incomplete / draft so parent portal unlocks
+    let auditNote = entry.note_to_team || '';
+    const returnNote = `\n\n[Returned to parent for correction on ${new Date().toLocaleDateString()}: ${effectiveReason}]`;
+    auditNote = auditNote ? `${auditNote}${returnNote}` : returnNote;
+
+    await execute(`
+      UPDATE child_event_entries
+      SET status = 'incomplete',
+          details_confirmed = 0,
+          information_confirmed = 0,
+          submitted_at = NULL,
+          reviewed_at = NULL,
+          note_to_team = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [auditNote, now, id]);
+
+    // 2. Revoke any existing event pass
+    await execute(`
+      UPDATE event_passes
+      SET status = 'revoked', revoked_at = ?, updated_at = ?
+      WHERE child_event_entry_id = ? AND status != 'revoked'
+    `, [now, now, id]);
+
+    // 3. Prepare parent notification text
+    const parentFirstName = entry.parent_name?.split(' ')[0] || 'Parent';
+    const childFirstName = entry.child_name ? entry.child_name.split(' ')[0] : 'your child';
+    const eventName = entry.event_title || 'The General Assembly';
+
+    const defaultMessage = `Hello ${parentFirstName},
+
+We noticed that ${childFirstName}'s registration for ${eventName} needs an update:
+• ${effectiveReason}
+
+We have temporarily reopened your application in draft mode. Please sign in to your Parent account, update the required information (under My Passes / Incomplete), and re-submit.`;
+
+    const finalMessage = (customMessage && String(customMessage).trim()) ? String(customMessage).trim() : defaultMessage;
+    const subject = `Action required: Update ${childFirstName}'s registration details`;
+
+    // 4. In-App Message Thread & Messages
+    try {
+      let thread = await queryOne(`
+        SELECT id FROM message_threads
+        WHERE event_id = ? AND linked_entry_id = ? AND category = 'child_application'
+        ORDER BY created_at DESC LIMIT 1
+      `, [entry.event_id, id]);
+
+      let threadId = thread?.id;
+      if (!threadId) {
+        threadId = `th-${crypto.randomUUID()}`;
+        await execute(`
+          INSERT INTO message_threads (
+            id, event_id, parent_profile_id, child_id, linked_entry_id, category, subject, status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, 'child_application', ?, 'open', ?, ?)
+        `, [threadId, entry.event_id, entry.parent_profile_id, entry.child_id, id, subject, now, now]);
+      } else {
+        await execute(`
+          UPDATE message_threads
+          SET status = 'open', updated_at = ?
+          WHERE id = ?
+        `, [now, threadId]);
+      }
+
+      const msgId = `msg-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO messages (
+          id, thread_id, sender_user_id, sender_role, body, message_type, action_type, action_payload, created_at
+        ) VALUES (?, ?, ?, 'admin', ?, 'application_correction_required', 'update_application_details', ?, ?)
+      `, [
+        msgId,
+        threadId,
+        adminId,
+        finalMessage,
+        JSON.stringify({ entryId: id, childId: entry.child_id, reason: effectiveReason }),
+        now
+      ]);
+
+      const notifId = `notif-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO notifications (
+          id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
+        ) VALUES (?, ?, ?, 'alert', 'parent', 'individual', ?, ?, ?, ?, 'high', 'in-app')
+      `, [notifId, subject, finalMessage, entry.event_id, entry.child_id, entry.parent_profile_id, now]);
+
+      const pNotifId = `pnotif-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [pNotifId, entry.parent_profile_id, entry.event_id, entry.child_id, subject, finalMessage, now]);
+    } catch (msgErr) {
+      console.error('[ReturnToDraft] Failed to record in-app message/notification:', msgErr);
+    }
+
+    // 5. Send Transactional Email
+    if (notifyEmail && entry.parent_email) {
+      const emailHtml = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 28px; border-radius: 16px; background-color: #FAF9F6;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <span style="font-family: serif; font-size: 22px; font-weight: bold; color: #18181B; letter-spacing: 2px;">KOINONIA</span>
+            <div style="width: 44px; height: 2px; background-color: #C59B27; margin: 8px auto 0;"></div>
+          </div>
+          <h2 style="font-size: 18px; color: #18181B; margin-top: 0; font-weight: 600;">Registration Update Required</h2>
+          <p style="font-size: 14px; color: #3F3F46;">Hello ${parentFirstName},</p>
+          <p style="font-size: 14px; color: #3F3F46; line-height: 1.6;">
+            We noticed that <strong>${childFirstName}</strong>'s registration for <strong>${eventName}</strong> requires an update:
+          </p>
+          <div style="background-color: #F4EFE6; border-left: 4px solid #C59B27; padding: 14px 18px; border-radius: 8px; margin: 20px 0; font-size: 13.5px; color: #4A463F;">
+            ${effectiveReason.replace(/\n/g, '<br/>')}
+          </div>
+          <p style="font-size: 14px; color: #3F3F46; line-height: 1.6;">
+            Your application has been unlocked and moved back to draft mode. Please sign in to your Parent account to make the correction and re-submit.
+          </p>
+          <div style="text-align: center; margin: 28px 0;">
+            <a href="https://koinonia12.netlify.app/parent/home" style="display: inline-block; background-color: #C59B27; color: #FFFFFF; font-weight: 600; font-size: 14px; padding: 12px 28px; border-radius: 10px; text-decoration: none;">
+              Update Application Now
+            </a>
+          </div>
+          <hr style="border: 0; border-top: 1px solid #EAE8E1; margin: 24px 0;">
+          <p style="font-size: 11px; color: #71717A; text-align: center;">
+            This is an official administrative notice regarding your Koinonia Children and Teens registration.
+          </p>
+        </div>
+      `;
+      sendEmail({
+        to: entry.parent_email,
+        subject,
+        text: finalMessage,
+        html: emailHtml
+      }).catch(err => console.error('[ReturnToDraft] Failed to send email:', err));
+    }
+
+    // 6. Send WhatsApp if enabled
+    const targetPhone = entry.parent_whatsapp || entry.parent_phone;
+    if (notifyWhatsApp && targetPhone) {
+      const waText = `Hello ${parentFirstName},\n\nAction required for ${childFirstName}'s registration at ${eventName}:\n• ${effectiveReason}\n\nYour application has been unlocked. Please sign in to your Parent account at https://koinonia12.netlify.app/parent/home to update the details and re-submit.`;
+      sendWhatsApp(targetPhone, waText).catch(err => console.error('[ReturnToDraft] Failed to dispatch WhatsApp:', err));
+    }
+
+    // 7. Audit Log
+    try {
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, 'admin', 'Return application to parent for correction', 'child_event_entry', id, ?, ?)
+      `, [
+        crypto.randomUUID(),
+        adminId,
+        JSON.stringify({ reason: effectiveReason, customMessage: finalMessage, notifyEmail, notifyWhatsApp }),
+        now
+      ]);
+    } catch (auditErr) {
+      console.error('[ReturnToDraft] Audit log error:', auditErr);
+    }
+
+    return res.json({
+      success: true,
+      message: 'Application successfully returned to parent for correction.',
+      newStatus: 'incomplete'
+    });
+  } catch (err: any) {
+    console.error('Error returning application to parent:', err);
+    return res.status(500).json({ success: false, error: 'Failed to return application to parent.' });
   }
 });
 
@@ -10788,6 +11013,10 @@ router.put('/applications/:id', authMiddleware, async (req: AuthenticatedRequest
       fullName,
       gender,
       dateOfBirth,
+      photoUrl,
+      photoFileId,
+      childPhoto,
+      photo,
       schoolClass,
       schoolName,
       hasMedicalNotes,
@@ -10798,9 +11027,13 @@ router.put('/applications/:id', authMiddleware, async (req: AuthenticatedRequest
       parentPhone,
       parentWhatsApp,
       parentHomeAddress,
+      parentPhotoUrl,
+      parentPhotoFileId,
       pickupPersonName,
       pickupPersonRelationship,
-      pickupPersonPhone
+      pickupPersonPhone,
+      pickupPersonPhotoUrl,
+      pickupPersonPhotoFileId
     } = req.body;
 
     const entry = await queryOne(`SELECT child_id FROM child_event_entries WHERE id = ?`, [id]);
@@ -10819,6 +11052,12 @@ router.put('/applications/:id', authMiddleware, async (req: AuthenticatedRequest
       if (parentPhone !== undefined) { parentUpdates.push('phone_number = ?'); parentParams.push(parentPhone); }
       if (parentWhatsApp !== undefined) { parentUpdates.push('whatsapp_number = ?'); parentParams.push(parentWhatsApp); }
       if (parentHomeAddress !== undefined) { parentUpdates.push('home_address = ?'); parentParams.push(parentHomeAddress); }
+      const rawParentPhoto = parentPhotoUrl !== undefined ? parentPhotoUrl : parentPhotoFileId;
+      if (rawParentPhoto !== undefined) {
+        const resolvedParentPhotoId = await resolveToMediaFileId(rawParentPhoto);
+        parentUpdates.push('photo_file_id = ?');
+        parentParams.push(resolvedParentPhotoId || null);
+      }
       if (parentUpdates.length > 0) {
         parentUpdates.push('updated_at = ?'); parentParams.push(now);
         parentParams.push(childRow.parent_profile_id);
@@ -10827,14 +11066,21 @@ router.put('/applications/:id', authMiddleware, async (req: AuthenticatedRequest
     }
 
     // Update authorized pickup details if specified
-    if (pickupPersonName !== undefined || pickupPersonRelationship !== undefined || pickupPersonPhone !== undefined) {
+    if (pickupPersonName !== undefined || pickupPersonRelationship !== undefined || pickupPersonPhone !== undefined || pickupPersonPhotoUrl !== undefined || pickupPersonPhotoFileId !== undefined) {
       const existingPickup = await queryOne('SELECT id FROM pickup_people WHERE child_event_entry_id = ?', [id]);
+      const rawPickupPhoto = pickupPersonPhotoUrl !== undefined ? pickupPersonPhotoUrl : pickupPersonPhotoFileId;
+      let resolvedPickupPhotoId: string | null = null;
+      if (rawPickupPhoto !== undefined) {
+        resolvedPickupPhotoId = (await resolveToMediaFileId(rawPickupPhoto)) || null;
+      }
+
       if (existingPickup) {
         const pickupUpdates: string[] = [];
         const pickupParams: any[] = [];
         if (pickupPersonName !== undefined) { pickupUpdates.push('full_name = ?'); pickupParams.push(pickupPersonName); }
         if (pickupPersonRelationship !== undefined) { pickupUpdates.push('relationship_to_child = ?'); pickupParams.push(pickupPersonRelationship); }
         if (pickupPersonPhone !== undefined) { pickupUpdates.push('phone_number = ?'); pickupParams.push(pickupPersonPhone); }
+        if (rawPickupPhoto !== undefined) { pickupUpdates.push('photo_file_id = ?'); pickupParams.push(resolvedPickupPhotoId); }
         if (pickupUpdates.length > 0) {
           pickupUpdates.push('updated_at = ?'); pickupParams.push(now);
           pickupParams.push(existingPickup.id);
@@ -10843,9 +11089,9 @@ router.put('/applications/:id', authMiddleware, async (req: AuthenticatedRequest
       } else {
         const newPickupId = 'pickup-' + Math.random().toString(36).substring(2, 11);
         await execute(`
-          INSERT INTO pickup_people (id, child_event_entry_id, pickup_type, full_name, relationship_to_child, phone_number, whatsapp_number, approved_by_parent, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [newPickupId, id, 'other', pickupPersonName || '', pickupPersonRelationship || '', pickupPersonPhone || '', '', 1, now, now]);
+          INSERT INTO pickup_people (id, child_event_entry_id, pickup_type, full_name, relationship_to_child, phone_number, whatsapp_number, photo_file_id, approved_by_parent, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [newPickupId, id, 'other', pickupPersonName || '', pickupPersonRelationship || '', pickupPersonPhone || '', '', resolvedPickupPhotoId, 1, now, now]);
       }
     }
 
@@ -10871,6 +11117,12 @@ router.put('/applications/:id', authMiddleware, async (req: AuthenticatedRequest
       childUpdates.push('calculated_age = ?'); childParams.push(calculatedAge);
       childUpdates.push('age_group = ?'); childParams.push(ageGroup);
       childUpdates.push('needs_age_review = ?'); childParams.push(needsAgeReview);
+    }
+    const rawChildPhoto = photoUrl !== undefined ? photoUrl : (photoFileId !== undefined ? photoFileId : (childPhoto !== undefined ? childPhoto : photo));
+    if (rawChildPhoto !== undefined) {
+      const resolvedChildPhotoId = await resolveToMediaFileId(rawChildPhoto);
+      childUpdates.push('photo_file_id = ?');
+      childParams.push(resolvedChildPhotoId || null);
     }
     childUpdates.push('updated_at = ?'); childParams.push(now);
 

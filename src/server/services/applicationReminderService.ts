@@ -378,6 +378,12 @@ We need some additional information to complete ${context.childFirstName}'s regi
 
 Please sign in to your Parent account and update the required information.`;
 
+    if (needsAttentionCheck.reasons.includes('MISSING_CHILD_PHOTO')) {
+      correctionBody += `\n\nA clear photo of ${context.childFirstName} is required to complete registration.`;
+    }
+    if (needsAttentionCheck.reasons.includes('MISSING_PARENT_PHOTO')) {
+      correctionBody += `\n\nA profile photo for the parent / guardian is still required.`;
+    }
     if (needsAttentionCheck.reasons.includes('MISSING_PICKUP_PHOTO') || needsAttentionCheck.reasons.includes('INVALID_PICKUP_PHOTO')) {
       correctionBody += `\n\nA clear photo of the authorised pickup person is still required.`;
     }
@@ -422,6 +428,12 @@ Please sign in to your Parent account and update the required information.`;
   const missingSections: string[] = [];
   if (!context.child.date_of_birth) {
     missingSections.push('Date of birth');
+  }
+  if (needsAttentionCheck.reasons.includes('MISSING_CHILD_PHOTO')) {
+    missingSections.push('Child photo');
+  }
+  if (needsAttentionCheck.reasons.includes('MISSING_PARENT_PHOTO')) {
+    missingSections.push('Parent profile photo');
   }
   if (!pickups || pickups.length === 0) {
     missingSections.push('Authorised pickup person');
