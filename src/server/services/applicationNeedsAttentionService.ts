@@ -33,7 +33,7 @@ export function evaluateApplicationNeedsAttention(
   const reasons: string[] = [];
 
   // 1. DOB & AGE ELIGIBILITY
-  const rawDob = app.date_of_birth || app.dob || app.child?.date_of_birth || app.child?.dob;
+  const rawDob = app.date_of_birth || app.dob || app.child?.date_of_birth || app.child?.dob || app.dateOfBirth || app.child?.dateOfBirth;
   if (!rawDob || !String(rawDob).trim()) {
     reasons.push('DOB_MISSING');
   } else {
@@ -44,24 +44,51 @@ export function evaluateApplicationNeedsAttention(
   }
 
   // 2. CHILD PHOTO
-  const childPhoto = app.child_photo_file_id || app.child?.photoFileId || app.photo_file_id || app.child_photo_url || app.child?.photoUrl;
+  const childPhoto = app.child_photo_file_id ||
+                     app.child_photo_url ||
+                     app.childPhoto ||
+                     app.photo_file_id ||
+                     app.child?.photoFileId ||
+                     app.child?.photo_file_id ||
+                     app.child?.photoUrl ||
+                     app.child?.photo_url;
   if (!isValidUploadedPhoto(childPhoto)) {
     reasons.push('MISSING_CHILD_PHOTO');
   }
 
   // 3. PARENT PHOTO
-  const parentPhoto = app.parent_photo_file_id || app.parent?.photoFileId || app.parent_photo_url || app.parent?.photoUrl;
+  const parentPhoto = app.parent_photo_file_id ||
+                      app.parent_photo_url ||
+                      app.parentPhoto ||
+                      app.parent?.photoFileId ||
+                      app.parent?.photo_file_id ||
+                      app.parent?.photoUrl ||
+                      app.parent?.photo_url;
   if (!isValidUploadedPhoto(parentPhoto)) {
     reasons.push('MISSING_PARENT_PHOTO');
   }
 
   // 4. AUTHORISED PICKUP PERSON & PHOTO
+  const parentName = app.parent_name || app.parent?.fullName || app.parent?.full_name;
+  const parentPhone = app.phone_number || app.parent_phone || app.parent?.phone || app.parent?.phone_number;
+
   if (!pickups || pickups.length === 0) {
-    reasons.push('MISSING_PICKUP_PERSON');
+    if (!parentName || !parentPhone) {
+      reasons.push('MISSING_PICKUP_PERSON');
+    }
   } else {
     for (const pickup of pickups) {
-      const isParentPickup = pickup.pickup_type === 'parent';
-      const pickupPhoto = pickup.photo_file_id || pickup.photoUrl || (isParentPickup ? parentPhoto : null);
+      const pickupRel = String(pickup.relationship_to_child || pickup.relationship || '').trim().toLowerCase();
+      const pickupType = String(pickup.pickup_type || pickup.pickupType || '').trim().toLowerCase();
+      const isParentPickup = pickupType === 'parent' ||
+                             ['parent', 'father', 'mother', 'mom', 'dad'].includes(pickupRel) ||
+                             (!pickup.full_name && !pickup.fullName);
+
+      const pickupPhoto = pickup.photo_file_id ||
+                          pickup.photoFileId ||
+                          pickup.photo_url ||
+                          pickup.photoUrl ||
+                          (isParentPickup ? parentPhoto : null);
 
       if (!pickupPhoto || !String(pickupPhoto).trim()) {
         if (!reasons.includes('MISSING_PICKUP_PHOTO')) {
@@ -77,11 +104,9 @@ export function evaluateApplicationNeedsAttention(
         const name = pickup.full_name || pickup.fullName;
         const rel = pickup.relationship_to_child || pickup.relationship;
         const phone = pickup.phone_number || pickup.phone;
-        const approved = pickup.approved_by_parent !== undefined
-          ? Boolean(pickup.approved_by_parent)
-          : Boolean(pickup.approvedByParent);
+        const isExplicitlyDisapproved = pickup.approved_by_parent === 0 || pickup.approvedByParent === false || pickup.approved === false;
 
-        if (!name || !String(name).trim() || !rel || !String(rel).trim() || !phone || !String(phone).trim() || !approved) {
+        if (!name || !String(name).trim() || !rel || !String(rel).trim() || !phone || !String(phone).trim() || isExplicitlyDisapproved) {
           if (!reasons.includes('MISSING_REQUIRED_FIELD')) {
             reasons.push('MISSING_REQUIRED_FIELD');
           }
@@ -91,13 +116,13 @@ export function evaluateApplicationNeedsAttention(
   }
 
   // 5. REQUIRED IDENTIFIERS & CLASS
-  const childName = app.child_name || app.child?.fullName || app.full_name;
+  const childName = app.child_name || app.child?.fullName || app.full_name || app.child?.full_name;
   if (!childName || !String(childName).trim()) {
     if (!reasons.includes('MISSING_REQUIRED_FIELD')) {
       reasons.push('MISSING_REQUIRED_FIELD');
     }
   }
-  const childClass = app.school_class || app.schoolClass;
+  const childClass = app.school_class || app.schoolClass || app.class || app.schoolAndAgeGroup?.schoolClass;
   if (!childClass || !String(childClass).trim()) {
     if (!reasons.includes('MISSING_REQUIRED_FIELD')) {
       reasons.push('MISSING_REQUIRED_FIELD');

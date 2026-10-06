@@ -525,7 +525,14 @@ export async function sendCompletionReminder(
       [params.entryId]
     );
     needsAttentionCheck = evaluateApplicationNeedsAttention(
-      context.entry,
+      {
+        ...context.entry,
+        ...context.child,
+        child_name: context.child.full_name,
+        parent_name: context.parentProfile.full_name,
+        parent_phone: context.parentProfile.phone_number,
+        parent_photo_file_id: context.parentProfile.photo_file_id
+      },
       rawPickups,
       CANONICAL_GA_EVENT_DATE
     );
@@ -594,7 +601,14 @@ export async function sendCompletionReminder(
         [params.entryId]
       );
       const currentNeedsAttn = evaluateApplicationNeedsAttention(
-        currentEntry,
+        {
+          ...currentEntry,
+          ...context.child,
+          child_name: context.child.full_name,
+          parent_name: context.parentProfile.full_name,
+          parent_phone: context.parentProfile.phone_number,
+          parent_photo_file_id: context.parentProfile.photo_file_id
+        },
         rawPickups,
         CANONICAL_GA_EVENT_DATE
       );
@@ -867,7 +881,14 @@ export async function sendWhatsAppNudge(
       [context.child.id, context.event.id]
     );
     needsAttentionCheck = evaluateApplicationNeedsAttention(
-      context.entry,
+      {
+        ...context.entry,
+        ...context.child,
+        child_name: context.child.full_name,
+        parent_name: context.parentProfile.full_name,
+        parent_phone: context.parentProfile.phone_number,
+        parent_photo_file_id: context.parentProfile.photo_file_id
+      },
       rawPickups,
       CANONICAL_GA_EVENT_DATE
     );

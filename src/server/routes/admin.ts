@@ -1874,6 +1874,8 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
         c.age_group,
         c.relationship_to_child,
         c.needs_age_review,
+        c.photo_file_id as child_photo_file_id,
+        c.photo_file_id,
         m.secure_url as child_photo_url,
         p.id as parent_id,
         p.full_name as parent_name,
@@ -1915,17 +1917,33 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
         const entryPickups = pickupPeople.filter((p: any) => p.child_event_entry_id === app.entry_id)
           .map((p: any) => ({
             id: p.id,
+            pickupType: p.pickup_type || 'parent',
+            pickup_type: p.pickup_type || 'parent',
             fullName: p.full_name,
+            full_name: p.full_name,
             relationship: p.relationship_to_child,
+            relationship_to_child: p.relationship_to_child,
             phone: p.phone_number,
+            phone_number: p.phone_number,
+            whatsapp: p.whatsapp_number,
+            whatsapp_number: p.whatsapp_number,
+            photoFileId: p.photo_file_id,
+            photo_file_id: p.photo_file_id,
             photoUrl: p.photo_url || null,
-            approvedByParent: !!p.approved_by_parent
+            photo_url: p.photo_url || null,
+            approvedByParent: p.approved_by_parent === 1 || p.pickup_type === 'parent',
+            approved_by_parent: p.approved_by_parent === 1 || p.pickup_type === 'parent',
+            approved: p.approved_by_parent === 1 || p.pickup_type === 'parent'
           }));
 
         const pass = eventPasses.find((p: any) => p.child_event_entry_id === app.entry_id);
 
         const childAge = getChildAge(app, CANONICAL_GA_EVENT_DATE);
         const childAgeGroup = deriveAgeGroup(childAge, app.age_group);
+        const ageRes = app.date_of_birth ? resolveCanonicalAgeGroup(app.date_of_birth, CANONICAL_GA_EVENT_DATE) : null;
+        const isOutOfRange = !ageRes || ageRes.isOutOfRange;
+        const hasReviewNeededLabel = Boolean(app.age_group && app.age_group.includes('Review Needed'));
+        const effectiveNeedsAgeReview = isOutOfRange || hasReviewNeededLabel;
         const attnResult = evaluateApplicationNeedsAttention(app, entryPickups, CANONICAL_GA_EVENT_DATE);
 
         return {
@@ -1968,7 +1986,7 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
             age: childAge >= 0 ? childAge : app.calculated_age,
             ageGroup: childAgeGroup,
             relationship: app.relationship_to_child,
-            needsAgeReview: app.needs_age_review === 1,
+            needsAgeReview: effectiveNeedsAgeReview,
             photoUrl: app.child_photo_url
           },
           parent: {
@@ -2644,6 +2662,8 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
         c.age_group,
         c.relationship_to_child,
         c.needs_age_review,
+        c.photo_file_id as child_photo_file_id,
+        c.photo_file_id,
         m.secure_url as child_photo_url,
         p.id as parent_id,
         p.full_name as parent_name,
@@ -2677,12 +2697,23 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
 
     const formattedPickups = pickups.map((p: any) => ({
       id: p.id,
+      pickupType: p.pickup_type || 'parent',
+      pickup_type: p.pickup_type || 'parent',
       fullName: p.full_name,
+      full_name: p.full_name,
       relationship: p.relationship_to_child,
+      relationship_to_child: p.relationship_to_child,
       phone: p.phone_number,
+      phone_number: p.phone_number,
       whatsapp: p.whatsapp_number,
-      photoUrl: p.photo_url,
-      approved: p.approved_by_parent === 1
+      whatsapp_number: p.whatsapp_number,
+      photoFileId: p.photo_file_id,
+      photo_file_id: p.photo_file_id,
+      photoUrl: p.photo_url || null,
+      photo_url: p.photo_url || null,
+      approvedByParent: p.approved_by_parent === 1 || p.pickup_type === 'parent',
+      approved_by_parent: p.approved_by_parent === 1 || p.pickup_type === 'parent',
+      approved: p.approved_by_parent === 1 || p.pickup_type === 'parent'
     }));
 
     const auditEvents = await query(`
@@ -2732,6 +2763,16 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
 
     const childAge = getChildAge(app, CANONICAL_GA_EVENT_DATE);
     const childAgeGroup = deriveAgeGroup(childAge, app.age_group);
+    const ageRes = app.date_of_birth ? resolveCanonicalAgeGroup(app.date_of_birth, CANONICAL_GA_EVENT_DATE) : null;
+    const isOutOfRange = !ageRes || ageRes.isOutOfRange;
+    const hasReviewNeededLabel = Boolean(app.age_group && app.age_group.includes('Review Needed'));
+    const effectiveNeedsAgeReview = isOutOfRange || hasReviewNeededLabel;
+
+    if (app.needs_age_review === 1 && !isOutOfRange && !hasReviewNeededLabel && app.child_id && ageRes) {
+      execute('UPDATE children SET needs_age_review = 0, calculated_age = ?, age_group = ? WHERE id = ?',
+        [childAge, childAgeGroup, app.child_id]).catch((e: any) => console.error('Failed to clear stale age review flag:', e));
+    }
+
     const attnResult = evaluateApplicationNeedsAttention(app, formattedPickups, CANONICAL_GA_EVENT_DATE);
     const lastReminder = await queryOne(`
       SELECT m.created_at, m.message_type
@@ -2794,7 +2835,7 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
         age: childAge >= 0 ? childAge : app.calculated_age,
         ageGroup: childAgeGroup,
         relationship: app.relationship_to_child,
-        needsAgeReview: app.needs_age_review === 1,
+        needsAgeReview: effectiveNeedsAgeReview,
         photoUrl: app.child_photo_url
       },
       parent: {
@@ -2835,10 +2876,27 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
     }
 
     const app = await queryOne(`
-      SELECT e.*, c.full_name as child_name, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.id as parent_profile_id
+      SELECT e.*, 
+        c.full_name as child_name, 
+        c.date_of_birth,
+        c.date_of_birth as dob,
+        c.photo_file_id as child_photo_file_id,
+        c.photo_file_id,
+        cm.secure_url as child_photo_url,
+        c.gender,
+        c.age_group,
+        p.full_name as parent_name, 
+        p.email as parent_email, 
+        p.phone_number as parent_phone, 
+        p.phone_number,
+        p.id as parent_profile_id,
+        p.photo_file_id as parent_photo_file_id,
+        pm.secure_url as parent_photo_url
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
       JOIN parent_profiles p ON p.id = c.parent_profile_id
+      LEFT JOIN media_files cm ON cm.id = c.photo_file_id
+      LEFT JOIN media_files pm ON pm.id = p.photo_file_id
       WHERE e.id = ?
     `, [id]);
 
@@ -2860,7 +2918,28 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
         'SELECT p.*, m.secure_url as photo_url FROM pickup_people p LEFT JOIN media_files m ON m.id = p.photo_file_id WHERE p.child_event_entry_id = ? OR (p.child_id = ? AND p.event_id = ?)',
         [id, app.child_id, app.event_id]
       );
-      const attnCheck = evaluateApplicationNeedsAttention(app, rawPickups, CANONICAL_GA_EVENT_DATE);
+      const formattedReviewPickups = rawPickups.map((p: any) => ({
+        ...p,
+        id: p.id,
+        pickupType: p.pickup_type || 'parent',
+        pickup_type: p.pickup_type || 'parent',
+        fullName: p.full_name,
+        full_name: p.full_name,
+        relationship: p.relationship_to_child,
+        relationship_to_child: p.relationship_to_child,
+        phone: p.phone_number,
+        phone_number: p.phone_number,
+        whatsapp: p.whatsapp_number,
+        whatsapp_number: p.whatsapp_number,
+        photoFileId: p.photo_file_id,
+        photo_file_id: p.photo_file_id,
+        photoUrl: p.photo_url || null,
+        photo_url: p.photo_url || null,
+        approvedByParent: p.approved_by_parent === 1 || p.pickup_type === 'parent',
+        approved_by_parent: p.approved_by_parent === 1 || p.pickup_type === 'parent',
+        approved: p.approved_by_parent === 1 || p.pickup_type === 'parent'
+      }));
+      const attnCheck = evaluateApplicationNeedsAttention(app, formattedReviewPickups, CANONICAL_GA_EVENT_DATE);
       if (attnCheck.blocking) {
         return res.status(400).json({
           success: false,
@@ -3128,10 +3207,27 @@ router.post('/applications/bulk-review', authMiddleware, async (req: Authenticat
 
     for (const id of applicationIds) {
       const app = await queryOne(`
-        SELECT e.*, c.full_name as child_name, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.id as parent_profile_id
+        SELECT e.*, 
+          c.full_name as child_name, 
+          c.date_of_birth,
+          c.date_of_birth as dob,
+          c.photo_file_id as child_photo_file_id,
+          c.photo_file_id,
+          cm.secure_url as child_photo_url,
+          c.gender,
+          c.age_group,
+          p.full_name as parent_name, 
+          p.email as parent_email, 
+          p.phone_number as parent_phone, 
+          p.phone_number,
+          p.id as parent_profile_id,
+          p.photo_file_id as parent_photo_file_id,
+          pm.secure_url as parent_photo_url
         FROM child_event_entries e
         JOIN children c ON c.id = e.child_id
         JOIN parent_profiles p ON p.id = c.parent_profile_id
+        LEFT JOIN media_files cm ON cm.id = c.photo_file_id
+        LEFT JOIN media_files pm ON pm.id = p.photo_file_id
         WHERE e.id = ?
       `, [id]);
 
@@ -3164,7 +3260,28 @@ router.post('/applications/bulk-review', authMiddleware, async (req: Authenticat
           'SELECT p.*, m.secure_url as photo_url FROM pickup_people p LEFT JOIN media_files m ON m.id = p.photo_file_id WHERE p.child_event_entry_id = ? OR (p.child_id = ? AND p.event_id = ?)',
           [id, app.child_id, app.event_id]
         );
-        const attnCheck = evaluateApplicationNeedsAttention(app, rawPickups, CANONICAL_GA_EVENT_DATE);
+        const formattedReviewPickups = rawPickups.map((p: any) => ({
+          ...p,
+          id: p.id,
+          pickupType: p.pickup_type || 'parent',
+          pickup_type: p.pickup_type || 'parent',
+          fullName: p.full_name,
+          full_name: p.full_name,
+          relationship: p.relationship_to_child,
+          relationship_to_child: p.relationship_to_child,
+          phone: p.phone_number,
+          phone_number: p.phone_number,
+          whatsapp: p.whatsapp_number,
+          whatsapp_number: p.whatsapp_number,
+          photoFileId: p.photo_file_id,
+          photo_file_id: p.photo_file_id,
+          photoUrl: p.photo_url || null,
+          photo_url: p.photo_url || null,
+          approvedByParent: p.approved_by_parent === 1 || p.pickup_type === 'parent',
+          approved_by_parent: p.approved_by_parent === 1 || p.pickup_type === 'parent',
+          approved: p.approved_by_parent === 1 || p.pickup_type === 'parent'
+        }));
+        const attnCheck = evaluateApplicationNeedsAttention(app, formattedReviewPickups, CANONICAL_GA_EVENT_DATE);
         if (attnCheck.blocking) {
           failures.push({
             id,
