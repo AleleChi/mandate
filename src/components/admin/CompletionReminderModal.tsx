@@ -166,8 +166,12 @@ export const CompletionReminderModal: React.FC<CompletionReminderModalProps> = (
       );
 
       if (res && res.success) {
-        const portalResult = res.portal;
-        const waResult = res.whatsapp;
+        // Backend returns channels nested under res.channels.portal / res.channels.whatsapp
+        const rawPortal = res.channels?.portal;
+        const rawWa = res.channels?.whatsapp;
+        // Normalise: backend uses `success`, modal logic below expects `sent`
+        const portalResult = rawPortal ? { sent: rawPortal.success, ...rawPortal } : undefined;
+        const waResult = rawWa ? { sent: rawWa.success, ...rawWa } : undefined;
 
         if (channel === 'both') {
           if (portalResult?.sent && waResult?.sent) {
