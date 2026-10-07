@@ -520,6 +520,44 @@ export async function sendChildReviewDecisionEmail(params: {
 }
 
 /**
+ * 4b. Application returned to parent for correction / update
+ */
+export async function sendChildReturnToDraftEmail(params: {
+  parentEmail: string;
+  parentFirstName?: string;
+  childName: string;
+  reason: string;
+  customMessage?: string;
+  parentPortalLink?: string;
+}): Promise<SendEmailResult> {
+  const childName = params.childName || 'your child';
+  const suffix = childName.endsWith('s') ? '’' : '’s';
+  const subject = `Update needed for ${childName}${suffix} details`;
+  const firstName = getFirstName(params.parentFirstName);
+  const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
+  const portalUrl = params.parentPortalLink || buildPublicAppUrl('/parent/home');
+
+  const reasonSnippet = params.reason ? params.reason.trim() : 'Some registration information needs review or updating.';
+  
+  const bodyHtml = `
+    <p style="margin-top: 0;">${greeting}</p>
+    <p>Our review team noticed that <strong>${childName}</strong>’s registration details require an update:</p>
+    <div style="background-color: #FAF8F4; border-left: 3px solid #C59B27; padding: 12px 16px; margin: 16px 0; border-radius: 4px; font-size: 14px; color: #27272A; line-height: 1.5;">
+      ${reasonSnippet.replace(/\n/g, '<br/>')}
+    </div>
+    <p>We have reopened ${childName}’s application in draft mode. Please sign in to Parent Access, update the required details, and re-submit.</p>
+    <br>
+    <p style="margin-bottom: 0;">Thank you,<br>Koinonia Children and Teens</p>
+  `;
+
+  const text = `${greeting}\n\nOur review team noticed that ${childName}’s registration details require an update:\n• ${reasonSnippet}\n\nWe have reopened ${childName}’s application in draft mode. Please sign in to Parent Access, update the required details, and re-submit:\n${portalUrl}\n\nThank you,\nKoinonia Children and Teens`;
+
+  const html = wrapHtmlTemplate(subject, bodyHtml, { label: 'Update details', url: portalUrl });
+
+  return sendEmail({ to: params.parentEmail, subject, html, text });
+}
+
+/**
  * 5. Pass ready later
  */
 export async function sendPassReadyEmail(params: {

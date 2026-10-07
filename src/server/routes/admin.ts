@@ -6,7 +6,7 @@ import { query, queryOne, execute, transaction } from '../db';
 import { authMiddleware, AuthenticatedRequest, verifyPassword, hashPassword, generateToken } from '../auth';
 import { syncJobsForEvent, executeTestNotification, sendWhatsApp } from '../services/notifications';
 import { sendWebPush } from '../services/push';
-import { sendEmail, sendVolunteerApprovedEmail, sendInvitationEmail, formatInvitationExpiry, isEmailConfigured, resolveEmailProvider } from '../services/email';
+import { sendEmail, sendVolunteerApprovedEmail, sendInvitationEmail, formatInvitationExpiry, isEmailConfigured, resolveEmailProvider, sendChildReturnToDraftEmail } from '../services/email';
 import { issuePassForChild, revokePassForChild } from '../services/passService';
 import { uploadMedia, buildCloudinaryOptimizedVideoUrl, buildCloudinaryVideoPosterUrl } from '../services/media/cloudinary';
 import { processImage } from '../services/media/imageProcessor';
@@ -3361,40 +3361,13 @@ We have temporarily reopened your application in draft mode. Please sign in to y
     // 5. Send Transactional Email
     let emailDeliveryResult: any = null;
     if (notifyEmail && entry.parent_email) {
-      const emailHtml = `
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 28px; border-radius: 16px; background-color: #FAF9F6;">
-          <div style="text-align: center; margin-bottom: 24px;">
-            <span style="font-family: serif; font-size: 22px; font-weight: bold; color: #18181B; letter-spacing: 2px;">KOINONIA</span>
-            <div style="width: 44px; height: 2px; background-color: #C59B27; margin: 8px auto 0;"></div>
-          </div>
-          <h2 style="font-size: 18px; color: #18181B; margin-top: 0; font-weight: 600;">Registration Update Required</h2>
-          <p style="font-size: 14px; color: #3F3F46;">Hello ${parentFirstName},</p>
-          <p style="font-size: 14px; color: #3F3F46; line-height: 1.6;">
-            We noticed that <strong>${childFirstName}</strong>'s registration for <strong>${eventName}</strong> requires an update:
-          </p>
-          <div style="background-color: #F4EFE6; border-left: 4px solid #C59B27; padding: 14px 18px; border-radius: 8px; margin: 20px 0; font-size: 13.5px; color: #4A463F;">
-            ${effectiveReason.replace(/\n/g, '<br/>')}
-          </div>
-          <p style="font-size: 14px; color: #3F3F46; line-height: 1.6;">
-            Your application has been unlocked and moved back to draft mode. Please sign in to your Parent account to make the correction and re-submit.
-          </p>
-          <div style="text-align: center; margin: 28px 0;">
-            <a href="https://koinonia12.netlify.app/parent/home" style="display: inline-block; background-color: #C59B27; color: #FFFFFF; font-weight: 600; font-size: 14px; padding: 12px 28px; border-radius: 10px; text-decoration: none;">
-              Update Application Now
-            </a>
-          </div>
-          <hr style="border: 0; border-top: 1px solid #EAE8E1; margin: 24px 0;">
-          <p style="font-size: 11px; color: #71717A; text-align: center;">
-            This is an official administrative notice regarding your Koinonia Children and Teens registration.
-          </p>
-        </div>
-      `;
       try {
-        emailDeliveryResult = await sendEmail({
-          to: entry.parent_email,
-          subject,
-          text: finalMessage,
-          html: emailHtml
+        emailDeliveryResult = await sendChildReturnToDraftEmail({
+          parentEmail: entry.parent_email,
+          parentFirstName: entry.parent_name,
+          childName: entry.child_name,
+          reason: effectiveReason,
+          customMessage: finalMessage
         });
         if (!emailDeliveryResult.success) {
           console.error(`[ReturnToDraft] Email delivery failed for ${entry.parent_email}: provider=${emailDeliveryResult.provider}, error=${emailDeliveryResult.error}`);
