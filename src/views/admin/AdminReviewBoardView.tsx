@@ -6,6 +6,7 @@ import {
   AlertCircle, 
   Filter, 
   SlidersHorizontal, 
+  ChevronLeft,
   ChevronRight, 
   CheckSquare, 
   Square,
@@ -55,6 +56,10 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
   const [workerFilter, setWorkerFilter] = useState<string>('all');
   const [ageFilter, setAgeFilter] = useState<string>('all');
   const [reminderFilter, setReminderFilter] = useState<string>('all');
+  
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(25);
   
   // Mobile sheet drawer filters open
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -463,6 +468,37 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
     return list;
   }, [enrichedApplications, statusFilter, ageFilter, reminderFilter, flagFilter, workerFilter, searchQuery, sortBy]);
 
+  // Reset page when filters, sorting, or search query changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter, flagFilter, workerFilter, ageFilter, reminderFilter, searchQuery, sortBy]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredApplications.length / pageSize));
+  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+
+  const paginatedApplications = useMemo(() => {
+    const startIndex = (safePage - 1) * pageSize;
+    return filteredApplications.slice(startIndex, startIndex + pageSize);
+  }, [filteredApplications, safePage, pageSize]);
+
+  const goToPage = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const getPageNumbers = (current: number, total: number): (number | string)[] => {
+    if (total <= 7) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+    if (current <= 4) {
+      return [1, 2, 3, 4, 5, '...', total];
+    }
+    if (current >= total - 3) {
+      return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+    }
+    return [1, '...', current - 1, current, current + 1, '...', total];
+  };
+
   // Selected incomplete applications eligible for bulk reminders
   const selectedIncompleteApps = useMemo(() => {
     return filteredApplications.filter(app => 
@@ -535,15 +571,28 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
     fetchApplications(true);
   };
 
-  // Active child highlight selection (first child from the filtered list if not chosen)
+  // Active child highlight selection (first child from current page if not chosen)
   const [activeSelectId, setActiveSelectId] = useState<string | null>(null);
 
   const activeSelectedChild = useMemo(() => {
-    const targetId = activeSelectId || (filteredApplications[0]?.id || null);
+    const targetId = activeSelectId || (paginatedApplications[0]?.id || filteredApplications[0]?.id || null);
     return enrichedApplications.find(app => app.id === targetId) || null;
-  }, [activeSelectId, filteredApplications, enrichedApplications]);
+  }, [activeSelectId, paginatedApplications, filteredApplications, enrichedApplications]);
 
   // Bulk selection actions
+  const isAllOnPageSelected = paginatedApplications.length > 0 && paginatedApplications.every(app => selectedIds.includes(app.id));
+
+  const handleToggleSelectPage = () => {
+    if (isAllOnPageSelected) {
+      const pageIds = new Set(paginatedApplications.map(app => app.id));
+      setSelectedIds(prev => prev.filter(id => !pageIds.has(id)));
+    } else {
+      const newSelected = new Set(selectedIds);
+      paginatedApplications.forEach(app => newSelected.add(app.id));
+      setSelectedIds(Array.from(newSelected));
+    }
+  };
+
   const handleToggleSelectAll = () => {
     if (selectedIds.length === filteredApplications.length) {
       setSelectedIds([]);
@@ -594,6 +643,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
     setAgeFilter('all');
     setReminderFilter('all');
     setSearchQuery('');
+    setCurrentPage(1);
   };
 
   const isFiltersActive = statusFilter !== 'all' || flagFilter !== 'all' || workerFilter !== 'all' || ageFilter !== 'all' || reminderFilter !== 'all' || searchQuery.trim() !== '';
@@ -1132,32 +1182,61 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                   {/* Actions & Sort */}
                   <div className="flex items-center justify-between sm:justify-end gap-2 w-full lg:w-auto flex-wrap">
                     <span className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium hidden md:inline">
-                      {filteredApplications.length} {filteredApplications.length === 1 ? 'result' : 'results'}
+                      {totalPages > 1 ? `Page ${safePage} of ${totalPages} · ` : ''}
+                      {filteredApplications.length.toLocaleString()} {filteredApplications.length === 1 ? 'result' : 'results'}
                     </span>
 
-                    {/* Select All Filtered Toggle */}
+                    {/* Select Page Toggle */}
                     <button
                       type="button"
-                      onClick={handleToggleSelectAll}
-                      disabled={filteredApplications.length === 0}
+                      onClick={handleToggleSelectPage}
+                      disabled={paginatedApplications.length === 0}
                       className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-xl border font-medium transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                        filteredApplications.length > 0 && selectedIds.length === filteredApplications.length
+                        isAllOnPageSelected
                           ? 'bg-[#FAF8F3] dark:bg-[#262520] text-[#C59B27] border-[#C59B27] font-semibold'
                           : 'bg-white dark:bg-[#262520] text-zinc-700 dark:text-[#F0EBE3] border-[#EAE8E1] dark:border-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#2A2926]'
                       }`}
-                      title={filteredApplications.length > 0 && selectedIds.length === filteredApplications.length ? 'Deselect all' : 'Select all filtered results'}
+                      title={isAllOnPageSelected ? 'Deselect current page' : 'Select all registrations on current page'}
                     >
-                      {filteredApplications.length > 0 && selectedIds.length === filteredApplications.length ? (
+                      {isAllOnPageSelected ? (
                         <CheckSquare className="w-3.5 h-3.5 text-[#C59B27]" />
                       ) : (
                         <Square className="w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570]" />
                       )}
                       <span>
-                        {filteredApplications.length > 0 && selectedIds.length === filteredApplications.length 
-                          ? `Deselect all (${selectedIds.length})` 
-                          : `Select all (${filteredApplications.length})`}
+                        {isAllOnPageSelected 
+                          ? `Deselect page (${paginatedApplications.length})` 
+                          : totalPages > 1 
+                            ? `Select page (${paginatedApplications.length})` 
+                            : `Select all (${filteredApplications.length})`}
                       </span>
                     </button>
+
+                    {/* Select All Across All Pages Toggle (shown when totalPages > 1) */}
+                    {totalPages > 1 && (
+                      <button
+                        type="button"
+                        onClick={handleToggleSelectAll}
+                        disabled={filteredApplications.length === 0}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-xl border font-medium transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                          filteredApplications.length > 0 && selectedIds.length === filteredApplications.length
+                            ? 'bg-[#FAF8F3] dark:bg-[#262520] text-[#C59B27] border-[#C59B27] font-semibold'
+                            : 'bg-white dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] border-[#EAE8E1] dark:border-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#2A2926]'
+                        }`}
+                        title={filteredApplications.length > 0 && selectedIds.length === filteredApplications.length ? 'Deselect all' : 'Select all registrations across all pages'}
+                      >
+                        {filteredApplications.length > 0 && selectedIds.length === filteredApplications.length ? (
+                          <CheckSquare className="w-3.5 h-3.5 text-[#C59B27]" />
+                        ) : (
+                          <Square className="w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570]" />
+                        )}
+                        <span>
+                          {filteredApplications.length > 0 && selectedIds.length === filteredApplications.length 
+                            ? `Deselect all (${selectedIds.length})` 
+                            : `Select all ${filteredApplications.length}`}
+                        </span>
+                      </button>
+                    )}
 
                     {/* Expanded Sort Dropdown */}
                     <select
@@ -1422,8 +1501,9 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                   )}
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {filteredApplications.map((app) => {
+                <>
+                  <div className="space-y-3">
+                  {paginatedApplications.map((app) => {
                     const isSelected = selectedIds.includes(app.id);
                     const isActive = activeSelectedChild?.id === app.id;
                     const statusInfo = getStatusBadge(app.status);
@@ -1597,8 +1677,110 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                     );
                   })}
                 </div>
-              )}
-            </div>
+
+                {/* PAGINATION BAR */}
+                {filteredApplications.length > 0 && (
+                  <div 
+                    className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs"
+                    data-component-version="admin-review-pagination"
+                  >
+                    {/* Left: Summary Count & Page size selector */}
+                    <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
+                      <p className="text-xs text-zinc-500 dark:text-[#7A7570]">
+                        Showing <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">{((safePage - 1) * pageSize) + 1}</span> to{' '}
+                        <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">
+                          {Math.min(safePage * pageSize, filteredApplications.length)}
+                        </span>{' '}
+                        of <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">{filteredApplications.length.toLocaleString()}</span> registrations
+                      </p>
+
+                      {/* Page size dropdown */}
+                      <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-[#7A7570]">
+                        <span className="hidden md:inline">Per page:</span>
+                        <select
+                          value={pageSize}
+                          onChange={(e) => {
+                            setPageSize(Number(e.target.value));
+                            setCurrentPage(1);
+                          }}
+                          className="text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-[#FAF9F6] dark:bg-[#262520] px-2 py-1 font-medium text-zinc-700 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] cursor-pointer"
+                        >
+                          <option value={15}>15</option>
+                          <option value={25}>25</option>
+                          <option value={50}>50</option>
+                          <option value={100}>100</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Right: Page navigation */}
+                    {totalPages > 1 && (
+                      <div className="flex items-center gap-1 w-full sm:w-auto justify-center sm:justify-end">
+                        {/* Previous Button */}
+                        <button
+                          type="button"
+                          onClick={() => goToPage(Math.max(safePage - 1, 1))}
+                          disabled={safePage === 1}
+                          className="inline-flex items-center justify-center p-2 rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] hover:bg-zinc-50 dark:hover:bg-[#2A2926] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                          title="Previous page"
+                          aria-label="Previous page"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+
+                        {/* Page Number Pills */}
+                        <div className="flex items-center gap-1">
+                          {getPageNumbers(safePage, totalPages).map((p, idx) => {
+                            if (p === '...') {
+                              return (
+                                <span 
+                                  key={`ellipsis-${idx}`} 
+                                  className="px-1.5 py-1 text-xs text-zinc-400 dark:text-[#7A7570] select-none"
+                                >
+                                  ...
+                                </span>
+                              );
+                            }
+
+                            const pageNum = p as number;
+                            const isCurrent = safePage === pageNum;
+
+                            return (
+                              <button
+                                key={pageNum}
+                                type="button"
+                                onClick={() => goToPage(pageNum)}
+                                className={`min-w-[32px] h-8 px-2 text-xs font-semibold rounded-xl transition-all cursor-pointer flex items-center justify-center ${
+                                  isCurrent
+                                    ? 'bg-[#C59B27] text-white shadow-xs'
+                                    : 'bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] hover:bg-zinc-50 dark:hover:bg-[#2A2926]'
+                                }`}
+                                aria-current={isCurrent ? 'page' : undefined}
+                              >
+                                {pageNum}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Next Button */}
+                        <button
+                          type="button"
+                          onClick={() => goToPage(Math.min(safePage + 1, totalPages))}
+                          disabled={safePage === totalPages}
+                          className="inline-flex items-center justify-center p-2 rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] hover:bg-zinc-50 dark:hover:bg-[#2A2926] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                          title="Next page"
+                          aria-label="Next page"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
 
             {/* 5. RIGHT SIDEBAR DETAILS PANEL (3 cols) */}
             <div className="lg:col-span-3 space-y-5">
