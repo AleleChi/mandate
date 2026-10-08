@@ -44,12 +44,14 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
   
   // Search and Sort
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'oldest' | 'newest'>('oldest');
+  const [sortBy, setSortBy] = useState<'oldest' | 'newest' | 'not_reminded' | 'most_reminded' | 'youngest' | 'oldest_child' | 'name_asc'>('oldest');
   
   // Filter States
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [flagFilter, setFlagFilter] = useState<string>('all');
   const [workerFilter, setWorkerFilter] = useState<string>('all');
+  const [ageFilter, setAgeFilter] = useState<string>('all');
+  const [reminderFilter, setReminderFilter] = useState<string>('all');
   
   // Mobile sheet drawer filters open
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -258,6 +260,49 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
     ];
   }, [enrichedApplications]);
 
+  // Helper to reliably compute reminder count
+  const getReminderCount = (app: any): number => {
+    if (typeof app.reminderCount === 'number' && !isNaN(app.reminderCount)) {
+      return app.reminderCount;
+    }
+    let c = 0;
+    if (app.lastReminderSentAt) c++;
+    if (app.lastWhatsAppSentAt) c++;
+    return c;
+  };
+
+  // Quick count metrics for filter chips
+  const quickCounts = useMemo(() => {
+    let unreminded = 0;
+    let reminded = 0;
+    const ageCounts: Record<string, number> = {
+      age_2: 0,
+      group_2_3: 0,
+      group_4_6: 0,
+      group_7_9: 0,
+      group_10_12: 0,
+      group_13_14: 0
+    };
+
+    enrichedApplications.forEach(app => {
+      const remCount = getReminderCount(app);
+      if (remCount === 0) unreminded++;
+      else reminded++;
+
+      const age = app.child?.age;
+      if (typeof age === 'number' && !isNaN(age)) {
+        if (age === 2) ageCounts.age_2++;
+        if (age >= 2 && age <= 3) ageCounts.group_2_3++;
+        if (age >= 4 && age <= 6) ageCounts.group_4_6++;
+        if (age >= 7 && age <= 9) ageCounts.group_7_9++;
+        if (age >= 10 && age <= 12) ageCounts.group_10_12++;
+        if (age >= 13 && age <= 14) ageCounts.group_13_14++;
+      }
+    });
+
+    return { unreminded, reminded, ageCounts };
+  }, [enrichedApplications]);
+
   // Filter application list based on search and selected filter values
   const filteredApplications = useMemo(() => {
     let list = [...enrichedApplications];
@@ -273,6 +318,61 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
       } else {
         list = list.filter(app => app.status === statusFilter);
       }
+    }
+
+    // Age Grade & Individual Age Filter
+    if (ageFilter !== 'all') {
+      list = list.filter(app => {
+        const age = app.child?.age;
+        const hasAge = typeof age === 'number' && !isNaN(age);
+
+        if (ageFilter.startsWith('age_')) {
+          const targetAge = parseInt(ageFilter.replace('age_', ''), 10);
+          return hasAge && age === targetAge;
+        }
+        if (ageFilter === 'group_2_3') {
+          return hasAge && age >= 2 && age <= 3;
+        }
+        if (ageFilter === 'group_4_6') {
+          return hasAge && age >= 4 && age <= 6;
+        }
+        if (ageFilter === 'group_7_9') {
+          return hasAge && age >= 7 && age <= 9;
+        }
+        if (ageFilter === 'group_10_12') {
+          return hasAge && age >= 10 && age <= 12;
+        }
+        if (ageFilter === 'group_13_14') {
+          return hasAge && age >= 13 && age <= 14;
+        }
+        if (ageFilter === 'below_2') {
+          return hasAge && age < 2;
+        }
+        if (ageFilter === 'above_14') {
+          return hasAge && age > 14;
+        }
+        if (ageFilter === 'age_missing') {
+          return !hasAge;
+        }
+        return true;
+      });
+    }
+
+    // Reminder Status Filter
+    if (reminderFilter !== 'all') {
+      list = list.filter(app => {
+        const count = getReminderCount(app);
+        if (reminderFilter === 'not_reminded') {
+          return count === 0;
+        }
+        if (reminderFilter === 'reminded') {
+          return count > 0;
+        }
+        if (reminderFilter === 'reminded_multiple') {
+          return count >= 2;
+        }
+        return true;
+      });
     }
 
     // Flag filters
@@ -315,15 +415,40 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
       );
     }
 
-    // Sort order (oldest first or newest first)
+    // Sort order
     list.sort((a, b) => {
+      if (sortBy === 'not_reminded') {
+        const countA = getReminderCount(a);
+        const countB = getReminderCount(b);
+        if (countA !== countB) return countA - countB; // 0 reminders first
+        return new Date(a.submittedAt || a.updatedAt || 0).getTime() - new Date(b.submittedAt || b.updatedAt || 0).getTime();
+      }
+      if (sortBy === 'most_reminded') {
+        const countA = getReminderCount(a);
+        const countB = getReminderCount(b);
+        if (countA !== countB) return countB - countA;
+        return new Date(b.submittedAt || b.updatedAt || 0).getTime() - new Date(a.submittedAt || a.updatedAt || 0).getTime();
+      }
+      if (sortBy === 'youngest') {
+        const ageA = typeof a.child?.age === 'number' ? a.child.age : 99;
+        const ageB = typeof b.child?.age === 'number' ? b.child.age : 99;
+        return ageA - ageB;
+      }
+      if (sortBy === 'oldest_child') {
+        const ageA = typeof a.child?.age === 'number' ? a.child.age : -1;
+        const ageB = typeof b.child?.age === 'number' ? b.child.age : -1;
+        return ageB - ageA;
+      }
+      if (sortBy === 'name_asc') {
+        return (a.child?.fullName || '').localeCompare(b.child?.fullName || '');
+      }
       const dateA = new Date(a.submittedAt || 0).getTime();
       const dateB = new Date(b.submittedAt || 0).getTime();
       return sortBy === 'oldest' ? dateA - dateB : dateB - dateA;
     });
 
     return list;
-  }, [enrichedApplications, statusFilter, flagFilter, workerFilter, searchQuery, sortBy]);
+  }, [enrichedApplications, statusFilter, ageFilter, reminderFilter, flagFilter, workerFilter, searchQuery, sortBy]);
 
   // Active child highlight selection (first child from the filtered list if not chosen)
   const [activeSelectId, setActiveSelectId] = useState<string | null>(null);
@@ -381,10 +506,12 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
     setStatusFilter('all');
     setFlagFilter('all');
     setWorkerFilter('all');
+    setAgeFilter('all');
+    setReminderFilter('all');
     setSearchQuery('');
   };
 
-  const isFiltersActive = statusFilter !== 'all' || flagFilter !== 'all' || workerFilter !== 'all' || searchQuery.trim() !== '';
+  const isFiltersActive = statusFilter !== 'all' || flagFilter !== 'all' || workerFilter !== 'all' || ageFilter !== 'all' || reminderFilter !== 'all' || searchQuery.trim() !== '';
 
   const formatSubmittedDate = (dateVal?: string) => {
     if (!dateVal) return 'Date not recorded';
@@ -422,37 +549,39 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
   };
 
   const renderReminderStatusText = (app: any) => {
+    const totalCount = getReminderCount(app);
     const portalSent = !!app.lastReminderSentAt;
     const whatsappSent = !!app.lastWhatsAppSentAt;
+    const portalCount = typeof app.portalReminderCount === 'number' ? app.portalReminderCount : (portalSent ? 1 : 0);
+    const waCount = typeof app.whatsappReminderCount === 'number' ? app.whatsappReminderCount : (whatsappSent ? 1 : 0);
 
-    if (portalSent && whatsappSent) {
+    if (totalCount === 0) {
       return (
-        <p className="text-[11px] text-[#A67C1E] dark:text-[#D4AF37] font-medium flex items-center gap-1">
-          <span>Both sent</span>
-          <span className="text-zinc-400 dark:text-zinc-500 text-[10px]">
-            (Portal {formatShortDateTime(app.lastReminderSentAt)} · WA {formatShortDateTime(app.lastWhatsAppSentAt)})
+        <div className="flex items-center gap-1.5 pt-0.5">
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-500 dark:text-[#8E877D] bg-zinc-50 dark:bg-zinc-800/40 px-2 py-0.5 rounded-md border border-zinc-200/60 dark:border-zinc-700/50">
+            <span className="w-1.5 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-600 inline-block" />
+            Not reminded yet
           </span>
-        </p>
+        </div>
       );
     }
-    if (portalSent) {
-      return (
-        <p className="text-[11px] text-[#A67C1E] dark:text-[#D4AF37] font-medium">
-          Portal sent · {formatShortDateTime(app.lastReminderSentAt)}
-        </p>
-      );
-    }
-    if (whatsappSent) {
-      return (
-        <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
-          WhatsApp sent · {formatShortDateTime(app.lastWhatsAppSentAt)}
-        </p>
-      );
-    }
+
+    const channelsDesc = portalSent && whatsappSent
+      ? `Portal (${portalCount}x · ${formatShortDateTime(app.lastReminderSentAt)}) · WA (${waCount}x · ${formatShortDateTime(app.lastWhatsAppSentAt)})`
+      : portalSent
+        ? `Portal sent (${portalCount}x) · ${formatShortDateTime(app.lastReminderSentAt)}`
+        : `WhatsApp sent (${waCount}x) · ${formatShortDateTime(app.lastWhatsAppSentAt)}`;
+
     return (
-      <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
-        Reminder: Not sent
-      </p>
+      <div className="flex items-center flex-wrap gap-1.5 pt-0.5">
+        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#A67C1E] dark:text-[#D4AF37] bg-amber-50/80 dark:bg-amber-950/40 px-2 py-0.5 rounded-md border border-amber-200/60 dark:border-amber-900/40">
+          <Clock className="w-3 h-3 text-[#C59B27]" />
+          Reminded ({totalCount}x)
+        </span>
+        <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">
+          {channelsDesc}
+        </span>
+      </div>
     );
   };
 
@@ -466,38 +595,25 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
       ? 'Draft · Not submitted'
       : (app.submittedAt ? formatSubmittedDate(app.submittedAt) : 'Submitted');
 
-    if (isDraft) {
-      const updatedFormatted = formatShortDateTime(app.updatedAt);
-      return (
-        <div className="space-y-0.5 pt-0.5">
-          <p className="text-xs text-zinc-500 dark:text-[#8E877D] flex items-center flex-wrap gap-x-2">
-            <span className="font-medium text-amber-700 dark:text-amber-400">
-              {submissionText}
-            </span>
-            <span className="text-zinc-300 dark:text-zinc-600">·</span>
-            <span>
-              DOB: <span className={!hasValidDob ? 'text-amber-600 dark:text-amber-400 italic' : 'font-medium text-zinc-700 dark:text-[#D1CBC0]'}>{dobText}</span>
-            </span>
-            {updatedFormatted && (
-              <span className="text-zinc-400 dark:text-[#6E6A63] text-[11px]">
-                (Updated {updatedFormatted})
-              </span>
-            )}
-          </p>
-          {renderReminderStatusText(app)}
-        </div>
-      );
-    }
+    const shouldShowReminder = isDraft || app.blockingAttention || getReminderCount(app) > 0 || reminderFilter !== 'all';
 
     return (
       <div className="space-y-0.5 pt-0.5">
-        <p className="text-xs text-zinc-400 dark:text-[#7A7570] flex items-center flex-wrap gap-x-2">
-          <span>{submissionText}</span>
+        <p className="text-xs text-zinc-500 dark:text-[#8E877D] flex items-center flex-wrap gap-x-2">
+          <span className={isDraft ? "font-medium text-amber-700 dark:text-amber-400" : "text-zinc-600 dark:text-[#7A7570]"}>
+            {submissionText}
+          </span>
           <span className="text-zinc-300 dark:text-zinc-600">·</span>
           <span>
-            DOB: <span className={!hasValidDob ? 'text-amber-600 dark:text-amber-400 italic' : 'text-zinc-600 dark:text-[#D1CBC0]'}>{dobText}</span>
+            DOB: <span className={!hasValidDob ? 'text-amber-600 dark:text-amber-400 italic' : 'font-medium text-zinc-700 dark:text-[#D1CBC0]'}>{dobText}</span>
           </span>
+          {isDraft && app.updatedAt && (
+            <span className="text-zinc-400 dark:text-[#6E6A63] text-[11px]">
+              (Updated {formatShortDateTime(app.updatedAt)})
+            </span>
+          )}
         </p>
+        {shouldShowReminder && renderReminderStatusText(app)}
       </div>
     );
   };
@@ -740,6 +856,64 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                 </select>
               </div>
 
+              {/* Age / Age Grade Filter */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
+                  Age / Age grade
+                </label>
+                <select 
+                  value={ageFilter}
+                  onChange={(e) => setAgeFilter(e.target.value)}
+                  className="w-full text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] p-2.5 text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
+                >
+                  <option value="all">All ages & grades</option>
+                  <optgroup label="Single Ages (e.g. Batch approval)">
+                    <option value="age_2">Age 2 only ({quickCounts.ageCounts.age_2})</option>
+                    <option value="age_3">Age 3 only</option>
+                    <option value="age_4">Age 4 only</option>
+                    <option value="age_5">Age 5 only</option>
+                    <option value="age_6">Age 6 only</option>
+                    <option value="age_7">Age 7 only</option>
+                    <option value="age_8">Age 8 only</option>
+                    <option value="age_9">Age 9 only</option>
+                    <option value="age_10">Age 10 only</option>
+                    <option value="age_11">Age 11 only</option>
+                    <option value="age_12">Age 12 only</option>
+                    <option value="age_13">Age 13 only</option>
+                    <option value="age_14">Age 14 only</option>
+                  </optgroup>
+                  <optgroup label="Age Cohorts">
+                    <option value="group_2_3">Ages 2–3 ({quickCounts.ageCounts.group_2_3})</option>
+                    <option value="group_4_6">Ages 4–6 ({quickCounts.ageCounts.group_4_6})</option>
+                    <option value="group_7_9">Ages 7–9 ({quickCounts.ageCounts.group_7_9})</option>
+                    <option value="group_10_12">Ages 10–12 ({quickCounts.ageCounts.group_10_12})</option>
+                    <option value="group_13_14">Ages 13–14 ({quickCounts.ageCounts.group_13_14})</option>
+                  </optgroup>
+                  <optgroup label="Eligibility Checks">
+                    <option value="below_2">Under 2 years (Review needed)</option>
+                    <option value="above_14">Over 14 years</option>
+                    <option value="age_missing">Age missing / unstated</option>
+                  </optgroup>
+                </select>
+              </div>
+
+              {/* Reminder Status Filter */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
+                  Reminder status
+                </label>
+                <select 
+                  value={reminderFilter}
+                  onChange={(e) => setReminderFilter(e.target.value)}
+                  className="w-full text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] p-2.5 text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
+                >
+                  <option value="all">All registrations</option>
+                  <option value="not_reminded">Not reminded yet ({quickCounts.unreminded})</option>
+                  <option value="reminded">Reminded (1+ sent) ({quickCounts.reminded})</option>
+                  <option value="reminded_multiple">Reminded multiple times (2+)</option>
+                </select>
+              </div>
+
               {/* Parent Role Filter */}
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
@@ -787,41 +961,197 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
               data-component-version="admin-review-results-list"
             >
               {/* SEARCH & SORT TOOLBAR */}
-              <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-                {/* Search Bar - Desktop */}
-                <div className="relative flex-1 max-w-sm hidden lg:block">
-                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-zinc-400 dark:text-[#7A7570]">
-                    <Search className="w-4 h-4" />
-                  </span>
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search by child, parent or email"
-                    className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] dark:text-[#F0EBE3] dark:placeholder-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
-                  />
+              <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 flex flex-col gap-3 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  {/* Search Bar - Desktop */}
+                  <div className="relative flex-1 max-w-sm hidden lg:block">
+                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-zinc-400 dark:text-[#7A7570]">
+                      <Search className="w-4 h-4" />
+                    </span>
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search by child, parent or email"
+                      className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] dark:text-[#F0EBE3] dark:placeholder-[#7A7570] focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
+                    />
+                  </div>
+
+                  {/* Actions & Sort */}
+                  <div className="flex items-center justify-between sm:justify-end gap-2 w-full lg:w-auto flex-wrap">
+                    <span className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium hidden md:inline">
+                      {filteredApplications.length} {filteredApplications.length === 1 ? 'result' : 'results'}
+                    </span>
+
+                    {/* Select All Filtered Toggle */}
+                    <button
+                      type="button"
+                      onClick={handleToggleSelectAll}
+                      disabled={filteredApplications.length === 0}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-xl border font-medium transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                        filteredApplications.length > 0 && selectedIds.length === filteredApplications.length
+                          ? 'bg-[#FAF8F3] dark:bg-[#262520] text-[#C59B27] border-[#C59B27] font-semibold'
+                          : 'bg-white dark:bg-[#262520] text-zinc-700 dark:text-[#F0EBE3] border-[#EAE8E1] dark:border-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#2A2926]'
+                      }`}
+                      title={filteredApplications.length > 0 && selectedIds.length === filteredApplications.length ? 'Deselect all' : 'Select all filtered results'}
+                    >
+                      {filteredApplications.length > 0 && selectedIds.length === filteredApplications.length ? (
+                        <CheckSquare className="w-3.5 h-3.5 text-[#C59B27]" />
+                      ) : (
+                        <Square className="w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570]" />
+                      )}
+                      <span>
+                        {filteredApplications.length > 0 && selectedIds.length === filteredApplications.length 
+                          ? `Deselect all (${selectedIds.length})` 
+                          : `Select all (${filteredApplications.length})`}
+                      </span>
+                    </button>
+
+                    {/* Expanded Sort Dropdown */}
+                    <select
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value as any)}
+                      className="text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-[#FAF9F6] dark:bg-[#262520] px-3 py-1.5 font-medium text-zinc-700 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] cursor-pointer"
+                    >
+                      <option value="oldest">Sort: Oldest first</option>
+                      <option value="newest">Sort: Newest first</option>
+                      <option value="not_reminded">Sort: Not reminded first</option>
+                      <option value="most_reminded">Sort: Most reminded first</option>
+                      <option value="youngest">Sort: Youngest age first</option>
+                      <option value="oldest_child">Sort: Oldest age first</option>
+                      <option value="name_asc">Sort: Child name (A–Z)</option>
+                    </select>
+                  </div>
                 </div>
 
-                {/* Match count and Sort Options */}
-                <div className="flex items-center justify-between sm:justify-end gap-3 w-full lg:w-auto">
-                  <span className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium">
-                    {filteredApplications.length} {filteredApplications.length === 1 ? 'result' : 'results'}
+                {/* Quick Filter Chips Strip for 1-Click Cohort & Reminder Filtering */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pt-2 border-t border-[#EAE8E1]/70 dark:border-[#302E29] text-xs scrollbar-none">
+                  <span className="text-[11px] font-medium text-zinc-400 dark:text-[#7A7570] shrink-0 mr-1">
+                    Quick filter:
                   </span>
+                  
+                  {/* All */}
+                  <button
+                    type="button"
+                    onClick={() => { setAgeFilter('all'); setReminderFilter('all'); }}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all shrink-0 cursor-pointer text-xs ${
+                      ageFilter === 'all' && reminderFilter === 'all'
+                        ? 'bg-[#FAF8F3] dark:bg-[#262520] text-[#C59B27] border border-[#C59B27]/40 font-semibold'
+                        : 'bg-zinc-50 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] hover:bg-zinc-100 border border-transparent'
+                    }`}
+                  >
+                    All
+                  </button>
 
-                  <div className="flex items-center gap-1 bg-[#FAF9F6] dark:bg-[#262520] p-1 border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-xs">
-                    <button 
-                      onClick={() => setSortBy('oldest')}
-                      className={`px-2.5 py-1 font-medium rounded-lg transition-colors cursor-pointer ${sortBy === 'oldest' ? 'bg-white dark:bg-[#1D1D1A] text-[#18181B] dark:text-[#F0EBE3] shadow-2xs font-semibold' : 'text-zinc-500 dark:text-[#7A7570] hover:text-zinc-700 dark:hover:text-[#B8B0A5]'}`}
-                    >
-                      Oldest first
-                    </button>
-                    <button 
-                      onClick={() => setSortBy('newest')}
-                      className={`px-2.5 py-1 font-medium rounded-lg transition-colors cursor-pointer ${sortBy === 'newest' ? 'bg-white dark:bg-[#1D1D1A] text-[#18181B] dark:text-[#F0EBE3] shadow-2xs font-semibold' : 'text-zinc-500 dark:text-[#7A7570] hover:text-zinc-700 dark:hover:text-[#B8B0A5]'}`}
-                    >
-                      Newest first
-                    </button>
-                  </div>
+                  {/* Age 2 */}
+                  <button
+                    type="button"
+                    onClick={() => setAgeFilter(ageFilter === 'age_2' ? 'all' : 'age_2')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all shrink-0 cursor-pointer text-xs ${
+                      ageFilter === 'age_2'
+                        ? 'bg-[#FAF8F3] dark:bg-[#262520] text-[#C59B27] border border-[#C59B27]/50 font-semibold shadow-2xs'
+                        : 'bg-zinc-50 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] hover:bg-zinc-100 border border-transparent'
+                    }`}
+                  >
+                    Age 2 {quickCounts.ageCounts.age_2 > 0 ? `(${quickCounts.ageCounts.age_2})` : ''}
+                  </button>
+
+                  {/* Ages 2–3 */}
+                  <button
+                    type="button"
+                    onClick={() => setAgeFilter(ageFilter === 'group_2_3' ? 'all' : 'group_2_3')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all shrink-0 cursor-pointer text-xs ${
+                      ageFilter === 'group_2_3'
+                        ? 'bg-[#FAF8F3] dark:bg-[#262520] text-[#C59B27] border border-[#C59B27]/50 font-semibold shadow-2xs'
+                        : 'bg-zinc-50 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] hover:bg-zinc-100 border border-transparent'
+                    }`}
+                  >
+                    Ages 2–3 {quickCounts.ageCounts.group_2_3 > 0 ? `(${quickCounts.ageCounts.group_2_3})` : ''}
+                  </button>
+
+                  {/* Ages 4–6 */}
+                  <button
+                    type="button"
+                    onClick={() => setAgeFilter(ageFilter === 'group_4_6' ? 'all' : 'group_4_6')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all shrink-0 cursor-pointer text-xs ${
+                      ageFilter === 'group_4_6'
+                        ? 'bg-[#FAF8F3] dark:bg-[#262520] text-[#C59B27] border border-[#C59B27]/50 font-semibold shadow-2xs'
+                        : 'bg-zinc-50 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] hover:bg-zinc-100 border border-transparent'
+                    }`}
+                  >
+                    Ages 4–6 {quickCounts.ageCounts.group_4_6 > 0 ? `(${quickCounts.ageCounts.group_4_6})` : ''}
+                  </button>
+
+                  {/* Ages 7–9 */}
+                  <button
+                    type="button"
+                    onClick={() => setAgeFilter(ageFilter === 'group_7_9' ? 'all' : 'group_7_9')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all shrink-0 cursor-pointer text-xs ${
+                      ageFilter === 'group_7_9'
+                        ? 'bg-[#FAF8F3] dark:bg-[#262520] text-[#C59B27] border border-[#C59B27]/50 font-semibold shadow-2xs'
+                        : 'bg-zinc-50 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] hover:bg-zinc-100 border border-transparent'
+                    }`}
+                  >
+                    Ages 7–9 {quickCounts.ageCounts.group_7_9 > 0 ? `(${quickCounts.ageCounts.group_7_9})` : ''}
+                  </button>
+
+                  {/* Ages 10–12 */}
+                  <button
+                    type="button"
+                    onClick={() => setAgeFilter(ageFilter === 'group_10_12' ? 'all' : 'group_10_12')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all shrink-0 cursor-pointer text-xs ${
+                      ageFilter === 'group_10_12'
+                        ? 'bg-[#FAF8F3] dark:bg-[#262520] text-[#C59B27] border border-[#C59B27]/50 font-semibold shadow-2xs'
+                        : 'bg-zinc-50 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] hover:bg-zinc-100 border border-transparent'
+                    }`}
+                  >
+                    Ages 10–12 {quickCounts.ageCounts.group_10_12 > 0 ? `(${quickCounts.ageCounts.group_10_12})` : ''}
+                  </button>
+
+                  {/* Ages 13–14 */}
+                  <button
+                    type="button"
+                    onClick={() => setAgeFilter(ageFilter === 'group_13_14' ? 'all' : 'group_13_14')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all shrink-0 cursor-pointer text-xs ${
+                      ageFilter === 'group_13_14'
+                        ? 'bg-[#FAF8F3] dark:bg-[#262520] text-[#C59B27] border border-[#C59B27]/50 font-semibold shadow-2xs'
+                        : 'bg-zinc-50 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] hover:bg-zinc-100 border border-transparent'
+                    }`}
+                  >
+                    Ages 13–14 {quickCounts.ageCounts.group_13_14 > 0 ? `(${quickCounts.ageCounts.group_13_14})` : ''}
+                  </button>
+
+                  <div className="h-4 w-px bg-zinc-200 dark:bg-[#3A3835] mx-1 shrink-0" />
+
+                  {/* Unreminded */}
+                  <button
+                    type="button"
+                    onClick={() => setReminderFilter(reminderFilter === 'not_reminded' ? 'all' : 'not_reminded')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all shrink-0 cursor-pointer text-xs flex items-center gap-1.5 ${
+                      reminderFilter === 'not_reminded'
+                        ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300/60 font-semibold shadow-2xs'
+                        : 'bg-zinc-50 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] hover:bg-zinc-100 border border-transparent'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 dark:bg-zinc-500" />
+                    <span>Not reminded</span>
+                    <span className="text-[10px] opacity-80 font-bold">({quickCounts.unreminded})</span>
+                  </button>
+
+                  {/* Reminded */}
+                  <button
+                    type="button"
+                    onClick={() => setReminderFilter(reminderFilter === 'reminded' ? 'all' : 'reminded')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all shrink-0 cursor-pointer text-xs flex items-center gap-1.5 ${
+                      reminderFilter === 'reminded'
+                        ? 'bg-[#FAF8F3] dark:bg-[#262520] text-[#C59B27] border border-[#C59B27]/50 font-semibold shadow-2xs'
+                        : 'bg-zinc-50 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] hover:bg-zinc-100 border border-transparent'
+                    }`}
+                  >
+                    <Clock className="w-3 h-3 text-[#C59B27]" />
+                    <span>Reminded</span>
+                    <span className="text-[10px] opacity-80 font-bold">({quickCounts.reminded})</span>
+                  </button>
                 </div>
               </div>
 
@@ -1027,25 +1357,33 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                               </span>
 
                               <div className="flex items-center gap-1.5 mt-auto">
-                                {((app.isIncomplete || app.status === 'incomplete' || app.status === 'draft') || app.blockingAttention) && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setReminderTarget({
-                                        id: app.id,
-                                        childName: app.child?.fullName || 'Child',
-                                        parentName: app.parent?.fullName || 'Parent'
-                                      });
-                                      setIsReminderModalOpen(true);
-                                    }}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-amber-200/80 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100/80 text-xs font-semibold text-amber-800 dark:text-amber-300 transition-colors cursor-pointer"
-                                    title={app.blockingAttention && !(app.isIncomplete || app.status === 'incomplete' || app.status === 'draft') ? "Contact parent about missing required information" : "Send completion reminder"}
-                                  >
-                                    <Clock className="w-3.5 h-3.5" />
-                                    <span>{app.blockingAttention && !(app.isIncomplete || app.status === 'incomplete' || app.status === 'draft') ? 'Contact' : 'Remind'}</span>
-                                  </button>
-                                )}
+                                {((app.isIncomplete || app.status === 'incomplete' || app.status === 'draft') || app.blockingAttention) && (() => {
+                                  const appRemCount = getReminderCount(app);
+                                  const isContactMode = app.blockingAttention && !(app.isIncomplete || app.status === 'incomplete' || app.status === 'draft');
+                                  const buttonLabel = isContactMode
+                                    ? (appRemCount > 0 ? `Contact (${appRemCount}x)` : 'Contact')
+                                    : (appRemCount > 0 ? `Remind (${appRemCount}x)` : 'Remind');
+
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setReminderTarget({
+                                          id: app.id,
+                                          childName: app.child?.fullName || 'Child',
+                                          parentName: app.parent?.fullName || 'Parent'
+                                        });
+                                        setIsReminderModalOpen(true);
+                                      }}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-amber-200/80 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100/80 text-xs font-semibold text-amber-800 dark:text-amber-300 transition-colors cursor-pointer"
+                                      title={appRemCount > 0 ? `Reminder already sent ${appRemCount} time(s). Click to send another.` : (isContactMode ? "Contact parent about missing required information" : "Send completion reminder")}
+                                    >
+                                      <Clock className="w-3.5 h-3.5" />
+                                      <span>{buttonLabel}</span>
+                                    </button>
+                                  );
+                                })()}
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -1138,6 +1476,29 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                           <span className="font-medium text-[#18181B] dark:text-[#F0EBE3] truncate max-w-[150px]">
                             {activeSelectedChild.siblings.join(', ')}
                           </span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center py-1.5">
+                        <span className="text-zinc-500 dark:text-[#7A7570]">Reminders sent</span>
+                        <span className="font-medium text-[#18181B] dark:text-[#F0EBE3] flex items-center gap-1">
+                          {getReminderCount(activeSelectedChild) > 0 ? (
+                            <span className="text-[#C59B27] font-semibold flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {getReminderCount(activeSelectedChild)}x sent
+                            </span>
+                          ) : (
+                            <span className="text-zinc-400 dark:text-zinc-500">None sent yet</span>
+                          )}
+                        </span>
+                      </div>
+                      {getReminderCount(activeSelectedChild) > 0 && (
+                        <div className="py-1 text-[11px] text-zinc-500 dark:text-[#7A7570] space-y-0.5 bg-zinc-50/70 dark:bg-[#262520] p-2 rounded-lg">
+                          {activeSelectedChild.lastReminderSentAt && (
+                            <p>• Portal reminder: {formatShortDateTime(activeSelectedChild.lastReminderSentAt)}</p>
+                          )}
+                          {activeSelectedChild.lastWhatsAppSentAt && (
+                            <p>• WhatsApp reminder: {formatShortDateTime(activeSelectedChild.lastWhatsAppSentAt)}</p>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1274,11 +1635,25 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                           ? 'bg-amber-500' 
                           : 'bg-[#C59B27]';
                       
+                      const cohortFilterKey = c.id === '2–3' ? 'group_2_3'
+                        : c.id === '4–6' ? 'group_4_6'
+                        : c.id === '7–9' ? 'group_7_9'
+                        : c.id === '10–12' ? 'group_10_12'
+                        : 'group_13_14';
+                      const isFilterActiveForCohort = ageFilter === cohortFilterKey;
+
                       return (
-                        <div key={c.id} className="space-y-1.5">
+                        <div 
+                          key={c.id} 
+                          onClick={() => setAgeFilter(isFilterActiveForCohort ? 'all' : cohortFilterKey)}
+                          className={`space-y-1.5 p-2 -mx-2 rounded-xl transition-all cursor-pointer hover:bg-zinc-50 dark:hover:bg-[#262520] ${
+                            isFilterActiveForCohort ? 'bg-[#FAF8F3] dark:bg-[#262520] ring-1 ring-[#C59B27]/40 shadow-2xs' : ''
+                          }`}
+                          title={`Click to filter registrations by ${c.label}`}
+                        >
                           <div className="flex items-center justify-between text-xs">
-                            <span className="text-zinc-600 dark:text-[#B8B0A5] truncate max-w-[140px]">
-                              {c.label}
+                            <span className="text-zinc-600 dark:text-[#B8B0A5] truncate max-w-[140px] font-medium">
+                              {c.label} {isFilterActiveForCohort && <span className="text-[#C59B27] text-[10px] ml-1 font-semibold">(Active)</span>}
                             </span>
                             <span className="text-zinc-500 dark:text-[#7A7570] font-medium">
                               <span className="text-[#18181B] dark:text-[#F0EBE3] font-semibold">{c.current}</span>
@@ -1473,6 +1848,64 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                   <option value="age_issue">Age not eligible / DOB missing</option>
                   <option value="medical_or_support">Care & medical notes</option>
                   <option value="duplicate_contact">Sibling registrations</option>
+                </select>
+              </div>
+
+              {/* Age / Age Grade Filter */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
+                  Age / Age grade
+                </label>
+                <select 
+                  value={ageFilter}
+                  onChange={(e) => setAgeFilter(e.target.value)}
+                  className="w-full text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] p-2.5 text-zinc-800 dark:text-[#F0EBE3] focus:outline-none"
+                >
+                  <option value="all">All ages & grades</option>
+                  <optgroup label="Single Ages (Batch review)">
+                    <option value="age_2">Age 2 only ({quickCounts.ageCounts.age_2})</option>
+                    <option value="age_3">Age 3 only</option>
+                    <option value="age_4">Age 4 only</option>
+                    <option value="age_5">Age 5 only</option>
+                    <option value="age_6">Age 6 only</option>
+                    <option value="age_7">Age 7 only</option>
+                    <option value="age_8">Age 8 only</option>
+                    <option value="age_9">Age 9 only</option>
+                    <option value="age_10">Age 10 only</option>
+                    <option value="age_11">Age 11 only</option>
+                    <option value="age_12">Age 12 only</option>
+                    <option value="age_13">Age 13 only</option>
+                    <option value="age_14">Age 14 only</option>
+                  </optgroup>
+                  <optgroup label="Age Cohorts">
+                    <option value="group_2_3">Ages 2–3 ({quickCounts.ageCounts.group_2_3})</option>
+                    <option value="group_4_6">Ages 4–6 ({quickCounts.ageCounts.group_4_6})</option>
+                    <option value="group_7_9">Ages 7–9 ({quickCounts.ageCounts.group_7_9})</option>
+                    <option value="group_10_12">Ages 10–12 ({quickCounts.ageCounts.group_10_12})</option>
+                    <option value="group_13_14">Ages 13–14 ({quickCounts.ageCounts.group_13_14})</option>
+                  </optgroup>
+                  <optgroup label="Eligibility Checks">
+                    <option value="below_2">Under 2 years (Review needed)</option>
+                    <option value="above_14">Over 14 years</option>
+                    <option value="age_missing">Age missing / unstated</option>
+                  </optgroup>
+                </select>
+              </div>
+
+              {/* Reminder Status Filter */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
+                  Reminder status
+                </label>
+                <select 
+                  value={reminderFilter}
+                  onChange={(e) => setReminderFilter(e.target.value)}
+                  className="w-full text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] p-2.5 text-zinc-800 dark:text-[#F0EBE3] focus:outline-none"
+                >
+                  <option value="all">All registrations</option>
+                  <option value="not_reminded">Not reminded yet ({quickCounts.unreminded})</option>
+                  <option value="reminded">Reminded (1+ sent) ({quickCounts.reminded})</option>
+                  <option value="reminded_multiple">Reminded multiple times (2+)</option>
                 </select>
               </div>
 
