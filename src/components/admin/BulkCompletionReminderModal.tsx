@@ -46,7 +46,7 @@ export const BulkCompletionReminderModal: React.FC<BulkCompletionReminderModalPr
   const { showSuccess } = useNotification();
 
   const [sendPortal, setSendPortal] = useState(true);
-  const [sendWhatsApp, setSendWhatsApp] = useState(false);
+  const [sendWhatsApp, setSendWhatsApp] = useState(true);
   const [ignoreCooldown, setIgnoreCooldown] = useState(false);
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -254,10 +254,10 @@ export const BulkCompletionReminderModal: React.FC<BulkCompletionReminderModalPr
                   <div className="space-y-0.5 text-xs">
                     <span className="font-semibold text-zinc-800 dark:text-zinc-200 flex items-center gap-1">
                       <MessageSquare className="w-3.5 h-3.5 text-[#C59B27]" />
-                      Portal Reminders
+                      Portal &amp; Email Reminders
                     </span>
                     <p className="text-[10px] text-zinc-500">
-                      Standard portal messages with resume draft action
+                      Inbox thread &amp; email reminder with resume draft action
                     </p>
                   </div>
                 </label>
