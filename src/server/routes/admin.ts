@@ -1876,6 +1876,19 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
           ORDER BY COALESCE(l.sent_at, l.created_at) DESC
           LIMIT 1
         ) as last_whatsapp_sent_at,
+        (
+          SELECT COUNT(*)
+          FROM messages m
+          JOIN message_threads t ON t.id = m.thread_id
+          WHERE t.linked_entry_id = e.id
+            AND m.message_type IN ('application_completion_reminder', 'application_correction_required')
+        ) as portal_reminder_count,
+        (
+          SELECT COUNT(*)
+          FROM whatsapp_delivery_logs l
+          WHERE l.child_event_entry_id = e.id
+            AND l.status IN ('sent', 'delivered', 'read')
+        ) as whatsapp_reminder_count,
         e.school_class,
         e.school_name,
         e.previous_children_programme,
@@ -1979,6 +1992,9 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
           lastReminderSentAt: app.last_reminder_sent_at || null,
           lastReminderType: app.last_reminder_type || null,
           lastWhatsAppSentAt: app.last_whatsapp_sent_at || null,
+          portalReminderCount: Number(app.portal_reminder_count) || 0,
+          whatsappReminderCount: Number(app.whatsapp_reminder_count) || 0,
+          reminderCount: (Number(app.portal_reminder_count) || 0) + (Number(app.whatsapp_reminder_count) || 0) || ((app.last_reminder_sent_at ? 1 : 0) + (app.last_whatsapp_sent_at ? 1 : 0)),
           updatedAt: app.entry_updated_at || app.entry_created_at || null,
           checkedInAt: app.checked_in_at,
           pickedUpAt: app.picked_up_at,
@@ -2812,6 +2828,26 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
       ORDER BY COALESCE(sent_at, created_at) DESC
       LIMIT 1
     `, [id]);
+    const reminderCounts = await queryOne(`
+      SELECT 
+        (
+          SELECT COUNT(*)
+          FROM messages m
+          JOIN message_threads t ON t.id = m.thread_id
+          WHERE t.linked_entry_id = ?
+            AND m.message_type IN ('application_completion_reminder', 'application_correction_required')
+        ) as portal_count,
+        (
+          SELECT COUNT(*)
+          FROM whatsapp_delivery_logs l
+          WHERE l.child_event_entry_id = ?
+            AND l.status IN ('sent', 'delivered', 'read')
+        ) as whatsapp_count
+    `, [id, id]);
+
+    const portalRemCount = Number(reminderCounts?.portal_count) || 0;
+    const waRemCount = Number(reminderCounts?.whatsapp_count) || 0;
+    const totalRemCount = portalRemCount + waRemCount || ((lastReminder?.created_at ? 1 : 0) + (lastWhatsApp?.sent_at ? 1 : 0));
 
     const applicationDetails = {
       id: app.entry_id,
@@ -2825,6 +2861,9 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
       lastReminderSentAt: lastReminder?.created_at || null,
       lastReminderType: lastReminder?.message_type || null,
       lastWhatsAppSentAt: lastWhatsApp?.sent_at || null,
+      portalReminderCount: portalRemCount,
+      whatsappReminderCount: waRemCount,
+      reminderCount: totalRemCount,
       checkedInAt: app.checked_in_at,
       pickedUpAt: app.picked_up_at,
       hasPass: !!pass,
