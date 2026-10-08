@@ -47,13 +47,16 @@ export const BulkCompletionReminderModal: React.FC<BulkCompletionReminderModalPr
 
   const [sendPortal, setSendPortal] = useState(true);
   const [sendWhatsApp, setSendWhatsApp] = useState(false);
+  const [ignoreCooldown, setIgnoreCooldown] = useState(false);
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [results, setResults] = useState<ResultItem[] | null>(null);
   const [summaryStats, setSummaryStats] = useState<{
     portalSent: number;
+    portalCooldown: number;
     portalFailed: number;
     whatsappSent: number;
+    whatsappCooldown: number;
     whatsappSkipped: number;
     whatsappFailed: number;
   } | null>(null);
@@ -77,8 +80,10 @@ export const BulkCompletionReminderModal: React.FC<BulkCompletionReminderModalPr
       sendPortal && sendWhatsApp ? 'both' : (sendWhatsApp ? 'whatsapp' : 'portal');
 
     let pSent = 0;
+    let pCooldown = 0;
     let pFailed = 0;
     let waSent = 0;
+    let waCooldown = 0;
     let waSkipped = 0;
     let waFailed = 0;
 
@@ -87,7 +92,7 @@ export const BulkCompletionReminderModal: React.FC<BulkCompletionReminderModalPr
     for (let i = 0; i < applications.length; i++) {
       const app = applications[i];
       try {
-        const res = await api.admin.sendCompletionReminder(app.id, undefined, channel);
+        const res = await api.admin.sendCompletionReminder(app.id, undefined, channel, undefined, ignoreCooldown);
         if (res && res.success) {
           let pStatus: ResultItem['portalStatus'] = 'skipped';
           let waStatus: ResultItem['whatsappStatus'] = 'skipped';
@@ -95,18 +100,20 @@ export const BulkCompletionReminderModal: React.FC<BulkCompletionReminderModalPr
           let waErr: string | undefined;
 
           if (sendPortal) {
-            if (res.portal?.sent) {
+            const portalSent = Boolean(res.channels?.portal?.success || res.portal?.sent || (channel === 'portal' && res.success));
+            if (portalSent) {
               pStatus = 'sent';
               pSent++;
             } else {
               pStatus = 'failed';
-              pErr = res.portal?.error || 'Failed';
+              pErr = res.channels?.portal?.error || res.portal?.error || 'Failed';
               pFailed++;
             }
           }
 
           if (sendWhatsApp) {
-            if (res.whatsapp?.sent) {
+            const waSentCheck = Boolean(res.channels?.whatsapp?.success || res.whatsapp?.sent);
+            if (waSentCheck) {
               waStatus = 'sent';
               waSent++;
             } else if (res.whatsapp?.skipped) {
@@ -115,7 +122,7 @@ export const BulkCompletionReminderModal: React.FC<BulkCompletionReminderModalPr
               waSkipped++;
             } else {
               waStatus = 'failed';
-              waErr = res.whatsapp?.error || 'Failed';
+              waErr = res.channels?.whatsapp?.error || res.whatsapp?.error || 'Failed';
               waFailed++;
             }
           }
@@ -141,17 +148,30 @@ export const BulkCompletionReminderModal: React.FC<BulkCompletionReminderModalPr
         }
       } catch (err: any) {
         const extracted = extractApiError(err);
-        const isCooldown = err?.code === 'APPLICATION_REMINDER_COOLDOWN' || extracted.code === 'APPLICATION_REMINDER_COOLDOWN';
+        const isCooldown = err?.code === 'APPLICATION_REMINDER_COOLDOWN' || extracted.code === 'APPLICATION_REMINDER_COOLDOWN' || extracted.message?.toLowerCase().includes('cooldown');
 
         if (sendPortal) {
-          updatedResults[i].portalStatus = isCooldown ? 'cooldown' : 'failed';
-          updatedResults[i].portalError = isCooldown ? 'Throttled (cooldown)' : (extracted.description || extracted.message || 'Error');
-          pFailed++;
+          if (isCooldown) {
+            updatedResults[i].portalStatus = 'cooldown';
+            updatedResults[i].portalError = 'Throttled (recently reminded)';
+            pCooldown++;
+          } else {
+            updatedResults[i].portalStatus = 'failed';
+            updatedResults[i].portalError = extracted.description || extracted.message || 'Error';
+            pFailed++;
+          }
         }
         if (sendWhatsApp) {
-          updatedResults[i].whatsappStatus = 'failed';
-          updatedResults[i].whatsappError = extracted.description || extracted.message || 'Error';
-          waFailed++;
+          const isWaCooldown = err?.code === 'WHATSAPP_COOLDOWN' || extracted.code === 'WHATSAPP_COOLDOWN' || extracted.message?.toLowerCase().includes('cooldown');
+          if (isWaCooldown) {
+            updatedResults[i].whatsappStatus = 'cooldown';
+            updatedResults[i].whatsappError = 'Throttled (recently reminded)';
+            waCooldown++;
+          } else {
+            updatedResults[i].whatsappStatus = 'failed';
+            updatedResults[i].whatsappError = extracted.description || extracted.message || 'Error';
+            waFailed++;
+          }
         }
       }
       setResults([...updatedResults]);
@@ -159,8 +179,10 @@ export const BulkCompletionReminderModal: React.FC<BulkCompletionReminderModalPr
 
     setSummaryStats({
       portalSent: pSent,
+      portalCooldown: pCooldown,
       portalFailed: pFailed,
       whatsappSent: waSent,
+      whatsappCooldown: waCooldown,
       whatsappSkipped: waSkipped,
       whatsappFailed: waFailed
     });
@@ -262,6 +284,24 @@ export const BulkCompletionReminderModal: React.FC<BulkCompletionReminderModalPr
                   </div>
                 </label>
               </div>
+
+              {/* Anti-spam cooldown bypass toggle */}
+              <label className="flex items-start gap-2.5 p-3 rounded-xl border border-[#EAE8E1] dark:border-[#302F2A] bg-[#FCFBF8] dark:bg-[#24231F] cursor-pointer text-xs transition-all mt-2.5">
+                <input
+                  type="checkbox"
+                  checked={ignoreCooldown}
+                  onChange={e => setIgnoreCooldown(e.target.checked)}
+                  className="mt-0.5 text-[#C59B27] rounded focus:ring-[#C59B27]"
+                />
+                <div className="space-y-0.5">
+                  <span className="font-semibold text-zinc-800 dark:text-zinc-200">
+                    Bypass 60-minute anti-spam cooldown
+                  </span>
+                  <p className="text-[10px] text-zinc-500">
+                    Force re-send to parents who received a reminder in the last hour. If unchecked, recently reminded parents will be safely throttled.
+                  </p>
+                </div>
+              </label>
             </div>
           )}
 
@@ -275,13 +315,15 @@ export const BulkCompletionReminderModal: React.FC<BulkCompletionReminderModalPr
                 {sendPortal && (
                   <p>
                     • <strong className="text-zinc-800 dark:text-zinc-200">{summaryStats.portalSent}</strong> portal reminders sent
-                    {summaryStats.portalFailed > 0 && <span className="text-rose-600 ml-1">({summaryStats.portalFailed} failed/throttled)</span>}
+                    {summaryStats.portalCooldown > 0 && <span className="text-amber-600 dark:text-amber-400 ml-1">({summaryStats.portalCooldown} cooldown throttled)</span>}
+                    {summaryStats.portalFailed > 0 && <span className="text-rose-600 ml-1">({summaryStats.portalFailed} failed)</span>}
                   </p>
                 )}
                 {sendWhatsApp && (
                   <>
                     <p>
                       • <strong className="text-zinc-800 dark:text-zinc-200">{summaryStats.whatsappSent}</strong> WhatsApp reminders sent
+                      {summaryStats.whatsappCooldown > 0 && <span className="text-amber-600 dark:text-amber-400 ml-1">({summaryStats.whatsappCooldown} cooldown throttled)</span>}
                     </p>
                     {summaryStats.whatsappSkipped > 0 && (
                       <p className="text-amber-700 dark:text-amber-400">

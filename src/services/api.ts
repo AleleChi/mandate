@@ -1482,7 +1482,13 @@ export const api = {
         };
       }>(`/api/admin/applications/${encodeURIComponent(entryId)}/completion-reminder`);
     },
-    async sendCompletionReminder(entryId: string, body?: string, channel: 'portal' | 'whatsapp' | 'both' = 'portal', whatsappBody?: string) {
+    async sendCompletionReminder(
+      entryId: string,
+      body?: string,
+      channel: 'portal' | 'whatsapp' | 'both' = 'portal',
+      whatsappBody?: string,
+      ignoreCooldown?: boolean
+    ) {
       return api.request<{
         success: boolean;
         messageId?: string;
@@ -1522,7 +1528,7 @@ export const api = {
         };
       }>(`/api/admin/applications/${encodeURIComponent(entryId)}/completion-reminder`, {
         method: 'POST',
-        body: JSON.stringify({ body, channel, whatsappBody })
+        body: JSON.stringify({ body, channel, whatsappBody, ignoreCooldown })
       });
     },
     async removeChild(id: string, reason: string) {
