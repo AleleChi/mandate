@@ -5,8 +5,9 @@ import {
   emitSSEEventToRoles,
   emitSSEEventToAudience
 } from './sse';
-import { sendEmail } from './email';
+import { sendEmail, sendApplicationCompletionReminderEmail } from './email';
 import { sendWhatsApp } from './notifications';
+import { sendWebPush } from './push';
 import { buildPublicAppUrl } from '../utils/urlHelper';
 
 function escapeHtml(str: string): string {
@@ -446,6 +447,54 @@ export async function notifyCompletionReminderSent(params: {
       notificationId: notifId,
       timestamp: now
     });
+
+    // Resolve details for outbound Email, Push, and WhatsApp dispatch
+    const parentProfile = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [parentProfileId]);
+    const parentUser = await queryOne('SELECT * FROM users WHERE id = ?', [parentUserId]);
+    const parentEmail = parentProfile?.email || parentUser?.email;
+    const parentPhone = parentProfile?.whatsapp_number || parentProfile?.phone_number;
+    const parentFirstName = parentProfile?.full_name ? parentProfile.full_name.trim().split(/\s+/)[0] : 'Parent';
+
+    let childFirstName = 'Child';
+    if (linkedChildId) {
+      const childRow = await queryOne('SELECT full_name FROM children WHERE id = ?', [linkedChildId]);
+      if (childRow?.full_name) {
+        childFirstName = childRow.full_name.trim().split(/\s+/)[0] || childRow.full_name.trim();
+      }
+    }
+
+    const msgRow = await queryOne('SELECT body FROM messages WHERE id = ?', [messageId]);
+    const messageBody = msgRow?.body || '';
+    const portalUrl = buildPublicAppUrl(deepLink);
+
+    // 1. Dispatch Email notification to Parent
+    if (parentEmail) {
+      sendApplicationCompletionReminderEmail({
+        parentEmail,
+        parentFirstName,
+        childName: childFirstName,
+        messageBody,
+        parentPortalLink: portalUrl
+      }).catch(err => console.error('[notifyCompletionReminderSent] Failed to dispatch reminder email:', err));
+    }
+
+    // 2. Dispatch Web Push notification to Parent devices
+    sendWebPush(parentUserId, {
+      title: `Complete ${childFirstName}'s registration`,
+      body: messageBody.slice(0, 120) || 'You have an important registration message from Koinonia.',
+      metadata: {
+        url: deepLink,
+        threadId
+      }
+    }).catch(err => console.error('[notifyCompletionReminderSent] Failed to dispatch WebPush:', err));
+
+    // 3. Dispatch WhatsApp message to Parent
+    if (parentPhone) {
+      const snippet = messageBody.length > 250 ? `${messageBody.substring(0, 247)}...` : messageBody;
+      const waText = `Hello ${parentFirstName},\n\nWe need additional information to complete ${childFirstName}'s registration for the General Assembly Children & Teens Session:\n\n"${snippet}"\n\nPlease complete it in your Parent Portal here:\n${portalUrl}`;
+
+      sendWhatsApp(parentPhone, waText).catch(err => console.error('[notifyCompletionReminderSent] Failed to dispatch WhatsApp reminder:', err));
+    }
   } catch (err) {
     console.error('[notifyCompletionReminderSent] Failed to dispatch reminder notification/SSE:', err);
   }

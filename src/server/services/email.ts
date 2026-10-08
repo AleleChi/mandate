@@ -558,6 +558,51 @@ export async function sendChildReturnToDraftEmail(params: {
 }
 
 /**
+ * 4c. Application completion reminder email to parent
+ */
+export async function sendApplicationCompletionReminderEmail(params: {
+  parentEmail: string;
+  parentFirstName?: string;
+  childName: string;
+  messageBody?: string;
+  formattedDeadline?: string;
+  parentPortalLink?: string;
+}): Promise<SendEmailResult> {
+  const childName = params.childName || 'your child';
+  const suffix = childName.endsWith('s') ? '’' : '’s';
+  const subject = `Action required: Complete ${childName}${suffix} registration`;
+  const firstName = getFirstName(params.parentFirstName);
+  const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
+  const portalUrl = params.parentPortalLink || buildPublicAppUrl('/parent/home');
+
+  const bodySnippet = params.messageBody
+    ? params.messageBody.trim().replace(/\n/g, '<br/>')
+    : `This is a friendly reminder that <strong>${childName}</strong>’s registration for Children &amp; Teens at The General Assembly is still incomplete.`;
+
+  const deadlineHtml = params.formattedDeadline
+    ? `<p style="margin-top: 14px; color: #9A7326; font-weight: 500;">Registration deadline: <strong>${params.formattedDeadline}</strong></p>`
+    : '';
+
+  const bodyHtml = `
+    <p style="margin-top: 0;">${greeting}</p>
+    <p>This is a reminder regarding <strong>${childName}</strong>’s registration for Children and Teens at The General Assembly:</p>
+    <div style="background-color: #FAF8F4; border-left: 3px solid #C59B27; padding: 12px 16px; margin: 16px 0; border-radius: 4px; font-size: 14px; color: #27272A; line-height: 1.5;">
+      ${bodySnippet}
+    </div>
+    ${deadlineHtml}
+    <p>Please open Parent Access to resume and complete your application.</p>
+    <br>
+    <p style="margin-bottom: 0;">Thank you,<br>Koinonia Children and Teens</p>
+  `;
+
+  const text = `${greeting}\n\nThis is a reminder regarding ${childName}’s registration for Children and Teens at The General Assembly:\n\n${params.messageBody || ''}\n\n${params.formattedDeadline ? `Registration deadline: ${params.formattedDeadline}\n\n` : ''}Please resume and complete your application here:\n${portalUrl}\n\nThank you,\nKoinonia Children and Teens`;
+
+  const html = wrapHtmlTemplate(subject, bodyHtml, { label: 'Continue application', url: portalUrl });
+
+  return sendEmail({ to: params.parentEmail, subject, html, text });
+}
+
+/**
  * 5. Pass ready later
  */
 export async function sendPassReadyEmail(params: {
