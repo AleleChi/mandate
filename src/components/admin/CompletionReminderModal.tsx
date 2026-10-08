@@ -21,6 +21,9 @@ interface CompletionReminderModalProps {
   parentName?: string;
   onClose: () => void;
   onSuccess?: (entryId: string, sentAt: string) => void;
+  onNext?: () => void;
+  hasNext?: boolean;
+  queuePosition?: { current: number; total: number };
 }
 
 export const CompletionReminderModal: React.FC<CompletionReminderModalProps> = ({
@@ -29,7 +32,10 @@ export const CompletionReminderModal: React.FC<CompletionReminderModalProps> = (
   childName,
   parentName,
   onClose,
-  onSuccess
+  onSuccess,
+  onNext,
+  hasNext,
+  queuePosition
 }) => {
   const { showError, showSuccess, showWarning } = useNotification();
 
@@ -203,7 +209,11 @@ export const CompletionReminderModal: React.FC<CompletionReminderModalProps> = (
           const sentTimestamp = res.lastReminderSentAt || res.lastWhatsAppSentAt || new Date().toISOString();
           onSuccess(entryId, sentTimestamp);
         }
-        onClose();
+        if (hasNext && onNext) {
+          onNext();
+        } else {
+          onClose();
+        }
       } else {
         setSendError('Failed to send reminder. Please check application status.');
       }
@@ -236,14 +246,31 @@ export const CompletionReminderModal: React.FC<CompletionReminderModalProps> = (
             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200/70 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900/40">
               {workflow === 'correction' ? 'Missing required details' : 'Incomplete draft'}
             </span>
+            {queuePosition && (
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#FAF8F3] dark:bg-[#262520] text-[#C59B27] border border-[#C59B27]/40">
+                {queuePosition.current} of {queuePosition.total}
+              </span>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2.5">
+            {hasNext && onNext && (
+              <button
+                type="button"
+                onClick={onNext}
+                className="text-xs text-[#C59B27] hover:underline font-medium cursor-pointer"
+                title="Skip this parent and move to the next incomplete application"
+              >
+                Skip to next →
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}
@@ -512,7 +539,7 @@ export const CompletionReminderModal: React.FC<CompletionReminderModalProps> = (
                     </div>
                   ) : (
                     <div className="flex items-center space-x-1.5">
-                      <span>Send notification</span>
+                      <span>{hasNext ? 'Send & Next parent' : 'Send notification'}</span>
                       <Send className="w-3.5 h-3.5" />
                     </div>
                   )}

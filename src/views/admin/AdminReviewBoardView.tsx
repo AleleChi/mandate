@@ -18,6 +18,7 @@ import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { AdminReviewChildView } from './AdminReviewChildView';
 import { CompletionReminderModal } from '../../components/admin/CompletionReminderModal';
+import { BulkCompletionReminderModal } from '../../components/admin/BulkCompletionReminderModal';
 
 interface AdminReviewBoardViewProps {
   onBackToOverview: () => void;
@@ -67,6 +68,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
   // Completion Reminder Modal State
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [reminderTarget, setReminderTarget] = useState<{ id: string; childName: string; parentName: string } | null>(null);
+  const [bulkReminderModalOpen, setBulkReminderModalOpen] = useState(false);
 
   const fetchApplications = async (silent = false) => {
     if (isFetchingRef.current) return;
@@ -273,8 +275,9 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
 
   // Quick count metrics for filter chips
   const quickCounts = useMemo(() => {
-    let unreminded = 0;
-    let reminded = 0;
+    let unremindedIncomplete = 0;
+    let remindedIncomplete = 0;
+    let totalIncomplete = 0;
     const ageCounts: Record<string, number> = {
       age_2: 0,
       group_2_3: 0,
@@ -285,9 +288,13 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
     };
 
     enrichedApplications.forEach(app => {
-      const remCount = getReminderCount(app);
-      if (remCount === 0) unreminded++;
-      else reminded++;
+      const isIncomplete = app.isIncomplete || app.status === 'incomplete' || app.status === 'draft';
+      if (isIncomplete) {
+        totalIncomplete++;
+        const remCount = getReminderCount(app);
+        if (remCount === 0) unremindedIncomplete++;
+        else remindedIncomplete++;
+      }
 
       const age = app.child?.age;
       if (typeof age === 'number' && !isNaN(age)) {
@@ -300,7 +307,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
       }
     });
 
-    return { unreminded, reminded, ageCounts };
+    return { unremindedIncomplete, remindedIncomplete, totalIncomplete, ageCounts };
   }, [enrichedApplications]);
 
   // Filter application list based on search and selected filter values
@@ -358,18 +365,19 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
       });
     }
 
-    // Reminder Status Filter
+    // Reminder Status Filter (specifically for incomplete applications)
     if (reminderFilter !== 'all') {
       list = list.filter(app => {
+        const isIncomplete = app.isIncomplete || app.status === 'incomplete' || app.status === 'draft';
         const count = getReminderCount(app);
         if (reminderFilter === 'not_reminded') {
-          return count === 0;
+          return isIncomplete && count === 0;
         }
         if (reminderFilter === 'reminded') {
-          return count > 0;
+          return isIncomplete && count > 0;
         }
         if (reminderFilter === 'reminded_multiple') {
-          return count >= 2;
+          return isIncomplete && count >= 2;
         }
         return true;
       });
@@ -418,6 +426,9 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
     // Sort order
     list.sort((a, b) => {
       if (sortBy === 'not_reminded') {
+        const isIncompA = a.isIncomplete || a.status === 'incomplete' || a.status === 'draft';
+        const isIncompB = b.isIncomplete || b.status === 'incomplete' || b.status === 'draft';
+        if (isIncompA !== isIncompB) return isIncompA ? -1 : 1;
         const countA = getReminderCount(a);
         const countB = getReminderCount(b);
         if (countA !== countB) return countA - countB; // 0 reminders first
@@ -449,6 +460,69 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
 
     return list;
   }, [enrichedApplications, statusFilter, ageFilter, reminderFilter, flagFilter, workerFilter, searchQuery, sortBy]);
+
+  // Selected incomplete applications eligible for bulk reminders
+  const selectedIncompleteApps = useMemo(() => {
+    return filteredApplications.filter(app => 
+      selectedIds.includes(app.id) && 
+      (app.isIncomplete || app.status === 'incomplete' || app.status === 'draft')
+    );
+  }, [selectedIds, filteredApplications]);
+
+  // Queue of incomplete applications for sequential one-by-one reminders
+  const incompleteReminderQueue = useMemo(() => {
+    const source = (statusFilter === 'incomplete' || reminderFilter !== 'all') 
+      ? filteredApplications 
+      : enrichedApplications;
+    return source.filter(app => 
+      (app.isIncomplete || app.status === 'incomplete' || app.status === 'draft')
+    );
+  }, [statusFilter, reminderFilter, filteredApplications, enrichedApplications]);
+
+  const currentQueueIndex = useMemo(() => {
+    if (!reminderTarget) return -1;
+    return incompleteReminderQueue.findIndex(app => app.id === reminderTarget.id);
+  }, [reminderTarget, incompleteReminderQueue]);
+
+  const nextIncompleteTarget = useMemo(() => {
+    if (!reminderTarget || currentQueueIndex === -1) return null;
+    const afterCurrent = incompleteReminderQueue.slice(currentQueueIndex + 1).find(app => getReminderCount(app) === 0);
+    if (afterCurrent) return afterCurrent;
+    return incompleteReminderQueue.find(app => app.id !== reminderTarget.id && getReminderCount(app) === 0) || null;
+  }, [reminderTarget, currentQueueIndex, incompleteReminderQueue]);
+
+  const hasNextReminder = !!nextIncompleteTarget;
+
+  const handleNextReminder = () => {
+    if (nextIncompleteTarget) {
+      setReminderTarget({
+        id: nextIncompleteTarget.id,
+        childName: nextIncompleteTarget.child?.fullName || 'Child',
+        parentName: nextIncompleteTarget.parent?.fullName || 'Parent'
+      });
+      setActiveSelectId(nextIncompleteTarget.id);
+    } else {
+      showSuccess('All Incomplete Registrations Reminded', 'You have sent reminders to all parents with incomplete registrations in this queue.');
+      setIsReminderModalOpen(false);
+      setReminderTarget(null);
+    }
+  };
+
+  const handleReminderSuccess = (entryId: string) => {
+    setApplications(prev => prev.map(app => {
+      if (app.id === entryId) {
+        const curCount = getReminderCount(app);
+        return {
+          ...app,
+          reminderCount: curCount + 1,
+          portalReminderCount: (app.portalReminderCount || 0) + 1,
+          lastReminderSentAt: new Date().toISOString()
+        };
+      }
+      return app;
+    }));
+    fetchApplications(true);
+  };
 
   // Active child highlight selection (first child from the filtered list if not chosen)
   const [activeSelectId, setActiveSelectId] = useState<string | null>(null);
@@ -908,9 +982,9 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                   className="w-full text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] p-2.5 text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] focus:border-[#C59B27] transition-all"
                 >
                   <option value="all">All registrations</option>
-                  <option value="not_reminded">Not reminded yet ({quickCounts.unreminded})</option>
-                  <option value="reminded">Reminded (1+ sent) ({quickCounts.reminded})</option>
-                  <option value="reminded_multiple">Reminded multiple times (2+)</option>
+                  <option value="not_reminded">Incomplete: Not reminded yet ({quickCounts.unremindedIncomplete})</option>
+                  <option value="reminded">Incomplete: Reminded 1+ times ({quickCounts.remindedIncomplete})</option>
+                  <option value="reminded_multiple">Incomplete: Reminded multiple times (2+)</option>
                 </select>
               </div>
 
@@ -1123,7 +1197,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
 
                   <div className="h-4 w-px bg-zinc-200 dark:bg-[#3A3835] mx-1 shrink-0" />
 
-                  {/* Unreminded */}
+                  {/* Incomplete - Not reminded */}
                   <button
                     type="button"
                     onClick={() => setReminderFilter(reminderFilter === 'not_reminded' ? 'all' : 'not_reminded')}
@@ -1134,11 +1208,11 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                     }`}
                   >
                     <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 dark:bg-zinc-500" />
-                    <span>Not reminded</span>
-                    <span className="text-[10px] opacity-80 font-bold">({quickCounts.unreminded})</span>
+                    <span>Incomplete: Not reminded</span>
+                    <span className="text-[10px] opacity-80 font-bold">({quickCounts.unremindedIncomplete})</span>
                   </button>
 
-                  {/* Reminded */}
+                  {/* Incomplete - Reminded */}
                   <button
                     type="button"
                     onClick={() => setReminderFilter(reminderFilter === 'reminded' ? 'all' : 'reminded')}
@@ -1148,9 +1222,9 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                         : 'bg-zinc-50 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] hover:bg-zinc-100 border border-transparent'
                     }`}
                   >
-                    <Clock className="w-3 h-3 text-[#C59B27]" />
-                    <span>Reminded</span>
-                    <span className="text-[10px] opacity-80 font-bold">({quickCounts.reminded})</span>
+                    <Clock className="w-3.5 h-3.5 text-[#C59B27]" />
+                    <span>Incomplete: Reminded</span>
+                    <span className="text-[10px] opacity-80 font-bold">({quickCounts.remindedIncomplete})</span>
                   </button>
                 </div>
               </div>
@@ -1166,6 +1240,18 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap">
+                    {/* Bulk Reminder Button for Incomplete Applications */}
+                    {selectedIncompleteApps.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setBulkReminderModalOpen(true)}
+                        className="px-3.5 py-1.5 bg-[#C59B27] hover:bg-[#b08921] text-white text-xs font-semibold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-xs"
+                      >
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>Send reminders ({selectedIncompleteApps.length})</span>
+                      </button>
+                    )}
+
                     <button
                       onClick={() => {
                         setBulkDecision('selected');
@@ -1903,9 +1989,9 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                   className="w-full text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] p-2.5 text-zinc-800 dark:text-[#F0EBE3] focus:outline-none"
                 >
                   <option value="all">All registrations</option>
-                  <option value="not_reminded">Not reminded yet ({quickCounts.unreminded})</option>
-                  <option value="reminded">Reminded (1+ sent) ({quickCounts.reminded})</option>
-                  <option value="reminded_multiple">Reminded multiple times (2+)</option>
+                  <option value="not_reminded">Incomplete: Not reminded yet ({quickCounts.unremindedIncomplete})</option>
+                  <option value="reminded">Incomplete: Reminded 1+ times ({quickCounts.remindedIncomplete})</option>
+                  <option value="reminded_multiple">Incomplete: Reminded multiple times (2+)</option>
                 </select>
               </div>
 
@@ -1955,7 +2041,26 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
             setIsReminderModalOpen(false);
             setReminderTarget(null);
           }}
+          onSuccess={handleReminderSuccess}
+          onNext={handleNextReminder}
+          hasNext={hasNextReminder}
+          queuePosition={currentQueueIndex >= 0 ? { current: currentQueueIndex + 1, total: incompleteReminderQueue.length } : undefined}
+        />
+      )}
+
+      {/* Bulk Completion Reminder Modal */}
+      {bulkReminderModalOpen && selectedIncompleteApps.length > 0 && (
+        <BulkCompletionReminderModal
+          isOpen={bulkReminderModalOpen}
+          applications={selectedIncompleteApps.map((a) => ({
+            id: a.id,
+            childName: a.child?.fullName || 'Child',
+            parentName: a.parent?.fullName || 'Parent'
+          }))}
+          onClose={() => setBulkReminderModalOpen(false)}
           onSuccess={async () => {
+            setSelectedIds([]);
+            setBulkReminderModalOpen(false);
             await fetchApplications(true);
           }}
         />
