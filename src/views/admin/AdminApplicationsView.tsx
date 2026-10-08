@@ -26,6 +26,7 @@ import { AdminSelectionCheckbox } from '../../components/common/AdminSelectionCh
 import { AdminReviewChildView } from './AdminReviewChildView';
 import { CompletionReminderModal } from '../../components/admin/CompletionReminderModal';
 import { BulkCompletionReminderModal } from '../../components/admin/BulkCompletionReminderModal';
+import { BulkApplicationReviewModal, BulkReviewDecision } from '../../components/admin/BulkApplicationReviewModal';
 
 interface AdminApplicationsViewProps {
   onBackToOverview?: () => void;
@@ -98,6 +99,8 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
     parentName: string;
   } | null>(null);
   const [bulkReminderModalOpen, setBulkReminderModalOpen] = useState(false);
+  const [bulkReviewModalOpen, setBulkReviewModalOpen] = useState(false);
+  const [bulkReviewDecision, setBulkReviewDecision] = useState<BulkReviewDecision>('selected');
 
   // Drilldown to Child Review Detail Page
   const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(null);
@@ -884,7 +887,10 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                 <Button
                   type="button"
                   variant="primary"
-                  onClick={() => setModalBulkSelectOpen(true)}
+                  onClick={() => {
+                    setBulkReviewDecision('selected');
+                    setBulkReviewModalOpen(true);
+                  }}
                   disabled={eligibleSelectApps.length === 0}
                   className="text-xs font-semibold px-3 py-1.5 rounded-xl cursor-pointer"
                 >
@@ -894,7 +900,10 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                 {/* Secondary: Waiting list */}
                 <Button
                   type="button"
-                  onClick={() => setModalBulkWaitlistOpen(true)}
+                  onClick={() => {
+                    setBulkReviewDecision('waiting_list');
+                    setBulkReviewModalOpen(true);
+                  }}
                   disabled={eligibleWaitlistApps.length === 0}
                   className="text-xs font-medium px-3 py-1.5 bg-white text-zinc-700 border border-[#EAE8E1] hover:bg-zinc-50 rounded-xl cursor-pointer"
                 >
@@ -904,7 +913,10 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                 {/* Secondary: Not selected */}
                 <Button
                   type="button"
-                  onClick={() => setModalBulkNotSelectedOpen(true)}
+                  onClick={() => {
+                    setBulkReviewDecision('not_selected');
+                    setBulkReviewModalOpen(true);
+                  }}
                   disabled={eligibleNotSelectedApps.length === 0}
                   className="text-xs font-medium px-3 py-1.5 bg-white text-zinc-700 border border-[#EAE8E1] hover:bg-zinc-50 rounded-xl cursor-pointer"
                 >
@@ -914,7 +926,10 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
                 {/* Secondary: Reopen review */}
                 <Button
                   type="button"
-                  onClick={() => setModalBulkReopenOpen(true)}
+                  onClick={() => {
+                    setBulkReviewDecision('under_review');
+                    setBulkReviewModalOpen(true);
+                  }}
                   disabled={eligibleReopenApps.length === 0}
                   className="text-xs font-medium px-3 py-1.5 bg-white text-zinc-700 border border-[#EAE8E1] hover:bg-zinc-50 rounded-xl cursor-pointer"
                 >
@@ -1926,6 +1941,27 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({
             parentName: a.parent?.fullName || 'Parent'
           }))}
           onClose={() => setBulkReminderModalOpen(false)}
+          onSuccess={() => {
+            setSelectedIds([]);
+            fetchApplications(currentPage, true);
+          }}
+        />
+      )}
+
+      {bulkReviewModalOpen && selectedApps.length > 0 && (
+        <BulkApplicationReviewModal
+          isOpen={bulkReviewModalOpen}
+          applications={selectedApps.map((a) => ({
+            id: a.id,
+            childName: a.child?.fullName || 'Child',
+            parentName: a.parent?.fullName || 'Parent',
+            age: a.child?.age,
+            ageGroup: a.child?.ageGroup,
+            currentStatus: a.status,
+            photoUrl: a.child?.photoUrl
+          }))}
+          initialDecision={bulkReviewDecision}
+          onClose={() => setBulkReviewModalOpen(false)}
           onSuccess={() => {
             setSelectedIds([]);
             fetchApplications(currentPage, true);

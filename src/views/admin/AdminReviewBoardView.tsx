@@ -10,7 +10,8 @@ import {
   CheckSquare, 
   Square,
   Loader2,
-  Clock
+  Clock,
+  CheckCircle2
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -19,6 +20,7 @@ import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoad
 import { AdminReviewChildView } from './AdminReviewChildView';
 import { CompletionReminderModal } from '../../components/admin/CompletionReminderModal';
 import { BulkCompletionReminderModal } from '../../components/admin/BulkCompletionReminderModal';
+import { BulkApplicationReviewModal, BulkReviewDecision } from '../../components/admin/BulkApplicationReviewModal';
 
 interface AdminReviewBoardViewProps {
   onBackToOverview: () => void;
@@ -469,6 +471,15 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
     );
   }, [selectedIds, filteredApplications]);
 
+  // Selected applications eligible for bulk review actions
+  const selectedReviewApps = useMemo(() => {
+    return filteredApplications.filter(app => selectedIds.includes(app.id));
+  }, [selectedIds, filteredApplications]);
+
+  const selectedUnderReviewCount = useMemo(() => {
+    return selectedReviewApps.filter(app => app.status === 'under_review').length;
+  }, [selectedReviewApps]);
+
   // Queue of incomplete applications for sequential one-by-one reminders
   const incompleteReminderQueue = useMemo(() => {
     const source = (statusFilter === 'incomplete' || reminderFilter !== 'all') 
@@ -808,60 +819,127 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
             className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-xs"
             data-component-version="admin-review-summary-strip"
           >
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-y-4 sm:gap-y-0 sm:divide-x divide-[#EAE8E1] dark:sm:divide-[#302E29]">
-              <div className="sm:px-4 first:sm:pl-0">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-0 sm:divide-x divide-[#EAE8E1] dark:sm:divide-[#302E29]">
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilter(statusFilter === 'incomplete' ? 'all' : 'incomplete');
+                  setReminderFilter('all');
+                }}
+                className={`text-left p-2.5 sm:px-4 first:sm:pl-0 rounded-xl transition-all cursor-pointer ${
+                  statusFilter === 'incomplete'
+                    ? 'bg-amber-50/70 dark:bg-amber-950/30 ring-1 ring-amber-500/40 shadow-xs'
+                    : 'hover:bg-zinc-50 dark:hover:bg-[#262520]'
+                }`}
+              >
                 <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
                   Incomplete
                 </span>
                 <span className="text-2xl font-semibold text-amber-700 dark:text-amber-400 block mt-1">
                   {displayStats.incomplete}
                 </span>
-              </div>
+              </button>
 
-              <div className="sm:px-4">
-                <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilter(statusFilter === 'under_review' ? 'all' : 'under_review');
+                  setFlagFilter('all');
+                }}
+                className={`text-left p-2.5 sm:px-4 rounded-xl transition-all cursor-pointer ${
+                  statusFilter === 'under_review'
+                    ? 'bg-blue-50/70 dark:bg-blue-950/30 ring-1 ring-blue-500/40 shadow-xs'
+                    : 'hover:bg-zinc-50 dark:hover:bg-[#262520]'
+                }`}
+              >
+                <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
                   Awaiting review
                 </span>
-                <span className="text-2xl font-semibold text-[#18181B] dark:text-[#F0EBE3] block mt-1">
+                <span className={`text-2xl font-semibold block mt-1 ${statusFilter === 'under_review' ? 'text-blue-600 dark:text-blue-400' : 'text-[#18181B] dark:text-[#F0EBE3]'}`}>
                   {displayStats.underReview}
                 </span>
-              </div>
+              </button>
 
-              <div className="sm:px-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilter(statusFilter === 'selected' ? 'all' : 'selected');
+                  setFlagFilter('all');
+                }}
+                className={`text-left p-2.5 sm:px-4 rounded-xl transition-all cursor-pointer ${
+                  statusFilter === 'selected'
+                    ? 'bg-emerald-50/70 dark:bg-emerald-950/30 ring-1 ring-emerald-500/40 shadow-xs'
+                    : 'hover:bg-zinc-50 dark:hover:bg-[#262520]'
+                }`}
+              >
                 <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
                   Selected
                 </span>
-                <span className="text-2xl font-semibold text-[#18181B] dark:text-[#F0EBE3] block mt-1">
+                <span className={`text-2xl font-semibold block mt-1 ${statusFilter === 'selected' ? 'text-emerald-600 dark:text-emerald-400' : 'text-[#18181B] dark:text-[#F0EBE3]'}`}>
                   {displayStats.selected}
                 </span>
-              </div>
+              </button>
 
-              <div className="sm:px-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilter(statusFilter === 'waiting_list' ? 'all' : 'waiting_list');
+                  setFlagFilter('all');
+                }}
+                className={`text-left p-2.5 sm:px-4 rounded-xl transition-all cursor-pointer ${
+                  statusFilter === 'waiting_list'
+                    ? 'bg-amber-50/70 dark:bg-amber-950/30 ring-1 ring-amber-500/40 shadow-xs'
+                    : 'hover:bg-zinc-50 dark:hover:bg-[#262520]'
+                }`}
+              >
                 <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
                   Waiting list
                 </span>
-                <span className="text-2xl font-semibold text-[#18181B] dark:text-[#F0EBE3] block mt-1">
+                <span className={`text-2xl font-semibold block mt-1 ${statusFilter === 'waiting_list' ? 'text-amber-600 dark:text-amber-400' : 'text-[#18181B] dark:text-[#F0EBE3]'}`}>
                   {displayStats.waitingList}
                 </span>
-              </div>
+              </button>
 
-              <div className="sm:px-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilter(statusFilter === 'not_selected' ? 'all' : 'not_selected');
+                  setFlagFilter('all');
+                }}
+                className={`text-left p-2.5 sm:px-4 rounded-xl transition-all cursor-pointer ${
+                  statusFilter === 'not_selected'
+                    ? 'bg-zinc-100 dark:bg-[#2A2926] ring-1 ring-zinc-400/40 shadow-xs'
+                    : 'hover:bg-zinc-50 dark:hover:bg-[#262520]'
+                }`}
+              >
                 <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
                   Not selected
                 </span>
-                <span className="text-2xl font-semibold text-[#18181B] dark:text-[#F0EBE3] block mt-1">
+                <span className={`text-2xl font-semibold block mt-1 ${statusFilter === 'not_selected' ? 'text-zinc-600 dark:text-zinc-300' : 'text-[#18181B] dark:text-[#F0EBE3]'}`}>
                   {displayStats.notSelected}
                 </span>
-              </div>
+              </button>
 
-              <div className="sm:px-4 last:sm:pr-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setFlagFilter(flagFilter === 'any' ? 'all' : 'any');
+                  setStatusFilter('all');
+                }}
+                className={`text-left p-2.5 sm:px-4 last:sm:pr-0 rounded-xl transition-all cursor-pointer ${
+                  flagFilter === 'any'
+                    ? 'bg-amber-50/70 dark:bg-amber-950/30 ring-1 ring-amber-500/40 shadow-xs'
+                    : 'hover:bg-zinc-50 dark:hover:bg-[#262520]'
+                }`}
+              >
                 <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
                   Needs attention
                 </span>
                 <span className={`text-2xl font-semibold block mt-1 ${displayStats.needsAttention > 0 ? 'text-amber-800 dark:text-amber-400' : 'text-zinc-500 dark:text-[#7A7570]'}`}>
                   {displayStats.needsAttention}
                 </span>
-              </div>
+              </button>
             </div>
           </div>
 
@@ -1107,14 +1185,32 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                   {/* All */}
                   <button
                     type="button"
-                    onClick={() => { setAgeFilter('all'); setReminderFilter('all'); }}
+                    onClick={() => { setAgeFilter('all'); setReminderFilter('all'); setStatusFilter('all'); }}
                     className={`px-2.5 py-1 rounded-lg font-medium transition-all shrink-0 cursor-pointer text-xs ${
-                      ageFilter === 'all' && reminderFilter === 'all'
+                      ageFilter === 'all' && reminderFilter === 'all' && statusFilter === 'all'
                         ? 'bg-[#FAF8F3] dark:bg-[#262520] text-[#C59B27] border border-[#C59B27]/40 font-semibold'
                         : 'bg-zinc-50 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] hover:bg-zinc-100 border border-transparent'
                     }`}
                   >
                     All
+                  </button>
+
+                  {/* Awaiting Review */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStatusFilter(statusFilter === 'under_review' ? 'all' : 'under_review');
+                      setReminderFilter('all');
+                    }}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all shrink-0 cursor-pointer text-xs flex items-center gap-1.5 ${
+                      statusFilter === 'under_review'
+                        ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 border border-blue-300/60 font-semibold shadow-2xs'
+                        : 'bg-zinc-50 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] hover:bg-zinc-100 border border-transparent'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                    <span>Awaiting review</span>
+                    <span className="text-[10px] opacity-80 font-bold">({displayStats.underReview})</span>
                   </button>
 
                   {/* Age 2 */}
@@ -1234,9 +1330,16 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                 <div className="bg-[#FAF8F3] dark:bg-[#21211E] border border-[#E5D5AE]/60 dark:border-[#3A3835] rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-fade-in">
                   <div className="flex items-center space-x-2.5">
                     <CheckSquare className="w-4 h-4 text-[#C59B27]" />
-                    <span className="text-xs font-semibold text-zinc-800 dark:text-[#F0EBE3]">
-                      {selectedIds.length} registration{selectedIds.length > 1 ? 's' : ''} selected
-                    </span>
+                    <div>
+                      <span className="text-xs font-semibold text-zinc-800 dark:text-[#F0EBE3] block">
+                        {selectedIds.length} registration{selectedIds.length > 1 ? 's' : ''} selected
+                      </span>
+                      {selectedUnderReviewCount > 0 && (
+                        <span className="text-[11px] text-zinc-500 dark:text-[#7A7570] block">
+                          {selectedUnderReviewCount} awaiting review
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap">
@@ -1253,16 +1356,19 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                     )}
 
                     <button
+                      type="button"
                       onClick={() => {
                         setBulkDecision('selected');
                         setBulkActionOpen(true);
                       }}
-                      className="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40 hover:bg-emerald-100 dark:hover:bg-emerald-950/50 text-xs font-medium rounded-xl cursor-pointer transition-colors"
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl cursor-pointer transition-colors shadow-xs flex items-center gap-1.5"
                     >
-                      Select for event
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Select for event ({selectedIds.length})</span>
                     </button>
                     
                     <button
+                      type="button"
                       onClick={() => {
                         setBulkDecision('waiting_list');
                         setBulkActionOpen(true);
@@ -1273,6 +1379,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                     </button>
 
                     <button
+                      type="button"
                       onClick={() => {
                         setBulkDecision('not_selected');
                         setBulkActionOpen(true);
@@ -1283,6 +1390,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
                     </button>
 
                     <button
+                      type="button"
                       onClick={() => setSelectedIds([])}
                       className="text-xs text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5] font-medium cursor-pointer px-2 py-1.5"
                     >
@@ -1792,82 +1900,27 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
         </>
       )}
 
-      {/* BULK ACTION SELECTION MODAL */}
-      {bulkActionOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div 
-            onClick={() => setBulkActionOpen(false)}
-            className="fixed inset-0 bg-black/40 backdrop-blur-xs" 
-          />
-          <div className="relative bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl w-full max-w-md p-6 shadow-2xl animate-fade-in space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-[#EAE8E1] dark:border-[#302E29]">
-              <h3 className="text-base font-semibold text-[#18181B] dark:text-[#F0EBE3]">
-                Bulk decision
-              </h3>
-              <button 
-                onClick={() => setBulkActionOpen(false)}
-                className="text-zinc-400 dark:text-[#7A7570] hover:text-[#18181B] dark:hover:text-[#F0EBE3] p-1 rounded-lg cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleBulkSubmit} className="space-y-4">
-              <p className="text-xs text-zinc-500 dark:text-[#7A7570] leading-relaxed">
-                You are recording a decision for <strong>{selectedIds.length}</strong> child registrations.
-              </p>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-600 dark:text-[#B8B0A5] block">
-                  Action decision
-                </label>
-                <select 
-                  value={bulkDecision}
-                  onChange={(e) => setBulkDecision(e.target.value as any)}
-                  className="w-full text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] p-2.5 text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
-                >
-                  <option value="selected">Select for event</option>
-                  <option value="waiting_list">Add to waiting list</option>
-                  <option value="not_selected">Mark as not selected</option>
-                  <option value="under_review">Reset to awaiting review</option>
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-600 dark:text-[#B8B0A5] block">
-                  Team note (optional)
-                </label>
-                <textarea 
-                  value={bulkNote}
-                  onChange={(e) => setBulkNote(e.target.value)}
-                  placeholder="Add an internal note explaining this bulk decision..."
-                  className="w-full text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] p-2.5 text-zinc-800 dark:text-[#F0EBE3] dark:placeholder-[#7A7570] h-20 focus:outline-none focus:ring-1 focus:ring-[#C59B27] resize-none"
-                />
-              </div>
-
-              <div className="bg-[#FAF9F6] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] p-3 rounded-xl text-xs text-zinc-500 dark:text-[#7A7570] leading-normal">
-                Parents will be updated according to your event notification settings.
-              </div>
-
-              <div className="pt-3 border-t border-[#EAE8E1] dark:border-[#302E29] flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setBulkActionOpen(false)}
-                  className="px-4 py-2 bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#F0EBE3] font-medium rounded-xl text-xs cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  loading={submittingBulk}
-                >
-                  Confirm decision
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* BULK APPLICATION REVIEW MODAL */}
+      {bulkActionOpen && selectedReviewApps.length > 0 && (
+        <BulkApplicationReviewModal
+          isOpen={bulkActionOpen}
+          applications={selectedReviewApps.map((a) => ({
+            id: a.id,
+            childName: a.child?.fullName || 'Child',
+            parentName: a.parent?.fullName || 'Parent',
+            age: a.child?.age,
+            ageGroup: a.child?.ageGroup,
+            currentStatus: a.status,
+            photoUrl: a.child?.photoUrl
+          }))}
+          initialDecision={bulkDecision}
+          onClose={() => setBulkActionOpen(false)}
+          onSuccess={async () => {
+            setSelectedIds([]);
+            setBulkActionOpen(false);
+            await fetchApplications(true);
+          }}
+        />
       )}
 
       {/* MOBILE DRAWER FILTERS SHEET */}

@@ -207,7 +207,7 @@ export const BulkCompletionReminderModal: React.FC<BulkCompletionReminderModalPr
           <div className="flex items-center space-x-2">
             <Users className="w-4 h-4 text-[#C59B27]" />
             <h3 className="font-serif-koinonia font-bold text-sm text-[#18181B] dark:text-[#F0EBE3]">
-              Send Bulk Completion Reminders ({applications.length})
+              Send Completion Reminders ({applications.length})
             </h3>
           </div>
           <button
@@ -226,10 +226,10 @@ export const BulkCompletionReminderModal: React.FC<BulkCompletionReminderModalPr
           <div className="p-3.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200 space-y-1.5 leading-relaxed">
             <div className="flex items-center space-x-1.5 font-bold">
               <Lock className="w-3.5 h-3.5 text-[#9A7326]" />
-              <span>Private Child-Linked Dispatch</span>
+              <span>Private & Confidential Delivery</span>
             </div>
             <p className="text-[11px] text-amber-800 dark:text-amber-300">
-              Each recipient receives their own isolated 1-to-1 operational thread. Recipient lists are never shared, and per-child draft links cannot be cross-accessed. Cooldown rules are enforced individually.
+              Each parent receives a personalized message directly to their portal inbox and email. Families only see their own child's application, and details are kept strictly private. Parents messaged recently are safely protected from duplicates.
             </p>
           </div>
 
@@ -257,7 +257,7 @@ export const BulkCompletionReminderModal: React.FC<BulkCompletionReminderModalPr
                       Portal &amp; Email Reminders
                     </span>
                     <p className="text-[10px] text-zinc-500">
-                      Inbox thread &amp; email reminder with resume draft action
+                      Inbox thread &amp; email reminder with link to submit
                     </p>
                   </div>
                 </label>
@@ -276,10 +276,10 @@ export const BulkCompletionReminderModal: React.FC<BulkCompletionReminderModalPr
                   <div className="space-y-0.5 text-xs">
                     <span className="font-semibold text-zinc-800 dark:text-zinc-200 flex items-center gap-1">
                       <Smartphone className="w-3.5 h-3.5 text-emerald-600" />
-                      WhatsApp reminders
+                      WhatsApp Reminders
                     </span>
                     <p className="text-[10px] text-zinc-500">
-                      Privacy-safe reminder to opted-in parents only
+                      Friendly reminder sent to opted-in parents
                     </p>
                   </div>
                 </label>
@@ -295,10 +295,10 @@ export const BulkCompletionReminderModal: React.FC<BulkCompletionReminderModalPr
                 />
                 <div className="space-y-0.5">
                   <span className="font-semibold text-zinc-800 dark:text-zinc-200">
-                    Bypass 60-minute anti-spam cooldown
+                    Send even if reminded recently (within the last hour)
                   </span>
                   <p className="text-[10px] text-zinc-500">
-                    Force re-send to parents who received a reminder in the last hour. If unchecked, recently reminded parents will be safely throttled.
+                    Re-send reminders to parents who were already contacted within the past hour. Leave unchecked to avoid messaging the same family twice.
                   </p>
                 </div>
               </label>
@@ -309,13 +309,13 @@ export const BulkCompletionReminderModal: React.FC<BulkCompletionReminderModalPr
           {summaryStats && (
             <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-[#24231F] border border-[#EAE8E1] dark:border-[#302F2A] text-xs space-y-1">
               <span className="font-semibold text-zinc-800 dark:text-zinc-200 block">
-                Dispatch Summary:
+                Delivery Summary:
               </span>
               <div className="space-y-0.5 text-[11px] text-zinc-600 dark:text-[#B8B0A5]">
                 {sendPortal && (
                   <p>
-                    • <strong className="text-zinc-800 dark:text-zinc-200">{summaryStats.portalSent}</strong> portal reminders sent
-                    {summaryStats.portalCooldown > 0 && <span className="text-amber-600 dark:text-amber-400 ml-1">({summaryStats.portalCooldown} cooldown throttled)</span>}
+                    • <strong className="text-zinc-800 dark:text-zinc-200">{summaryStats.portalSent}</strong> portal &amp; email reminders sent
+                    {summaryStats.portalCooldown > 0 && <span className="text-amber-600 dark:text-amber-400 ml-1">({summaryStats.portalCooldown} contacted recently — skipped)</span>}
                     {summaryStats.portalFailed > 0 && <span className="text-rose-600 ml-1">({summaryStats.portalFailed} failed)</span>}
                   </p>
                 )}
@@ -323,11 +323,11 @@ export const BulkCompletionReminderModal: React.FC<BulkCompletionReminderModalPr
                   <>
                     <p>
                       • <strong className="text-zinc-800 dark:text-zinc-200">{summaryStats.whatsappSent}</strong> WhatsApp reminders sent
-                      {summaryStats.whatsappCooldown > 0 && <span className="text-amber-600 dark:text-amber-400 ml-1">({summaryStats.whatsappCooldown} cooldown throttled)</span>}
+                      {summaryStats.whatsappCooldown > 0 && <span className="text-amber-600 dark:text-amber-400 ml-1">({summaryStats.whatsappCooldown} contacted recently — skipped)</span>}
                     </p>
                     {summaryStats.whatsappSkipped > 0 && (
                       <p className="text-amber-700 dark:text-amber-400">
-                        • <strong>{summaryStats.whatsappSkipped}</strong> WhatsApp skipped — updates not enabled
+                        • <strong>{summaryStats.whatsappSkipped}</strong> WhatsApp skipped — parent opted out
                       </p>
                     )}
                     {summaryStats.whatsappFailed > 0 && (
@@ -344,7 +344,7 @@ export const BulkCompletionReminderModal: React.FC<BulkCompletionReminderModalPr
           {/* Recipients List or Progress Results */}
           <div className="space-y-2">
             <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 block">
-              {results ? 'Recipient Outcomes' : `Selected Incomplete Registrations (${applications.length})`}
+              {results ? 'Delivery Results' : `Selected Registrations (${applications.length})`}
             </span>
 
             <div className="max-h-56 overflow-y-auto divide-y divide-[#EAE8E1] dark:divide-[#302F2A] border border-[#EAE8E1] dark:border-[#302F2A] rounded-xl bg-white dark:bg-[#24231F]">
@@ -364,25 +364,25 @@ export const BulkCompletionReminderModal: React.FC<BulkCompletionReminderModalPr
                         <span className="text-[10px] text-amber-600 dark:text-amber-400 block mt-0.5">Portal: {item.portalError}</span>
                       )}
                       {item.whatsappError && (
-                        <span className="text-[10px] text-zinc-500 dark:text-zinc-400 block">WA: {item.whatsappError}</span>
+                        <span className="text-[10px] text-zinc-500 dark:text-zinc-400 block">WhatsApp: {item.whatsappError}</span>
                       )}
                     </div>
 
                     <div className="flex items-center gap-2">
                       {sendPortal && pStatus && (
                         <span className="text-[10px]">
-                          {pStatus === 'pending' && <span className="text-zinc-400">Portal...</span>}
+                          {pStatus === 'pending' && <span className="text-zinc-400">Sending...</span>}
                           {pStatus === 'sent' && <span className="text-emerald-600 font-medium">Portal: Sent</span>}
-                          {pStatus === 'cooldown' && <span className="text-amber-600 font-medium">Portal: Cooldown</span>}
+                          {pStatus === 'cooldown' && <span className="text-amber-600 font-medium">Sent recently (Skipped)</span>}
                           {pStatus === 'failed' && <span className="text-rose-600 font-medium">Portal: Failed</span>}
                         </span>
                       )}
                       {sendWhatsApp && waStatus && (
                         <span className="text-[10px]">
                           {waStatus === 'pending' && <span className="text-zinc-400">WA...</span>}
-                          {waStatus === 'sent' && <span className="text-emerald-600 font-medium">WA: Sent</span>}
-                          {waStatus === 'skipped' && <span className="text-zinc-500 font-medium">WA: Skipped</span>}
-                          {waStatus === 'failed' && <span className="text-rose-600 font-medium">WA: Failed</span>}
+                          {waStatus === 'sent' && <span className="text-emerald-600 font-medium">WhatsApp: Sent</span>}
+                          {waStatus === 'skipped' && <span className="text-zinc-500 font-medium">WA: Opted out</span>}
+                          {waStatus === 'failed' && <span className="text-rose-600 font-medium">WhatsApp: Failed</span>}
                         </span>
                       )}
                     </div>
