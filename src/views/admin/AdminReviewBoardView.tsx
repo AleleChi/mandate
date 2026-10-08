@@ -80,7 +80,7 @@ export const AdminReviewBoardView: React.FC<AdminReviewBoardViewProps> = ({
     else setRefreshing(true);
 
     try {
-      const res = await api.admin.getApplications({ limit: 1000 });
+      const res = await api.admin.getApplications({ limit: 10000 });
       if (res.success) {
         setApplications(res.applications || []);
         if (res.stats) {
