@@ -74,14 +74,15 @@ applicationRemindersRouter.get('/:entryId/completion-reminder', async (req: Auth
  */
 applicationRemindersRouter.post('/:entryId/completion-reminder', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { body, channel, whatsappBody } = req.body || {};
+    const { body, channel, whatsappBody, ignoreCooldown } = req.body || {};
     const result = await sendApplicationRecoveryReminder({
       entryId: req.params.entryId,
       adminUserId: req.user!.id,
       adminRole: req.user!.role,
       channel: channel || 'portal',
       customBody: body,
-      whatsappBody
+      whatsappBody,
+      ignoreCooldown: Boolean(ignoreCooldown)
     });
     return res.status(201).json({
       success: true,

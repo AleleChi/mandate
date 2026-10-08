@@ -137,7 +137,7 @@ export async function resolveAuthoritativeEntryContext(entryId: string): Promise
   }
 
   const parentUser = await queryOne('SELECT * FROM users WHERE id = ?', [parentProfile.user_id]);
-  if (!parentUser || parentUser.role !== 'parent') {
+  if (!parentUser) {
     throw new ApplicationReminderError(
       'APPLICATION_REMINDER_PARENT_NOT_FOUND',
       'Associated parent user account not found.',
@@ -497,6 +497,7 @@ export interface SendCompletionReminderParams {
   adminRole: string;
   customBody?: string;
   workflow?: 'incomplete' | 'correction';
+  ignoreCooldown?: boolean;
 }
 
 export interface SendCompletionReminderResult {
@@ -641,18 +642,20 @@ export async function sendCompletionReminder(
       }
     }
 
-    // Cooldown check inside transaction
-    const cooldown = await getReminderCooldownState(params.entryId, messageType);
-    if (!cooldown.canSend) {
-      throw new ApplicationReminderError(
-        'APPLICATION_REMINDER_COOLDOWN',
-        'A reminder was recently sent for this application. Please wait until cooldown expires.',
-        409,
-        {
-          lastReminderSentAt: cooldown.lastReminderSentAt,
-          cooldownEndsAt: cooldown.cooldownEndsAt
-        }
-      );
+    // Cooldown check inside transaction (unless explicitly bypassed by admin)
+    if (!params.ignoreCooldown) {
+      const cooldown = await getReminderCooldownState(params.entryId, messageType);
+      if (!cooldown.canSend) {
+        throw new ApplicationReminderError(
+          'APPLICATION_REMINDER_COOLDOWN',
+          'A reminder was recently sent for this application. Please wait until cooldown expires.',
+          409,
+          {
+            lastReminderSentAt: cooldown.lastReminderSentAt,
+            cooldownEndsAt: cooldown.cooldownEndsAt
+          }
+        );
+      }
     }
 
     const now = new Date().toISOString();
@@ -862,6 +865,7 @@ export interface SendWhatsAppNudgeParams {
   adminUserId: string;
   adminRole: string;
   customBody?: string;
+  ignoreCooldown?: boolean;
 }
 
 export interface SendWhatsAppNudgeResult {
@@ -933,18 +937,20 @@ export async function sendWhatsAppNudge(
     );
   }
 
-  // 3. Verify cooldown
-  const cooldown = await getWhatsAppCooldownState(params.entryId);
-  if (!cooldown.canSend) {
-    throw new ApplicationReminderError(
-      'WHATSAPP_COOLDOWN',
-      'A WhatsApp reminder was recently sent for this application. Please wait until cooldown expires.',
-      409,
-      {
-        lastSentAt: cooldown.lastSentAt,
-        cooldownEndsAt: cooldown.cooldownEndsAt
-      }
-    );
+  // 3. Verify cooldown (unless explicitly bypassed by admin)
+  if (!params.ignoreCooldown) {
+    const cooldown = await getWhatsAppCooldownState(params.entryId);
+    if (!cooldown.canSend) {
+      throw new ApplicationReminderError(
+        'WHATSAPP_COOLDOWN',
+        'A WhatsApp reminder was recently sent for this application. Please wait until cooldown expires.',
+        409,
+        {
+          lastSentAt: cooldown.lastSentAt,
+          cooldownEndsAt: cooldown.cooldownEndsAt
+        }
+      );
+    }
   }
 
   // 4. Generate or validate privacy-safe body
@@ -1050,6 +1056,7 @@ export interface SendApplicationRecoveryReminderParams {
   channel?: 'portal' | 'whatsapp' | 'both';
   customBody?: string;
   whatsappBody?: string;
+  ignoreCooldown?: boolean;
 }
 
 export interface ChannelOperationResult {
@@ -1068,6 +1075,17 @@ export interface SendApplicationRecoveryReminderResult {
   channels: {
     portal?: ChannelOperationResult;
     whatsapp?: ChannelOperationResult;
+  };
+  portal?: {
+    sent: boolean;
+    messageId?: string;
+    threadId?: string;
+    error?: string;
+  };
+  whatsapp?: {
+    sent: boolean;
+    status?: string;
+    error?: string;
   };
   lastReminderSentAt: string | null;
   lastWhatsAppSentAt: string | null;
@@ -1101,7 +1119,8 @@ export async function sendApplicationRecoveryReminder(
         entryId: params.entryId,
         adminUserId: params.adminUserId,
         adminRole: params.adminRole,
-        customBody: params.customBody
+        customBody: params.customBody,
+        ignoreCooldown: params.ignoreCooldown
       });
       result.channels.portal = {
         success: true,
@@ -1132,7 +1151,8 @@ export async function sendApplicationRecoveryReminder(
         entryId: params.entryId,
         adminUserId: params.adminUserId,
         adminRole: params.adminRole,
-        customBody: params.whatsappBody
+        customBody: params.whatsappBody,
+        ignoreCooldown: params.ignoreCooldown
       });
       result.channels.whatsapp = {
         success: true,
@@ -1154,6 +1174,23 @@ export async function sendApplicationRecoveryReminder(
         throw err;
       }
     }
+  }
+
+  // Populate top-level convenience channel objects for direct client consumption
+  if (result.channels.portal) {
+    result.portal = {
+      sent: Boolean(result.channels.portal.success),
+      messageId: result.channels.portal.messageId,
+      threadId: result.channels.portal.threadId,
+      error: result.channels.portal.error
+    };
+  }
+  if (result.channels.whatsapp) {
+    result.whatsapp = {
+      sent: Boolean(result.channels.whatsapp.success),
+      status: result.channels.whatsapp.status,
+      error: result.channels.whatsapp.error
+    };
   }
 
   if (chosenChannel === 'both') {
