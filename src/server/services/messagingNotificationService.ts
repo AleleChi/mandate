@@ -524,7 +524,7 @@ export async function notifyCompletionReminderSent(params: {
     if (parentPhone) {
       try {
         const snippet = messageBody.length > 250 ? `${messageBody.substring(0, 247)}...` : messageBody;
-        const waText = `Hello ${parentFirstName},\n\nWe need additional information to complete ${childFirstName}'s registration for the General Assembly Children & Teens Session:\n\n"${snippet}"\n\nPlease complete it in your Parent Portal here:\n${portalUrl}`;
+        const waText = `Hello ${parentFirstName},\n\nThis is a reminder regarding ${childFirstName}'s registration for The General Assembly Children & Teens Session:\n\n"${snippet}"\n\nImportant: If you have already filled in all the details, please ensure you review and click "Submit Application" so our team can review it.\n\nPlease complete and submit it here:\n${portalUrl}`;
 
         await sendWhatsApp(parentPhone, waText);
         console.log(`[notifyCompletionReminderSent] WhatsApp reminder dispatched to ${parentPhone}`);

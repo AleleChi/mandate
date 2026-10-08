@@ -87,9 +87,11 @@ export function generateDefaultWhatsAppNudgeBody(params: {
 }): string {
   return `Hello ${params.parentFirstName},
 
-${params.childFirstName}'s registration is still incomplete.
+${params.childFirstName}'s registration has not yet been submitted.
 
-Please sign in to your Koinonia Parent account to complete the application before registration closes on ${params.formattedDeadline}.`;
+Please sign in to your Koinonia Parent account to complete and submit the application before registration closes on ${params.formattedDeadline}.
+
+Important: If you have already filled in all the details, please remember to click the "Submit Application" button on the final review screen. Applications can only be reviewed after submission.`;
 }
 
 export interface AuthoritativeEntryContext {
@@ -187,11 +189,11 @@ export function generateDefaultReminderBody(params: {
 }): string {
   return `Hello ${params.parentFirstName},
 
-The registration for ${params.childFirstName} has not yet been completed.
+The registration for ${params.childFirstName} has not yet been submitted.
 
-Please sign in to your Parent account and complete the outstanding information before registration closes on ${params.formattedDeadline}.
+Please sign in to your Parent account to complete and submit the application before registration closes on ${params.formattedDeadline}.
 
-An application is only submitted for review after all required information has been completed.`;
+Important: If you have already filled in all required information, please proceed to the final review screen and click the "Submit Application" button. An application is only submitted for review after this final step is completed.`;
 }
 
 /**
@@ -359,11 +361,11 @@ export async function previewCompletionReminder(
     nextStepLabel = 'Continue application';
     body = `Hello ${context.parentFirstName},
 
-${context.childFirstName}'s registration has not yet been completed.
+The registration for ${context.childFirstName} has not yet been submitted.
 
-Please sign in to your Parent account and complete the outstanding information before registration closes on ${context.formattedDeadline}.
+Please sign in to your Parent account to complete and submit the application before registration closes on ${context.formattedDeadline}.
 
-The application will be submitted for review once all required information is complete.`;
+Important: If you have already filled in all required information, please proceed to the final review screen and click the "Submit Application" button. An application is only submitted for review after this final step is completed.`;
   } else if (needsAttentionCheck.needsAttention) {
     eligible = true;
     workflow = 'correction';

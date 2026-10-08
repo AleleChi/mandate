@@ -570,14 +570,19 @@ export async function sendApplicationCompletionReminderEmail(params: {
 }): Promise<SendEmailResult> {
   const childName = params.childName || 'your child';
   const suffix = childName.endsWith('s') ? '’' : '’s';
-  const subject = `Action required: Complete ${childName}${suffix} registration`;
+  const subject = `Action required: Complete and submit ${childName}${suffix} registration`;
   const firstName = getFirstName(params.parentFirstName);
   const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
   const portalUrl = params.parentPortalLink || buildPublicAppUrl('/parent/home');
 
-  const bodySnippet = params.messageBody
-    ? params.messageBody.trim().replace(/\n/g, '<br/>')
-    : `This is a friendly reminder that <strong>${childName}</strong>’s registration for Children &amp; Teens at The General Assembly is still incomplete.`;
+  let rawSnippet = params.messageBody
+    ? params.messageBody.trim()
+    : `The registration for ${childName} has not yet been submitted. Please sign in to Parent Access to complete and submit the application before registration closes.`;
+
+  // Prevent duplicate greeting inside the quote box when already present in the email header
+  rawSnippet = rawSnippet.replace(/^Hello\s+[^,\n]+,\s*/i, '');
+
+  const bodySnippet = rawSnippet.replace(/\n/g, '<br/>');
 
   const deadlineHtml = params.formattedDeadline
     ? `<p style="margin-top: 14px; color: #9A7326; font-weight: 500;">Registration deadline: <strong>${params.formattedDeadline}</strong></p>`
@@ -589,15 +594,18 @@ export async function sendApplicationCompletionReminderEmail(params: {
     <div style="background-color: #FAF8F4; border-left: 3px solid #C59B27; padding: 12px 16px; margin: 16px 0; border-radius: 4px; font-size: 14px; color: #27272A; line-height: 1.5;">
       ${bodySnippet}
     </div>
+    <div style="background-color: #FEF9EC; border: 1px solid #EAD89C; border-radius: 6px; padding: 12px 16px; margin: 16px 0; font-size: 13px; color: #8C6718; line-height: 1.5;">
+      <strong>Important reminder:</strong> Even if you have already filled in all the details, your application remains in draft until you proceed to the final review screen and click <strong>"Submit Application"</strong>. Only submitted applications can be reviewed by our team.
+    </div>
     ${deadlineHtml}
-    <p>Please open Parent Access to resume and complete your application.</p>
+    <p>Please open Parent Access to review, complete, and submit ${childName}’s application.</p>
     <br>
     <p style="margin-bottom: 0;">Thank you,<br>Koinonia Children and Teens</p>
   `;
 
-  const text = `${greeting}\n\nThis is a reminder regarding ${childName}’s registration for Children and Teens at The General Assembly:\n\n${params.messageBody || ''}\n\n${params.formattedDeadline ? `Registration deadline: ${params.formattedDeadline}\n\n` : ''}Please resume and complete your application here:\n${portalUrl}\n\nThank you,\nKoinonia Children and Teens`;
+  const text = `${greeting}\n\nThis is a reminder regarding ${childName}’s registration for Children and Teens at The General Assembly:\n\n${rawSnippet}\n\nImportant reminder: Even if you have already filled in all the details, your application remains in draft until you proceed to the final review screen and click "Submit Application". Only submitted applications can be reviewed by our team.\n\n${params.formattedDeadline ? `Registration deadline: ${params.formattedDeadline}\n\n` : ''}Please open Parent Access to review, complete, and submit your application:\n${portalUrl}\n\nThank you,\nKoinonia Children and Teens`;
 
-  const html = wrapHtmlTemplate(subject, bodyHtml, { label: 'Continue application', url: portalUrl });
+  const html = wrapHtmlTemplate(subject, bodyHtml, { label: 'Review & Submit Application', url: portalUrl });
 
   return sendEmail({ to: params.parentEmail, subject, html, text });
 }
