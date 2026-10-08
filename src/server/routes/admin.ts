@@ -1721,7 +1721,7 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
     const page = parseInt(req.query.page as string, 10) || 1;
     const limit = req.query.limit
       ? parseInt(req.query.limit as string, 10)
-      : (req.query.page ? 25 : 1000);
+      : (req.query.page ? 25 : 10000);
     const offset = (page - 1) * limit;
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
