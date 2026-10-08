@@ -154,7 +154,11 @@ export const AdminSignInView: React.FC<AdminSignInViewProps> = ({
       onNavigate('/admin/overview');
     } catch (err: any) {
       const parsed = extractApiError(err);
-      setError(parsed.message);
+      if (parsed.code === 'INVALID_CREDENTIALS' || parsed.message?.includes('session has expired') || parsed.message?.includes('Unauthorized') || parsed.message?.includes('Authentication required')) {
+        setError('Invalid email or password.');
+      } else {
+        setError(parsed.message || 'Invalid email or password.');
+      }
     } finally {
       setLoading(false);
     }

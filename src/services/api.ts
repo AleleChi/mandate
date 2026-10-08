@@ -140,6 +140,28 @@ export const api = {
 
     if (!res.ok) {
       if (res.status === 401) {
+        const isAuthEndpoint = [
+          '/sign-in',
+          '/login',
+          '/create-account',
+          '/passkeys/login'
+        ].some(p => endpoint.includes(p));
+
+        const rawMsg = data?.message || data?.error;
+        const errorCode = data?.code || (isAuthEndpoint ? 'INVALID_CREDENTIALS' : 'UNAUTHORIZED');
+
+        // On sign-in / login endpoints, or if explicit credential error was returned, never claim the session expired
+        if (isAuthEndpoint || errorCode === 'INVALID_CREDENTIALS') {
+          const authMsg = rawMsg || 'Email or password is incorrect.';
+          throw new ParentApiError(authMsg, 'Please check your credentials and try again.', errorCode, data, 401);
+        }
+
+        // If backend returned a specific error message other than token rejection, prioritize it
+        if (rawMsg && rawMsg !== 'Authentication required' && rawMsg !== 'Invalid or expired token' && rawMsg !== 'Unauthorized') {
+          throw new ParentApiError(rawMsg, 'Please try again.', errorCode, data, 401);
+        }
+
+        // Genuine session expiration on protected endpoints
         throw new ParentApiError('Your session has expired. Please sign in again.', 'Please sign in again to continue.', 'UNAUTHORIZED', data, 401);
       }
       if (res.status === 403) {

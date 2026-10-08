@@ -244,7 +244,7 @@ export const SignInView: React.FC<SignInViewProps> = ({
         return;
       }
 
-      if (code === 'INVALID_CREDENTIALS') {
+      if (code === 'INVALID_CREDENTIALS' || message.includes('session has expired') || message.includes('Unauthorized') || message.includes('Authentication required')) {
         setError('Email or password is incorrect.');
         return;
       }
