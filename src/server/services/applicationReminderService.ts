@@ -594,7 +594,7 @@ export async function sendCompletionReminder(
   }
 
   // 3. Atomic execution inside transaction
-  return await transaction(async () => {
+  const txResult = await transaction(async () => {
     // Re-check application state inside transaction to guard against stale composer
     const currentEntry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [params.entryId]);
     if (!currentEntry) {
@@ -839,19 +839,7 @@ export async function sendCompletionReminder(
     const insertedMessage = await queryOne('SELECT * FROM messages WHERE id = ?', [messageId]);
     const updatedThread = await queryOne('SELECT * FROM message_threads WHERE id = ?', [threadId]);
 
-    // Trigger Phase H notification, transactional email, WebPush and WhatsApp dispatch
-    await notifyCompletionReminderSent({
-      threadId,
-      messageId,
-      parentUserId: context.parentUser.id,
-      parentProfileId: context.parentProfile.id,
-      adminUserId: params.adminUserId,
-      eventId: context.event.id,
-      formattedDeadline: context.formattedDeadline
-    }).catch(e => console.error('[sendCompletionReminder] Realtime dispatch error:', e));
-
     return {
-      success: true,
       messageId,
       threadId,
       thread: updatedThread,
@@ -859,6 +847,26 @@ export async function sendCompletionReminder(
       cooldownEndsAt: new Date(Date.now() + REMINDER_COOLDOWN_MS).toISOString()
     };
   });
+
+  // Trigger Phase H notification, transactional email, WebPush and WhatsApp dispatch OUTSIDE the transaction
+  await notifyCompletionReminderSent({
+    threadId: txResult.threadId,
+    messageId: txResult.messageId,
+    parentUserId: context.parentUser.id,
+    parentProfileId: context.parentProfile.id,
+    adminUserId: params.adminUserId,
+    eventId: context.event.id,
+    formattedDeadline: context.formattedDeadline
+  }).catch(e => console.error('[sendCompletionReminder] Outbound dispatch error:', e));
+
+  return {
+    success: true,
+    messageId: txResult.messageId,
+    threadId: txResult.threadId,
+    thread: txResult.thread,
+    message: txResult.message,
+    cooldownEndsAt: txResult.cooldownEndsAt
+  };
 }
 
 export interface SendWhatsAppNudgeParams {
