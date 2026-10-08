@@ -381,31 +381,39 @@ export async function notifyCompletionReminderSent(params: {
   parentProfileId: string;
   adminUserId: string;
   eventId?: string | null;
+  formattedDeadline?: string;
 }) {
+  const now = new Date().toISOString();
+  const { threadId, messageId, parentUserId, parentProfileId, adminUserId, eventId, formattedDeadline } = params;
+
+  const notifId = `notif-rem-${messageId}-${parentUserId}`;
+  const title = "Complete your child's application";
+  const message = 'You have an important registration message from Koinonia.';
+  const deepLink = `/parent/messages/${threadId}`;
+
+  const metadataJson = JSON.stringify({
+    deepLink,
+    threadId,
+    action: 'View'
+  });
+
+  // 1. Resolve linked child
+  let linkedChildId: string | null = null;
   try {
-    const now = new Date().toISOString();
-    const { threadId, messageId, parentUserId, parentProfileId, adminUserId, eventId } = params;
-
-    const notifId = `notif-rem-${messageId}-${parentUserId}`;
-    const title = "Complete your child's application";
-    const message = 'You have an important registration message from Koinonia.';
-    const deepLink = `/parent/messages/${threadId}`;
-
-    const metadataJson = JSON.stringify({
-      deepLink,
-      threadId,
-      action: 'View'
-    });
-
-    // Resolve linked child for parent_notifications child_id column
     const threadRow = await queryOne('SELECT linked_child_id FROM message_threads WHERE id = ?', [threadId]);
-    const linkedChildId = threadRow?.linked_child_id || null;
+    linkedChildId = threadRow?.linked_child_id || null;
+  } catch (tErr) {
+    console.warn('[notifyCompletionReminderSent] Failed to query thread linked_child_id:', tErr);
+  }
 
+  // 2. In-App Notifications (PostgreSQL & SQLite compatible ON CONFLICT)
+  try {
     await execute(`
-      INSERT OR IGNORE INTO notifications (
+      INSERT INTO notifications (
         id, title, message, type, audience_role, audience_scope,
         event_id, child_id, parent_id, created_by_user_id, created_at, metadata_json
       ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, NULL, ?, ?, ?, ?)
+      ON CONFLICT (id) DO NOTHING
     `, [
       notifId,
       title,
@@ -417,13 +425,12 @@ export async function notifyCompletionReminderSent(params: {
       metadataJson
     ]);
 
-    // Also write to parent_notifications — /api/parent/notifications reads ONLY this table.
-    // Without this row the parent bell badge never increments.
     const pNotifId = `pnotif-rem-${messageId}`;
     await execute(`
-      INSERT OR IGNORE INTO parent_notifications (
+      INSERT INTO parent_notifications (
         id, parent_id, event_id, child_id, title, message, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (id) DO NOTHING
     `, [
       pNotifId,
       parentProfileId,
@@ -433,8 +440,12 @@ export async function notifyCompletionReminderSent(params: {
       message,
       now
     ]);
+  } catch (notifErr) {
+    console.error('[notifyCompletionReminderSent] Failed to record in-app notifications:', notifErr);
+  }
 
-    // Emit SSE strictly to that Parent user
+  // 3. Emit SSE strictly to that Parent user
+  try {
     emitSSEEventToUser(parentUserId, 'message.created', {
       threadId,
       messageId,
@@ -447,8 +458,12 @@ export async function notifyCompletionReminderSent(params: {
       notificationId: notifId,
       timestamp: now
     });
+  } catch (sseErr) {
+    console.error('[notifyCompletionReminderSent] Failed to emit SSE:', sseErr);
+  }
 
-    // Resolve details for outbound Email, Push, and WhatsApp dispatch
+  // 4. Resolve details for outbound Email, Push, and WhatsApp dispatch
+  try {
     const parentProfile = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [parentProfileId]);
     const parentUser = await queryOne('SELECT * FROM users WHERE id = ?', [parentUserId]);
     const parentEmail = parentProfile?.email || parentUser?.email;
@@ -467,36 +482,58 @@ export async function notifyCompletionReminderSent(params: {
     const messageBody = msgRow?.body || '';
     const portalUrl = buildPublicAppUrl(deepLink);
 
-    // 1. Dispatch Email notification to Parent
+    // 4a. Dispatch Email notification to Parent (CRITICAL: Await with delivery logging)
     if (parentEmail) {
-      sendApplicationCompletionReminderEmail({
-        parentEmail,
-        parentFirstName,
-        childName: childFirstName,
-        messageBody,
-        parentPortalLink: portalUrl
-      }).catch(err => console.error('[notifyCompletionReminderSent] Failed to dispatch reminder email:', err));
+      try {
+        console.log(`[notifyCompletionReminderSent] Dispatching completion reminder email to ${parentEmail} (child: ${childFirstName})...`);
+        const emailResult = await sendApplicationCompletionReminderEmail({
+          parentEmail,
+          parentFirstName,
+          childName: childFirstName,
+          messageBody,
+          formattedDeadline,
+          parentPortalLink: portalUrl
+        });
+        if (emailResult.success) {
+          console.log(`[notifyCompletionReminderSent] Email successfully sent to ${parentEmail} (provider: ${emailResult.provider}, id: ${emailResult.id})`);
+        } else {
+          console.error(`[notifyCompletionReminderSent] Email delivery failed for ${parentEmail}: provider=${emailResult.provider}, error=${emailResult.error}`);
+        }
+      } catch (emailErr) {
+        console.error('[notifyCompletionReminderSent] Unexpected error dispatching reminder email:', emailErr);
+      }
+    } else {
+      console.warn(`[notifyCompletionReminderSent] No parent email found for parentProfileId: ${parentProfileId}, parentUserId: ${parentUserId}`);
     }
 
-    // 2. Dispatch Web Push notification to Parent devices
-    sendWebPush(parentUserId, {
-      title: `Complete ${childFirstName}'s registration`,
-      body: messageBody.slice(0, 120) || 'You have an important registration message from Koinonia.',
-      metadata: {
-        url: deepLink,
-        threadId
-      }
-    }).catch(err => console.error('[notifyCompletionReminderSent] Failed to dispatch WebPush:', err));
+    // 4b. Dispatch Web Push notification to Parent devices
+    try {
+      await sendWebPush(parentUserId, {
+        title: `Complete ${childFirstName}'s registration`,
+        body: messageBody.slice(0, 120) || 'You have an important registration message from Koinonia.',
+        metadata: {
+          url: deepLink,
+          threadId
+        }
+      });
+    } catch (pushErr) {
+      console.error('[notifyCompletionReminderSent] Failed to dispatch WebPush:', pushErr);
+    }
 
-    // 3. Dispatch WhatsApp message to Parent
+    // 4c. Dispatch WhatsApp message to Parent
     if (parentPhone) {
-      const snippet = messageBody.length > 250 ? `${messageBody.substring(0, 247)}...` : messageBody;
-      const waText = `Hello ${parentFirstName},\n\nWe need additional information to complete ${childFirstName}'s registration for the General Assembly Children & Teens Session:\n\n"${snippet}"\n\nPlease complete it in your Parent Portal here:\n${portalUrl}`;
+      try {
+        const snippet = messageBody.length > 250 ? `${messageBody.substring(0, 247)}...` : messageBody;
+        const waText = `Hello ${parentFirstName},\n\nWe need additional information to complete ${childFirstName}'s registration for the General Assembly Children & Teens Session:\n\n"${snippet}"\n\nPlease complete it in your Parent Portal here:\n${portalUrl}`;
 
-      sendWhatsApp(parentPhone, waText).catch(err => console.error('[notifyCompletionReminderSent] Failed to dispatch WhatsApp reminder:', err));
+        await sendWhatsApp(parentPhone, waText);
+        console.log(`[notifyCompletionReminderSent] WhatsApp reminder dispatched to ${parentPhone}`);
+      } catch (waErr) {
+        console.error('[notifyCompletionReminderSent] Failed to dispatch WhatsApp reminder:', waErr);
+      }
     }
   } catch (err) {
-    console.error('[notifyCompletionReminderSent] Failed to dispatch reminder notification/SSE:', err);
+    console.error('[notifyCompletionReminderSent] Outbound dispatch error:', err);
   }
 }
 

@@ -97,6 +97,17 @@ function convertPlaceholders(sql: string): string {
   return sql.replace(/\?/g, () => `$${idx++}`);
 }
 
+function normalizePostgresSql(sql: string): string {
+  let pgSql = sql;
+  if (/insert\s+or\s+ignore\s+into/i.test(pgSql)) {
+    pgSql = pgSql.replace(/insert\s+or\s+ignore\s+into/gi, 'INSERT INTO');
+    if (!/on\s+conflict/i.test(pgSql)) {
+      pgSql = `${pgSql.trim()} ON CONFLICT DO NOTHING`;
+    }
+  }
+  return convertPlaceholders(pgSql);
+}
+
 import { AsyncLocalStorage } from 'async_hooks';
 
 const pgTxStorage = new AsyncLocalStorage<any>();
@@ -105,7 +116,7 @@ export async function query<T = any>(sql: string, params: any[] = []): Promise<T
   const db = getDb();
   if (isPostgres && pgPool) {
     if (pgInitPromise) await pgInitPromise;
-    const pgSql = convertPlaceholders(sql);
+    const pgSql = normalizePostgresSql(sql);
     const txClient = pgTxStorage.getStore();
     const runner = txClient || pgPool;
     try {
@@ -135,7 +146,7 @@ export async function execute(sql: string, params: any[] = []): Promise<{ change
   const db = getDb();
   if (isPostgres && pgPool) {
     if (pgInitPromise) await pgInitPromise;
-    const pgSql = convertPlaceholders(sql);
+    const pgSql = normalizePostgresSql(sql);
     const txClient = pgTxStorage.getStore();
     const runner = txClient || pgPool;
     try {

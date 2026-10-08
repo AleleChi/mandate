@@ -839,14 +839,15 @@ export async function sendCompletionReminder(
     const insertedMessage = await queryOne('SELECT * FROM messages WHERE id = ?', [messageId]);
     const updatedThread = await queryOne('SELECT * FROM message_threads WHERE id = ?', [threadId]);
 
-    // Trigger Phase H notification and SSE dispatch (non-blocking)
-    notifyCompletionReminderSent({
+    // Trigger Phase H notification, transactional email, WebPush and WhatsApp dispatch
+    await notifyCompletionReminderSent({
       threadId,
       messageId,
       parentUserId: context.parentUser.id,
       parentProfileId: context.parentProfile.id,
       adminUserId: params.adminUserId,
-      eventId: context.event.id
+      eventId: context.event.id,
+      formattedDeadline: context.formattedDeadline
     }).catch(e => console.error('[sendCompletionReminder] Realtime dispatch error:', e));
 
     return {
