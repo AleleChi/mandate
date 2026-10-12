@@ -255,7 +255,7 @@ export function resolveMessageTokens(template: string, context: RecipientTokenCo
   const pLink = context.passUrl || buildParentPassUrl();
   const rLink = context.reviewUrl || buildParentStatusUrl();
   const pTime = (context.pickupTime || '').trim() || '4:00 PM';
-  const sContact = (context.supportContact || '').trim() || '+234 803 123 4567';
+  const sContact = (context.supportContact || '').trim() || (process.env.SUPPORT_PHONE_NUMBER?.trim() || '');
 
   let result = template
     .replace(/\{Parent name\}/gi, pName)

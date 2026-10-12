@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { query, queryOne, execute, transaction } from '../db';
 import { sendEmail } from './email';
 import { sendWebPush } from './push';
+import { getWhatsAppProvider } from './whatsapp';
 
 // Helper to format date/time in Koinonia's timezone (Africa/Lagos)
 export function formatInTimezone(date: Date, timezone: string = 'Africa/Lagos'): string {
@@ -39,19 +40,37 @@ export function formatWhatsAppTo(phone: string): string {
 
 // WhatsApp sending helper with robust Twilio Sandbox integration
 export async function sendWhatsApp(to: string, message: string): Promise<{ success: boolean; error?: string; messageSid?: string }> {
-  const provider = process.env.WHATSAPP_PROVIDER;
-  if (provider !== 'twilio') {
-    console.log(`[WhatsApp Simulated] To: ${to}\nMessage: ${message}\n-------------------`);
-    return { success: true };
+  const rawProvider = (process.env.WHATSAPP_PROVIDER || '').trim().toLowerCase();
+  const effectiveProvider = !rawProvider ? 'twilio' : rawProvider;
+
+  if (effectiveProvider === 'zoho') {
+    const waProvider = getWhatsAppProvider();
+    const res = await waProvider.sendSessionMessage({ to, body: message });
+    return {
+      success: res.success,
+      error: res.error,
+      messageSid: res.messageId
+    };
+  }
+
+  if (effectiveProvider !== 'twilio') {
+    if (process.env.NODE_ENV !== 'production' && effectiveProvider === 'simulated') {
+      console.log(`[WhatsApp Simulated] To: ${to}\nMessage: ${message}\n-------------------`);
+      return { success: true };
+    }
+    return {
+      success: false,
+      error: `WhatsApp provider "${rawProvider}" is unsupported.`
+    };
   }
 
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886';
+  const from = process.env.TWILIO_WHATSAPP_FROM || (process.env.TWILIO_WHATSAPP_SANDBOX === 'true' ? 'whatsapp:+14155238886' : '');
 
-  if (!accountSid || !authToken) {
-    console.error('[WhatsApp Error] Missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN');
-    return { success: false, error: 'Twilio provider credentials are not fully configured in backend.' };
+  if (!accountSid || !authToken || !from) {
+    console.error('[WhatsApp Error] Missing TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, or TWILIO_WHATSAPP_FROM');
+    return { success: false, error: 'Twilio provider credentials or sender number (TWILIO_WHATSAPP_FROM) are not configured in backend.' };
   }
 
   const formattedTo = formatWhatsAppTo(to);

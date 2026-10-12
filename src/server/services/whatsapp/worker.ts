@@ -496,6 +496,8 @@ export async function processQueuedWhatsAppJobs(
               .replace(/\{Volunteer\s+name\}/gi, recipientName);
           }
 
+          const supportContact = (process.env.SUPPORT_PHONE_NUMBER || process.env.ZOHO_WHATSAPP_FROM || '').trim();
+
           messageBody = resolveMessageTokens(rendered, {
             volunteerName: recipientName,
             team: vTeam,
@@ -503,7 +505,7 @@ export async function processQueuedWhatsAppJobs(
             parentName: recipientName,
             childName: recipientName,
             eventName,
-            supportContact: '+234 803 123 4567'
+            supportContact
           });
         } else {
           const parentDisplayName = (parent?.full_name || '').trim() || 'Parent';
@@ -513,6 +515,8 @@ export async function processQueuedWhatsAppJobs(
               .replace(/^Dear\s+(?:Parents?|\{Parent\s+name\}),?/i, `Dear ${parentDisplayName},`)
               .replace(/\{Parent\s+name\}/gi, parentDisplayName);
           }
+          const supportContact = (process.env.SUPPORT_PHONE_NUMBER || process.env.ZOHO_WHATSAPP_FROM || '').trim();
+
           messageBody = resolveMessageTokens(rendered, {
             parentName: parentDisplayName,
             eventName,
@@ -520,7 +524,7 @@ export async function processQueuedWhatsAppJobs(
             reviewUrl,
             passUrl,
             pickupTime: '4:00 PM',
-            supportContact: '+234 803 123 4567'
+            supportContact
           });
         }
 

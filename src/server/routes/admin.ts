@@ -7263,11 +7263,9 @@ router.get('/messages/settings', async (req: AuthenticatedRequest, res: Response
     const emailProvider = resolveEmailProvider();
     const emailEnabled = isEmailConfigured();
 
-    const whatsappProvider = (process.env.WHATSAPP_PROVIDER || 'twilio').toLowerCase();
-    let whatsappEnabled = false;
-    if (whatsappProvider === 'twilio') {
-      whatsappEnabled = !!process.env.TWILIO_ACCOUNT_SID && !!process.env.TWILIO_AUTH_TOKEN;
-    }
+    const whatsappReadiness = getWhatsAppProviderReadiness();
+    const whatsappEnabled = whatsappReadiness.configured;
+    const whatsappProvider = whatsappReadiness.provider;
 
     const settings = await queryOne(`
       SELECT sender_name as senderName, reply_to_email as replyToEmail
@@ -7283,7 +7281,7 @@ router.get('/messages/settings', async (req: AuthenticatedRequest, res: Response
       emailEnabled,
       whatsappEnabled,
       emailProvider: ['zeptomail', 'resend', 'smtp'].includes(emailProvider) ? emailProvider : null,
-      whatsappProvider: whatsappProvider === 'twilio' ? 'twilio' : null
+      whatsappProvider: whatsappEnabled ? whatsappProvider : null
     });
   } catch (err: any) {
     console.error('Error fetching admin messages settings:', err);

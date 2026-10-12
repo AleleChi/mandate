@@ -1,9 +1,10 @@
-import { Router, Request, Response } from 'express';
+import express, { Router, Request, Response } from 'express';
 import { execute, queryOne } from '../db';
 import crypto from 'crypto';
 import { getWhatsAppProvider, logWhatsAppDelivery, WhatsAppStatusUpdate } from '../services/whatsapp';
 import { TwilioWhatsAppProvider } from '../services/whatsapp/twilioProvider';
 import { MetaWhatsAppProvider } from '../services/whatsapp/metaProvider';
+import { ZohoWhatsAppProvider } from '../services/whatsapp/zohoProvider';
 
 const router = Router();
 
@@ -15,10 +16,71 @@ function getRequestFullUrl(req: Request): string {
 }
 
 /**
+ * Evaluates whether an incoming delivery status transition is valid according to
+ * WhatsApp message lifecycle guarantees.
+ *
+ * Rules:
+ * 1. queued -> sent -> delivered -> read
+ * 2. Failure states (failed, undelivered, process_failed) may transition from queued or sent.
+ * 3. Once delivered or read, subsequent failure or regress statuses are strictly BLOCKED.
+ * 4. Duplicate same-status transitions are idempotent (allowed).
+ */
+export function canTransitionStatus(currentStatus: string, incomingStatus: string): boolean {
+  const normCurrent = currentStatus.toLowerCase().trim();
+  const normIncoming = incomingStatus.toLowerCase().trim();
+
+  // 1. Same-status is idempotent
+  if (normCurrent === normIncoming) {
+    return true;
+  }
+
+  // 2. Terminal state: 'read' cannot regress to ANY previous or failure state
+  if (normCurrent === 'read') {
+    return false;
+  }
+
+  // 3. 'delivered' can only advance to 'read'.
+  // Explicitly blocks: sent, queued, failed, undelivered, process_failed
+  if (normCurrent === 'delivered') {
+    return normIncoming === 'read';
+  }
+
+  // 4. 'failed' (or undelivered) cannot regress back to queued or sent
+  if (normCurrent === 'failed' || normCurrent === 'undelivered' || normCurrent === 'process_failed') {
+    return false;
+  }
+
+  // 5. 'sent' can advance to 'delivered', 'read', or fail
+  if (normCurrent === 'sent') {
+    return (
+      normIncoming === 'delivered' ||
+      normIncoming === 'read' ||
+      normIncoming === 'failed' ||
+      normIncoming === 'undelivered' ||
+      normIncoming === 'process_failed'
+    );
+  }
+
+  // 6. 'queued' can transition to sent, delivered, read, or failed
+  if (normCurrent === 'queued') {
+    return (
+      normIncoming === 'sent' ||
+      normIncoming === 'delivered' ||
+      normIncoming === 'read' ||
+      normIncoming === 'failed' ||
+      normIncoming === 'undelivered' ||
+      normIncoming === 'process_failed'
+    );
+  }
+
+  return true;
+}
+
+/**
  * Common idempotent handler for delivery status callbacks from providers.
  * Updates whatsapp_delivery_logs and linked notification_jobs.
  */
-async function handleDeliveryStatusUpdate(statusUpdate: WhatsAppStatusUpdate): Promise<void> {
+export async function handleDeliveryStatusUpdate(statusUpdate: WhatsAppStatusUpdate): Promise<void> {
   const now = statusUpdate.timestamp || new Date().toISOString();
 
   // 1. Locate matching log entry by provider + provider_message_id
@@ -28,47 +90,38 @@ async function handleDeliveryStatusUpdate(statusUpdate: WhatsAppStatusUpdate): P
   `, [statusUpdate.provider, statusUpdate.messageId]);
 
   if (existingLog) {
-    const statusRanks: Record<string, number> = {
-      queued: 1,
-      sent: 2,
-      delivered: 3,
-      read: 4,
-      failed: 5
-    };
-
-    const currentRank = statusRanks[existingLog.status] || 0;
-    const incomingRank = statusRanks[statusUpdate.status] || 0;
-
-    // Progression safeguard: don't regress status (e.g. read back to delivered)
-    if (statusUpdate.status === 'failed' || incomingRank >= currentRank) {
-      const sentAt = statusUpdate.status === 'sent' ? now : undefined;
-      const deliveredAt = statusUpdate.status === 'delivered' ? now : undefined;
-      const readAt = statusUpdate.status === 'read' ? now : undefined;
-      const failedAt = statusUpdate.status === 'failed' ? now : undefined;
-
-      await execute(`
-        UPDATE whatsapp_delivery_logs SET
-          status = ?,
-          error_code = COALESCE(?, error_code),
-          error_message = COALESCE(?, error_message),
-          sent_at = COALESCE(?, sent_at),
-          delivered_at = COALESCE(?, delivered_at),
-          read_at = COALESCE(?, read_at),
-          failed_at = COALESCE(?, failed_at),
-          updated_at = ?
-        WHERE id = ?
-      `, [
-        statusUpdate.status,
-        statusUpdate.errorCode || null,
-        statusUpdate.errorMessage || null,
-        sentAt || null,
-        deliveredAt || null,
-        readAt || null,
-        failedAt || null,
-        now,
-        existingLog.id
-      ]);
+    // Progression safeguard: don't regress status or overwrite confirmed delivered/read with failure
+    if (!canTransitionStatus(existingLog.status, statusUpdate.status)) {
+      return;
     }
+
+    const sentAt = statusUpdate.status === 'sent' ? now : undefined;
+    const deliveredAt = statusUpdate.status === 'delivered' ? now : undefined;
+    const readAt = statusUpdate.status === 'read' ? now : undefined;
+    const failedAt = statusUpdate.status === 'failed' ? now : undefined;
+
+    await execute(`
+      UPDATE whatsapp_delivery_logs SET
+        status = ?,
+        error_code = COALESCE(?, error_code),
+        error_message = COALESCE(?, error_message),
+        sent_at = COALESCE(?, sent_at),
+        delivered_at = COALESCE(?, delivered_at),
+        read_at = COALESCE(?, read_at),
+        failed_at = COALESCE(?, failed_at),
+        updated_at = ?
+      WHERE id = ?
+    `, [
+      statusUpdate.status,
+      statusUpdate.errorCode || null,
+      statusUpdate.errorMessage || null,
+      sentAt || null,
+      deliveredAt || null,
+      readAt || null,
+      failedAt || null,
+      now,
+      existingLog.id
+    ]);
 
     // 2. If linked to notification_jobs, update job status
     if (existingLog.job_id) {
@@ -291,6 +344,97 @@ router.post('/meta/whatsapp', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('Error handling Meta WhatsApp webhook:', err);
     return res.status(500).json({ error: err.message || 'Meta webhook processing failed.' });
+  }
+});
+
+// ==========================================
+// 3. ZOHO WHATSAPP CPAAS WEBHOOKS
+// ==========================================
+
+// POST /api/webhooks/zoho/whatsapp
+// Receives inbound messages and delivery status events from Zoho CPaaS
+router.post('/zoho/whatsapp', express.raw({ type: '*/*', limit: '10mb' }), async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const zohoProvider = new ZohoWhatsAppProvider();
+
+    const rawBodyBuffer = Buffer.isBuffer(req.body) ? req.body : (req as any).rawBody;
+    const rawBodyString = rawBodyBuffer ? rawBodyBuffer.toString('utf-8') : (typeof req.body === 'string' ? req.body : undefined);
+
+    // Verify signature in production or if secret is configured
+    if (process.env.ZOHO_WHATSAPP_WEBHOOK_SECRET || process.env.NODE_ENV === 'production') {
+      const isValid = zohoProvider.verifyWebhookSignature({
+        headers: req.headers,
+        body: req.body,
+        rawBody: rawBodyBuffer || rawBodyString
+      });
+
+      if (!isValid) {
+        console.warn('[Zoho Webhook] Rejected: Invalid webhook signature.');
+        return res.status(403).json({ error: 'Invalid webhook signature.' });
+      }
+    }
+
+    // Safely extract and decode payload whether received as Buffer, URL-encoded string, or JSON
+    let payloadToProcess = req.body;
+    if (Buffer.isBuffer(req.body) || typeof req.body === 'string') {
+      const bodyStr = Buffer.isBuffer(req.body) ? req.body.toString('utf-8') : req.body;
+      let decodedStr = bodyStr;
+      try {
+        decodedStr = decodeURIComponent(bodyStr.replace(/\+/g, '%20'));
+      } catch {
+        decodedStr = bodyStr;
+      }
+      const firstEq = decodedStr.indexOf('=');
+      const candidateStr = firstEq !== -1 ? decodedStr.substring(firstEq + 1) : decodedStr;
+      try {
+        payloadToProcess = JSON.parse(candidateStr);
+      } catch {
+        try {
+          payloadToProcess = JSON.parse(decodedStr);
+        } catch {
+          payloadToProcess = candidateStr;
+        }
+      }
+    } else if (req.body && typeof req.body === 'object' && typeof req.body.data === 'string') {
+      try {
+        payloadToProcess = JSON.parse(req.body.data);
+      } catch {
+        payloadToProcess = req.body;
+      }
+    }
+
+    // 1. Process inbound user reply if present
+    const inbound = zohoProvider.parseInbound(payloadToProcess);
+    if (inbound && inbound.from && inbound.body) {
+      console.log(`[Zoho Inbound WhatsApp] Message received. ID: ${inbound.messageId}`);
+
+      const notifId = `notif-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO notifications (
+          id, title, message, type, audience_role, audience_scope, created_at, priority, channel, metadata_json
+        ) VALUES (?, ?, ?, 'incoming_reply', 'admin', 'all', ?, 'normal', 'in-app', ?)
+      `, [
+        notifId,
+        'Incoming WhatsApp reply',
+        `New WhatsApp message received: "${inbound.body.substring(0, 60)}${inbound.body.length > 60 ? '...' : ''}"`,
+        new Date().toISOString(),
+        JSON.stringify({ messageId: inbound.messageId, provider: 'zoho' })
+      ]);
+    }
+
+    // 2. Process delivery/read/failure status updates via common monotonic handler
+    const statusUpdate = zohoProvider.parseStatus(payloadToProcess);
+    if (statusUpdate) {
+      console.log(`[Zoho WhatsApp Status] ID: ${statusUpdate.messageId}, Status: ${statusUpdate.status}`);
+      await handleDeliveryStatusUpdate(statusUpdate);
+      return res.status(200).json({ success: true, messageId: statusUpdate.messageId, status: statusUpdate.status });
+    }
+
+    return res.status(200).json({ success: true });
+  } catch (err: any) {
+    console.error('Error handling Zoho WhatsApp webhook:', err);
+    return res.status(500).json({ error: err.message || 'Zoho webhook processing failed.' });
   }
 });
 

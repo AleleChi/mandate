@@ -16,13 +16,13 @@ export class TwilioWhatsAppProvider implements WhatsAppProvider {
     return {
       accountSid: process.env.TWILIO_ACCOUNT_SID || '',
       authToken: process.env.TWILIO_AUTH_TOKEN || '',
-      fromNumber: process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886'
+      fromNumber: process.env.TWILIO_WHATSAPP_FROM || (process.env.TWILIO_WHATSAPP_SANDBOX === 'true' ? 'whatsapp:+14155238886' : '')
     };
   }
 
   async sendTemplate(params: SendTemplateParams): Promise<ProviderSendResult> {
     // For Twilio, template parameters are mapped into the message body or Content SID
-    const renderedBody = params.parameters.map(p => p.text || '').join(' ');
+    const renderedBody = (params.parameters || []).map(p => p.text || '').join(' ');
     return this.sendSessionMessage({
       to: params.to,
       body: renderedBody,
@@ -39,6 +39,15 @@ export class TwilioWhatsAppProvider implements WhatsAppProvider {
         provider: this.name,
         status: 'failed',
         error: 'Twilio credentials (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN) are unconfigured.'
+      };
+    }
+
+    if (!fromNumber) {
+      return {
+        success: false,
+        provider: this.name,
+        status: 'failed',
+        error: 'Twilio sender number (TWILIO_WHATSAPP_FROM) is unconfigured.'
       };
     }
 
