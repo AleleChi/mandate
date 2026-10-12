@@ -361,8 +361,8 @@ router.post('/zoho/whatsapp', express.raw({ type: '*/*', limit: '10mb' }), async
     const rawBodyBuffer = Buffer.isBuffer(req.body) ? req.body : (req as any).rawBody;
     const rawBodyString = rawBodyBuffer ? rawBodyBuffer.toString('utf-8') : (typeof req.body === 'string' ? req.body : undefined);
 
-    // Verify signature in production or if secret is configured
-    if (process.env.ZOHO_WHATSAPP_WEBHOOK_SECRET || process.env.NODE_ENV === 'production') {
+    // Verify signature if secret is configured (matches Twilio and Meta behavior for initial webhook setup)
+    if (process.env.ZOHO_WHATSAPP_WEBHOOK_SECRET) {
       const isValid = zohoProvider.verifyWebhookSignature({
         headers: req.headers,
         body: req.body,
