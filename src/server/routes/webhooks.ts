@@ -352,8 +352,9 @@ router.post('/meta/whatsapp', async (req: Request, res: Response) => {
 // ==========================================
 
 // POST /api/webhooks/zoho/whatsapp
+// POST /api/webhooks/zoho/whatsapp
 // Receives inbound messages and delivery status events from Zoho CPaaS
-router.post('/zoho/whatsapp', express.raw({ type: '*/*', limit: '10mb' }), async (req: Request, res: Response) => {
+const handleZohoWebhook = async (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   try {
     const zohoProvider = new ZohoWhatsAppProvider();
@@ -361,19 +362,9 @@ router.post('/zoho/whatsapp', express.raw({ type: '*/*', limit: '10mb' }), async
     const rawBodyBuffer = Buffer.isBuffer(req.body) ? req.body : (req as any).rawBody;
     const rawBodyString = rawBodyBuffer ? rawBodyBuffer.toString('utf-8') : (typeof req.body === 'string' ? req.body : undefined);
 
-    // Verify signature if secret is configured (matches Twilio and Meta behavior for initial webhook setup)
-    if (process.env.ZOHO_WHATSAPP_WEBHOOK_SECRET) {
-      const isValid = zohoProvider.verifyWebhookSignature({
-        headers: req.headers,
-        body: req.body,
-        rawBody: rawBodyBuffer || rawBodyString
-      });
-
-      if (!isValid) {
-        console.warn('[Zoho Webhook] Rejected: Invalid webhook signature.');
-        return res.status(403).json({ error: 'Invalid webhook signature.' });
-      }
-    }
+    const hasSignatureHeader = Boolean(
+      req.headers['producer-signature'] || req.headers['Producer-Signature']
+    );
 
     // Safely extract and decode payload whether received as Buffer, URL-encoded string, or JSON
     let payloadToProcess = req.body;
@@ -404,8 +395,30 @@ router.post('/zoho/whatsapp', express.raw({ type: '*/*', limit: '10mb' }), async
       }
     }
 
-    // 1. Process inbound user reply if present
+    // 1. Check for inbound message or delivery status event
     const inbound = zohoProvider.parseInbound(payloadToProcess);
+    const statusUpdate = zohoProvider.parseStatus(payloadToProcess);
+    const hasEvent = Boolean(inbound || statusUpdate);
+
+    // Signature Verification:
+    // - Always required if signature header is provided (e.g. testing signature or production event)
+    // - Required on actual events if webhook secret is configured
+    // - Initial verification probe (Zoho "Verify" button test ping with no events and no signature)
+    //   is acknowledged with 200 OK so that setup succeeds before or after secret entry.
+    if (hasSignatureHeader || (process.env.ZOHO_WHATSAPP_WEBHOOK_SECRET && hasEvent)) {
+      const isValid = zohoProvider.verifyWebhookSignature({
+        headers: req.headers,
+        body: req.body,
+        rawBody: rawBodyBuffer || rawBodyString
+      });
+
+      if (!isValid) {
+        console.warn('[Zoho Webhook] Rejected: Invalid webhook signature.');
+        return res.status(403).json({ error: 'Invalid webhook signature.' });
+      }
+    }
+
+    // 2. Process inbound user reply if present
     if (inbound && inbound.from && inbound.body) {
       console.log(`[Zoho Inbound WhatsApp] Message received. ID: ${inbound.messageId}`);
 
@@ -423,19 +436,37 @@ router.post('/zoho/whatsapp', express.raw({ type: '*/*', limit: '10mb' }), async
       ]);
     }
 
-    // 2. Process delivery/read/failure status updates via common monotonic handler
-    const statusUpdate = zohoProvider.parseStatus(payloadToProcess);
+    // 3. Process delivery/read/failure status updates via common monotonic handler
     if (statusUpdate) {
       console.log(`[Zoho WhatsApp Status] ID: ${statusUpdate.messageId}, Status: ${statusUpdate.status}`);
       await handleDeliveryStatusUpdate(statusUpdate);
       return res.status(200).json({ success: true, messageId: statusUpdate.messageId, status: statusUpdate.status });
     }
 
-    return res.status(200).json({ success: true });
+    // Probe acknowledgment (unauthenticated setup ping)
+    return res.status(200).json({ success: true, message: 'Zoho webhook verified.' });
   } catch (err: any) {
     console.error('Error handling Zoho WhatsApp webhook:', err);
     return res.status(500).json({ error: err.message || 'Zoho webhook processing failed.' });
   }
+};
+
+const rawMiddleware = express.raw({ type: '*/*', limit: '10mb' });
+
+// Mount Zoho handler on canonical path, short path, and root webhook path
+router.post('/zoho/whatsapp', rawMiddleware, handleZohoWebhook);
+router.post('/zoho', rawMiddleware, handleZohoWebhook);
+router.post('/', rawMiddleware, handleZohoWebhook);
+
+// GET reachability probes
+router.get('/zoho/whatsapp', (_req: Request, res: Response) => {
+  res.status(200).json({ status: 'ok', service: 'zoho-whatsapp-webhook' });
+});
+router.get('/zoho', (_req: Request, res: Response) => {
+  res.status(200).json({ status: 'ok', service: 'zoho-whatsapp-webhook' });
+});
+router.get('/', (_req: Request, res: Response) => {
+  res.status(200).json({ status: 'ok', service: 'webhooks' });
 });
 
 export default router;
