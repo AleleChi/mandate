@@ -39,13 +39,13 @@ export function formatWhatsAppTo(phone: string): string {
 }
 
 // WhatsApp sending helper with robust Twilio Sandbox integration
-export async function sendWhatsApp(to: string, message: string): Promise<{ success: boolean; error?: string; messageSid?: string }> {
+export async function sendWhatsApp(to: string, message: string, intent?: string): Promise<{ success: boolean; error?: string; messageSid?: string }> {
   const rawProvider = (process.env.WHATSAPP_PROVIDER || '').trim().toLowerCase();
   const effectiveProvider = !rawProvider ? 'twilio' : rawProvider;
 
   if (effectiveProvider === 'zoho') {
     const waProvider = getWhatsAppProvider();
-    const res = await waProvider.sendSessionMessage({ to, body: message });
+    const res = await waProvider.sendSessionMessage({ to, body: message, intent });
     return {
       success: res.success,
       error: res.error,

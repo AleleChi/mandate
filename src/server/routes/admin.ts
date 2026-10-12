@@ -3096,7 +3096,12 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
 
       // 2. Dispatch WhatsApp if phone is available
       if (app.parent_phone) {
-        await sendWhatsApp(app.parent_phone, message).catch(err => console.error('Failed to send review WhatsApp notification:', err));
+        const decisionIntent = finalStatus === 'pass_ready' ? 'pass_ready'
+          : finalStatus === 'selected' ? 'child_approved'
+          : finalStatus === 'waiting_list' ? 'child_waitlisted'
+          : status === 'not_selected' ? 'child_not_selected'
+          : 'review_decision';
+        await sendWhatsApp(app.parent_phone, message, decisionIntent).catch(err => console.error('Failed to send review WhatsApp notification:', err));
       }
 
       // 3. Create In-App Notification
@@ -3642,7 +3647,12 @@ router.post('/applications/bulk-review', authMiddleware, async (req: Authenticat
         }
 
         if (app.parent_phone) {
-          await sendWhatsApp(app.parent_phone, message).catch(err => console.error('Failed to send bulk review WhatsApp notification:', err));
+          const decisionIntent = finalDecision === 'pass_ready' ? 'pass_ready'
+            : finalDecision === 'selected' ? 'child_approved'
+            : finalDecision === 'waiting_list' ? 'child_waitlisted'
+            : decision === 'not_selected' ? 'child_not_selected'
+            : 'review_decision';
+          await sendWhatsApp(app.parent_phone, message, decisionIntent).catch(err => console.error('Failed to send bulk review WhatsApp notification:', err));
         }
 
         const notifId = `notif-${crypto.randomUUID()}`;

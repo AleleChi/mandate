@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { query, queryOne, execute, transaction } from '../db';
 import { authMiddleware, AuthenticatedRequest } from '../auth';
 import { sendChildReviewReceivedEmail } from '../services/email';
+import { sendWhatsApp } from '../services/notifications';
 import { validateParentProfile, validateChildDraftStep, validatePhoneNumber, validateChildName, validateDateOfBirth, isValidUploadedPhoto } from '../utils/validation';
 import { resolveCountryIso, resolveWhatsAppCountryIso, getCountryByIso, inferCountryIsoFromE164 } from '../../utils/countries';
 import { normalizePhoneNumberToE164 } from '../utils/phone';
@@ -1221,6 +1222,16 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
       childName: c.full_name,
       childStatusLink
     }).catch(() => {});
+  }
+
+  const parentPhone = req.parentProfile?.whatsapp_number || req.parentProfile?.phone_number;
+  if (parentPhone) {
+    const pName = (req.parentProfile?.full_name || '').split(' ')[0] || 'Parent';
+    const cName = c.full_name || 'your child';
+    const waText = `Hello ${pName},\n\nWe have received ${cName}'s application for ${currentEvent.title || 'the event'}. It is currently under review by our team.\n\nYou will receive a message when there is a decision.`;
+    sendWhatsApp(parentPhone, waText, 'child_under_review').catch(err => {
+      console.error('[ParentReview] Failed to dispatch WhatsApp under-review message:', err);
+    });
   }
 
   const mapped = await mapChildToFrontend(c, updatedEntry, pickup, req.parentProfile.id, false, currentEventId);

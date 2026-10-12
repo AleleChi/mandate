@@ -38,42 +38,53 @@ export interface ResolvedZohoTemplate {
  * Resolves configured template key or alias for a given intent or template name.
  */
 export function resolveZohoTemplateConfig(intentOrName?: string): ResolvedZohoTemplate | null {
-  if (!intentOrName) {
-    const defaultVal = process.env.ZOHO_WA_DEFAULT_TEMPLATE?.trim();
-    if (defaultVal) return parseTemplateValue(defaultVal);
-    return null;
-  }
-
-  const clean = intentOrName.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  const clean = intentOrName ? intentOrName.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_') : '';
 
   // Intent-specific environment variable lookups
   const intentMap: Record<string, string | undefined> = {
-    registration_ack: process.env.ZOHO_WA_TEMPLATE_REGISTRATION_ACK,
-    registration_acknowledgement: process.env.ZOHO_WA_TEMPLATE_REGISTRATION_ACK,
-    review_decision: process.env.ZOHO_WA_TEMPLATE_REVIEW_DECISION,
+    registration_ack: process.env.ZOHO_WA_TEMPLATE_REGISTRATION_ACK || process.env.ZOHO_WA_TEMPLATE_KOINONIA_REGISTRATION_ACK || process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY,
+    registration_acknowledgement: process.env.ZOHO_WA_TEMPLATE_REGISTRATION_ACK || process.env.ZOHO_WA_TEMPLATE_KOINONIA_REGISTRATION_ACK || process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY,
+    review_decision: process.env.ZOHO_WA_TEMPLATE_REVIEW_DECISION || process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_APPROVED,
+    child_approved: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_APPROVED || process.env.ZOHO_WA_TEMPLATE_REVIEW_DECISION,
+    child_under_review: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_UNDER_REVIEW,
+    under_review: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_UNDER_REVIEW,
+    child_not_selected: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_NOT_SELECTED,
+    not_selected: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_NOT_SELECTED,
+    child_waitlisted: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_WAITLISTED,
+    waiting_list: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_WAITLISTED,
+    pass_ready: process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY || process.env.ZOHO_WA_TEMPLATE_REGISTRATION_ACK,
     return_to_draft: process.env.ZOHO_WA_TEMPLATE_RETURN_TO_DRAFT,
-    completion_reminder: process.env.ZOHO_WA_TEMPLATE_COMPLETION_REMINDER,
+    completion_reminder: process.env.ZOHO_WA_TEMPLATE_COMPLETION_REMINDER || process.env.ZOHO_WA_TEMPLATE_KOINONIA_APPLICATION_INCOMPLETE,
     inquiry_reply: process.env.ZOHO_WA_TEMPLATE_INQUIRY_REPLY,
     volunteer_reply: process.env.ZOHO_WA_TEMPLATE_VOLUNTEER_REPLY,
     duty_reminder: process.env.ZOHO_WA_TEMPLATE_DUTY_REMINDER,
     pickup_reminder: process.env.ZOHO_WA_TEMPLATE_PICKUP_REMINDER,
-    checkin_opening: process.env.ZOHO_WA_TEMPLATE_CHECKIN_OPENING,
-    broadcast: process.env.ZOHO_WA_TEMPLATE_BROADCAST,
-    manual_broadcast: process.env.ZOHO_WA_TEMPLATE_BROADCAST,
+    checkin_opening: process.env.ZOHO_WA_TEMPLATE_CHECKIN_OPENING || process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHECKIN_REMINDER,
+    broadcast: process.env.ZOHO_WA_TEMPLATE_BROADCAST || process.env.ZOHO_WA_DEFAULT_TEMPLATE || process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY,
+    manual_broadcast: process.env.ZOHO_WA_TEMPLATE_BROADCAST || process.env.ZOHO_WA_DEFAULT_TEMPLATE,
     escalation: process.env.ZOHO_WA_TEMPLATE_ESCALATION,
-    super_admin_test: process.env.ZOHO_WA_TEMPLATE_TEST,
-    test: process.env.ZOHO_WA_TEMPLATE_TEST
+    super_admin_test: process.env.ZOHO_WA_TEMPLATE_TEST || process.env.ZOHO_WA_DEFAULT_TEMPLATE,
+    test: process.env.ZOHO_WA_TEMPLATE_TEST || process.env.ZOHO_WA_DEFAULT_TEMPLATE
   };
 
-  const matchedEnv = intentMap[clean] || process.env[`ZOHO_WA_TEMPLATE_${clean.toUpperCase()}`];
-  if (matchedEnv?.trim()) {
-    return parseTemplateValue(matchedEnv.trim());
+  if (clean) {
+    const matchedEnv = intentMap[clean] || process.env[`ZOHO_WA_TEMPLATE_${clean.toUpperCase()}`];
+    if (matchedEnv?.trim()) {
+      return parseTemplateValue(matchedEnv.trim());
+    }
   }
 
   // Fallback to default template if configured
   const fallback = process.env.ZOHO_WA_DEFAULT_TEMPLATE?.trim();
   if (fallback) {
     return parseTemplateValue(fallback);
+  }
+
+  // Fallback to any configured template if no default set
+  for (const [k, v] of Object.entries(process.env)) {
+    if (k.startsWith('ZOHO_WA_TEMPLATE_') && v?.trim()) {
+      return parseTemplateValue(v.trim());
+    }
   }
 
   return null;
@@ -117,7 +128,8 @@ export function isZohoWhatsAppConfigured(): boolean {
     process.env.ZOHO_WA_TEMPLATE_REGISTRATION_ACK?.trim() ||
     process.env.ZOHO_WA_TEMPLATE_BROADCAST?.trim() ||
     process.env.ZOHO_WA_TEMPLATE_TEST?.trim() ||
-    process.env.ZOHO_WA_TEMPLATE_REVIEW_DECISION?.trim()
+    process.env.ZOHO_WA_TEMPLATE_REVIEW_DECISION?.trim() ||
+    Object.keys(process.env).some(k => k.startsWith('ZOHO_WA_TEMPLATE_') && process.env[k]?.trim())
   );
   return hasKey && hasFrom && hasTemplate;
 }
