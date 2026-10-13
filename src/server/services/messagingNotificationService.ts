@@ -425,7 +425,7 @@ export async function notifyCompletionReminderSent(params: {
       metadataJson
     ]);
 
-    const pNotifId = `pnotif-rem-${messageId}`;
+    const pNotifId = `pnotif-${crypto.randomUUID()}`;
     await execute(`
       INSERT INTO parent_notifications (
         id, parent_id, event_id, child_id, title, message, created_at
@@ -526,7 +526,7 @@ export async function notifyCompletionReminderSent(params: {
         const snippet = messageBody.length > 250 ? `${messageBody.substring(0, 247)}...` : messageBody;
         const waText = `Hello ${parentFirstName},\n\nThis is a reminder regarding ${childFirstName}'s registration for The General Assembly Children & Teens Session:\n\n"${snippet}"\n\nImportant: If you have already filled in all the details, please ensure you review and click "Submit Application" so our team can review it.\n\nPlease complete and submit it here:\n${portalUrl}`;
 
-        await sendWhatsApp(parentPhone, waText);
+        await sendWhatsApp(parentPhone, waText, 'completion_reminder');
         console.log(`[notifyCompletionReminderSent] WhatsApp reminder dispatched to ${parentPhone}`);
       } catch (waErr) {
         console.error('[notifyCompletionReminderSent] Failed to dispatch WhatsApp reminder:', waErr);

@@ -982,6 +982,7 @@ export async function sendWhatsAppNudge(
   const sendResult = await provider.sendSessionMessage({
     to: eligibility.normalizedNumber!,
     body: nudgeBody,
+    intent: 'completion_reminder',
     idempotencyKey: `nudge:entry:${params.entryId}:${Date.now()}`
   });
 

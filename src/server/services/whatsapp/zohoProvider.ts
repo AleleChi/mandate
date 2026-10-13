@@ -297,7 +297,8 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
         method: 'POST',
         headers: {
           'Authorization': `Zoho-enczapikey ${config.apiKey}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
         body: JSON.stringify(payload),
         signal: controller.signal
@@ -320,7 +321,8 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
         } else if (response.status === 429) {
           errMsg = 'Zoho rate limit exceeded (HTTP 429).';
         } else if (response.status >= 500) {
-          errMsg = `Zoho service unavailable (HTTP ${response.status}).`;
+          const detail = resJson?.message || resJson?.error || (resJson?.data && (resJson.data.message || resJson.data.error)) || (resJson ? JSON.stringify(resJson) : '');
+          errMsg = detail ? `Zoho service error (HTTP ${response.status}): ${detail}` : `Zoho service unavailable (HTTP ${response.status}).`;
         }
 
         // Parse Retry-After header if supplied

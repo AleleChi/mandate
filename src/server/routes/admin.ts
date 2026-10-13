@@ -6478,10 +6478,10 @@ router.post('/notifications/test-whatsapp', async (req: AuthenticatedRequest, re
       });
     }
 
-    if (req.user.role !== 'super_admin') {
+    if (req.user.role !== 'super_admin' && req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
-        error: 'Only a Super Admin can send WhatsApp test messages.'
+        error: 'Admin access required to send WhatsApp test messages.'
       });
     }
 
@@ -6549,6 +6549,7 @@ router.post('/notifications/test-whatsapp', async (req: AuthenticatedRequest, re
         error: result.error || 'Failed to send WhatsApp message via configured provider.',
         provider: provider.name,
         status: result.status,
+        rawResponse: result.rawResponse,
         logId
       });
     }
