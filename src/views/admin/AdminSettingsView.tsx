@@ -284,6 +284,11 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
   const [emailProvider, setEmailProvider] = useState<string | null>(null);
   const [whatsappProvider, setWhatsappProvider] = useState<string | null>(null);
 
+  // Test WhatsApp State
+  const [testWhatsAppPhone, setTestWhatsAppPhone] = useState('');
+  const [isSendingTestWhatsApp, setIsSendingTestWhatsApp] = useState(false);
+  const [testWhatsAppResult, setTestWhatsAppResult] = useState<{ success: boolean; message: string } | null>(null);
+
   // Team Access / Staff Roles State
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [volunteers, setVolunteers] = useState<any[]>([]);
@@ -660,6 +665,39 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
       showFeedback('Could not dispatch test alert: ' + errMessage, 'error');
     } finally {
       setIsTestingDevice(false);
+    }
+  };
+
+  const handleSendTestWhatsApp = async () => {
+    if (!testWhatsAppPhone.trim()) return;
+    setIsSendingTestWhatsApp(true);
+    setTestWhatsAppResult(null);
+    try {
+      const res = await api.admin.testWhatsApp({
+        to: testWhatsAppPhone.trim()
+      });
+      if (res.success) {
+        setTestWhatsAppResult({
+          success: true,
+          message: `Dispatched! Message ID: ${res.messageSid || 'queued'}`
+        });
+        showFeedback('WhatsApp test message dispatched successfully!');
+      } else {
+        setTestWhatsAppResult({
+          success: false,
+          message: res.message || 'Failed to dispatch test WhatsApp message.'
+        });
+        showFeedback(res.message || 'WhatsApp test failed', 'error');
+      }
+    } catch (err: any) {
+      const msg = err.message || 'Failed to dispatch test WhatsApp message.';
+      setTestWhatsAppResult({
+        success: false,
+        message: msg
+      });
+      showFeedback(msg, 'error');
+    } finally {
+      setIsSendingTestWhatsApp(false);
     }
   };
 
@@ -1751,6 +1789,34 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                     <p className="text-[11px] text-zinc-400 dark:text-[#7A7570] leading-normal border-t border-zinc-100 dark:border-[#302E29] pt-2.5">
                       Used for broadcasting attendance alerts and quick gate release notification receipts.
                     </p>
+
+                    <div className="pt-3 border-t border-zinc-100 dark:border-[#302E29] space-y-2">
+                      <label className="text-[10px] uppercase font-bold text-zinc-400 dark:text-[#7A7570] tracking-wider block">
+                        Test WhatsApp Dispatch
+                      </label>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="text"
+                          placeholder="+234... or international format"
+                          value={testWhatsAppPhone}
+                          onChange={(e) => setTestWhatsAppPhone(e.target.value)}
+                          className="flex-1 text-xs px-2.5 py-1.5 rounded-lg border border-[#EAE8E1] dark:border-[#302E29] bg-zinc-50 dark:bg-[#18181B] text-[#18181B] dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
+                        />
+                        <button
+                          type="button"
+                          disabled={!testWhatsAppPhone.trim() || isSendingTestWhatsApp}
+                          onClick={handleSendTestWhatsApp}
+                          className="px-3 py-1.5 bg-[#C59B27] hover:bg-[#b08920] disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-colors flex items-center space-x-1 shrink-0"
+                        >
+                          {isSendingTestWhatsApp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span>Send Test</span>}
+                        </button>
+                      </div>
+                      {testWhatsAppResult && (
+                        <p className={`text-[11px] font-medium leading-tight ${testWhatsAppResult.success ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                          {testWhatsAppResult.message}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </div>
 
