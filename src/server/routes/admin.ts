@@ -6520,7 +6520,10 @@ router.post('/notifications/test-whatsapp', async (req: AuthenticatedRequest, re
     const result = await provider.sendSessionMessage({
       to: normalizedTo,
       body: safeMessage,
-      intent: 'super_admin_test'
+      intent: 'super_admin_test',
+      mergeInfo: {
+        first_name: 'Admin'
+      }
     });
 
     const nowIso = new Date().toISOString();

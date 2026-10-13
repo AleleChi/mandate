@@ -281,7 +281,16 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
     if (params.mergeInfo && Object.keys(params.mergeInfo).length > 0) {
       payload.merge_info = params.mergeInfo;
     } else if (params.bodyFallback) {
-      payload.merge_info = { '1': params.bodyFallback };
+      const activeTemplate = (templateAlias || templateKey || '').toLowerCase();
+      if (
+        activeTemplate.includes('registration') ||
+        activeTemplate.includes('registration-acknowledgement') ||
+        activeTemplate === 'f72d56f0-c508-11f1-9f0b-5254001dc20d'
+      ) {
+        payload.merge_info = { first_name: 'Parent' };
+      } else {
+        payload.merge_info = { '1': params.bodyFallback };
+      }
     }
 
     if (clientRef) {

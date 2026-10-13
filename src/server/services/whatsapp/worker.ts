@@ -529,9 +529,13 @@ export async function processQueuedWhatsAppJobs(
         }
 
         // 5. Send message via selected WhatsApp provider
+        const isAckJob = isRegistrationAck || Boolean(candidate.idempotency_key?.startsWith('registration_ack:'));
+        const ackFirstName = recipientName ? recipientName.trim().split(/\s+/)[0] : 'Parent';
         const sendResult = await provider.sendSessionMessage({
           to: recipientPhone,
           body: messageBody,
+          intent: isAckJob ? 'registration_ack' : undefined,
+          mergeInfo: isAckJob ? { first_name: ackFirstName } : undefined,
           idempotencyKey: candidate.idempotency_key || undefined
         });
 
