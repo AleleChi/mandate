@@ -3428,8 +3428,9 @@ We have temporarily reopened your application in draft mode. Please sign in to y
     // 6. Send WhatsApp if enabled
     const targetPhone = entry.parent_whatsapp || entry.parent_phone;
     if (notifyWhatsApp && targetPhone) {
-      const waText = `Hello ${parentFirstName},\n\nAction required for ${childFirstName}'s registration at ${eventName}:\n• ${effectiveReason}\n\nYour application has been unlocked. Please sign in to your Parent account at https://koinonia12.netlify.app/parent/home to update the details and re-submit.`;
-      sendWhatsApp(targetPhone, waText).catch(err => console.error('[ReturnToDraft] Failed to dispatch WhatsApp:', err));
+      const baseUrl = process.env.PUBLIC_APP_URL || 'https://kgachildren.koinoniageneralassembly.com';
+      const waText = `Hello ${parentFirstName},\n\nAction required for ${childFirstName}'s registration at ${eventName}:\n• ${effectiveReason}\n\nYour application has been unlocked. Please sign in to your Parent account at ${baseUrl}/parent/home to update the details and re-submit.`;
+      sendWhatsApp(targetPhone, waText, 'return_to_draft').catch(err => console.error('[ReturnToDraft] Failed to dispatch WhatsApp:', err));
     }
 
     // 7. Audit Log

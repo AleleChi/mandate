@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { query, queryOne, execute, transaction } from '../db';
 import { sendEmail } from './email';
 import { sendWebPush } from './push';
-import { getWhatsAppProvider } from './whatsapp';
+import { getWhatsAppProvider, logWhatsAppDelivery } from './whatsapp';
 
 // Helper to format date/time in Koinonia's timezone (Africa/Lagos)
 export function formatInTimezone(date: Date, timezone: string = 'Africa/Lagos'): string {
@@ -46,6 +46,24 @@ export async function sendWhatsApp(to: string, message: string, intent?: string)
   if (effectiveProvider === 'zoho') {
     const waProvider = getWhatsAppProvider();
     const res = await waProvider.sendSessionMessage({ to, body: message, intent });
+    if (res.success && res.messageId) {
+      await logWhatsAppDelivery({
+        recipientPhone: to,
+        provider: 'zoho',
+        providerMessageId: res.messageId,
+        status: res.status || 'queued',
+        sentAt: new Date().toISOString()
+      }).catch(err => console.error('[sendWhatsApp] Failed to log delivery:', err));
+    } else if (!res.success) {
+      console.error(`[sendWhatsApp:zoho] Failed to send WhatsApp to ${to}:`, res.error);
+      await logWhatsAppDelivery({
+        recipientPhone: to,
+        provider: 'zoho',
+        status: 'failed',
+        errorMessage: res.error,
+        failedAt: new Date().toISOString()
+      }).catch(err => console.error('[sendWhatsApp] Failed to log failure:', err));
+    }
     return {
       success: res.success,
       error: res.error,

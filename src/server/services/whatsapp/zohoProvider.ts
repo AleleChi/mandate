@@ -53,7 +53,7 @@ export function resolveZohoTemplateConfig(intentOrName?: string): ResolvedZohoTe
     child_waitlisted: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_WAITLISTED,
     waiting_list: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_WAITLISTED,
     pass_ready: process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY || process.env.ZOHO_WA_TEMPLATE_REGISTRATION_ACK,
-    return_to_draft: process.env.ZOHO_WA_TEMPLATE_RETURN_TO_DRAFT,
+    return_to_draft: process.env.ZOHO_WA_TEMPLATE_RETURN_TO_DRAFT || process.env.ZOHO_WA_TEMPLATE_KOINONIA_APPLICATION_INCOMPLETE || process.env.ZOHO_WA_TEMPLATE_COMPLETION_REMINDER,
     completion_reminder: process.env.ZOHO_WA_TEMPLATE_COMPLETION_REMINDER || process.env.ZOHO_WA_TEMPLATE_KOINONIA_APPLICATION_INCOMPLETE,
     inquiry_reply: process.env.ZOHO_WA_TEMPLATE_INQUIRY_REPLY,
     volunteer_reply: process.env.ZOHO_WA_TEMPLATE_VOLUNTEER_REPLY,
