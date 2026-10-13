@@ -14,14 +14,28 @@ export const DEFAULT_ZOHO_WHATSAPP_API_URL = 'https://cpaas.zoho.com/v1.1/whatsa
 export const DEFAULT_ZOHO_WHATSAPP_TIMEOUT_MS = 10000;
 
 /**
- * Strips secret values from error messages to prevent credential leakage.
+ * Strips secret values and sensitive authorization headers from error messages and logs
+ * to prevent credential leakage.
  */
-function sanitizeSecret(text: string, secret?: string): string {
+export function sanitizeSecret(text: string, secret?: string): string {
   if (!text) return '';
   let result = text;
   if (secret && secret.length > 4) {
     result = result.split(secret).join('[REDACTED]');
   }
+  const extraSecrets = [
+    process.env.ZOHO_WHATSAPP_API_KEY,
+    process.env.ZEPTOMAIL_SEND_TOKEN,
+    process.env.ZOHO_WHATSAPP_WEBHOOK_SECRET
+  ];
+  for (const s of extraSecrets) {
+    if (s && s.length > 4) {
+      result = result.split(s).join('[REDACTED]');
+    }
+  }
+  result = result.replace(/Zoho-enczapikey\s+[^\s"'\r\n]+/gi, 'Zoho-enczapikey [REDACTED]');
+  result = result.replace(/Bearer\s+[^\s"'\r\n]+/gi, 'Bearer [REDACTED]');
+  result = result.replace(/authorization:\s*[^\r\n]+/gi, 'authorization: [REDACTED]');
   return result;
 }
 
@@ -340,9 +354,31 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
       }
 
       if (!response.ok) {
-        console.error(`[Zoho Provider Error HTTP ${response.status}] To: ${normalizedTo}, From: ${normalizedFrom}, Template: ${templateKey || templateAlias}, Response:`, rawText);
+        const xRequestId = response.headers?.get?.('x-request-id') || response.headers?.get?.('request-id') || undefined;
+        const xZohoRequestId = response.headers?.get?.('x-zoho-request-id') || undefined;
+        const cfRay = response.headers?.get?.('cf-ray') || undefined;
+        const contentType = response.headers?.get?.('content-type') || undefined;
+        const retryHeader = response.headers?.get?.('retry-after') || undefined;
+        const statusText = response.statusText || undefined;
+        const trimmedBody = rawText ? rawText.trim() : '';
 
-        const detail = resJson?.message || resJson?.error || (resJson?.data && (resJson.data.message || resJson.data.error)) || (resJson ? JSON.stringify(resJson) : (rawText ? rawText.slice(0, 300) : ''));
+        // Safe structured error log without secrets, tokens, or Authorization headers
+        console.error(
+          `[Zoho Provider Error]\n` +
+          `status: ${response.status}\n` +
+          `statusText: ${statusText || 'none'}\n` +
+          `To: ${normalizedTo}\n` +
+          `From: ${normalizedFrom}\n` +
+          `Template: ${templateKey || templateAlias || 'none'}\n` +
+          `x-request-id: ${xRequestId || 'none'}\n` +
+          `x-zoho-request-id: ${xZohoRequestId || 'none'}\n` +
+          `cf-ray: ${cfRay || 'none'}\n` +
+          `content-type: ${contentType || 'none'}\n` +
+          `retry-after: ${retryHeader || 'none'}\n` +
+          `body: ${sanitizeSecret(trimmedBody || '<empty>', config.apiKey)}`
+        );
+
+        const detail = resJson?.message || resJson?.error || (resJson?.data && (resJson.data.message || resJson.data.error)) || (resJson ? JSON.stringify(resJson) : (trimmedBody ? trimmedBody.slice(0, 300) : (statusText || '')));
         let errMsg = detail ? `Zoho service error (HTTP ${response.status}): ${detail}` : `Zoho service unavailable (HTTP ${response.status}).`;
 
         if (response.status === 401) {
@@ -353,7 +389,6 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
 
         // Parse Retry-After header if supplied
         let retryAfter: number | undefined = undefined;
-        const retryHeader = response.headers?.get?.('retry-after');
         if (retryHeader) {
           const parsed = parseInt(retryHeader, 10);
           if (!isNaN(parsed) && parsed > 0) {
@@ -364,6 +399,7 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
         return {
           success: false,
           provider: this.name,
+          requestId: xRequestId || xZohoRequestId,
           status: 'failed',
           error: sanitizeSecret(errMsg, config.apiKey),
           retryAfter,

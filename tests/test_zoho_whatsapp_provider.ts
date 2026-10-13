@@ -61,6 +61,7 @@ interface MockFetchCall {
 let mockFetchCalls: MockFetchCall[] = [];
 let mockFetchResponse: {
   status: number;
+  statusText?: string;
   headers?: Record<string, string>;
   json?: any;
   text?: string;
@@ -98,11 +99,14 @@ function setupMockFetch() {
 
     return {
       status: mockFetchResponse.status,
+      statusText: mockFetchResponse.statusText !== undefined
+        ? mockFetchResponse.statusText
+        : (mockFetchResponse.status === 200 ? 'OK' : (mockFetchResponse.status === 500 ? 'Internal Server Error' : (mockFetchResponse.status === 401 ? 'Unauthorized' : (mockFetchResponse.status === 429 ? 'Too Many Requests' : 'Error')))),
       ok: mockFetchResponse.status >= 200 && mockFetchResponse.status < 300,
       headers: {
         get: (h: string) => headersMap.get(h.toLowerCase()) || null
       },
-      text: async () => mockFetchResponse.text || JSON.stringify(mockFetchResponse.json || {}),
+      text: async () => mockFetchResponse.text !== undefined ? mockFetchResponse.text : JSON.stringify(mockFetchResponse.json || {}),
       json: async () => mockFetchResponse.json || {}
     } as any;
   }) as any;
@@ -625,6 +629,180 @@ async function runTestSuite() {
       !err500.success && err500.status === 'failed' && (err500.error?.includes('500') ?? false),
       'HTTP 500 normalized to service unavailable error'
     );
+
+    // Test 20b: 500 with empty body (Render production failure mode)
+    let capturedErrorLogs: string[] = [];
+    const origConsoleErr = console.error;
+    console.error = (...args: any[]) => {
+      capturedErrorLogs.push(args.map(a => String(a)).join(' '));
+    };
+
+    try {
+      mockFetchCalls = [];
+      mockFetchResponse = {
+        status: 500,
+        statusText: 'Internal Server Error',
+        text: ''
+      };
+      const err500Empty = await zohoProvider.sendSessionMessage({
+        to: '+2348012345678',
+        body: 'Empty 500 test',
+        templateAlias: FAKE_TEMPLATE_ALIAS
+      });
+      assert(
+        !err500Empty.success && err500Empty.status === 'failed' && (err500Empty.error?.includes('500') ?? false),
+        'HTTP 500 with empty body normalized to status="failed" with 500 in error'
+      );
+      assert(
+        capturedErrorLogs.some(log => log.includes('[Zoho Provider Error]') && log.includes('body: <empty>') && log.includes('status: 500')),
+        'HTTP 500 with empty body logs structured metadata with body: <empty>'
+      );
+
+      // Test 20c: 500 with JSON body
+      capturedErrorLogs = [];
+      mockFetchCalls = [];
+      mockFetchResponse = {
+        status: 500,
+        statusText: 'Internal Server Error',
+        json: { error: 'Template resolution failure', code: 'TEMPLATE_INVALID' }
+      };
+      const err500Json = await zohoProvider.sendSessionMessage({
+        to: '+2348012345678',
+        body: 'JSON 500 test',
+        templateAlias: FAKE_TEMPLATE_ALIAS
+      });
+      assert(
+        !err500Json.success && err500Json.status === 'failed' && (err500Json.error?.includes('Template resolution failure') ?? false),
+        'HTTP 500 with JSON body surfaces error detail'
+      );
+      assert(
+        capturedErrorLogs.some(log => log.includes('Template resolution failure')),
+        'HTTP 500 with JSON body logs error body'
+      );
+
+      // Test 20d: request-id header captured
+      capturedErrorLogs = [];
+      mockFetchCalls = [];
+      mockFetchResponse = {
+        status: 500,
+        statusText: 'Internal Server Error',
+        headers: {
+          'x-request-id': 'req-diagnostic-12345'
+        },
+        text: ''
+      };
+      const errWithReqId = await zohoProvider.sendSessionMessage({
+        to: '+2348012345678',
+        body: 'Request ID test',
+        templateAlias: FAKE_TEMPLATE_ALIAS
+      });
+      assert(
+        errWithReqId.requestId === 'req-diagnostic-12345',
+        'x-request-id header captured in ProviderSendResult.requestId'
+      );
+      assert(
+        capturedErrorLogs.some(log => log.includes('x-request-id: req-diagnostic-12345')),
+        'x-request-id header logged in structured diagnostics'
+      );
+
+      // Test 20e: x-zoho-request-id captured
+      capturedErrorLogs = [];
+      mockFetchCalls = [];
+      mockFetchResponse = {
+        status: 500,
+        statusText: 'Internal Server Error',
+        headers: {
+          'x-zoho-request-id': 'zoho-trace-67890'
+        },
+        text: ''
+      };
+      const errWithZohoReqId = await zohoProvider.sendSessionMessage({
+        to: '+2348012345678',
+        body: 'Zoho request ID test',
+        templateAlias: FAKE_TEMPLATE_ALIAS
+      });
+      assert(
+        errWithZohoReqId.requestId === 'zoho-trace-67890',
+        'x-zoho-request-id header captured in ProviderSendResult.requestId'
+      );
+      assert(
+        capturedErrorLogs.some(log => log.includes('x-zoho-request-id: zoho-trace-67890')),
+        'x-zoho-request-id header logged in structured diagnostics'
+      );
+
+      // Test 20f: retry-after captured
+      capturedErrorLogs = [];
+      mockFetchCalls = [];
+      mockFetchResponse = {
+        status: 500,
+        statusText: 'Internal Server Error',
+        headers: {
+          'retry-after': '45'
+        },
+        text: ''
+      };
+      const errWithRetry = await zohoProvider.sendSessionMessage({
+        to: '+2348012345678',
+        body: 'Retry after test',
+        templateAlias: FAKE_TEMPLATE_ALIAS
+      });
+      assert(
+        errWithRetry.retryAfter === 45,
+        'retry-after header on 500 captured and parsed as number'
+      );
+      assert(
+        capturedErrorLogs.some(log => log.includes('retry-after: 45')),
+        'retry-after header logged in structured diagnostics'
+      );
+
+      // Test 20g: secrets never included in diagnostic output
+      capturedErrorLogs = [];
+      mockFetchCalls = [];
+      mockFetchResponse = {
+        status: 500,
+        statusText: 'Internal Server Error',
+        text: `Error reflection containing ${FAKE_ZOHO_KEY} and ZEPTOMAIL token`
+      };
+      process.env.ZEPTOMAIL_SEND_TOKEN = 'secret-zeptomail-token-999';
+      const errWithSecretLeak = await zohoProvider.sendSessionMessage({
+        to: '+2348012345678',
+        body: 'Secret redaction test',
+        templateAlias: FAKE_TEMPLATE_ALIAS
+      });
+      delete process.env.ZEPTOMAIL_SEND_TOKEN;
+      assert(
+        !errWithSecretLeak.error?.includes(FAKE_ZOHO_KEY),
+        'API key never included in normalized error string'
+      );
+      assert(
+        !capturedErrorLogs.some(log => log.includes(FAKE_ZOHO_KEY)),
+        'API key never included in diagnostic log output'
+      );
+
+      // Test 20h: Authorization header never included in diagnostic output
+      capturedErrorLogs = [];
+      mockFetchCalls = [];
+      mockFetchResponse = {
+        status: 500,
+        statusText: 'Internal Server Error',
+        text: `Gateway dumped headers: Authorization: Zoho-enczapikey ${FAKE_ZOHO_KEY} and Bearer secret123`
+      };
+      await zohoProvider.sendSessionMessage({
+        to: '+2348012345678',
+        body: 'Auth header redaction test',
+        templateAlias: FAKE_TEMPLATE_ALIAS
+      });
+      assert(
+        !capturedErrorLogs.some(log => log.includes(FAKE_ZOHO_KEY)),
+        'Reflected API key redacted from diagnostic log'
+      );
+      assert(
+        !capturedErrorLogs.some(log => log.includes(`Zoho-enczapikey ${FAKE_ZOHO_KEY}`)),
+        'Authorization header never included in diagnostic output'
+      );
+    } finally {
+      console.error = origConsoleErr;
+    }
 
     // ----------------------------------------------------
     // SECTION 5: TIMEOUT, RETRIES & PRE-NETWORK GUARDS
