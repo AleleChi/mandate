@@ -268,6 +268,25 @@ async function runTestSuite() {
       'Correct Content-Type header: application/json'
     );
 
+    // Test 7b: Authorization header normalizes pre-prefixed API key without double prefix
+    process.env.ZOHO_WHATSAPP_API_KEY = `Zoho-enczapikey ${FAKE_ZOHO_KEY}`;
+    mockFetchCalls = [];
+    mockFetchResponse = {
+      status: 200,
+      json: { message_id: 'wa_zoho_1002', request_id: 'req_1002' }
+    };
+    await zohoProvider.sendSessionMessage({
+      to: '+2348012345678',
+      body: 'Prefix test',
+      templateAlias: FAKE_TEMPLATE_ALIAS
+    });
+    const normalizedAuthHeader = mockFetchCalls[0].options.headers['Authorization'];
+    assert(
+      normalizedAuthHeader === `Zoho-enczapikey ${FAKE_ZOHO_KEY}`,
+      'Authorization header strips pre-prefixed Zoho-enczapikey preventing double prefix'
+    );
+    process.env.ZOHO_WHATSAPP_API_KEY = FAKE_ZOHO_KEY;
+
     // Test 8: API key never leaks into error output
     mockFetchCalls = [];
     mockFetchResponse = {

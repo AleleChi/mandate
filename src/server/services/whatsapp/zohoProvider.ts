@@ -154,10 +154,13 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
   private getConfig() {
     const rawTimeout = process.env.ZOHO_WHATSAPP_TIMEOUT_MS;
     const timeoutMs = rawTimeout ? parseInt(rawTimeout, 10) : DEFAULT_ZOHO_WHATSAPP_TIMEOUT_MS;
+    const rawApiKey = (process.env.ZOHO_WHATSAPP_API_KEY || '').trim();
+    // Normalize API key: strip redundant 'Zoho-enczapikey ' prefix if copied directly from the Zoho CPaaS UI
+    const cleanApiKey = rawApiKey.replace(/^zoho-enczapikey\s+/i, '').trim();
 
     return {
       apiUrl: process.env.ZOHO_WHATSAPP_API_URL?.trim() || DEFAULT_ZOHO_WHATSAPP_API_URL,
-      apiKey: process.env.ZOHO_WHATSAPP_API_KEY?.trim() || '',
+      apiKey: cleanApiKey,
       from: process.env.ZOHO_WHATSAPP_FROM?.trim() || '',
       timeoutMs: isNaN(timeoutMs) || timeoutMs <= 0 ? DEFAULT_ZOHO_WHATSAPP_TIMEOUT_MS : timeoutMs,
       webhookSecret: process.env.ZOHO_WHATSAPP_WEBHOOK_SECRET?.trim() || ''
