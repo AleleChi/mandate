@@ -193,7 +193,11 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
     }
 
     // 2. Normalize recipient and sender numbers to canonical E.164
-    const normalizedTo = normalizePhoneNumberToE164(params.to);
+    const rawToClean = (params.to || '').trim().replace(/^whatsapp:/i, '').replace(/[\s\-\(\)\.]/g, '');
+    let normalizedTo = normalizePhoneNumberToE164(rawToClean);
+    if (!normalizedTo && /^\+[1-9]\d{6,14}$/.test(rawToClean)) {
+      normalizedTo = rawToClean;
+    }
     if (!normalizedTo) {
       return {
         success: false,
@@ -203,7 +207,11 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
       };
     }
 
-    const normalizedFrom = normalizePhoneNumberToE164(rawFrom);
+    const rawFromClean = (rawFrom || '').trim().replace(/^whatsapp:/i, '').replace(/[\s\-\(\)\.]/g, '');
+    let normalizedFrom = normalizePhoneNumberToE164(rawFromClean);
+    if (!normalizedFrom && /^\+[1-9]\d{6,14}$/.test(rawFromClean)) {
+      normalizedFrom = rawFromClean;
+    }
     if (!normalizedFrom) {
       return {
         success: false,

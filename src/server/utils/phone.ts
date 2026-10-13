@@ -57,11 +57,16 @@ export function normalizePhoneNumberToE164(
   if (isExplicitInternational) {
     try {
       const parsed = parsePhoneNumberFromString(cleaned);
-      if (parsed && parsed.isValid()) {
+      if (parsed && (parsed.isValid() || parsed.isPossible())) {
         return parsed.format('E.164');
       }
     } catch {
       // Fall through to country-guided attempt
+    }
+
+    // Standard international E.164 syntax fallback for test/sandbox numbers (e.g. +1555...)
+    if (/^\+[1-9]\d{6,14}$/.test(cleaned)) {
+      return cleaned;
     }
   }
 
