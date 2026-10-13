@@ -306,23 +306,29 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
 
       clearTimeout(timer);
 
+      let rawText = '';
       let resJson: any = null;
       try {
-        resJson = await response.json();
+        rawText = await response.text();
+        try {
+          resJson = JSON.parse(rawText);
+        } catch {
+          resJson = null;
+        }
       } catch {
-        resJson = null;
+        rawText = '';
       }
 
       if (!response.ok) {
-        let errMsg = resJson?.message || resJson?.error || `Zoho dispatch failed with HTTP ${response.status}`;
+        console.error(`[Zoho Provider Error HTTP ${response.status}] To: ${normalizedTo}, From: ${normalizedFrom}, Template: ${templateKey || templateAlias}, Response:`, rawText);
+
+        const detail = resJson?.message || resJson?.error || (resJson?.data && (resJson.data.message || resJson.data.error)) || (resJson ? JSON.stringify(resJson) : (rawText ? rawText.slice(0, 300) : ''));
+        let errMsg = detail ? `Zoho service error (HTTP ${response.status}): ${detail}` : `Zoho service unavailable (HTTP ${response.status}).`;
 
         if (response.status === 401) {
           errMsg = 'Zoho authentication failed (HTTP 401). Verify ZOHO_WHATSAPP_API_KEY in server configuration.';
         } else if (response.status === 429) {
           errMsg = 'Zoho rate limit exceeded (HTTP 429).';
-        } else if (response.status >= 500) {
-          const detail = resJson?.message || resJson?.error || (resJson?.data && (resJson.data.message || resJson.data.error)) || (resJson ? JSON.stringify(resJson) : '');
-          errMsg = detail ? `Zoho service error (HTTP ${response.status}): ${detail}` : `Zoho service unavailable (HTTP ${response.status}).`;
         }
 
         // Parse Retry-After header if supplied
@@ -341,7 +347,7 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
           status: 'failed',
           error: sanitizeSecret(errMsg, config.apiKey),
           retryAfter,
-          rawResponse: resJson
+          rawResponse: resJson || rawText
         };
       }
 

@@ -6519,7 +6519,8 @@ router.post('/notifications/test-whatsapp', async (req: AuthenticatedRequest, re
 
     const result = await provider.sendSessionMessage({
       to: normalizedTo,
-      body: safeMessage
+      body: safeMessage,
+      intent: 'super_admin_test'
     });
 
     const nowIso = new Date().toISOString();
