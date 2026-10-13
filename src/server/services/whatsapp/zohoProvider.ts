@@ -242,6 +242,17 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
       }
     }
 
+    // Auto-promote known template alias to exact Zoho CPaaS UUID template_key
+    const KNOWN_TEMPLATE_KEY_MAP: Record<string, string> = {
+      'registration-acknowledgement': 'f72d56f0-c508-11f1-9f0b-5254001dc20d',
+      'koinonia_registration_ack': 'f72d56f0-c508-11f1-9f0b-5254001dc20d',
+      'koinonia-registration-ack': 'f72d56f0-c508-11f1-9f0b-5254001dc20d'
+    };
+    if (!templateKey && templateAlias && KNOWN_TEMPLATE_KEY_MAP[templateAlias.toLowerCase()]) {
+      templateKey = KNOWN_TEMPLATE_KEY_MAP[templateAlias.toLowerCase()];
+      templateAlias = undefined;
+    }
+
     if (templateKey && templateAlias) {
       return {
         success: false,
