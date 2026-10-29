@@ -3035,7 +3035,7 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
       `, [noteToTeam || app.note_to_team, now, now, id]);
 
       try {
-        passData = await issuePassForChild({ childId: app.child_id });
+        passData = await issuePassForChild({ childId: app.child_id, eventId: app.event_id });
         finalStatus = 'pass_ready';
       } catch (err: any) {
         console.error('Failed to issue pass during admin review:', err);
@@ -3755,7 +3755,7 @@ router.put('/applications/:id/status', async (req: AuthenticatedRequest, res: Re
       }
 
       try {
-        passData = await issuePassForChild({ childId: entry.child_id });
+        passData = await issuePassForChild({ childId: entry.child_id, eventId: entry.event_id });
         finalStatus = 'pass_ready';
       } catch (err: any) {
         console.error('Failed to issue pass during admin review:', err);
@@ -10375,7 +10375,7 @@ router.post('/volunteers/bulk-restore', authMiddleware, async (req: Authenticate
   }
 });
 
-// GET /api/admin/parents - Get all parents and metrics
+// GET /api/admin/parents - Get all parents and metrics with rich filtering
 router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user || !['admin', 'super_admin', 'team'].includes(req.user.role)) {
@@ -10383,6 +10383,13 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
     }
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const status = typeof req.query.status === 'string' ? req.query.status.trim() : 'active';
+    const workerStatus = typeof req.query.workerStatus === 'string' ? req.query.workerStatus.trim() : 'all';
+    const department = typeof req.query.department === 'string' ? req.query.department.trim() : 'all';
+    const country = typeof req.query.country === 'string' ? req.query.country.trim() : 'all';
+    const stateRegion = typeof req.query.stateRegion === 'string' ? req.query.stateRegion.trim() : 'all';
+    const city = typeof req.query.city === 'string' ? req.query.city.trim() : 'all';
+    const hasChildren = typeof req.query.hasChildren === 'string' ? req.query.hasChildren.trim() : 'all';
+    const hasLocation = typeof req.query.hasLocation === 'string' ? req.query.hasLocation.trim() : 'all';
 
     let queryStr = `
       SELECT 
@@ -10390,7 +10397,7 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
         u.email as user_email,
         u.role as user_role,
         m.secure_url as photo_url,
-        (SELECT COUNT(*) FROM children c WHERE c.parent_profile_id = p.id) as children_count,
+        (SELECT COUNT(*) FROM children c WHERE c.parent_profile_id = p.id AND (c.is_deleted = 0 OR c.is_deleted IS NULL)) as children_count,
         (SELECT email FROM users WHERE id = p.deleted_by) as deleted_by_email,
         (SELECT email FROM users WHERE id = p.restored_by) as restored_by_email
       FROM parent_profiles p
@@ -10409,15 +10416,137 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
       queryStr += ` AND (p.is_deleted = 0 OR p.is_deleted IS NULL)`;
     }
 
+    if (workerStatus === 'worker') {
+      queryStr += ` AND p.is_koinonia_worker = 1`;
+    } else if (workerStatus === 'non_worker') {
+      queryStr += ` AND (p.is_koinonia_worker = 0 OR p.is_koinonia_worker IS NULL)`;
+    }
+
+    if (department && department !== 'all') {
+      queryStr += ` AND p.department = ?`;
+      queryParams.push(department);
+    }
+
+    if (country && country !== 'all') {
+      queryStr += ` AND p.country = ?`;
+      queryParams.push(country);
+    }
+
+    if (stateRegion && stateRegion !== 'all') {
+      queryStr += ` AND p.state_region = ?`;
+      queryParams.push(stateRegion);
+    }
+
+    if (city && city !== 'all') {
+      queryStr += ` AND p.city = ?`;
+      queryParams.push(city);
+    }
+
+    if (hasChildren === 'has_children') {
+      queryStr += ` AND EXISTS (SELECT 1 FROM children c WHERE c.parent_profile_id = p.id AND (c.is_deleted = 0 OR c.is_deleted IS NULL))`;
+    } else if (hasChildren === 'no_children') {
+      queryStr += ` AND NOT EXISTS (SELECT 1 FROM children c WHERE c.parent_profile_id = p.id AND (c.is_deleted = 0 OR c.is_deleted IS NULL))`;
+    }
+
+    if (hasLocation === 'has_location') {
+      queryStr += ` AND ((p.city IS NOT NULL AND p.city != '') OR (p.state_region IS NOT NULL AND p.state_region != '') OR (p.country IS NOT NULL AND p.country != ''))`;
+    } else if (hasLocation === 'missing_location') {
+      queryStr += ` AND (p.city IS NULL OR p.city = '') AND (p.state_region IS NULL OR p.state_region = '') AND (p.country IS NULL OR p.country = '')`;
+    }
+
     if (q) {
-      queryStr += ` AND (p.full_name LIKE ? OR u.email LIKE ? OR p.phone_number LIKE ? OR p.city LIKE ?)`;
+      queryStr += ` AND (
+        p.full_name LIKE ? OR 
+        u.email LIKE ? OR 
+        p.phone_number LIKE ? OR 
+        p.whatsapp_number LIKE ? OR 
+        p.city LIKE ? OR 
+        p.state_region LIKE ? OR 
+        p.country LIKE ? OR 
+        p.home_address LIKE ? OR 
+        p.department LIKE ? OR 
+        EXISTS (
+          SELECT 1 FROM children c 
+          WHERE c.parent_profile_id = p.id 
+            AND (c.is_deleted = 0 OR c.is_deleted IS NULL) 
+            AND c.full_name LIKE ?
+        )
+      )`;
       const searchPattern = `%${q}%`;
-      queryParams.push(searchPattern, searchPattern, searchPattern, searchPattern);
+      queryParams.push(
+        searchPattern, searchPattern, searchPattern, searchPattern,
+        searchPattern, searchPattern, searchPattern, searchPattern,
+        searchPattern, searchPattern
+      );
     }
 
     queryStr += ` ORDER BY p.created_at DESC`;
 
     const rows = await query(queryStr, queryParams);
+
+    // Fetch linked children for these parents so we can display them concisely
+    const parentIds = rows.map((r: any) => r.id);
+    let childrenByParentId: Record<string, any[]> = {};
+    if (parentIds.length > 0) {
+      const placeholders = parentIds.map(() => '?').join(',');
+      const childrenRows = await query(`
+        SELECT id, parent_profile_id, full_name, calculated_age, age_group, gender
+        FROM children
+        WHERE parent_profile_id IN (${placeholders})
+          AND (is_deleted = 0 OR is_deleted IS NULL)
+        ORDER BY full_name ASC
+      `, parentIds);
+
+      for (const ch of childrenRows) {
+        if (!childrenByParentId[ch.parent_profile_id]) {
+          childrenByParentId[ch.parent_profile_id] = [];
+        }
+        childrenByParentId[ch.parent_profile_id].push({
+          id: ch.id,
+          fullName: ch.full_name,
+          age: ch.calculated_age,
+          ageGroup: ch.age_group,
+          gender: ch.gender
+        });
+      }
+    }
+
+    // Compute distinct filter options across all non-deleted parent profiles
+    const [filterDepts, filterCountries, filterStates, filterCities] = await Promise.all([
+      query(`
+        SELECT department, COUNT(*) as count 
+        FROM parent_profiles 
+        WHERE (is_deleted = 0 OR is_deleted IS NULL) 
+          AND department IS NOT NULL AND department != '' 
+        GROUP BY department 
+        ORDER BY department ASC
+      `),
+      query(`
+        SELECT country, COUNT(*) as count 
+        FROM parent_profiles 
+        WHERE (is_deleted = 0 OR is_deleted IS NULL) 
+          AND country IS NOT NULL AND country != '' 
+        GROUP BY country 
+        ORDER BY country ASC
+      `),
+      query(`
+        SELECT state_region, COUNT(*) as count 
+        FROM parent_profiles 
+        WHERE (is_deleted = 0 OR is_deleted IS NULL) 
+          AND state_region IS NOT NULL AND state_region != '' 
+        GROUP BY state_region 
+        ORDER BY state_region ASC
+      `),
+      query(`
+        SELECT city, COUNT(*) as count 
+        FROM parent_profiles 
+        WHERE (is_deleted = 0 OR is_deleted IS NULL) 
+          AND city IS NOT NULL AND city != '' 
+        GROUP BY city 
+        ORDER BY city ASC
+      `)
+    ]);
+
     const formatted = rows.map((p: any) => ({
       id: p.id,
       userId: p.user_id,
@@ -10439,6 +10568,7 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
       updatedAt: p.updated_at,
       userRole: p.user_role,
       childrenCount: Number(p.children_count || 0),
+      children: childrenByParentId[p.id] || [],
       isDeleted: p.is_deleted === 1,
       deletedAt: p.deleted_at,
       deletedBy: p.deleted_by,
@@ -10449,7 +10579,16 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
       restoredByEmail: p.restored_by_email
     }));
 
-    return res.json({ success: true, parents: formatted });
+    return res.json({ 
+      success: true, 
+      parents: formatted,
+      filterOptions: {
+        departments: filterDepts,
+        countries: filterCountries,
+        states: filterStates,
+        cities: filterCities
+      }
+    });
   } catch (err: any) {
     console.error('Error fetching admin parents list:', err);
     return res.status(500).json({ success: false, error: 'Failed to fetch parents list' });
