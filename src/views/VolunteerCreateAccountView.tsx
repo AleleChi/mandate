@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Check, Eye, EyeOff } from 'lucide-react';
 import { AppRoute } from '../types';
 import { api, extractApiError } from '../services/api';
@@ -9,6 +9,8 @@ import { AuthFormField } from '../components/common/AuthFormField';
 import { PhotoUploadBox } from '../components/common/PhotoUploadBox';
 import { authValidation } from '../utils/authValidation';
 import { AuthScreenShell } from '../components/common/AuthScreenShell';
+import { InternationalWhatsAppField } from '../components/common/InternationalWhatsAppField';
+import { inferCountryIsoFromE164, resolveConsistentCountryIso } from '../utils/countries';
 
 const generateStrongPassword = (): string => {
   const lowercase = 'abcdefghijkmnopqrstuvwxyz';
@@ -60,6 +62,7 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [selectedPhotoFile, setSelectedPhotoFile] = useState<File | null>(null);
   const [regStatus, setRegStatus] = useState<any>(null);
+  const consentContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api.auth.getRegistrationStatus().then((res) => {
@@ -76,6 +79,7 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
+  const [whatsappCountryIso, setWhatsappCountryIso] = useState('NG');
   const [isWhatsappSame, setIsWhatsappSame] = useState(false);
   const [photoRef, setPhotoRef] = useState('');
   const [isKoinoniaWorker, setIsKoinoniaWorker] = useState(false);
@@ -99,6 +103,7 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
           if (draft.email) setEmail(draft.email);
           if (draft.phone) setPhone(draft.phone);
           if (draft.whatsapp) setWhatsapp(draft.whatsapp);
+          if (draft.whatsappCountryIso) setWhatsappCountryIso(draft.whatsappCountryIso);
           if (draft.isWhatsappSame !== undefined) setIsWhatsappSame(draft.isWhatsappSame);
           if (draft.isKoinoniaWorker !== undefined) setIsKoinoniaWorker(draft.isKoinoniaWorker);
           if (draft.department) setDepartment(draft.department);
@@ -137,6 +142,7 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
           email,
           phone,
           whatsapp,
+          whatsappCountryIso,
           isWhatsappSame,
           isKoinoniaWorker,
           department,
@@ -157,6 +163,7 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
     email,
     phone,
     whatsapp,
+    whatsappCountryIso,
     isWhatsappSame,
     isKoinoniaWorker,
     department,
@@ -176,7 +183,8 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
     phone: false,
     whatsapp: false,
     password: false,
-    confirmPassword: false
+    confirmPassword: false,
+    whatsappConsent: false
   });
 
   const handleBlur = (field: keyof typeof touched) => {
@@ -188,11 +196,15 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
     ? `${email.trim().split('@')[0]}@${emailSyntaxError.suggestion}`
     : null;
 
+  const resolvedWaIso = isWhatsappSame
+    ? (inferCountryIsoFromE164(phone) || whatsappCountryIso)
+    : resolveConsistentCountryIso(whatsappCountryIso, whatsapp);
+
   const errors = {
     fullName: authValidation.fullName(fullName),
     email: authValidation.email(email),
     phone: authValidation.phone(phone),
-    whatsapp: authValidation.whatsapp(isWhatsappSame ? phone : whatsapp),
+    whatsapp: authValidation.whatsapp(isWhatsappSame ? phone : whatsapp, resolvedWaIso),
     password: authValidation.password(password),
     confirmPassword: authValidation.confirmPassword(confirmPassword, password)
   };
@@ -227,6 +239,8 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
     setIsWhatsappSame(checked);
     if (checked) {
       setWhatsapp(phone);
+      const inferred = inferCountryIsoFromE164(phone);
+      if (inferred) setWhatsappCountryIso(inferred);
     }
   };
 
@@ -235,6 +249,8 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
     setPhone(val);
     if (isWhatsappSame) {
       setWhatsapp(val);
+      const inferred = inferCountryIsoFromE164(val);
+      if (inferred) setWhatsappCountryIso(inferred);
     }
   };
 
@@ -270,8 +286,21 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
       phone: true,
       whatsapp: true,
       password: true,
-      confirmPassword: true
+      confirmPassword: true,
+      whatsappConsent: true
     });
+
+    if (!agreedToWhatsApp) {
+      const msg = 'Please enable WhatsApp updates to continue. Important volunteer information and duty updates are sent through WhatsApp.';
+      setErrorMsg(msg);
+      showWarning('Consent Required', 'Please enable WhatsApp updates to continue.');
+      if (consentContainerRef.current) {
+        consentContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const input = consentContainerRef.current.querySelector('input');
+        input?.focus();
+      }
+      return;
+    }
 
     if (!selectedPhotoFile) {
       setErrorMsg('Please add a clear profile photo to continue.');
@@ -294,11 +323,18 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
     setLoading(true);
 
     try {
+      const rawWa = (isWhatsappSame ? phone : whatsapp).trim();
+      const finalWaCountryIso = resolveConsistentCountryIso(
+        isWhatsappSame ? (inferCountryIsoFromE164(phone) || whatsappCountryIso) : whatsappCountryIso,
+        rawWa
+      );
+
       const formData = new FormData();
       formData.append('fullName', fullName.trim());
       formData.append('email', email.trim().toLowerCase());
       formData.append('phone', phone.trim());
       formData.append('whatsapp', (isWhatsappSame ? phone : whatsapp).trim());
+      formData.append('whatsappCountryIso', finalWaCountryIso);
       formData.append('isKoinoniaWorker', isKoinoniaWorker ? 'true' : 'false');
       formData.append('department', isKoinoniaWorker ? department.trim() : '');
       formData.append('preferredTeam', preferredTeam);
@@ -483,7 +519,9 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
             {/* WHATSAPP */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-[#18181B] dark:text-[#F0EBE3] tracking-wider uppercase block">WhatsApp Number</label>
+                <label className="text-xs font-bold text-[#18181B] dark:text-[#F0EBE3] tracking-wider uppercase block">
+                  WhatsApp Number <span className="text-[#DC2626]">*</span>
+                </label>
                 <label className="flex items-center space-x-1.5 text-xs text-[#52525B] dark:text-[#B8B0A5] cursor-pointer select-none font-medium">
                   <input
                     type="checkbox"
@@ -496,38 +534,55 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
                 </label>
               </div>
               {!isWhatsappSame && (
-                <AuthFormField
-                  id="whatsapp"
-                  label=""
-                  type="tel"
-                  placeholder="+234 803 123 4567"
+                <InternationalWhatsAppField
+                  id="volunteer-signup-whatsapp"
+                  countryIso={whatsappCountryIso}
                   value={whatsapp}
-                  onChange={(e) => setWhatsapp(e.target.value)}
-                  onBlur={() => handleBlur('whatsapp')}
-                  error={touched.whatsapp && !isWhatsappSame && errors.whatsapp ? errors.whatsapp : undefined}
-                  isValid={touched.whatsapp && !isWhatsappSame && !errors.whatsapp}
-                  isTouched={touched.whatsapp && !isWhatsappSame}
+                  onCountryChange={(iso) => setWhatsappCountryIso(iso)}
+                  onChange={(val) => {
+                    setWhatsapp(val);
+                    if (!touched.whatsapp) setTouched((prev) => ({ ...prev, whatsapp: true }));
+                  }}
+                  error={touched.whatsapp && errors.whatsapp ? errors.whatsapp : undefined}
                   disabled={loading}
+                  required
                 />
               )}
 
-              <div className="pt-0.5">
+              <div ref={consentContainerRef} className="pt-0.5 space-y-1.5">
                 <label
                   htmlFor="volunteerWhatsappConsent"
-                  className="flex items-start gap-2.5 cursor-pointer select-none group"
+                  className={`flex items-start gap-2.5 cursor-pointer select-none group p-2 -mx-2 rounded-xl transition-colors ${
+                    touched.whatsappConsent && !agreedToWhatsApp
+                      ? 'bg-red-50/60 dark:bg-red-950/20'
+                      : ''
+                  }`}
                 >
                   <input
                     id="volunteerWhatsappConsent"
                     type="checkbox"
                     className="sr-only"
                     checked={agreedToWhatsApp}
-                    onChange={(e) => setAgreedToWhatsApp(e.target.checked)}
+                    onChange={(e) => {
+                      setAgreedToWhatsApp(e.target.checked);
+                      if (touched.whatsappConsent) {
+                        setTouched((prev) => ({ ...prev, whatsappConsent: true }));
+                      }
+                      if (e.target.checked && errorMsg?.includes('WhatsApp')) {
+                        setErrorMsg(null);
+                      }
+                    }}
                     disabled={loading}
+                    aria-invalid={touched.whatsappConsent && !agreedToWhatsApp}
+                    aria-describedby={touched.whatsappConsent && !agreedToWhatsApp ? 'whatsapp-consent-error' : undefined}
+                    required
                   />
                   <div
                     className={`w-4 h-4 mt-0.5 rounded border flex items-center justify-center transition-all shrink-0 ${
                       agreedToWhatsApp
                         ? 'bg-[#C59B27] border-[#C59B27] text-[#18181B]'
+                        : touched.whatsappConsent && !agreedToWhatsApp
+                        ? 'bg-white dark:bg-[#262520] border-red-500 ring-2 ring-red-500/20'
                         : 'bg-white dark:bg-[#262520] border-[#D9D6CE] dark:border-[#3A3835] group-hover:border-[#18181B] dark:group-hover:border-[#F0EBE3]'
                     }`}
                   >
@@ -535,13 +590,22 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
                   </div>
                   <div className="pt-0.5">
                     <span className="text-xs text-zinc-700 dark:text-[#F0EBE3] leading-snug block">
-                      Send me important registration and event updates on WhatsApp
+                      I agree to receive volunteer updates on WhatsApp. <span className="text-[#DC2626]">*</span>
                     </span>
                     <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] block mt-0.5">
-                      You can turn this off later.
+                      WhatsApp is required for volunteer duty updates and important event information.
                     </span>
                   </div>
                 </label>
+                {touched.whatsappConsent && !agreedToWhatsApp && (
+                  <p
+                    id="whatsapp-consent-error"
+                    role="alert"
+                    className="text-xs text-red-600 dark:text-red-400 font-medium leading-relaxed pl-1 animate-in fade-in duration-150"
+                  >
+                    Please enable WhatsApp updates to continue. Important volunteer information and duty updates are sent through WhatsApp.
+                  </p>
+                )}
               </div>
             </div>
 

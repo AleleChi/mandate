@@ -2635,13 +2635,24 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
       return res.status(400).json({ success: false, error: 'Invalid review status.' });
     }
 
-    const app = await queryOne(`
+    let app = await queryOne(`
       SELECT e.*, c.full_name as child_name, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.id as parent_profile_id
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
-      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
       WHERE e.id = ?
     `, [id]);
+
+    if (!app) {
+      app = await queryOne(`
+        SELECT e.*, c.full_name as child_name, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.id as parent_profile_id
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
+        WHERE e.child_id = ?
+        ORDER BY e.created_at DESC LIMIT 1
+      `, [id]);
+    }
 
     if (!app) {
       return res.status(404).json({ success: false, error: 'Application entry not found.' });
@@ -2676,10 +2687,10 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
         UPDATE child_event_entries 
         SET status = 'selected', note_to_team = ?, reviewed_at = ?, updated_at = ?
         WHERE id = ?
-      `, [noteToTeam || app.note_to_team, now, now, id]);
+      `, [noteToTeam || app.note_to_team, now, now, app.id]);
 
       try {
-        passData = await issuePassForChild({ childId: app.child_id });
+        passData = await issuePassForChild({ childId: app.child_id, eventId: app.event_id });
         finalStatus = 'pass_ready';
       } catch (err: any) {
         console.error('Failed to issue pass during admin review:', err);
@@ -2693,81 +2704,87 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
       UPDATE child_event_entries 
       SET status = ?, note_to_team = ?, reviewed_at = ?, updated_at = ?
       WHERE id = ?
-    `, [finalStatus, noteToTeam || app.note_to_team, now, now, id]);
+    `, [finalStatus, noteToTeam || app.note_to_team, now, now, app.id]);
 
     // Process notification if requested
     if (sendNotification) {
-      let subject = 'Koinonia Application Review Update';
-      let message = '';
-      
-      const pName = app.parent_name?.split(' ')[0] || 'Parent';
-      const cName = app.child_name || 'your child';
+      try {
+        let subject = 'Koinonia Application Review Update';
+        let message = '';
+        
+        const pName = app.parent_name?.split(' ')[0] || 'Parent';
+        const cName = app.child_name || 'your child';
 
-      if (finalStatus === 'pass_ready') {
-        subject = 'Koinonia Event Pass Ready!';
-        message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nYour secure event pass is now ready in your portal. Please log in to download it and keep it handy during check-in.\n\nWarm regards,\nKoinonia Children and Teens Team`;
-      } else if (finalStatus === 'selected') {
-        subject = 'Koinonia Application Selected!';
-        message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nOur team is finalizing your event details. Your secure event pass will be generated shortly and will be available in your portal.\n\nWarm regards,\nKoinonia Children and Teens Team`;
-      } else if (finalStatus === 'waiting_list') {
-        subject = 'Koinonia Application Waitlist Update';
-        message = `Hello ${pName},\n\nThank you for registering ${cName} for the upcoming Koinonia Children and Teens Event.\n\nDue to venue capacity and safety limits, ${cName} has been placed on our waiting list. We will review seating limits regularly and will notify you immediately if a pass becomes available.\n\nWarm regards,\nKoinonia Children and Teens Team`;
-      } else if (status === 'not_selected') {
-        subject = 'Koinonia Application Status';
-        message = `Hello ${pName},\n\nThank you for registering ${cName} for Koinonia Children and Teens.\n\nDue to high registration volumes and room capacity limits, we are unable to accommodate ${cName} for this upcoming session. We look forward to welcoming your family to future events.\n\nWarm regards,\nKoinonia Children and Teens Team`;
-      } else {
-        subject = 'Koinonia Application Update Needed';
-        message = `Hello ${pName},\n\nOur administrative team has reviewed ${cName}'s application. We kindly ask you to log in to your portal and update the details as requested so we can complete our review.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        if (finalStatus === 'pass_ready') {
+          subject = 'Koinonia Event Pass Ready!';
+          message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nYour secure event pass is now ready in your portal. Please log in to download it and keep it handy during check-in.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        } else if (finalStatus === 'selected') {
+          subject = 'Koinonia Application Selected!';
+          message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nOur team is finalizing your event details. Your secure event pass will be generated shortly and will be available in your portal.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        } else if (finalStatus === 'waiting_list') {
+          subject = 'Koinonia Application Waitlist Update';
+          message = `Hello ${pName},\n\nThank you for registering ${cName} for the upcoming Koinonia Children and Teens Event.\n\nDue to venue capacity and safety limits, ${cName} has been placed on our waiting list. We will review seating limits regularly and will notify you immediately if a pass becomes available.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        } else if (status === 'not_selected') {
+          subject = 'Koinonia Application Status';
+          message = `Hello ${pName},\n\nThank you for registering ${cName} for Koinonia Children and Teens.\n\nDue to high registration volumes and room capacity limits, we are unable to accommodate ${cName} for this upcoming session. We look forward to welcoming your family to future events.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        } else {
+          subject = 'Koinonia Application Update Needed';
+          message = `Hello ${pName},\n\nOur administrative team has reviewed ${cName}'s application. We kindly ask you to log in to your portal and update the details as requested so we can complete our review.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        }
+
+        // 1. Send transactional email
+        if (app.parent_email) {
+          await sendEmail({
+            to: app.parent_email,
+            subject,
+            text: message,
+            html: `<div style="font-family: sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 24px; border-radius: 12px; background-color: #FAF9F6;">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <span style="font-family: serif; font-size: 20px; font-weight: bold; color: #18181B; letter-spacing: 2px;">KOINONIA</span>
+                <div style="width: 40px; height: 2px; background-color: #C59B27; margin: 8px auto 0;"></div>
+              </div>
+              <p>${message.replace(/\n/g, '<br>')}</p>
+              <hr style="border: 0; border-top: 1px solid #EAE8E1; margin: 24px 0;">
+              <p style="font-size: 11px; color: #71717A; text-align: center;">This is an official administrative update regarding your Koinonia Children and Teens event registration.</p>
+            </div>`
+          }).catch(err => console.error('Failed to send review email notification:', err));
+        }
+
+        // 2. Dispatch WhatsApp if phone is available
+        if (app.parent_phone) {
+          await sendWhatsApp(app.parent_phone, message).catch(err => console.error('Failed to send review WhatsApp notification:', err));
+        }
+
+        // 3. Create In-App Notification
+        if (app.parent_profile_id) {
+          let inAppTitle = subject;
+          let inAppMessage = message;
+          
+          const childFirstName = app.child_name ? app.child_name.trim().split(' ')[0] : 'your child';
+          if (finalStatus === 'pass_ready') {
+            inAppTitle = 'Pass ready';
+            inAppMessage = `${childFirstName}'s event pass is ready. You can open it from your parent account.`;
+          } else if (finalStatus === 'selected') {
+            inAppTitle = 'Application selected';
+            inAppMessage = `${childFirstName} has been selected. The event pass will be available shortly.`;
+          }
+
+          const notifId = `notif-${crypto.randomUUID()}`;
+          await execute(`
+            INSERT INTO notifications (
+              id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
+            ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
+          `, [notifId, inAppTitle, inAppMessage, app.event_id, app.child_id, app.parent_profile_id, now]).catch(e => console.error('Failed to insert notification:', e));
+
+          const pNotifId = `pnotif-${crypto.randomUUID()}`;
+          await execute(`
+            INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `, [pNotifId, app.parent_profile_id, app.event_id, app.child_id, inAppTitle, inAppMessage, now]).catch(e => console.error('Failed to insert parent_notifications:', e));
+        }
+      } catch (notifErr) {
+        console.error('Non-critical notification error during admin review:', notifErr);
       }
-
-      // 1. Send transactional email
-      if (app.parent_email) {
-        await sendEmail({
-          to: app.parent_email,
-          subject,
-          text: message,
-          html: `<div style="font-family: sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 24px; border-radius: 12px; background-color: #FAF9F6;">
-            <div style="text-align: center; margin-bottom: 24px;">
-              <span style="font-family: serif; font-size: 20px; font-weight: bold; color: #18181B; letter-spacing: 2px;">KOINONIA</span>
-              <div style="width: 40px; height: 2px; background-color: #C59B27; margin: 8px auto 0;"></div>
-            </div>
-            <p>${message.replace(/\n/g, '<br>')}</p>
-            <hr style="border: 0; border-top: 1px solid #EAE8E1; margin: 24px 0;">
-            <p style="font-size: 11px; color: #71717A; text-align: center;">This is an official administrative update regarding your Koinonia Children and Teens event registration.</p>
-          </div>`
-        }).catch(err => console.error('Failed to send review email notification:', err));
-      }
-
-      // 2. Dispatch WhatsApp if phone is available
-      if (app.parent_phone) {
-        await sendWhatsApp(app.parent_phone, message).catch(err => console.error('Failed to send review WhatsApp notification:', err));
-      }
-
-      // 3. Create In-App Notification
-      let inAppTitle = subject;
-      let inAppMessage = message;
-      
-      const childFirstName = app.child_name ? app.child_name.trim().split(' ')[0] : 'your child';
-      if (finalStatus === 'pass_ready') {
-        inAppTitle = 'Pass ready';
-        inAppMessage = `${childFirstName}'s event pass is ready. You can open it from your parent account.`;
-      } else if (finalStatus === 'selected') {
-        inAppTitle = 'Application selected';
-        inAppMessage = `${childFirstName} has been selected. The event pass will be available shortly.`;
-      }
-
-      const notifId = `notif-${crypto.randomUUID()}`;
-      await execute(`
-        INSERT INTO notifications (
-          id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
-        ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
-      `, [notifId, inAppTitle, inAppMessage, app.event_id, app.child_id, app.parent_profile_id, now]);
-
-      const pNotifId = `pnotif-${crypto.randomUUID()}`;
-      await execute(`
-        INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `, [pNotifId, app.parent_profile_id, app.event_id, app.child_id, inAppTitle, inAppMessage, now]);
     }
 
     return res.json({ 
@@ -2779,7 +2796,7 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
     });
   } catch (err: any) {
     console.error('Error submitting application review:', err);
-    return res.status(500).json({ success: false, error: 'Failed to submit application review.' });
+    return res.status(500).json({ success: false, error: err?.message || 'Failed to submit application review.' });
   }
 });
 
@@ -2911,13 +2928,24 @@ router.post('/applications/bulk-review', authMiddleware, async (req: Authenticat
     const failures: { id: string; childName?: string; reason: string }[] = [];
 
     for (const id of applicationIds) {
-      const app = await queryOne(`
+      let app = await queryOne(`
         SELECT e.*, c.full_name as child_name, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.id as parent_profile_id
         FROM child_event_entries e
         JOIN children c ON c.id = e.child_id
-        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
         WHERE e.id = ?
       `, [id]);
+
+      if (!app) {
+        app = await queryOne(`
+          SELECT e.*, c.full_name as child_name, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.id as parent_profile_id
+          FROM child_event_entries e
+          JOIN children c ON c.id = e.child_id
+          LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
+          WHERE e.child_id = ?
+          ORDER BY e.created_at DESC LIMIT 1
+        `, [id]);
+      }
 
       if (!app) {
         failures.push({ id, reason: 'Application record not found' });
@@ -2968,77 +2996,86 @@ router.post('/applications/bulk-review', authMiddleware, async (req: Authenticat
         UPDATE child_event_entries 
         SET status = ?, note_to_team = ?, reviewed_at = ?, updated_at = ?
         WHERE id = ?
-      `, [finalDecision, note || app.note_to_team, now, now, id]);
+      `, [finalDecision, note || app.note_to_team, now, now, app.id]);
 
       // If pass_ready, auto-generate pass
       if (finalDecision === 'pass_ready') {
-        const pass = await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ?', [id]);
+        const pass = await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ?', [app.id]);
         if (!pass) {
           const passId = crypto.randomUUID();
-          const passRef = `KOI-2026-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+          let eventYear = '2026';
+          const matchYear = String(app.event_id || '').match(/\d{4}/);
+          if (matchYear) eventYear = matchYear[0];
+          const passRef = `KOI-${eventYear}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
           const passHash = crypto.randomBytes(16).toString('hex');
 
           await execute(`
             INSERT INTO event_passes (id, child_event_entry_id, pass_reference, pass_hash, status, issued_at, created_at, updated_at)
             VALUES (?, ?, ?, ?, 'active', ?, ?, ?)
-          `, [passId, id, passRef, passHash, now, now, now]);
+          `, [passId, app.id, passRef, passHash, now, now, now]);
         }
       }
 
       // Notifications (Only if not under_review)
       if (decision !== 'under_review') {
-        let subject = 'Koinonia Application Review Update';
-        let message = '';
-        const pName = app.parent_name?.split(' ')[0] || 'Parent';
-        const cName = app.child_name || 'your child';
+        try {
+          let subject = 'Koinonia Application Review Update';
+          let message = '';
+          const pName = app.parent_name?.split(' ')[0] || 'Parent';
+          const cName = app.child_name || 'your child';
 
-        if (finalDecision === 'pass_ready') {
-          subject = 'Koinonia Event Pass Ready!';
-          message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nYour secure event pass is now ready in your portal. Please log in to download it and keep it handy during check-in.\n\nWarm regards,\nKoinonia Children and Teens Team`;
-        } else if (finalDecision === 'selected') {
-          subject = 'Koinonia Application Selected!';
-          message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nOur team is finalizing your event details. Your secure event pass will be generated shortly and will be available in your portal.\n\nWarm regards,\nKoinonia Children and Teens Team`;
-        } else if (finalDecision === 'waiting_list') {
-          subject = 'Koinonia Application Waitlist Update';
-          message = `Hello ${pName},\n\nThank you for registering ${cName} for the upcoming Koinonia Children and Teens Event.\n\nDue to venue capacity and safety limits, ${cName} has been placed on our waiting list. We will review seating limits regularly and will notify you immediately if a pass becomes available.\n\nWarm regards,\nKoinonia Children and Teens Team`;
-        } else if (decision === 'not_selected') {
-          subject = 'Koinonia Application Status';
-          message = `Hello ${pName},\n\nThank you for registering ${cName} for Koinonia Children and Teens.\n\nDue to high registration volumes and room capacity limits, we are unable to accommodate ${cName} for this upcoming session. We look forward to welcoming your family to future events.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+          if (finalDecision === 'pass_ready') {
+            subject = 'Koinonia Event Pass Ready!';
+            message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nYour secure event pass is now ready in your portal. Please log in to download it and keep it handy during check-in.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+          } else if (finalDecision === 'selected') {
+            subject = 'Koinonia Application Selected!';
+            message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nOur team is finalizing your event details. Your secure event pass will be generated shortly and will be available in your portal.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+          } else if (finalDecision === 'waiting_list') {
+            subject = 'Koinonia Application Waitlist Update';
+            message = `Hello ${pName},\n\nThank you for registering ${cName} for the upcoming Koinonia Children and Teens Event.\n\nDue to venue capacity and safety limits, ${cName} has been placed on our waiting list. We will review seating limits regularly and will notify you immediately if a pass becomes available.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+          } else if (decision === 'not_selected') {
+            subject = 'Koinonia Application Status';
+            message = `Hello ${pName},\n\nThank you for registering ${cName} for Koinonia Children and Teens.\n\nDue to high registration volumes and room capacity limits, we are unable to accommodate ${cName} for this upcoming session. We look forward to welcoming your family to future events.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+          }
+
+          if (app.parent_email) {
+            await sendEmail({
+              to: app.parent_email,
+              subject,
+              text: message,
+              html: `<div style="font-family: sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 24px; border-radius: 12px; background-color: #FAF9F6;">
+                <div style="text-align: center; margin-bottom: 24px;">
+                  <span style="font-family: serif; font-size: 20px; font-weight: bold; color: #18181B; letter-spacing: 2px;">KOINONIA</span>
+                  <div style="width: 40px; height: 2px; background-color: #C59B27; margin: 8px auto 0;"></div>
+                </div>
+                <p>${message.replace(/\n/g, '<br>')}</p>
+                <hr style="border: 0; border-top: 1px solid #EAE8E1; margin: 24px 0;">
+                <p style="font-size: 11px; color: #71717A; text-align: center;">This is an official administrative update regarding your Koinonia Children and Teens event registration.</p>
+              </div>`
+            }).catch(err => console.error('Failed to send bulk review email notification:', err));
+          }
+
+          if (app.parent_phone) {
+            await sendWhatsApp(app.parent_phone, message).catch(err => console.error('Failed to send bulk review WhatsApp notification:', err));
+          }
+
+          if (app.parent_profile_id) {
+            const notifId = `notif-${crypto.randomUUID()}`;
+            await execute(`
+              INSERT INTO notifications (
+                id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
+              ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
+            `, [notifId, subject, message, app.event_id, app.child_id, app.parent_profile_id, now]).catch(e => console.error('Failed to insert bulk notification:', e));
+
+            const pNotifId = `pnotif-${crypto.randomUUID()}`;
+            await execute(`
+              INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+            `, [pNotifId, app.parent_profile_id, app.event_id, app.child_id, subject, message, now]).catch(e => console.error('Failed to insert bulk parent_notifications:', e));
+          }
+        } catch (notifErr) {
+          console.error('Non-critical notification error in bulk review:', notifErr);
         }
-
-        if (app.parent_email) {
-          await sendEmail({
-            to: app.parent_email,
-            subject,
-            text: message,
-            html: `<div style="font-family: sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 24px; border-radius: 12px; background-color: #FAF9F6;">
-              <div style="text-align: center; margin-bottom: 24px;">
-                <span style="font-family: serif; font-size: 20px; font-weight: bold; color: #18181B; letter-spacing: 2px;">KOINONIA</span>
-                <div style="width: 40px; height: 2px; background-color: #C59B27; margin: 8px auto 0;"></div>
-              </div>
-              <p>${message.replace(/\n/g, '<br>')}</p>
-              <hr style="border: 0; border-top: 1px solid #EAE8E1; margin: 24px 0;">
-              <p style="font-size: 11px; color: #71717A; text-align: center;">This is an official administrative update regarding your Koinonia Children and Teens event registration.</p>
-            </div>`
-          }).catch(err => console.error('Failed to send bulk review email notification:', err));
-        }
-
-        if (app.parent_phone) {
-          await sendWhatsApp(app.parent_phone, message).catch(err => console.error('Failed to send bulk review WhatsApp notification:', err));
-        }
-
-        const notifId = `notif-${crypto.randomUUID()}`;
-        await execute(`
-          INSERT INTO notifications (
-            id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
-          ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
-        `, [notifId, subject, message, app.event_id, app.child_id, app.parent_profile_id, now]);
-
-        const pNotifId = `pnotif-${crypto.randomUUID()}`;
-        await execute(`
-          INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `, [pNotifId, app.parent_profile_id, app.event_id, app.child_id, subject, message, now]);
       }
 
       // Record audit log for each reviewed application
@@ -3090,7 +3127,10 @@ router.put('/applications/:id/status', async (req: AuthenticatedRequest, res: Re
       return res.status(400).json({ error: 'Invalid status.' });
     }
 
-    const entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [id]);
+    let entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [id]);
+    if (!entry) {
+      entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? ORDER BY created_at DESC LIMIT 1', [id]);
+    }
     if (!entry) {
       return res.status(404).json({ error: 'Application entry not found.' });
     }
@@ -3116,17 +3156,17 @@ router.put('/applications/:id/status', async (req: AuthenticatedRequest, res: Re
           UPDATE child_event_entries 
           SET status = 'selected', note_to_team = ?, reviewed_at = ?, updated_at = ?
           WHERE id = ?
-        `, [noteToTeam, now, now, id]);
+        `, [noteToTeam, now, now, entry.id]);
       } else {
         await execute(`
           UPDATE child_event_entries 
           SET status = 'selected', reviewed_at = ?, updated_at = ?
           WHERE id = ?
-        `, [now, now, id]);
+        `, [now, now, entry.id]);
       }
 
       try {
-        passData = await issuePassForChild({ childId: entry.child_id });
+        passData = await issuePassForChild({ childId: entry.child_id, eventId: entry.event_id });
         finalStatus = 'pass_ready';
       } catch (err: any) {
         console.error('Failed to issue pass during admin review:', err);
@@ -3141,13 +3181,13 @@ router.put('/applications/:id/status', async (req: AuthenticatedRequest, res: Re
         UPDATE child_event_entries 
         SET status = ?, note_to_team = ?, reviewed_at = ?, updated_at = ?
         WHERE id = ?
-      `, [finalStatus, noteToTeam, now, now, id]);
+      `, [finalStatus, noteToTeam, now, now, entry.id]);
     } else {
       await execute(`
         UPDATE child_event_entries 
         SET status = ?, reviewed_at = ?, updated_at = ?
         WHERE id = ?
-      `, [finalStatus, now, now, id]);
+      `, [finalStatus, now, now, entry.id]);
     }
 
     return res.json({ 
@@ -9658,7 +9698,7 @@ router.post('/volunteers/bulk-restore', authMiddleware, async (req: Authenticate
   }
 });
 
-// GET /api/admin/parents - Get all parents and metrics
+// GET /api/admin/parents - Get all parents and metrics with rich filtering
 router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user || !['admin', 'super_admin', 'team'].includes(req.user.role)) {
@@ -9666,6 +9706,13 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
     }
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const status = typeof req.query.status === 'string' ? req.query.status.trim() : 'active';
+    const workerStatus = typeof req.query.workerStatus === 'string' ? req.query.workerStatus.trim() : 'all';
+    const department = typeof req.query.department === 'string' ? req.query.department.trim() : 'all';
+    const country = typeof req.query.country === 'string' ? req.query.country.trim() : 'all';
+    const stateRegion = typeof req.query.stateRegion === 'string' ? req.query.stateRegion.trim() : 'all';
+    const city = typeof req.query.city === 'string' ? req.query.city.trim() : 'all';
+    const hasChildren = typeof req.query.hasChildren === 'string' ? req.query.hasChildren.trim() : 'all';
+    const hasLocation = typeof req.query.hasLocation === 'string' ? req.query.hasLocation.trim() : 'all';
 
     let queryStr = `
       SELECT 
@@ -9673,7 +9720,7 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
         u.email as user_email,
         u.role as user_role,
         m.secure_url as photo_url,
-        (SELECT COUNT(*) FROM children c WHERE c.parent_profile_id = p.id) as children_count,
+        (SELECT COUNT(*) FROM children c WHERE c.parent_profile_id = p.id AND (c.is_deleted = 0 OR c.is_deleted IS NULL)) as children_count,
         (SELECT email FROM users WHERE id = p.deleted_by) as deleted_by_email,
         (SELECT email FROM users WHERE id = p.restored_by) as restored_by_email
       FROM parent_profiles p
@@ -9692,15 +9739,137 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
       queryStr += ` AND (p.is_deleted = 0 OR p.is_deleted IS NULL)`;
     }
 
+    if (workerStatus === 'worker') {
+      queryStr += ` AND p.is_koinonia_worker = 1`;
+    } else if (workerStatus === 'non_worker') {
+      queryStr += ` AND (p.is_koinonia_worker = 0 OR p.is_koinonia_worker IS NULL)`;
+    }
+
+    if (department && department !== 'all') {
+      queryStr += ` AND p.department = ?`;
+      queryParams.push(department);
+    }
+
+    if (country && country !== 'all') {
+      queryStr += ` AND p.country = ?`;
+      queryParams.push(country);
+    }
+
+    if (stateRegion && stateRegion !== 'all') {
+      queryStr += ` AND p.state_region = ?`;
+      queryParams.push(stateRegion);
+    }
+
+    if (city && city !== 'all') {
+      queryStr += ` AND p.city = ?`;
+      queryParams.push(city);
+    }
+
+    if (hasChildren === 'has_children') {
+      queryStr += ` AND EXISTS (SELECT 1 FROM children c WHERE c.parent_profile_id = p.id AND (c.is_deleted = 0 OR c.is_deleted IS NULL))`;
+    } else if (hasChildren === 'no_children') {
+      queryStr += ` AND NOT EXISTS (SELECT 1 FROM children c WHERE c.parent_profile_id = p.id AND (c.is_deleted = 0 OR c.is_deleted IS NULL))`;
+    }
+
+    if (hasLocation === 'has_location') {
+      queryStr += ` AND ((p.city IS NOT NULL AND p.city != '') OR (p.state_region IS NOT NULL AND p.state_region != '') OR (p.country IS NOT NULL AND p.country != ''))`;
+    } else if (hasLocation === 'missing_location') {
+      queryStr += ` AND (p.city IS NULL OR p.city = '') AND (p.state_region IS NULL OR p.state_region = '') AND (p.country IS NULL OR p.country = '')`;
+    }
+
     if (q) {
-      queryStr += ` AND (p.full_name LIKE ? OR u.email LIKE ? OR p.phone_number LIKE ? OR p.city LIKE ?)`;
+      queryStr += ` AND (
+        p.full_name LIKE ? OR 
+        u.email LIKE ? OR 
+        p.phone_number LIKE ? OR 
+        p.whatsapp_number LIKE ? OR 
+        p.city LIKE ? OR 
+        p.state_region LIKE ? OR 
+        p.country LIKE ? OR 
+        p.home_address LIKE ? OR 
+        p.department LIKE ? OR 
+        EXISTS (
+          SELECT 1 FROM children c 
+          WHERE c.parent_profile_id = p.id 
+            AND (c.is_deleted = 0 OR c.is_deleted IS NULL) 
+            AND c.full_name LIKE ?
+        )
+      )`;
       const searchPattern = `%${q}%`;
-      queryParams.push(searchPattern, searchPattern, searchPattern, searchPattern);
+      queryParams.push(
+        searchPattern, searchPattern, searchPattern, searchPattern,
+        searchPattern, searchPattern, searchPattern, searchPattern,
+        searchPattern, searchPattern
+      );
     }
 
     queryStr += ` ORDER BY p.created_at DESC`;
 
     const rows = await query(queryStr, queryParams);
+
+    // Fetch linked children for these parents so we can display them concisely
+    const parentIds = rows.map((r: any) => r.id);
+    let childrenByParentId: Record<string, any[]> = {};
+    if (parentIds.length > 0) {
+      const placeholders = parentIds.map(() => '?').join(',');
+      const childrenRows = await query(`
+        SELECT id, parent_profile_id, full_name, calculated_age, age_group, gender
+        FROM children
+        WHERE parent_profile_id IN (${placeholders})
+          AND (is_deleted = 0 OR is_deleted IS NULL)
+        ORDER BY full_name ASC
+      `, parentIds);
+
+      for (const ch of childrenRows) {
+        if (!childrenByParentId[ch.parent_profile_id]) {
+          childrenByParentId[ch.parent_profile_id] = [];
+        }
+        childrenByParentId[ch.parent_profile_id].push({
+          id: ch.id,
+          fullName: ch.full_name,
+          age: ch.calculated_age,
+          ageGroup: ch.age_group,
+          gender: ch.gender
+        });
+      }
+    }
+
+    // Compute distinct filter options across all non-deleted parent profiles
+    const [filterDepts, filterCountries, filterStates, filterCities] = await Promise.all([
+      query(`
+        SELECT department, COUNT(*) as count 
+        FROM parent_profiles 
+        WHERE (is_deleted = 0 OR is_deleted IS NULL) 
+          AND department IS NOT NULL AND department != '' 
+        GROUP BY department 
+        ORDER BY department ASC
+      `),
+      query(`
+        SELECT country, COUNT(*) as count 
+        FROM parent_profiles 
+        WHERE (is_deleted = 0 OR is_deleted IS NULL) 
+          AND country IS NOT NULL AND country != '' 
+        GROUP BY country 
+        ORDER BY country ASC
+      `),
+      query(`
+        SELECT state_region, COUNT(*) as count 
+        FROM parent_profiles 
+        WHERE (is_deleted = 0 OR is_deleted IS NULL) 
+          AND state_region IS NOT NULL AND state_region != '' 
+        GROUP BY state_region 
+        ORDER BY state_region ASC
+      `),
+      query(`
+        SELECT city, COUNT(*) as count 
+        FROM parent_profiles 
+        WHERE (is_deleted = 0 OR is_deleted IS NULL) 
+          AND city IS NOT NULL AND city != '' 
+        GROUP BY city 
+        ORDER BY city ASC
+      `)
+    ]);
+
     const formatted = rows.map((p: any) => ({
       id: p.id,
       userId: p.user_id,
@@ -9722,6 +9891,7 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
       updatedAt: p.updated_at,
       userRole: p.user_role,
       childrenCount: Number(p.children_count || 0),
+      children: childrenByParentId[p.id] || [],
       isDeleted: p.is_deleted === 1,
       deletedAt: p.deleted_at,
       deletedBy: p.deleted_by,
@@ -9732,7 +9902,16 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
       restoredByEmail: p.restored_by_email
     }));
 
-    return res.json({ success: true, parents: formatted });
+    return res.json({ 
+      success: true, 
+      parents: formatted,
+      filterOptions: {
+        departments: filterDepts,
+        countries: filterCountries,
+        states: filterStates,
+        cities: filterCities
+      }
+    });
   } catch (err: any) {
     console.error('Error fetching admin parents list:', err);
     return res.status(500).json({ success: false, error: 'Failed to fetch parents list' });
@@ -10286,7 +10465,7 @@ router.post('/children/:childId/pass/generate', authMiddleware, async (req: Auth
       return res.status(404).json({ success: false, error: 'Child registration not found' });
     }
 
-    const pass = await issuePassForChild({ childId });
+    const pass = await issuePassForChild({ childId, eventId: entry.event_id });
     if (!pass) {
       return res.status(400).json({ success: false, error: 'Failed to issue pass' });
     }
@@ -10297,22 +10476,26 @@ router.post('/children/:childId/pass/generate', authMiddleware, async (req: Auth
     
     // Send Pass Ready Notification
     if (parentId) {
-      const now = new Date().toISOString();
-      const subject = 'Pass ready';
-      const message = `${childFirstName}'s event pass is ready. You can open it from your parent account.`;
-      
-      const notifId = `notif-${crypto.randomUUID()}`;
-      await execute(`
-        INSERT INTO notifications (
-          id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
-        ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
-      `, [notifId, subject, message, entry.event_id, childId, parentId, now]);
+      try {
+        const now = new Date().toISOString();
+        const subject = 'Pass ready';
+        const message = `${childFirstName}'s event pass is ready. You can open it from your parent account.`;
+        
+        const notifId = `notif-${crypto.randomUUID()}`;
+        await execute(`
+          INSERT INTO notifications (
+            id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
+          ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
+        `, [notifId, subject, message, entry.event_id, childId, parentId, now]).catch(e => console.error('Failed to insert pass ready notification:', e));
 
-      const pNotifId = `pnotif-${crypto.randomUUID()}`;
-      await execute(`
-        INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `, [pNotifId, parentId, entry.event_id, childId, subject, message, now]);
+        const pNotifId = `pnotif-${crypto.randomUUID()}`;
+        await execute(`
+          INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [pNotifId, parentId, entry.event_id, childId, subject, message, now]).catch(e => console.error('Failed to insert pass ready parent_notifications:', e));
+      } catch (notifErr) {
+        console.error('Non-critical notification error during pass generation:', notifErr);
+      }
     }
 
     return res.json({

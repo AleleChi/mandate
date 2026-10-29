@@ -5,6 +5,8 @@ import { api, extractApiError } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
 import { Button } from '../components/common/Button';
 import { PhotoUploadBox } from '../components/common/PhotoUploadBox';
+import { InternationalWhatsAppField } from '../components/common/InternationalWhatsAppField';
+import { inferCountryIsoFromE164, resolveConsistentCountryIso } from '../utils/countries';
 
 interface VolunteerRequestViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -37,6 +39,11 @@ export const VolunteerRequestView: React.FC<VolunteerRequestViewProps> = ({
   const [email] = useState(parentProfile?.email || '');
   const [phone, setPhone] = useState(parentProfile?.phone || '');
   const [whatsapp, setWhatsapp] = useState(parentProfile?.whatsapp || parentProfile?.phone || '');
+  const initialWaIso = parentProfile?.whatsappCountryIso ||
+    inferCountryIsoFromE164(parentProfile?.whatsapp) ||
+    inferCountryIsoFromE164(parentProfile?.phone) ||
+    'NG';
+  const [whatsappCountryIso, setWhatsappCountryIso] = useState<string>(initialWaIso);
   const [isWhatsappSame, setIsWhatsappSame] = useState(false);
   const [photoUrl, setPhotoUrl] = useState(parentProfile?.photoUrl || '');
   const [isKoinoniaWorker, setIsKoinoniaWorker] = useState(parentProfile?.isWorker || false);
@@ -45,24 +52,44 @@ export const VolunteerRequestView: React.FC<VolunteerRequestViewProps> = ({
   const [servingExperience, setServingExperience] = useState(false);
   const [note, setNote] = useState('');
   const [agreed, setAgreed] = useState(false);
+  const [agreedToWhatsApp, setAgreedToWhatsApp] = useState(false);
 
-  // Synchronize whatsapp if same checkbox is enabled
-  useEffect(() => {
-    if (isWhatsappSame) {
+  const handleWhatsappSameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = e.target.checked;
+    setIsWhatsappSame(checked);
+    if (checked) {
       setWhatsapp(phone);
+      const inferred = inferCountryIsoFromE164(phone);
+      if (inferred) setWhatsappCountryIso(inferred);
     }
-  }, [phone, isWhatsappSame]);
+  };
+
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setPhone(val);
+    if (isWhatsappSame) {
+      setWhatsapp(val);
+      const inferred = inferCountryIsoFromE164(val);
+      if (inferred) setWhatsappCountryIso(inferred);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!agreedToWhatsApp) {
+      showWarning('Consent Required', 'Please confirm consent to receive volunteer updates on WhatsApp.');
+      return;
+    }
 
     if (!agreed) {
       showWarning('Consent Required', 'You must agree to the Children Safety Policy & background checks to apply.');
       return;
     }
 
-    if (!fullName.trim() || !phone.trim() || !preferredTeam.trim()) {
-      showWarning('Fields Required', 'Please fill in all required fields (Name, Phone, Preferred Team).');
+    const cleanWhatsapp = (isWhatsappSame ? phone : whatsapp).trim();
+    if (!fullName.trim() || !phone.trim() || !cleanWhatsapp || !preferredTeam.trim()) {
+      showWarning('Fields Required', 'Please fill in all required fields (Name, Phone, WhatsApp, Preferred Team).');
       return;
     }
 
@@ -75,10 +102,17 @@ export const VolunteerRequestView: React.FC<VolunteerRequestViewProps> = ({
     setLoading(true);
 
     try {
+      const finalWaCountryIso = resolveConsistentCountryIso(
+        isWhatsappSame ? (inferCountryIsoFromE164(phone) || whatsappCountryIso) : whatsappCountryIso,
+        cleanWhatsapp
+      );
+
       const payload = {
         fullName: fullName.trim(),
         phone: phone.trim(),
-        whatsapp: (isWhatsappSame ? phone : whatsapp).trim(),
+        whatsapp: cleanWhatsapp,
+        whatsappCountryIso: finalWaCountryIso,
+        whatsappConsent: agreedToWhatsApp,
         isKoinoniaWorker,
         department: isKoinoniaWorker ? department.trim() : null,
         preferredTeam,
@@ -243,7 +277,7 @@ export const VolunteerRequestView: React.FC<VolunteerRequestViewProps> = ({
                 type="tel"
                 placeholder="+234 803 123 4567"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={handlePhoneChange}
                 className="w-full h-11 px-4 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:border-[#C59B27] bg-gray-50/50"
                 disabled={loading}
                 required
@@ -253,12 +287,14 @@ export const VolunteerRequestView: React.FC<VolunteerRequestViewProps> = ({
             {/* WHATSAPP */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-gray-700 block">WhatsApp Number</label>
+                <label className="text-xs font-semibold text-gray-700 block">
+                  WhatsApp Number <span className="text-[#DC2626]">*</span>
+                </label>
                 <label className="flex items-center space-x-1.5 text-xs text-gray-500 cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={isWhatsappSame}
-                    onChange={(e) => setIsWhatsappSame(e.target.checked)}
+                    onChange={handleWhatsappSameChange}
                     className="rounded text-[#C59B27] focus:ring-[#C59B27] border-gray-300"
                     disabled={loading}
                   />
@@ -266,15 +302,50 @@ export const VolunteerRequestView: React.FC<VolunteerRequestViewProps> = ({
                 </label>
               </div>
               {!isWhatsappSame && (
-                <input
-                  type="tel"
-                  placeholder="+234 803 123 4567"
+                <InternationalWhatsAppField
+                  id="volunteer-request-whatsapp"
+                  countryIso={whatsappCountryIso}
                   value={whatsapp}
-                  onChange={(e) => setWhatsapp(e.target.value)}
-                  className="w-full h-11 px-4 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:border-[#C59B27] bg-gray-50/50"
+                  onCountryChange={(iso) => setWhatsappCountryIso(iso)}
+                  onChange={(val) => setWhatsapp(val)}
                   disabled={loading}
+                  required
                 />
               )}
+
+              <div className="pt-1">
+                <label
+                  htmlFor="volunteer_request_whatsapp_consent"
+                  className="flex items-start gap-2.5 cursor-pointer select-none group"
+                >
+                  <input
+                    id="volunteer_request_whatsapp_consent"
+                    type="checkbox"
+                    className="sr-only"
+                    checked={agreedToWhatsApp}
+                    onChange={(e) => setAgreedToWhatsApp(e.target.checked)}
+                    disabled={loading}
+                    required
+                  />
+                  <div
+                    className={`w-4 h-4 mt-0.5 rounded border flex items-center justify-center transition-all shrink-0 ${
+                      agreedToWhatsApp
+                        ? 'bg-[#C59B27] border-[#C59B27] text-white'
+                        : 'bg-white border-[#D9D6CE] group-hover:border-[#18181B]'
+                    }`}
+                  >
+                    {agreedToWhatsApp && <Check className="w-3 h-3 stroke-[3] text-white" />}
+                  </div>
+                  <div className="pt-0.5">
+                    <span className="text-xs text-zinc-700 leading-snug block">
+                      I agree to receive volunteer updates on WhatsApp. <span className="text-[#DC2626]">*</span>
+                    </span>
+                    <span className="text-[11px] text-zinc-400 block mt-0.5">
+                      WhatsApp is required for volunteer duty updates and important event information.
+                    </span>
+                  </div>
+                </label>
+              </div>
             </div>
 
             {/* KOINONIA WORKER STATUS */}

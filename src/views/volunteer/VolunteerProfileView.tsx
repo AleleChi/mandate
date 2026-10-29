@@ -11,6 +11,8 @@ import { DeviceSecuritySettings } from '../../components/common/DeviceSecuritySe
 import { isAppInstalled, promptPwaInstall } from '../../utils/pwaInstall';
 import { PwaInstallGuideModal } from '../../components/common/PwaInstallBanner';
 import { VolunteerWhatsAppPreferences } from '../../components/volunteer/VolunteerWhatsAppPreferences';
+import { InternationalWhatsAppField } from '../../components/common/InternationalWhatsAppField';
+import { inferCountryIsoFromE164, resolveConsistentCountryIso } from '../../utils/countries';
 import {
   getPushNotificationStatus,
   subscribeUserToPush,
@@ -53,6 +55,7 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
   const [editFullName, setEditFullName] = useState<string>('');
   const [editPhone, setEditPhone] = useState<string>('');
   const [editWhatsapp, setEditWhatsapp] = useState<string>('');
+  const [editWhatsappCountryIso, setEditWhatsappCountryIso] = useState<string>('NG');
   const [whatsappSameAsPhone, setWhatsappSameAsPhone] = useState<boolean>(false);
   const [editIsKoinoniaWorker, setEditIsKoinoniaWorker] = useState<boolean>(false);
   const [editDepartment, setEditDepartment] = useState<string>('');
@@ -72,8 +75,11 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
       setEditFullName(u.fullName || u.full_name || '');
       const phoneVal = p.phone || '';
       const whatsappVal = p.whatsapp || '';
+      const rawWaIso = p.whatsapp_country_iso || p.whatsappCountryIso;
+      const inferredIso = inferCountryIsoFromE164(whatsappVal) || inferCountryIsoFromE164(phoneVal) || 'NG';
       setEditPhone(phoneVal);
       setEditWhatsapp(whatsappVal);
+      setEditWhatsappCountryIso(rawWaIso || inferredIso);
       setWhatsappSameAsPhone(phoneVal !== '' && phoneVal === whatsappVal);
       setEditIsKoinoniaWorker(p.is_koinonia_worker === 1 || p.isKoinoniaWorker === true);
       setEditDepartment(p.department || '');
@@ -103,7 +109,12 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
       fd.append('phone', editPhone.trim());
       // Always submit the copied phone value if synced checkbox is checked
       const finalWhatsapp = whatsappSameAsPhone ? editPhone.trim() : editWhatsapp.trim();
+      const finalWaCountryIso = resolveConsistentCountryIso(
+        whatsappSameAsPhone ? (inferCountryIsoFromE164(editPhone.trim()) || editWhatsappCountryIso) : editWhatsappCountryIso,
+        finalWhatsapp
+      );
       fd.append('whatsapp', finalWhatsapp);
+      fd.append('whatsappCountryIso', finalWaCountryIso);
       fd.append('isKoinoniaWorker', editIsKoinoniaWorker ? 'true' : 'false');
       fd.append('department', editIsKoinoniaWorker ? editDepartment.trim() : '');
       fd.append('preferredTeam', editPreferredTeam);
@@ -919,6 +930,8 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
                       setEditPhone(val);
                       if (whatsappSameAsPhone) {
                         setEditWhatsapp(val);
+                        const inferred = inferCountryIsoFromE164(val);
+                        if (inferred) setEditWhatsappCountryIso(inferred);
                       }
                     }}
                     placeholder="Enter phone number"
@@ -936,6 +949,8 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
                       setWhatsappSameAsPhone(checked);
                       if (checked) {
                         setEditWhatsapp(editPhone);
+                        const inferred = inferCountryIsoFromE164(editPhone);
+                        if (inferred) setEditWhatsappCountryIso(inferred);
                       }
                     }}
                     className="mt-0.5 h-4.5 w-4.5 rounded border-[#D9D6CE] dark:border-[#302E29] text-[#C59B27] focus:ring-[#C59B27]/30 focus:ring-offset-0 cursor-pointer accent-[#C59B27]"
@@ -947,20 +962,27 @@ export const VolunteerProfileView: React.FC<VolunteerProfileViewProps> = ({
 
                 {/* WhatsApp number */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-[#3F3F46] dark:text-[#B8B0A5] tracking-wide block">WhatsApp number</label>
-                  <input
-                    type="tel"
-                    required
-                    disabled={whatsappSameAsPhone}
-                    value={editWhatsapp}
-                    onChange={(e) => setEditWhatsapp(e.target.value)}
-                    placeholder="Enter WhatsApp number"
-                    className={`w-full border border-b-2 rounded-lg px-3.5 py-2.5 text-xs transition-all shadow-2xs ${
-                      whatsappSameAsPhone
-                        ? 'bg-[#F4F3EF]/65 dark:bg-[#262520]/50 border-[#EAE8E1] dark:border-[#302E29] border-b-[#EAE8E1] dark:border-b-[#302E29] text-[#71717A] dark:text-[#7A7570] cursor-not-allowed font-medium'
-                        : 'bg-white dark:bg-[#262520] border-[#EAE8E1] dark:border-[#302E29] border-b-[#D9D6CE] dark:border-b-[#302E29] focus:border-b-[#C59B27] text-[#18181B] dark:text-[#F0EBE3] placeholder:text-[#D9D6CE] dark:placeholder:text-[#7A7570] focus:outline-none'
-                    }`}
-                  />
+                  <label className="text-xs font-bold text-[#3F3F46] dark:text-[#B8B0A5] tracking-wide block">
+                    WhatsApp number <span className="text-[#DC2626]">*</span>
+                  </label>
+                  {!whatsappSameAsPhone ? (
+                    <InternationalWhatsAppField
+                      id="volunteer-edit-whatsapp"
+                      countryIso={editWhatsappCountryIso}
+                      value={editWhatsapp}
+                      onCountryChange={(iso) => setEditWhatsappCountryIso(iso)}
+                      onChange={(val) => setEditWhatsapp(val)}
+                      disabled={saving}
+                      required
+                    />
+                  ) : (
+                    <input
+                      type="tel"
+                      disabled
+                      value={editPhone}
+                      className="w-full border border-b-2 rounded-lg px-3.5 py-2.5 text-xs bg-[#F4F3EF]/65 dark:bg-[#262520]/50 border-[#EAE8E1] dark:border-[#302E29] text-[#71717A] dark:text-[#7A7570] cursor-not-allowed font-medium shadow-2xs"
+                    />
+                  )}
                 </div>
               </div>
 

@@ -48,8 +48,8 @@ export function extractApiError(err: any): { message: string; description: strin
     return { message: 'Connection problem', description: 'Please check your internet and try again.' };
   }
   const lower = raw.toLowerCase();
-  const containsForbidden = FORBIDDEN_WORDS.some(w => lower.includes(w));
-  if (containsForbidden || raw.includes('Request failed (5') || raw.includes('Request failed (4')) {
+  const isInternalStack = lower.includes('at ') || lower.includes('node_modules') || lower.includes('syntax error');
+  if (isInternalStack || raw.includes('Request failed (5')) {
     return { message: 'Something went wrong', description: 'Please try again.', code: err?.code };
   }
   return { message: raw, description: 'Please try again.', code: err?.code };
@@ -153,11 +153,13 @@ export const api = {
       const errorCode = data.code;
       console.error('[api.request Error Details]:', { url, status: res.status, rawError, errorCode, data });
       const lower = rawError.toLowerCase();
-      const containsForbidden = FORBIDDEN_WORDS.some(w => lower.includes(w));
-      if (containsForbidden || res.status >= 500) {
+      const isAdminRoute = url.includes('/api/admin/');
+      const isInternalStack = lower.includes('at ') || lower.includes('node_modules') || lower.includes('syntax error');
+      const containsForbidden = !isAdminRoute && FORBIDDEN_WORDS.some(w => lower.includes(w));
+      if (isInternalStack || (!isAdminRoute && (containsForbidden || res.status >= 500))) {
         throw new ParentApiError('Something went wrong', 'Please try again.', errorCode, data, res.status);
       }
-      throw new ParentApiError(rawError, 'Please try again.', errorCode, data, res.status);
+      throw new ParentApiError(rawError, data?.description || 'Please try again.', errorCode, data, res.status);
     }
     return data as T;
   },
@@ -490,7 +492,7 @@ export const api = {
         body: JSON.stringify(profile)
       });
     },
-    async updateWhatsAppConsent(payload: { action: 'opt_in' | 'opt_out'; whatsappNumber?: string }) {
+    async updateWhatsAppConsent(payload: { action: 'opt_in' | 'opt_out'; whatsappNumber?: string; whatsappCountryIso?: string }) {
       return api.request<{ success: boolean; message: string; consentStatus: string; isDualRole?: boolean; profile?: any }>('/api/volunteer/whatsapp/consent', {
         method: 'POST',
         body: JSON.stringify(payload)
@@ -1746,12 +1748,38 @@ export const api = {
         body: JSON.stringify(payload)
       });
     },
-    async getParents(params?: { q?: string; status?: string }) {
+    async getParents(params?: { 
+      q?: string; 
+      status?: string; 
+      workerStatus?: string; 
+      department?: string; 
+      country?: string; 
+      stateRegion?: string; 
+      city?: string; 
+      hasChildren?: string; 
+      hasLocation?: string; 
+    }) {
       const queryParams = new URLSearchParams();
       if (params?.q) queryParams.append('q', params.q);
       if (params?.status) queryParams.append('status', params.status);
+      if (params?.workerStatus && params.workerStatus !== 'all') queryParams.append('workerStatus', params.workerStatus);
+      if (params?.department && params.department !== 'all') queryParams.append('department', params.department);
+      if (params?.country && params.country !== 'all') queryParams.append('country', params.country);
+      if (params?.stateRegion && params.stateRegion !== 'all') queryParams.append('stateRegion', params.stateRegion);
+      if (params?.city && params.city !== 'all') queryParams.append('city', params.city);
+      if (params?.hasChildren && params.hasChildren !== 'all') queryParams.append('hasChildren', params.hasChildren);
+      if (params?.hasLocation && params.hasLocation !== 'all') queryParams.append('hasLocation', params.hasLocation);
       const queryString = queryParams.toString();
-      return api.request<{ success: boolean; parents: any[] }>(`/api/admin/parents${queryString ? `?${queryString}` : ''}`);
+      return api.request<{ 
+        success: boolean; 
+        parents: any[]; 
+        filterOptions?: {
+          departments: { department: string; count: number }[];
+          countries: { country: string; count: number }[];
+          states: { state_region: string; count: number }[];
+          cities: { city: string; count: number }[];
+        };
+      }>(`/api/admin/parents${queryString ? `?${queryString}` : ''}`);
     },
     async getParentDetails(id: string) {
       return api.request<{ success: boolean; parent: any; linkedChildren: any[]; eventSummary: any; attention: any; adminNotes: any[] }>(`/api/admin/parents/${id}`);

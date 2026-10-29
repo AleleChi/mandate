@@ -27,11 +27,18 @@ export async function issuePassForChild({
   let entry = null;
   if (eventId) {
     entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, eventId]);
-  } else {
+  }
+  
+  if (!entry) {
     const currentEventId = await getCurrentEventId();
     if (currentEventId) {
       entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, currentEventId]);
     }
+  }
+
+  // Resilient fallback: lookup the latest entry for this child if no event-specific entry was resolved
+  if (!entry) {
+    entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? ORDER BY created_at DESC LIMIT 1', [childId]);
   }
 
   if (!entry) {
@@ -89,8 +96,13 @@ export async function issuePassForChild({
  */
 export async function getPassForChild(childId: string, eventId?: string) {
   const targetEventId = eventId || (await getCurrentEventId());
-  if (!targetEventId) return null;
-  const entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, targetEventId]);
+  let entry = null;
+  if (targetEventId) {
+    entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, targetEventId]);
+  }
+  if (!entry) {
+    entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? ORDER BY created_at DESC LIMIT 1', [childId]);
+  }
   if (!entry) return null;
   return await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entry.id, 'active']);
 }

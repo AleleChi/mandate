@@ -5,6 +5,8 @@ import {
   getInternationalCountries,
   getCountryByIso,
   searchInternationalCountries,
+  resolveConsistentCountryIso,
+  supportsFlagEmoji,
   InternationalCountry
 } from '../../utils/countries';
 import { normalizePhone, validatePhoneNumber } from '../../utils/validation';
@@ -64,6 +66,18 @@ export const InternationalWhatsAppField: React.FC<InternationalWhatsAppFieldProp
 
   const inputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Platform flag emoji support detection (falls back gracefully on Windows to avoid raw ISO text)
+  const [hasFlagSupport, setHasFlagSupport] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return supportsFlagEmoji();
+    }
+    return true;
+  });
+
+  useEffect(() => {
+    setHasFlagSupport(supportsFlagEmoji());
+  }, []);
 
   // Retrieve full countries list and active country record
   const allCountries = useMemo(() => getInternationalCountries(), []);
@@ -140,6 +154,12 @@ export const InternationalWhatsAppField: React.FC<InternationalWhatsAppFieldProp
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value;
     onChange(raw);
+    if (raw && raw.trim().startsWith('+')) {
+      const consistentIso = resolveConsistentCountryIso(activeIso, raw);
+      if (consistentIso && consistentIso !== activeIso) {
+        onCountryChange(consistentIso);
+      }
+    }
   };
 
   // Selector modal element
@@ -227,9 +247,11 @@ export const InternationalWhatsAppField: React.FC<InternationalWhatsAppFieldProp
                   }`}
                 >
                   <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                    <span className="text-lg leading-none shrink-0" role="img" aria-label={c.name}>
-                      {c.flag}
-                    </span>
+                    {hasFlagSupport && c.flag ? (
+                      <span className="text-lg leading-none shrink-0" role="img" aria-label={c.name}>
+                        {c.flag}
+                      </span>
+                    ) : null}
                     <span className="truncate">{c.name}</span>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -280,9 +302,11 @@ export const InternationalWhatsAppField: React.FC<InternationalWhatsAppFieldProp
             aria-expanded={isSelectorOpen}
             aria-haspopup="dialog"
           >
-            <span className="text-base sm:text-lg leading-none shrink-0" role="img" aria-label={selectedCountry.name}>
-              {selectedCountry.flag}
-            </span>
+            {hasFlagSupport && selectedCountry.flag ? (
+              <span className="text-base sm:text-lg leading-none shrink-0" role="img" aria-label={selectedCountry.name}>
+                {selectedCountry.flag}
+              </span>
+            ) : null}
             <span className="text-[13px] sm:text-sm font-medium text-[#18181B] dark:text-[#F0EBE3] tracking-tight">
               {selectedCountry.dialCode}
             </span>

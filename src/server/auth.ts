@@ -51,6 +51,8 @@ export interface AuthenticatedRequest extends Request {
     whatsapp_consent_at?: string | null;
     whatsapp_opt_out_at?: string | null;
     whatsapp_consent_source?: string | null;
+    whatsapp_country_iso?: string | null;
+    whatsappCountryIso?: string | null;
     created_at: string;
     updated_at: string;
   };

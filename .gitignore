@@ -29,3 +29,6 @@ data/*.corrupt-*
 # Generated reports
 data/reports/
 koinonia.db
+.pnpm-store/
+worktrees/
+temp-home.html

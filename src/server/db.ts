@@ -546,6 +546,7 @@ function initSqliteSchema(db: Database.Database) {
       whatsapp_consent_source TEXT,
       country TEXT,
       country_iso TEXT,
+      whatsapp_country_iso TEXT,
       is_koinonia_worker INTEGER DEFAULT 0,
       department TEXT,
       preferred_team TEXT NOT NULL,
@@ -1220,6 +1221,9 @@ function initSqliteSchema(db: Database.Database) {
   } catch (e) {}
   try {
     db.exec(`ALTER TABLE volunteer_profiles ADD COLUMN country_iso TEXT;`);
+  } catch (e) {}
+  try {
+    db.exec(`ALTER TABLE volunteer_profiles ADD COLUMN whatsapp_country_iso TEXT;`);
   } catch (e) {}
 
   // Idempotency and worker retry state for notification_jobs in SQLite

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Phone, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { api } from '../../services/api';
+import { formatReadablePhone, inferCountryIsoFromE164 } from '../../utils/countries';
 
 interface VolunteerWhatsAppPreferencesProps {
   variant?: 'banner' | 'settings';
@@ -56,6 +57,11 @@ export const VolunteerWhatsAppPreferences: React.FC<VolunteerWhatsAppPreferences
   }, []);
 
   const phone = volunteerProfile?.phone || volunteerProfile?.whatsapp || volunteerProfile?.whatsappNumber || '';
+  const waCountryIso = volunteerProfile?.whatsappCountryIso ||
+    volunteerProfile?.whatsapp_country_iso ||
+    inferCountryIsoFromE164(phone) ||
+    'NG';
+  const formattedPhone = formatReadablePhone(phone, waCountryIso, false) || phone;
   const hasPhone = Boolean(phone && String(phone).trim());
   const isDualRole = Boolean(volunteerProfile?.isDualRole);
 
@@ -71,7 +77,10 @@ export const VolunteerWhatsAppPreferences: React.FC<VolunteerWhatsAppPreferences
 
     setLoading(true);
     try {
-      const res = await api.volunteer.updateWhatsAppConsent({ action: 'opt_in' });
+      const res = await api.volunteer.updateWhatsAppConsent({
+        action: 'opt_in',
+        whatsappCountryIso: waCountryIso
+      });
       if (res.success) {
         const newStatus = (res.consentStatus as 'opted_in') || 'opted_in';
         setWhatsappStatus(newStatus);
@@ -81,6 +90,10 @@ export const VolunteerWhatsAppPreferences: React.FC<VolunteerWhatsAppPreferences
           if (res.profile?.whatsapp) {
             volunteerProfile.whatsapp = res.profile.whatsapp;
             volunteerProfile.whatsappNumber = res.profile.whatsapp;
+          }
+          if (res.profile?.whatsapp_country_iso || res.profile?.whatsappCountryIso) {
+            volunteerProfile.whatsapp_country_iso = res.profile.whatsapp_country_iso || res.profile.whatsappCountryIso;
+            volunteerProfile.whatsappCountryIso = res.profile.whatsappCountryIso || res.profile.whatsapp_country_iso;
           }
         }
         try {
@@ -246,8 +259,8 @@ export const VolunteerWhatsAppPreferences: React.FC<VolunteerWhatsAppPreferences
               <p className="text-[11px] text-zinc-500 leading-relaxed">
                 {isOptedIn
                   ? (isDualRole
-                      ? (phone ? `WhatsApp updates are active for your account (${phone}).` : 'WhatsApp updates are enabled for your account.')
-                      : (phone ? `Active for ${phone}. You can receive volunteer updates and duty reminders on WhatsApp.` : 'You can receive volunteer updates and duty reminders on WhatsApp.'))
+                      ? (phone ? `WhatsApp updates are active for your account (${formattedPhone}).` : 'WhatsApp updates are enabled for your account.')
+                      : (phone ? `Active for ${formattedPhone}. You can receive volunteer updates and duty reminders on WhatsApp.` : 'You can receive volunteer updates and duty reminders on WhatsApp.'))
                   : 'Receive important volunteer updates, duty reminders and event information on WhatsApp.'}
               </p>
             </div>

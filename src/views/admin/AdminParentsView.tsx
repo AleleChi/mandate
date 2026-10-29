@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Users,
@@ -8,7 +8,21 @@ import {
   Plus,
   MoreHorizontal,
   AlertTriangle,
-  ChevronDown
+  ChevronDown,
+  MapPin,
+  Briefcase,
+  ShieldCheck,
+  Download,
+  Eye,
+  X,
+  Filter,
+  CheckCircle2,
+  MessageSquare,
+  Home,
+  Globe,
+  Building2,
+  UserCheck,
+  HeartHandshake
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -25,6 +39,9 @@ interface AdminParentsViewProps {
 }
 
 type ParentTab = 'active' | 'removed';
+type WorkerFilterType = 'all' | 'worker' | 'non_worker';
+type ChildrenFilterType = 'all' | 'has_children' | 'no_children';
+type LocationFilterType = 'all' | 'has_location' | 'missing_location';
 
 export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, adminUser }) => {
   const isSuperAdmin = adminUser?.role === 'super_admin';
@@ -33,6 +50,29 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<ParentTab>('active');
+
+  // Enhanced Filter States
+  const [workerFilter, setWorkerFilter] = useState<WorkerFilterType>('all');
+  const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
+  const [selectedCountry, setSelectedCountry] = useState<string>('all');
+  const [selectedState, setSelectedState] = useState<string>('all');
+  const [selectedCity, setSelectedCity] = useState<string>('all');
+  const [hasChildrenFilter, setHasChildrenFilter] = useState<ChildrenFilterType>('all');
+  const [hasLocationFilter, setHasLocationFilter] = useState<LocationFilterType>('all');
+  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
+
+  // Available filter options returned by backend
+  const [filterOptions, setFilterOptions] = useState<{
+    departments: { department: string; count: number }[];
+    countries: { country: string; count: number }[];
+    states: { state_region: string; count: number }[];
+    cities: { city: string; count: number }[];
+  }>({
+    departments: [],
+    countries: [],
+    states: [],
+    cities: []
+  });
 
   // Bulk selection & actions
   const [selectedParentIds, setSelectedParentIds] = useState<string[]>([]);
@@ -49,14 +89,19 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
   const [bulkPurgeConfirmText, setBulkPurgeConfirmText] = useState('');
   const [submittingBulkPurge, setSubmittingBulkPurge] = useState(false);
 
-  // Stats across active parents
+  // Stats across parents
   const [stats, setStats] = useState({
     parents: 0,
     childrenLinked: 0,
     teamMembers: 0,
+    regularParents: 0,
+    locationsCount: 0,
     whatsAppNumbers: 0,
     whatsAppOptedIn: 0
   });
+
+  // Quick View Modal
+  const [quickViewParent, setQuickViewParent] = useState<any | null>(null);
 
   // Overflow menu state per row
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
@@ -80,24 +125,77 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
   // Add parent modal
   const [showAddParentModal, setShowAddParentModal] = useState(false);
 
+  // Active filters count
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (workerFilter !== 'all') count++;
+    if (selectedDepartment !== 'all') count++;
+    if (selectedCountry !== 'all') count++;
+    if (selectedState !== 'all') count++;
+    if (selectedCity !== 'all') count++;
+    if (hasChildrenFilter !== 'all') count++;
+    if (hasLocationFilter !== 'all') count++;
+    if (searchQuery.trim()) count++;
+    return count;
+  }, [
+    workerFilter,
+    selectedDepartment,
+    selectedCountry,
+    selectedState,
+    selectedCity,
+    hasChildrenFilter,
+    hasLocationFilter,
+    searchQuery
+  ]);
+
+  const handleResetFilters = () => {
+    setSearchQuery('');
+    setWorkerFilter('all');
+    setSelectedDepartment('all');
+    setSelectedCountry('all');
+    setSelectedState('all');
+    setSelectedCity('all');
+    setHasChildrenFilter('all');
+    setHasLocationFilter('all');
+  };
+
   const fetchParents = async () => {
     setLoading(true);
     try {
-      const res = await api.admin.getParents({ q: searchQuery, status: activeTab });
+      const res = await api.admin.getParents({
+        q: searchQuery,
+        status: activeTab,
+        workerStatus: workerFilter,
+        department: selectedDepartment,
+        country: selectedCountry,
+        stateRegion: selectedState,
+        city: selectedCity,
+        hasChildren: hasChildrenFilter,
+        hasLocation: hasLocationFilter
+      });
+
       if (res.success) {
         const list = res.parents || [];
         setParents(list);
 
-        // Update overall summary statistics when looking at active tab without search filters
-        if (activeTab === 'active' && !searchQuery.trim()) {
-          setStats({
-            parents: list.length,
-            childrenLinked: list.reduce((sum: number, p: any) => sum + Number(p.childrenCount || 0), 0),
-            teamMembers: list.filter((p: any) => p.isKoinoniaWorker).length,
-            whatsAppNumbers: list.filter((p: any) => Boolean(p.whatsapp && String(p.whatsapp).trim())).length,
-            whatsAppOptedIn: list.filter((p: any) => p.whatsappConsentStatus === 'opted_in').length
-          });
+        if (res.filterOptions) {
+          setFilterOptions(res.filterOptions);
         }
+
+        // Calculate statistics based on fetched slice or entire active list
+        const distinctCities = new Set(
+          list.map((p: any) => p.city).filter((c: any) => Boolean(c && String(c).trim()))
+        );
+
+        setStats({
+          parents: list.length,
+          childrenLinked: list.reduce((sum: number, p: any) => sum + Number(p.childrenCount || 0), 0),
+          teamMembers: list.filter((p: any) => p.isKoinoniaWorker).length,
+          regularParents: list.filter((p: any) => !p.isKoinoniaWorker).length,
+          locationsCount: distinctCities.size,
+          whatsAppNumbers: list.filter((p: any) => Boolean(p.whatsapp && String(p.whatsapp).trim())).length,
+          whatsAppOptedIn: list.filter((p: any) => p.whatsappConsentStatus === 'opted_in').length
+        });
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
@@ -109,12 +207,30 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
 
   useEffect(() => {
     fetchParents();
-  }, [searchQuery, activeTab]);
+  }, [
+    searchQuery,
+    activeTab,
+    workerFilter,
+    selectedDepartment,
+    selectedCountry,
+    selectedState,
+    selectedCity,
+    hasChildrenFilter,
+    hasLocationFilter
+  ]);
 
   // Clear bulk selection on tab switch or search change
   useEffect(() => {
     setSelectedParentIds([]);
-  }, [searchQuery, activeTab]);
+  }, [
+    searchQuery,
+    activeTab,
+    workerFilter,
+    selectedDepartment,
+    selectedCountry,
+    selectedState,
+    selectedCity
+  ]);
 
   const isAllVisibleSelected = parents.length > 0 && parents.every(p => selectedParentIds.includes(String(p.id)));
   const isSomeVisibleSelected = parents.some(p => selectedParentIds.includes(String(p.id)));
@@ -292,6 +408,69 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     }
   };
 
+  // Export filtered parents list as CSV
+  const handleExportCSV = () => {
+    if (parents.length === 0) {
+      showError('Export empty', 'There are no parents matching your current filters.');
+      return;
+    }
+
+    const headers = [
+      'Full Name',
+      'Worker Status',
+      'Department',
+      'Email',
+      'Phone Number',
+      'WhatsApp Number',
+      'Country',
+      'State/Region',
+      'City',
+      'Home Address',
+      'Children Count',
+      'Children Names',
+      'Account Status',
+      'Created Date'
+    ];
+
+    const escapeCsv = (val: any) => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const rows = parents.map(p => {
+      const childrenNames = (p.children || []).map((c: any) => `${c.fullName}${c.age ? ` (${c.age}y)` : ''}`).join('; ');
+      return [
+        escapeCsv(p.fullName),
+        escapeCsv(p.isKoinoniaWorker ? 'Koinonia Worker' : 'Parent'),
+        escapeCsv(p.department || ''),
+        escapeCsv(p.email || ''),
+        escapeCsv(p.phone || ''),
+        escapeCsv(p.whatsapp || ''),
+        escapeCsv(p.country || ''),
+        escapeCsv(p.stateRegion || ''),
+        escapeCsv(p.city || ''),
+        escapeCsv(p.homeAddress || ''),
+        escapeCsv(p.childrenCount || 0),
+        escapeCsv(childrenNames),
+        escapeCsv(p.isDeleted ? 'Removed' : 'Active'),
+        escapeCsv(p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '')
+      ].join(',');
+    });
+
+    const csvContent = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `koinonia_parents_directory_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showSuccess('Export Complete', `Exported ${parents.length} parent records to CSV.`);
+  };
+
   const getInitials = (name: any): string => {
     if (!name || typeof name !== 'string') return 'P';
     const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -313,6 +492,155 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
 
   const isDomReady = typeof document !== 'undefined' && Boolean(document.body);
 
+  // ---- QUICK FAMILY OVERVIEW MODAL ----
+  const quickViewModal = (quickViewParent && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+      <div
+        onClick={() => setQuickViewParent(null)}
+        className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
+      />
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden animate-scale-in text-[#18181B] dark:text-[#F0EBE3]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-5 border-b border-[#EAE8E1] dark:border-[#302E29] bg-[#FAF9F6] dark:bg-[#21211E]">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-[#C59B27]/10 text-[#C59B27] flex items-center justify-center font-bold text-base shrink-0">
+              {getInitials(getDisplayName(quickViewParent))}
+            </div>
+            <div>
+              <h3 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3] leading-tight flex items-center gap-2">
+                <span>{getDisplayName(quickViewParent)}</span>
+                {quickViewParent.isKoinoniaWorker && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#C59B27]/15 text-[#C59B27] border border-[#C59B27]/30">
+                    Worker
+                  </span>
+                )}
+              </h3>
+              <p className="text-xs text-zinc-500 dark:text-[#B8B0A5]">{quickViewParent.email || 'No email registered'}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setQuickViewParent(null)}
+            className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-600 dark:hover:text-[#F0EBE3] hover:bg-zinc-100 dark:hover:bg-[#262520] transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Content Body */}
+        <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+          {/* Quick Stat Pill Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-[#24231F] border border-[#EAE8E1] dark:border-[#302E29]">
+              <span className="text-[10px] font-medium text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block mb-1">Role / Status</span>
+              <p className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">
+                {quickViewParent.isKoinoniaWorker ? `Worker (${quickViewParent.department || 'General'})` : 'Regular Parent'}
+              </p>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-[#24231F] border border-[#EAE8E1] dark:border-[#302E29]">
+              <span className="text-[10px] font-medium text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block mb-1">Phone & WhatsApp</span>
+              <p className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">
+                {quickViewParent.phone || 'None'}
+              </p>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-[#24231F] border border-[#EAE8E1] dark:border-[#302E29] col-span-2 sm:col-span-1">
+              <span className="text-[10px] font-medium text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block mb-1">Children Registered</span>
+              <p className="text-xs font-semibold text-[#C59B27]">
+                {formatChildrenCount(quickViewParent.childrenCount || 0)}
+              </p>
+            </div>
+          </div>
+
+          {/* Location Origin Section */}
+          <div className="p-4 rounded-2xl bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] space-y-2">
+            <div className="flex items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-[#F0EBE3]">
+              <MapPin className="w-4 h-4 text-[#C59B27]" />
+              <span>Geographic Origin & Residence</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs pt-1">
+              <div>
+                <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block">City</span>
+                <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">{quickViewParent.city || 'Not specified'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block">State / Region</span>
+                <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">{quickViewParent.stateRegion || 'Not specified'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block">Country</span>
+                <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">{quickViewParent.country || 'Nigeria'}</span>
+              </div>
+            </div>
+            {quickViewParent.homeAddress && (
+              <div className="pt-2 border-t border-[#EAE8E1] dark:border-[#302E29] text-xs">
+                <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block">Home Address</span>
+                <p className="text-zinc-700 dark:text-[#B8B0A5] font-medium leading-relaxed">{quickViewParent.homeAddress}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Connected Children Section */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] flex items-center gap-2">
+                <Users className="w-4 h-4 text-[#C59B27]" />
+                <span>Connected Children ({quickViewParent.children?.length || 0})</span>
+              </h4>
+            </div>
+
+            {(!quickViewParent.children || quickViewParent.children.length === 0) ? (
+              <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-[#24231F] border border-[#EAE8E1] dark:border-[#302E29] text-center text-xs text-zinc-400 dark:text-[#7A7570]">
+                No children profiles linked to this parent yet.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {quickViewParent.children.map((child: any) => (
+                  <div
+                    key={child.id}
+                    className="p-3.5 rounded-2xl bg-white dark:bg-[#24231F] border border-[#EAE8E1] dark:border-[#302E29] flex items-center justify-between"
+                  >
+                    <div>
+                      <p className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">{child.fullName}</p>
+                      <p className="text-[11px] text-zinc-400 dark:text-[#7A7570]">
+                        {child.gender || 'Unknown gender'} · {child.age ? `${child.age} yrs` : 'Age not calculated'} {child.ageGroup ? `(${child.ageGroup})` : ''}
+                      </p>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-xl text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40">
+                      Registered
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Modal Footer */}
+        <div className="px-6 py-4 bg-[#FAF9F6] dark:bg-[#21211E] border-t border-[#EAE8E1] dark:border-[#302E29] flex items-center justify-between">
+          <button
+            onClick={() => {
+              const pid = quickViewParent.id;
+              setQuickViewParent(null);
+              onNavigate(`/admin/parents/${pid}` as AppRoute);
+            }}
+            className="px-4 py-2 text-xs font-semibold text-[#C59B27] hover:text-[#B08921] transition-colors cursor-pointer"
+          >
+            Open Full Profile & History →
+          </button>
+          <Button
+            onClick={() => setQuickViewParent(null)}
+            variant="secondary"
+            className="px-4 py-2 text-xs"
+          >
+            Close
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
   // ---- PORTAL MODALS ----
   const removeModal = (parentToRemove && isDomReady) ? createPortal(
     <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
@@ -329,7 +657,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
           </h4>
         </div>
         <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-4 leading-relaxed">
-          Their account will move to Removed and can be restored later.
+          Their account will move to Removed and can be restored later. Linked children records remain safe.
         </p>
         <form onSubmit={handleRemoveParentSubmit} className="space-y-4">
           <div>
@@ -449,52 +777,10 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     document.body
   ) : null;
 
-  const bulkPurgeModal = (showBulkPurgeModal && isDomReady) ? createPortal(
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-fade-in font-sans" id="confirm-bulk-parent-purge-modal">
-      <div
-        onClick={() => !submittingBulkPurge && setShowBulkPurgeModal(false)}
-        className="fixed inset-0 bg-black/50"
-        style={{ backdropFilter: 'blur(2px)' }}
-      />
-      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-red-200 dark:border-red-900/40 rounded-3xl w-full max-w-md shadow-2xl p-6 space-y-4">
-        <div className="flex items-center gap-2 text-red-600">
-          <Trash2 className="w-5 h-5 shrink-0" />
-          <h3 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
-            Delete {selectedParentIds.length} parents permanently?
-          </h3>
-        </div>
-        <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
-          This cannot be undone. The selected parent records will be permanently removed.
-        </p>
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
-          <Button
-            type="button"
-            onClick={() => setShowBulkPurgeModal(false)}
-            variant="secondary"
-            disabled={submittingBulkPurge}
-            className="px-4 py-2 text-xs"
-          >
-            Cancel
-          </Button>
-          <button
-            type="button"
-            onClick={() => handleBulkPurge()}
-            disabled={submittingBulkPurge}
-            className="px-5 py-2 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
-            id="confirm-bulk-parent-purge-btn"
-          >
-            {submittingBulkPurge ? 'Deleting…' : 'Delete permanently'}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  ) : null;
-
   const bulkRemoveModal = (showBulkRemoveModal && isDomReady) ? createPortal(
     <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
       <div
-        onClick={() => !submittingBulkRemove && setShowBulkRemoveModal(false)}
+        onClick={() => setShowBulkRemoveModal(false)}
         className="fixed inset-0 bg-black/50"
         style={{ backdropFilter: 'blur(2px)' }}
       />
@@ -506,7 +792,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
           </h4>
         </div>
         <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-4 leading-relaxed">
-          These parents will be moved to the Removed tab. All linked children, event registrations, attendance records, and audit history will be safely preserved. You can restore these parents at any time.
+          These parents will be moved to the Removed tab. All linked children and attendance records will be safely preserved.
         </p>
         <form onSubmit={handleBulkRemoveSubmit} className="space-y-4">
           <div>
@@ -588,10 +874,58 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     document.body
   ) : null;
 
+  const bulkPurgeModal = (showBulkPurgeModal && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-fade-in font-sans">
+      <div
+        className="fixed inset-0 bg-black/50"
+        onClick={() => !submittingBulkPurge && setShowBulkPurgeModal(false)}
+        style={{ backdropFilter: 'blur(2px)' }}
+      />
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-red-200 dark:border-red-900/40 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+        <div className="flex items-center gap-2 text-red-600">
+          <Trash2 className="w-5 h-5 shrink-0" />
+          <h3 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
+            Permanently delete {selectedParentIds.length} parents?
+          </h3>
+        </div>
+        <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+          Type <strong>DELETE</strong> below to confirm. This action cannot be reversed.
+        </p>
+        <input
+          type="text"
+          value={bulkPurgeConfirmText}
+          onChange={(e) => setBulkPurgeConfirmText(e.target.value)}
+          placeholder="Type DELETE to confirm"
+          className="w-full px-3.5 py-2 text-xs rounded-xl border border-red-300 dark:border-red-800 bg-white dark:bg-[#262520] focus:outline-none focus:border-red-500 text-zinc-800 dark:text-[#F0EBE3]"
+        />
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+          <Button
+            type="button"
+            onClick={() => setShowBulkPurgeModal(false)}
+            variant="secondary"
+            disabled={submittingBulkPurge}
+            className="px-4 py-2 text-xs"
+          >
+            Cancel
+          </Button>
+          <button
+            type="button"
+            onClick={() => handleBulkPurge()}
+            disabled={submittingBulkPurge || bulkPurgeConfirmText !== 'DELETE'}
+            className="px-5 py-2 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
+          >
+            {submittingBulkPurge ? 'Deleting…' : 'Confirm purge'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
   return (
     <div
       className="space-y-6"
-      data-view-version="admin-parents-refined"
+      data-view-version="admin-parents-enhanced-directory"
       id="admin-parents-module-root"
     >
       {/* Portal modals */}
@@ -601,177 +935,393 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       {bulkRemoveModal}
       {bulkRestoreModal}
       {bulkPurgeModal}
+      {quickViewModal}
 
-      {/* 1. Header */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 pb-4 border-b border-[#EAE8E1] dark:border-[#302E29]">
+      {/* 1. Header with title and actions */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-4 border-b border-[#EAE8E1] dark:border-[#302E29]">
         <div>
-          <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
-            Parents
-          </h1>
+          <div className="flex items-center gap-2.5">
+            <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
+              Parents & Workers Directory
+            </h1>
+            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-[#C59B27]/15 text-[#C59B27] border border-[#C59B27]/30">
+              {parents.length} Records
+            </span>
+          </div>
           <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">
-            View parent details, contact information and the children connected to each account.
+            Filter, search, and inspect registered parents, Koinonia workers, origin locations, and linked families.
           </p>
         </div>
-        <Button
-          onClick={() => setShowAddParentModal(true)}
-          variant="primary"
-          className="text-xs px-4 py-2 flex items-center gap-1.5 shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add parent</span>
-        </Button>
-      </div>
 
-      {/* 2. Restrained Summary Strip */}
-      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl px-6 py-4">
-        <div className="flex items-center divide-x divide-[#EAE8E1] dark:divide-[#302E29] overflow-x-auto">
-          <div className="pr-8 shrink-0">
-            <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-0.5">Parents</p>
-            <p className="text-lg font-semibold text-[#18181B] dark:text-[#F0EBE3]">{stats.parents}</p>
-          </div>
-          <div className="px-8 shrink-0">
-            <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-0.5">Children linked</p>
-            <p className="text-lg font-semibold text-zinc-700 dark:text-[#B8B0A5]">{stats.childrenLinked}</p>
-          </div>
-          <div className="px-8 shrink-0">
-            <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-0.5">Team members</p>
-            <p className="text-lg font-semibold text-zinc-700 dark:text-[#B8B0A5]">{stats.teamMembers}</p>
-          </div>
-          <div className="px-8 shrink-0">
-            <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-0.5">WhatsApp numbers</p>
-            <p className="text-lg font-semibold text-zinc-700 dark:text-[#B8B0A5]">{stats.whatsAppNumbers}</p>
-          </div>
-          <div className="pl-8 shrink-0">
-            <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mb-0.5">Opted in</p>
-            <p className="text-lg font-semibold text-zinc-700 dark:text-[#B8B0A5]">{stats.whatsAppOptedIn}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* 3. Text Tabs */}
-      <div className="flex border-b border-[#EAE8E1] dark:border-[#302E29]" id="parents-directory-tabs">
-        <button
-          onClick={() => handleTabChange('active')}
-          className={`px-4 py-2.5 text-xs font-medium transition-all border-b-2 cursor-pointer focus:outline-none ${
-            activeTab === 'active'
-              ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3]'
-              : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5]'
-          }`}
-          id="tab-active-parents"
-        >
-          Active
-        </button>
-        <button
-          onClick={() => handleTabChange('removed')}
-          className={`px-4 py-2.5 text-xs font-medium transition-all border-b-2 cursor-pointer focus:outline-none ${
-            activeTab === 'removed'
-              ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3]'
-              : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5]'
-          }`}
-          id="tab-removed-parents"
-        >
-          Removed
-        </button>
-      </div>
-
-      {/* 4. Search Filter */}
-      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 flex gap-3 items-center">
-        <div className="relative w-full">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 dark:text-[#7A7570]" />
-          <input
-            type="text"
-            placeholder="Search by name, email or phone"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] focus:outline-none focus:border-[#C59B27] transition-all bg-zinc-50/50 dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#5A5550]"
-          />
-        </div>
-        {searchQuery && (
-          <button
-            onClick={() => setSearchQuery('')}
-            className="text-xs text-zinc-400 dark:text-[#7A7570] hover:text-zinc-700 dark:hover:text-[#F0EBE3] transition-colors shrink-0 ml-1 cursor-pointer focus:outline-none"
+        <div className="flex items-center gap-2.5">
+          <Button
+            onClick={handleExportCSV}
+            variant="secondary"
+            className="text-xs px-3.5 py-2 flex items-center gap-1.5 shrink-0"
           >
-            Clear
+            <Download className="w-3.5 h-3.5" />
+            <span>Export CSV</span>
+          </Button>
+          <Button
+            onClick={() => setShowAddParentModal(true)}
+            variant="primary"
+            className="text-xs px-4 py-2 flex items-center gap-1.5 shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add parent</span>
+          </Button>
+        </div>
+      </div>
+
+      {/* 2. Rich KPI Metrics Strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 transition-all">
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-[11px] font-medium text-zinc-500 dark:text-[#7A7570]">Total Parents</p>
+            <Users className="w-4 h-4 text-zinc-400 dark:text-[#7A7570]" />
+          </div>
+          <p className="text-xl font-bold text-[#18181B] dark:text-[#F0EBE3]">{stats.parents}</p>
+          <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mt-0.5">Profiles in view</p>
+        </div>
+
+        <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 transition-all">
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-[11px] font-medium text-[#C59B27]">Koinonia Workers</p>
+            <Briefcase className="w-4 h-4 text-[#C59B27]" />
+          </div>
+          <p className="text-xl font-bold text-[#C59B27]">{stats.teamMembers}</p>
+          <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mt-0.5">Ministry team</p>
+        </div>
+
+        <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 transition-all">
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-[11px] font-medium text-zinc-500 dark:text-[#7A7570]">Regular Parents</p>
+            <HeartHandshake className="w-4 h-4 text-zinc-400 dark:text-[#7A7570]" />
+          </div>
+          <p className="text-xl font-bold text-zinc-800 dark:text-[#F0EBE3]">{stats.regularParents}</p>
+          <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mt-0.5">Non-worker guardians</p>
+        </div>
+
+        <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 transition-all">
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-[11px] font-medium text-zinc-500 dark:text-[#7A7570]">Children Linked</p>
+            <Users className="w-4 h-4 text-amber-500" />
+          </div>
+          <p className="text-xl font-bold text-zinc-800 dark:text-[#F0EBE3]">{stats.childrenLinked}</p>
+          <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mt-0.5">Connected family</p>
+        </div>
+
+        <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 transition-all">
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-[11px] font-medium text-zinc-500 dark:text-[#7A7570]">Locations / Cities</p>
+            <MapPin className="w-4 h-4 text-blue-500" />
+          </div>
+          <p className="text-xl font-bold text-zinc-800 dark:text-[#F0EBE3]">{stats.locationsCount}</p>
+          <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mt-0.5">Regions represented</p>
+        </div>
+
+        <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 transition-all">
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-[11px] font-medium text-zinc-500 dark:text-[#7A7570]">WhatsApp Ready</p>
+            <MessageSquare className="w-4 h-4 text-emerald-500" />
+          </div>
+          <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{stats.whatsAppOptedIn}</p>
+          <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mt-0.5">Verified & opted in</p>
+        </div>
+      </div>
+
+      {/* 3. Status Tabs (Active vs Removed) */}
+      <div className="flex items-center justify-between border-b border-[#EAE8E1] dark:border-[#302E29]" id="parents-directory-tabs">
+        <div className="flex gap-2">
+          <button
+            onClick={() => handleTabChange('active')}
+            className={`px-4 py-2.5 text-xs font-semibold transition-all border-b-2 cursor-pointer focus:outline-none flex items-center gap-2 ${
+              activeTab === 'active'
+                ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3]'
+                : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5]'
+            }`}
+            id="tab-active-parents"
+          >
+            <span>Active Accounts</span>
+            {activeTab === 'active' && (
+              <span className="w-2 h-2 rounded-full bg-[#C59B27]" />
+            )}
+          </button>
+          <button
+            onClick={() => handleTabChange('removed')}
+            className={`px-4 py-2.5 text-xs font-semibold transition-all border-b-2 cursor-pointer focus:outline-none flex items-center gap-2 ${
+              activeTab === 'removed'
+                ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3]'
+                : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5]'
+            }`}
+            id="tab-removed-parents"
+          >
+            <span>Removed & Archived</span>
+          </button>
+        </div>
+
+        {activeFiltersCount > 0 && (
+          <button
+            onClick={handleResetFilters}
+            className="text-xs text-[#C59B27] hover:underline cursor-pointer flex items-center gap-1 focus:outline-none"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Reset {activeFiltersCount} filter{activeFiltersCount > 1 ? 's' : ''}</span>
           </button>
         )}
       </div>
 
-      {/* Contextual Action Bar */}
-      {selectedParentIds.length > 0 && (
-        <div className="bg-[#FAF9F5] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs animate-fade-in mb-4">
-          <div className="flex items-center gap-3">
-            <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] whitespace-nowrap">
-              {selectedParentIds.length} selected
-            </span>
-            <div className="h-4 w-px bg-[#EAE8E1] dark:bg-[#302E29] hidden sm:block" />
-            <div className="flex flex-wrap items-center gap-2">
-              {activeTab === 'active' ? (
-                <button
-                  type="button"
-                  onClick={() => setShowBulkRemoveModal(true)}
-                  className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-[#262520] border border-red-200 dark:border-red-900/40 text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors focus:outline-none cursor-pointer"
-                >
-                  Remove
-                </button>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setShowBulkRestoreModal(true)}
-                    disabled={submittingBulkRestore}
-                    className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors focus:outline-none cursor-pointer disabled:opacity-50"
-                  >
-                    {submittingBulkRestore ? 'Restoring…' : 'Restore'}
-                  </button>
-                  {isSuperAdmin && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setBulkMoreDropdownOpen(false);
-                        setBulkPurgeConfirmText('');
-                        setShowBulkPurgeModal(true);
-                      }}
-                      disabled={submittingBulkPurge}
-                      className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-[#262520] border border-red-200 dark:border-red-900/40 text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors focus:outline-none cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
-                      id="bulk-parent-permanent-delete-btn"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
-                      <span>Delete permanently</span>
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
+      {/* 4. Comprehensive Interactive Filter Control Panel */}
+      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4">
+        {/* Top Filter Bar: Search + Worker Segment Pill Selector */}
+        <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
+          {/* Search bar */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 dark:text-[#7A7570]" />
+            <input
+              type="text"
+              placeholder="Search by parent name, phone, email, city, state, address, or child name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] focus:outline-none focus:border-[#C59B27] transition-all bg-zinc-50/70 dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#5A5550]"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-[#F0EBE3] cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={() => setSelectedParentIds([])}
-            className="text-zinc-500 dark:text-[#7A7570] hover:text-[#18181B] dark:hover:text-[#F0EBE3] text-xs font-medium underline-offset-4 hover:underline transition-colors cursor-pointer"
-          >
-            Clear selection
-          </button>
+
+          {/* Role Segment Toggle Pills */}
+          <div className="inline-flex p-1 rounded-2xl bg-zinc-100 dark:bg-[#24231F] border border-[#EAE8E1] dark:border-[#302E29] shrink-0">
+            <button
+              onClick={() => setWorkerFilter('all')}
+              className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all cursor-pointer ${
+                workerFilter === 'all'
+                  ? 'bg-white dark:bg-[#1D1D1A] text-[#18181B] dark:text-[#F0EBE3] shadow-xs'
+                  : 'text-zinc-500 dark:text-[#7A7570] hover:text-zinc-800 dark:hover:text-[#F0EBE3]'
+              }`}
+            >
+              All Members
+            </button>
+            <button
+              onClick={() => setWorkerFilter('worker')}
+              className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+                workerFilter === 'worker'
+                  ? 'bg-[#C59B27] text-white shadow-xs'
+                  : 'text-zinc-500 dark:text-[#7A7570] hover:text-zinc-800 dark:hover:text-[#F0EBE3]'
+              }`}
+            >
+              <Briefcase className="w-3 h-3" />
+              <span>Koinonia Workers</span>
+            </button>
+            <button
+              onClick={() => setWorkerFilter('non_worker')}
+              className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all cursor-pointer ${
+                workerFilter === 'non_worker'
+                  ? 'bg-white dark:bg-[#1D1D1A] text-[#18181B] dark:text-[#F0EBE3] shadow-xs'
+                  : 'text-zinc-500 dark:text-[#7A7570] hover:text-zinc-800 dark:hover:text-[#F0EBE3]'
+              }`}
+            >
+              Regular Parents
+            </button>
+          </div>
+        </div>
+
+        {/* Detailed Geographical & Status Selectors */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-1 border-t border-[#EAE8E1] dark:border-[#302E29]">
+          {/* Department Filter (Active/Highlighted when worker filter is on) */}
+          <div className="space-y-1">
+            <label className="text-[10px] font-semibold text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block">
+              Department
+            </label>
+            <select
+              value={selectedDepartment}
+              onChange={(e) => setSelectedDepartment(e.target.value)}
+              className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+            >
+              <option value="all">All Departments</option>
+              {filterOptions.departments.map(d => (
+                <option key={d.department} value={d.department}>
+                  {d.department} ({d.count})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Country Filter */}
+          <div className="space-y-1">
+            <label className="text-[10px] font-semibold text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block">
+              Country
+            </label>
+            <select
+              value={selectedCountry}
+              onChange={(e) => setSelectedCountry(e.target.value)}
+              className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+            >
+              <option value="all">All Countries</option>
+              {filterOptions.countries.map(c => (
+                <option key={c.country} value={c.country}>
+                  {c.country} ({c.count})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* State / Region Filter */}
+          <div className="space-y-1">
+            <label className="text-[10px] font-semibold text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block">
+              State / Region
+            </label>
+            <select
+              value={selectedState}
+              onChange={(e) => setSelectedState(e.target.value)}
+              className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+            >
+              <option value="all">All States / Regions</option>
+              {filterOptions.states.map(s => (
+                <option key={s.state_region} value={s.state_region}>
+                  {s.state_region} ({s.count})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* City Filter */}
+          <div className="space-y-1">
+            <label className="text-[10px] font-semibold text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block">
+              City
+            </label>
+            <select
+              value={selectedCity}
+              onChange={(e) => setSelectedCity(e.target.value)}
+              className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+            >
+              <option value="all">All Cities</option>
+              {filterOptions.cities.map(c => (
+                <option key={c.city} value={c.city}>
+                  {c.city} ({c.count})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Children Connected Filter */}
+          <div className="space-y-1">
+            <label className="text-[10px] font-semibold text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block">
+              Children Status
+            </label>
+            <select
+              value={hasChildrenFilter}
+              onChange={(e) => setHasChildrenFilter(e.target.value as ChildrenFilterType)}
+              className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+            >
+              <option value="all">All Parents</option>
+              <option value="has_children">Has Children Linked</option>
+              <option value="no_children">No Children Linked</option>
+            </select>
+          </div>
+
+          {/* Location Details Filter */}
+          <div className="space-y-1">
+            <label className="text-[10px] font-semibold text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block">
+              Location Data
+            </label>
+            <select
+              value={hasLocationFilter}
+              onChange={(e) => setHasLocationFilter(e.target.value as LocationFilterType)}
+              className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+            >
+              <option value="all">All Records</option>
+              <option value="has_location">Has Address / Location</option>
+              <option value="missing_location">Missing Location Info</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Contextual Action Bar when rows are selected */}
+      {selectedParentIds.length > 0 && (
+        <div className="bg-[#FAF8F2] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-2xl px-5 py-3 flex items-center justify-between shadow-xs animate-fade-in">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-[#C59B27]" />
+            <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">
+              {selectedParentIds.length} {selectedParentIds.length === 1 ? 'parent selected' : 'parents selected'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {activeTab === 'active' ? (
+              <button
+                onClick={() => setShowBulkRemoveModal(true)}
+                className="px-3 py-1.5 text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 rounded-xl transition-colors cursor-pointer"
+              >
+                Remove selected
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowBulkRestoreModal(true)}
+                className="px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-950/50 rounded-xl transition-colors cursor-pointer"
+              >
+                Restore selected
+              </button>
+            )}
+
+            {isSuperAdmin && activeTab === 'removed' && (
+              <button
+                onClick={() => {
+                  setBulkPurgeConfirmText('');
+                  setShowBulkPurgeModal(true);
+                }}
+                className="px-3 py-1.5 text-xs font-semibold text-red-700 dark:text-red-400 bg-red-100/70 dark:bg-red-950/60 hover:bg-red-200 dark:hover:bg-red-900/60 rounded-xl transition-colors cursor-pointer"
+              >
+                Permanently delete
+              </button>
+            )}
+
+            <button
+              onClick={() => setSelectedParentIds([])}
+              className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-[#F0EBE3] px-2 py-1 transition-colors cursor-pointer"
+            >
+              Clear selection
+            </button>
+          </div>
         </div>
       )}
 
-      {/* 5. Parent Table */}
+      {/* 5. Comprehensive Parents & Workers Table */}
       <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl overflow-hidden shadow-xs">
         {loading ? (
-          <div className="p-8">
+          <div className="p-12">
             <KoinoniaInlineLoader
               variant="skeleton"
               size="lg"
-              label="Loading parents..."
+              label="Loading parent and worker profiles..."
               centered
             />
           </div>
         ) : parents.length === 0 ? (
-          <div className="text-center py-16 text-zinc-400 dark:text-[#5A5550] space-y-2">
-            <Users className="w-7 h-7 stroke-[1.5] mx-auto text-zinc-300 dark:text-[#5A5550]" />
-            <p className="text-sm text-zinc-500 dark:text-[#B8B0A5] font-medium">
-              {activeTab === 'active' ? 'No active parents found.' : 'No removed parents.'}
-            </p>
-            {searchQuery && (
-              <p className="text-xs text-zinc-400 dark:text-[#7A7570]">No results matching "{searchQuery}".</p>
+          <div className="text-center py-16 text-zinc-400 dark:text-[#5A5550] space-y-3">
+            <Users className="w-8 h-8 stroke-[1.5] mx-auto text-zinc-300 dark:text-[#5A5550]" />
+            <div>
+              <p className="text-sm text-zinc-600 dark:text-[#B8B0A5] font-semibold">
+                {activeTab === 'active' ? 'No parents match the selected criteria.' : 'No removed parents found.'}
+              </p>
+              <p className="text-xs text-zinc-400 dark:text-[#7A7570] mt-1">
+                Try adjusting your search query, location filters, or worker status pills.
+              </p>
+            </div>
+            {activeFiltersCount > 0 && (
+              <Button
+                onClick={handleResetFilters}
+                variant="secondary"
+                className="text-xs px-4 py-1.5 mx-auto mt-2"
+              >
+                Clear all filters
+              </Button>
             )}
           </div>
         ) : (
@@ -787,11 +1337,12 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                       ariaLabel="Select all visible parents"
                     />
                   </th>
-                  <th className="p-4 text-[11px] font-semibold">Parent</th>
-                  <th className="p-4 text-[11px] font-semibold">Children</th>
-                  <th className="p-4 text-[11px] font-semibold">Role</th>
-                  <th className="p-4 text-[11px] font-semibold">Location</th>
-                  <th className="p-4 pr-6 text-right text-[11px] font-semibold">Action</th>
+                  <th className="p-4 text-[11px] font-semibold tracking-wider uppercase">Parent Profile</th>
+                  <th className="p-4 text-[11px] font-semibold tracking-wider uppercase">Worker Status</th>
+                  <th className="p-4 text-[11px] font-semibold tracking-wider uppercase">Origin & Location</th>
+                  <th className="p-4 text-[11px] font-semibold tracking-wider uppercase">Connected Children</th>
+                  <th className="p-4 text-[11px] font-semibold tracking-wider uppercase">WhatsApp</th>
+                  <th className="p-4 pr-6 text-right text-[11px] font-semibold tracking-wider uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#EAE8E1] dark:divide-[#302E29]">
@@ -800,10 +1351,16 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                   const isRemoved = p.isDeleted || activeTab === 'removed';
                   const isSelected = selectedParentIds.includes(String(p.id));
 
+                  const hasLocationData = Boolean(p.city || p.stateRegion || p.country || p.homeAddress);
+
                   return (
                     <tr
                       key={p.id}
-                      className={`transition-colors ${isSelected ? 'bg-[#FAF8F2] dark:bg-[#262520]' : 'hover:bg-zinc-50/50 dark:hover:bg-[#21211E]/60'}`}
+                      className={`transition-colors ${
+                        isSelected
+                          ? 'bg-[#FAF8F2] dark:bg-[#262520]'
+                          : 'hover:bg-zinc-50/50 dark:hover:bg-[#21211E]/60'
+                      }`}
                       data-parent-row-id={p.id}
                     >
                       {/* Checkbox */}
@@ -815,7 +1372,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                         />
                       </td>
 
-                      {/* Parent name & email */}
+                      {/* Parent name, avatar, email & phone */}
                       <td className="p-4">
                         <div className="flex items-center gap-3">
                           {p.photoUrl ? (
@@ -823,60 +1380,152 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                               src={p.photoUrl}
                               alt={displayName}
                               referrerPolicy="no-referrer"
-                              className="w-9 h-9 rounded-xl object-cover border border-[#EAE8E1] dark:border-[#3A3835] shrink-0"
+                              className="w-10 h-10 rounded-2xl object-cover border border-[#EAE8E1] dark:border-[#3A3835] shrink-0"
                             />
                           ) : (
-                            <div className="w-9 h-9 rounded-xl bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] flex items-center justify-center text-zinc-400 dark:text-[#7A7570] font-semibold shrink-0 text-sm uppercase">
+                            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-xs uppercase shrink-0 border ${
+                              p.isKoinoniaWorker
+                                ? 'bg-[#C59B27]/10 text-[#C59B27] border-[#C59B27]/30'
+                                : 'bg-[#FAF9F6] dark:bg-[#262520] text-zinc-500 dark:text-[#7A7570] border-[#EAE8E1] dark:border-[#3A3835]'
+                            }`}>
                               {getInitials(displayName)}
                             </div>
                           )}
                           <div className="min-w-0">
-                            <span className="font-medium text-[#18181B] dark:text-[#F0EBE3] block text-xs leading-snug truncate">
+                            <span 
+                              onClick={() => setQuickViewParent(p)}
+                              className="font-semibold text-[#18181B] dark:text-[#F0EBE3] block text-xs leading-snug truncate hover:text-[#C59B27] cursor-pointer"
+                              title="Click for quick family overview"
+                            >
                               {displayName}
                             </span>
-                            <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block truncate">
-                              {p.email || 'No email provided'}
+                            <span className="text-[11px] text-zinc-500 dark:text-[#7A7570] block truncate">
+                              {p.email || 'No email registered'}
                             </span>
+                            {p.phone && (
+                              <span className="text-[10px] text-zinc-400 dark:text-[#5A5550] block truncate">
+                                📞 {p.phone}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </td>
 
-                      {/* Linked Children */}
-                      <td className="p-4">
-                        <span className="text-zinc-600 dark:text-[#B8B0A5] text-xs">
-                          {formatChildrenCount(Number(p.childrenCount || 0))}
-                        </span>
-                      </td>
-
-                      {/* Role */}
+                      {/* Worker / Ministry Role Status */}
                       <td className="p-4">
                         {p.isKoinoniaWorker ? (
-                          <span className="text-xs font-medium text-[#C59B27] dark:text-amber-400">
-                            Team member{p.department ? ` • ${p.department}` : ''}
-                          </span>
+                          <div className="space-y-1">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-[#C59B27]/15 text-[#C59B27] border border-[#C59B27]/30">
+                              <Briefcase className="w-3 h-3" />
+                              <span>Koinonia Worker</span>
+                            </span>
+                            {p.department && (
+                              <span className="block text-[11px] text-zinc-600 dark:text-[#B8B0A5] font-medium pl-1">
+                                {p.department}
+                              </span>
+                            )}
+                          </div>
                         ) : (
-                          <span className="text-xs text-zinc-500 dark:text-[#7A7570]">Parent</span>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-100 dark:bg-[#262520] text-zinc-600 dark:text-[#7A7570]">
+                            Parent
+                          </span>
                         )}
                       </td>
 
-                      {/* Location */}
-                      <td className="p-4 text-zinc-500 dark:text-[#7A7570] text-xs">
-                        {p.city
-                          ? `${p.city}${p.stateRegion ? `, ${p.stateRegion}` : ''}`
-                          : <span className="text-zinc-400 dark:text-[#5A5550] italic">Not provided</span>}
+                      {/* Geographic Origin & Residence */}
+                      <td className="p-4 max-w-xs">
+                        {hasLocationData ? (
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {p.city && (
+                                <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] text-xs">
+                                  {p.city}
+                                </span>
+                              )}
+                              {p.stateRegion && (
+                                <span className="text-zinc-500 dark:text-[#B8B0A5] text-xs">
+                                  {p.city ? `· ${p.stateRegion}` : p.stateRegion}
+                                </span>
+                              )}
+                              {p.country && (
+                                <span className="px-1.5 py-0.5 rounded-md text-[9px] font-medium bg-zinc-100 dark:bg-[#262520] text-zinc-500 dark:text-[#7A7570]">
+                                  {p.country}
+                                </span>
+                              )}
+                            </div>
+                            {p.homeAddress && (
+                              <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] truncate flex items-center gap-1" title={p.homeAddress}>
+                                <Home className="w-2.5 h-2.5 shrink-0" />
+                                <span className="truncate">{p.homeAddress}</span>
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-zinc-400 dark:text-[#5A5550] italic text-[11px]">
+                            Location not provided
+                          </span>
+                        )}
                       </td>
 
-                      {/* Action buttons */}
+                      {/* Connected Children & Chips */}
+                      <td className="p-4">
+                        <div className="space-y-1">
+                          <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] text-xs block">
+                            {formatChildrenCount(Number(p.childrenCount || 0))}
+                          </span>
+                          {p.children && p.children.length > 0 && (
+                            <div className="flex flex-wrap gap-1 max-w-xs">
+                              {p.children.map((child: any) => (
+                                <span
+                                  key={child.id}
+                                  className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-zinc-100 dark:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] border border-[#EAE8E1] dark:border-[#302E29]"
+                                  title={`${child.fullName} (${child.age ? `${child.age} yrs` : 'Age unknown'})`}
+                                >
+                                  {child.fullName?.split(' ')[0] || 'Child'}{child.age ? ` (${child.age}y)` : ''}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* WhatsApp Readiness */}
+                      <td className="p-4">
+                        {p.whatsappConsentStatus === 'opted_in' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>Opted in</span>
+                          </span>
+                        ) : p.whatsapp ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-100 dark:bg-[#262520] text-zinc-500 dark:text-[#7A7570]">
+                            Provided
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-zinc-400 dark:text-[#5A5550] italic">
+                            None
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Actions */}
                       <td className="p-4 pr-6 text-right">
                         <div className="inline-flex items-center gap-1.5 justify-end">
                           <button
-                            onClick={() => onNavigate(`/admin/parents/${p.id}` as AppRoute)}
-                            className="px-3 py-1.5 text-xs font-medium text-[#18181B] dark:text-[#F0EBE3] bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] hover:border-zinc-300 dark:hover:border-[#4A4740] rounded-xl transition-all cursor-pointer focus:outline-none"
+                            onClick={() => setQuickViewParent(p)}
+                            className="p-1.5 text-zinc-500 hover:text-zinc-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] hover:bg-zinc-100 dark:hover:bg-[#262520] rounded-xl transition-colors cursor-pointer"
+                            title="Quick preview"
                           >
-                            View profile
+                            <Eye className="w-3.5 h-3.5" />
                           </button>
 
-                          {/* Overflow menu trigger */}
+                          <button
+                            onClick={() => onNavigate(`/admin/parents/${p.id}` as AppRoute)}
+                            className="px-3 py-1.5 text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] hover:border-zinc-300 dark:hover:border-[#4A4740] rounded-xl transition-all cursor-pointer focus:outline-none"
+                          >
+                            Profile
+                          </button>
+
+                          {/* Overflow Menu */}
                           <div className="relative inline-block text-left" ref={openActionMenuId === p.id ? actionMenuRef : undefined}>
                             <button
                               onClick={() => setOpenActionMenuId(openActionMenuId === p.id ? null : p.id)}
@@ -887,7 +1536,31 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                             </button>
 
                             {openActionMenuId === p.id && (
-                              <div className="absolute right-0 mt-1 w-44 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl shadow-lg py-1 z-30 animate-fade-in text-left">
+                              <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl shadow-xl py-1.5 z-30 animate-fade-in text-left">
+                                <button
+                                  onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    setQuickViewParent(p);
+                                  }}
+                                  className="w-full text-left px-3.5 py-2 text-xs text-zinc-700 dark:text-[#F0EBE3] hover:bg-zinc-50 dark:hover:bg-[#262520] flex items-center gap-2 transition-colors cursor-pointer"
+                                >
+                                  <Eye className="w-3.5 h-3.5 text-zinc-400" />
+                                  <span>Quick family view</span>
+                                </button>
+
+                                <button
+                                  onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    onNavigate(`/admin/parents/${p.id}` as AppRoute);
+                                  }}
+                                  className="w-full text-left px-3.5 py-2 text-xs text-zinc-700 dark:text-[#F0EBE3] hover:bg-zinc-50 dark:hover:bg-[#262520] flex items-center gap-2 transition-colors cursor-pointer"
+                                >
+                                  <Users className="w-3.5 h-3.5 text-zinc-400" />
+                                  <span>View full details</span>
+                                </button>
+
+                                <div className="h-px bg-zinc-100 dark:bg-[#302E29] my-1" />
+
                                 {!isRemoved ? (
                                   <button
                                     onClick={() => {
@@ -949,14 +1622,6 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
         onClose={() => setShowAddParentModal(false)}
         onSuccess={() => fetchParents()}
       />
-
-      {/* Action and Confirmation Modals */}
-      {removeModal}
-      {restoreModal}
-      {permanentDeleteModal}
-      {bulkPurgeModal}
-      {bulkRemoveModal}
-      {bulkRestoreModal}
     </div>
   );
 };
