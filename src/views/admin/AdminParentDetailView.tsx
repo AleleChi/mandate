@@ -17,6 +17,7 @@ import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
+import { ChildReviewModal } from '../../components/admin/modals/ChildReviewModal';
 import { AppRoute } from '../../types';
 
 interface AdminParentDetailViewProps {
@@ -67,6 +68,7 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
   const [submittingChildActionId, setSubmittingChildActionId] = useState<string | null>(null);
   const [childToRestore, setChildToRestore] = useState<any | null>(null);
   const [restoringChild, setRestoringChild] = useState(false);
+  const [reviewingChild, setReviewingChild] = useState<any | null>(null);
 
   // Confirmation states
   const [parentToRemove, setParentToRemove] = useState<any | null>(null);
@@ -167,30 +169,45 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
     setSubmittingChildActionId(actionKey);
     try {
       const res = await api.admin.reviewApplication(child.applicationId || child.id, {
-        status: 'selected',
+        status: 'under_review',
         eventId: activeEvent?.id,
-        sendNotification: true
+        sendNotification: false
       });
       if (res.success) {
-        showSuccess('Child Selected', `${child.fullName} has been selected for ${activeEvent?.title || activeEvent?.name || 'the event'}.`);
+        showSuccess('Child Entered for Event', `${child.fullName} is now entered for ${activeEvent?.title || activeEvent?.name || 'the event'} and awaiting review.`);
         await fetchParentDetails();
       } else {
-        showError('Selection Failed', res.error || 'Could not select child for event.');
+        showError('Selection Failed', res.error || 'Could not enter child for event.');
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
-      showError('Selection Failed', parsed.message || 'Could not select child for event.');
+      showError('Selection Failed', parsed.message || 'Could not enter child for event.');
     } finally {
       setSubmittingChildActionId(null);
     }
   };
 
   const handleReviewChild = (child: any) => {
-    if (child.applicationId) {
-      onNavigate(`/admin/review/${child.applicationId}` as AppRoute);
-    } else {
-      onNavigate(`/admin/children/${child.id}` as AppRoute);
-    }
+    setReviewingChild(child);
+  };
+
+  const handleStatusUpdatedFromReviewModal = async (newStatus: string, newApplicationId?: string) => {
+    if (!reviewingChild) return;
+    const targetChildId = reviewingChild.id;
+
+    // Update parent.children in place
+    setParent((prev: any) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        children: (prev.children || []).map((c: any) => 
+          c.id === targetChildId ? { ...c, entryStatus: newStatus, applicationId: newApplicationId || c.applicationId } : c
+        )
+      };
+    });
+
+    // Refresh backend stats and parent record
+    await fetchParentDetails();
   };
 
   const handleViewChild = (child: any) => {
@@ -993,7 +1010,7 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
                               onClick={() => handleReviewChild(child)}
                               className="px-3 py-1 text-xs font-medium text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-950/60 border border-amber-200 dark:border-amber-900/50 rounded-lg transition-colors cursor-pointer focus:outline-none"
                             >
-                              Review child
+                              Review application
                             </button>
                           )}
 
@@ -1115,6 +1132,20 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
           </div>
         </div>,
         document.body
+      )}
+
+      {reviewingChild && (
+        <ChildReviewModal
+          isOpen={Boolean(reviewingChild)}
+          applicationId={reviewingChild.applicationId || reviewingChild.id}
+          childId={reviewingChild.id}
+          childName={reviewingChild.fullName}
+          activeEvent={activeEvent}
+          onClose={() => setReviewingChild(null)}
+          onStatusUpdated={handleStatusUpdatedFromReviewModal}
+          onNavigateToChild={(cid) => onNavigate(`/admin/children/${cid}` as AppRoute)}
+          adminUser={adminUser}
+        />
       )}
 
     </div>
