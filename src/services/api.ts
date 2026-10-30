@@ -1232,7 +1232,7 @@ export const api = {
         body: JSON.stringify({ reason, confirmation: confirmation || 'DELETE' })
       });
     },
-    async reviewApplication(id: string, payload: { status: string; noteToTeam?: string; sendNotification?: boolean }) {
+    async reviewApplication(id: string, payload: { status: string; noteToTeam?: string; sendNotification?: boolean; eventId?: string }) {
       return api.request<any>(`/api/admin/applications/${id}/review`, {
         method: 'POST',
         body: JSON.stringify(payload)
@@ -1756,8 +1756,9 @@ export const api = {
       country?: string; 
       stateRegion?: string; 
       city?: string; 
-      hasChildren?: string; 
+      hasChildren?: string;
       hasLocation?: string; 
+      eventId?: string;
     }) {
       const queryParams = new URLSearchParams();
       if (params?.q) queryParams.append('q', params.q);
@@ -1769,6 +1770,7 @@ export const api = {
       if (params?.city && params.city !== 'all') queryParams.append('city', params.city);
       if (params?.hasChildren && params.hasChildren !== 'all') queryParams.append('hasChildren', params.hasChildren);
       if (params?.hasLocation && params.hasLocation !== 'all') queryParams.append('hasLocation', params.hasLocation);
+      if (params?.eventId) queryParams.append('eventId', params.eventId);
       const queryString = queryParams.toString();
       return api.request<{ 
         success: boolean; 
@@ -1781,8 +1783,8 @@ export const api = {
         };
       }>(`/api/admin/parents${queryString ? `?${queryString}` : ''}`);
     },
-    async getParentDetails(id: string) {
-      return api.request<{ success: boolean; parent: any; linkedChildren: any[]; eventSummary: any; attention: any; adminNotes: any[] }>(`/api/admin/parents/${id}`);
+    async getParentDetails(id: string, eventId?: string) {
+      return api.request<{ success: boolean; parent: any; linkedChildren: any[]; eventSummary: any; attention: any; adminNotes: any[] }>(`/api/admin/parents/${id}${eventId ? `?eventId=${encodeURIComponent(eventId)}` : ''}`);
     },
     async removeParent(id: string, reason?: string) {
       return api.request<{ success: boolean; message: string }>(`/api/admin/parents/${id}/remove`, {

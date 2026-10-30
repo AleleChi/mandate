@@ -9,7 +9,9 @@ import {
   Edit3,
   RotateCcw,
   AlertTriangle,
-  Send
+  Send,
+  Loader2,
+  CheckCircle2
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -22,14 +24,19 @@ interface AdminParentDetailViewProps {
   onNavigate: (route: AppRoute) => void;
   onBack: () => void;
   adminUser?: any;
+  currentEvent?: any;
 }
 
 export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
   parentId,
   onNavigate,
-  onBack
+  onBack,
+  currentEvent
 }) => {
   const { showError, showSuccess } = useNotification();
+
+  // Active Event Context
+  const [activeEvent, setActiveEvent] = useState<any>(currentEvent || null);
 
   // Data State
   const [loading, setLoading] = useState(true);
@@ -56,6 +63,11 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [resendingInvite, setResendingInvite] = useState(false);
 
+  // Child Action States
+  const [submittingChildActionId, setSubmittingChildActionId] = useState<string | null>(null);
+  const [childToRestore, setChildToRestore] = useState<any | null>(null);
+  const [restoringChild, setRestoringChild] = useState(false);
+
   // Confirmation states
   const [parentToRemove, setParentToRemove] = useState<any | null>(null);
   const [removeReason, setRemoveReason] = useState('');
@@ -79,11 +91,30 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
   });
   const [savingEdit, setSavingEdit] = useState(false);
 
+  // Resolve active event if not provided
+  useEffect(() => {
+    if (!activeEvent) {
+      api.admin.getEvents().then(res => {
+        if (res.success && res.events?.length > 0) {
+          const cur = res.events.find((e: any) => e.status === 'current') || res.events[0];
+          setActiveEvent(cur);
+        }
+      }).catch(() => {});
+    }
+  }, []);
+
+  // Sync activeEvent if currentEvent prop updates
+  useEffect(() => {
+    if (currentEvent) {
+      setActiveEvent(currentEvent);
+    }
+  }, [currentEvent]);
+
   // Load Parent Record
   const fetchParentDetails = async () => {
     setLoading(true);
     try {
-      const res = await api.admin.getParentDetails(parentId);
+      const res = await api.admin.getParentDetails(parentId, activeEvent?.id);
       if (res.success) {
         setParent(res.parent);
         setLinkedChildren(res.linkedChildren || []);
@@ -128,7 +159,63 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
     if (parentId) {
       fetchParentDetails();
     }
-  }, [parentId]);
+  }, [parentId, activeEvent?.id]);
+
+  // Child Event Actions
+  const handleSelectChildForEvent = async (child: any) => {
+    const actionKey = child.id + '-select';
+    setSubmittingChildActionId(actionKey);
+    try {
+      const res = await api.admin.reviewApplication(child.applicationId || child.id, {
+        status: 'selected',
+        eventId: activeEvent?.id,
+        sendNotification: true
+      });
+      if (res.success) {
+        showSuccess('Child Selected', `${child.fullName} has been selected for ${activeEvent?.title || activeEvent?.name || 'the event'}.`);
+        await fetchParentDetails();
+      } else {
+        showError('Selection Failed', res.error || 'Could not select child for event.');
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Selection Failed', parsed.message || 'Could not select child for event.');
+    } finally {
+      setSubmittingChildActionId(null);
+    }
+  };
+
+  const handleReviewChild = (child: any) => {
+    if (child.applicationId) {
+      onNavigate(`/admin/review/${child.applicationId}` as AppRoute);
+    } else {
+      onNavigate(`/admin/children/${child.id}` as AppRoute);
+    }
+  };
+
+  const handleViewChild = (child: any) => {
+    onNavigate(`/admin/children/${child.id}` as AppRoute);
+  };
+
+  const handleRestoreChildConfirm = async () => {
+    if (!childToRestore) return;
+    setRestoringChild(true);
+    try {
+      const res = await api.admin.restoreChild(childToRestore.applicationId || childToRestore.id);
+      if (res.success) {
+        showSuccess('Child Restored', `${childToRestore.fullName} has been restored to event review.`);
+        setChildToRestore(null);
+        await fetchParentDetails();
+      } else {
+        showError('Restore Failed', res.error || 'Could not restore child.');
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Restore Failed', parsed.message || 'Could not restore child.');
+    } finally {
+      setRestoringChild(false);
+    }
+  };
 
   // Handle Note Save
   const handleSaveNote = async (e: React.FormEvent) => {
@@ -801,10 +888,15 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
 
             {/* Linked Children Section */}
             <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 space-y-4">
-              <div className="flex items-center justify-between pb-2 border-b border-[#EAE8E1] dark:border-[#302E29]">
-                <h4 className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">Children</h4>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#EAE8E1] dark:border-[#302E29] gap-2">
+                <div>
+                  <h4 className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] uppercase tracking-wider">Children & Event Participation</h4>
+                  <p className="text-[11px] text-zinc-500 dark:text-[#8E877D] mt-0.5">
+                    Managing event status for <span className="font-semibold text-zinc-800 dark:text-zinc-200">{activeEvent?.title || activeEvent?.name || 'Current Event'}</span>
+                  </p>
+                </div>
                 {linkedChildren.length > 0 && (
-                  <span className="text-xs text-zinc-400 dark:text-[#7A7570]">
+                  <span className="text-xs text-zinc-400 dark:text-[#7A7570] self-start sm:self-auto">
                     {linkedChildren.length} {linkedChildren.length === 1 ? 'child' : 'children'}
                   </span>
                 )}
@@ -819,24 +911,42 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
               ) : (
                 <div className="space-y-2.5">
                   {linkedChildren.map((child: any) => {
-                    const statusText =
-                      child.entryStatus === 'selected' ? 'Selected' :
-                      child.entryStatus === 'pass_ready' ? 'Pass ready' :
-                      child.entryStatus === 'under_review' ? 'Awaiting review' :
-                      child.entryStatus === 'not_registered' ? 'Not registered' :
-                      child.entryStatus?.replace('_', ' ') || 'Not registered';
+                    const status = child.entryStatus || 'not_registered';
+                    let statusLabel = 'Not selected';
+                    let statusClass = 'bg-zinc-100 dark:bg-[#262520] text-zinc-600 dark:text-[#7A7570] border-zinc-200 dark:border-[#3A3835]';
 
-                    const statusClass =
-                      child.entryStatus === 'selected' || child.entryStatus === 'pass_ready'
-                        ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/40'
-                        : child.entryStatus === 'under_review'
-                        ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-900/40'
-                        : 'bg-zinc-100 dark:bg-[#262520] text-zinc-600 dark:text-[#7A7570] border-zinc-200 dark:border-[#3A3835]';
+                    if (status === 'pass_ready') {
+                      statusLabel = 'Pass Ready';
+                      statusClass = 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/40';
+                    } else if (status === 'selected') {
+                      statusLabel = 'Selected';
+                      statusClass = 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/40';
+                    } else if (status === 'under_review' || status === 'review_reopened') {
+                      statusLabel = 'Awaiting Review';
+                      statusClass = 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-900/40';
+                    } else if (status === 'checked_in' || status === 'inside') {
+                      statusLabel = 'Checked In';
+                      statusClass = 'bg-sky-50 dark:bg-sky-950/30 text-sky-700 dark:text-sky-400 border-sky-200 dark:border-sky-900/40';
+                    } else if (status === 'picked_up' || status === 'checked_out') {
+                      statusLabel = 'Picked Up';
+                      statusClass = 'bg-purple-50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-900/40';
+                    } else if (status === 'withdrawn') {
+                      statusLabel = 'Withdrawn';
+                      statusClass = 'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-900/40';
+                    } else if (status === 'waiting_list') {
+                      statusLabel = 'Waiting List';
+                      statusClass = 'bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-900/40';
+                    }
+
+                    const isSelecting = submittingChildActionId === `${child.id}-select`;
+                    const canSelect = !child.entryStatus || child.entryStatus === 'not_registered' || child.entryStatus === 'not_selected' || child.entryStatus === 'incomplete' || child.entryStatus === 'draft' || child.entryStatus === 'waiting_list';
+                    const isAwaitingReview = child.entryStatus === 'under_review' || child.entryStatus === 'review_reopened';
+                    const isWithdrawn = child.entryStatus === 'withdrawn';
 
                     return (
                       <div
                         key={child.id}
-                        className="p-3.5 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl flex items-center justify-between gap-4"
+                        className="p-3.5 bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4"
                         data-child-card-id={child.id}
                       >
                         <div className="flex items-center gap-3 min-w-0">
@@ -860,13 +970,47 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-3 shrink-0">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border capitalize ${statusClass}`}>
-                            {statusText}
+                        <div className="flex items-center flex-wrap sm:flex-nowrap gap-2 sm:gap-2.5 shrink-0">
+                          <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-medium border ${statusClass}`}>
+                            {statusLabel}
                           </span>
+
+                          {canSelect && (
+                            <button
+                              type="button"
+                              disabled={isSelecting}
+                              onClick={() => handleSelectChildForEvent(child)}
+                              className="px-3 py-1 text-xs font-semibold text-white bg-[#C59B27] hover:bg-[#B08921] disabled:opacity-60 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed focus:outline-none"
+                            >
+                              {isSelecting ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                              <span>Select for event</span>
+                            </button>
+                          )}
+
+                          {isAwaitingReview && (
+                            <button
+                              type="button"
+                              onClick={() => handleReviewChild(child)}
+                              className="px-3 py-1 text-xs font-medium text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-950/60 border border-amber-200 dark:border-amber-900/50 rounded-lg transition-colors cursor-pointer focus:outline-none"
+                            >
+                              Review child
+                            </button>
+                          )}
+
+                          {isWithdrawn && (
+                            <button
+                              type="button"
+                              onClick={() => setChildToRestore(child)}
+                              className="px-3 py-1 text-xs font-medium text-zinc-700 dark:text-[#F0EBE3] bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] rounded-lg transition-colors cursor-pointer focus:outline-none"
+                            >
+                              Restore to event
+                            </button>
+                          )}
+
                           <button
-                            onClick={() => onNavigate(`/admin/children/${child.id}` as AppRoute)}
-                            className="px-3 py-1 text-xs font-medium text-zinc-700 dark:text-[#F0EBE3] bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl transition-colors cursor-pointer focus:outline-none"
+                            type="button"
+                            onClick={() => handleViewChild(child)}
+                            className="px-3 py-1 text-xs font-medium text-zinc-700 dark:text-[#F0EBE3] bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] rounded-lg transition-colors cursor-pointer focus:outline-none"
                           >
                             View child
                           </button>
@@ -931,6 +1075,46 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
           </div>
 
         </div>
+      )}
+
+      {/* Restore Child Confirmation Modal */}
+      {childToRestore && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 text-left">
+            <div className="flex items-center gap-3 text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="w-5 h-5 shrink-0" />
+              <h3 className="font-semibold text-sm text-zinc-900 dark:text-[#F0EBE3]">Restore Child to Event</h3>
+            </div>
+            <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+              Are you sure you want to restore <strong>{childToRestore.fullName}</strong> for <strong>{activeEvent?.title || activeEvent?.name || 'the current event'}</strong>? The child's status will return to review so they can be selected.
+            </p>
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <Button
+                variant="secondary"
+                onClick={() => setChildToRestore(null)}
+                className="px-3.5 py-1.5 text-xs rounded-xl"
+                disabled={restoringChild}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleRestoreChildConfirm}
+                className="px-4 py-1.5 text-xs rounded-xl bg-[#C59B27] hover:bg-[#B08921] text-white font-semibold"
+                disabled={restoringChild}
+              >
+                {restoringChild ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                    Restoring...
+                  </>
+                ) : (
+                  'Restore to Event'
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
     </div>
