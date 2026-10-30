@@ -39,9 +39,18 @@ import { AdminSelectionCheckbox } from '../../components/common/AdminSelectionCh
 interface AdminChildrenViewProps {
   onBackToOverview: () => void;
   adminUser?: any;
+  initialApplicationId?: string | null;
+  initialChildId?: string | null;
+  onNavigate?: (route: any) => void;
 }
 
-export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOverview, adminUser }) => {
+export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ 
+  onBackToOverview, 
+  adminUser,
+  initialApplicationId,
+  initialChildId,
+  onNavigate
+}) => {
   const isSuperAdmin = adminUser?.role === 'super_admin';
   const { showError, showSuccess } = useNotification();
   const [loading, setLoading] = useState(true);
@@ -59,9 +68,15 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<string>('all');
-  const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(null);
+  const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(initialApplicationId || initialChildId || null);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [tempFilter, setTempFilter] = useState<string>('all');
+
+  useEffect(() => {
+    if (initialApplicationId || initialChildId) {
+      setSelectedApplicationId(initialApplicationId || initialChildId || null);
+    }
+  }, [initialApplicationId, initialChildId]);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -514,10 +529,14 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({ onBackToOv
     return (
       <AdminReviewChildView
         applicationId={selectedApplicationId}
-        onBack={() => setSelectedApplicationId(null)}
+        onBack={() => {
+          setSelectedApplicationId(null);
+          if (onNavigate) onNavigate('/admin/children' as any);
+        }}
         onSave={() => {
           setSelectedApplicationId(null);
           fetchChildren();
+          if (onNavigate) onNavigate('/admin/children' as any);
         }}
       />
     );

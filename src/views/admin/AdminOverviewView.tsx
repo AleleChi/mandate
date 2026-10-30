@@ -3604,7 +3604,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
           {activeTab === 'review' && (
             <AdminReviewBoardView
               onBackToOverview={() => handleTabChange('overview')}
-              initialApplicationId={initialApplicationId}
+              initialApplicationId={currentRoute?.startsWith('/admin/review/') ? currentRoute.replace('/admin/review/', '') : initialApplicationId}
               initialChildId={initialChildId}
               onClearInitialParams={() => {
                 setInitialApplicationId(null);
@@ -3616,7 +3616,13 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
           {/* CHILDREN MODULE VIEW PANEL */}
           {activeTab === 'children' && (
-            <AdminChildrenView onBackToOverview={() => handleTabChange('overview')} adminUser={adminUser} />
+            <AdminChildrenView 
+              onBackToOverview={() => handleTabChange('overview')} 
+              adminUser={adminUser}
+              initialApplicationId={currentRoute?.startsWith('/admin/children/') ? currentRoute.replace('/admin/children/', '') : undefined}
+              initialChildId={currentRoute?.startsWith('/admin/children/') ? currentRoute.replace('/admin/children/', '') : undefined}
+              onNavigate={onNavigate}
+            />
           )}
 
           {/* ATTENDANCE VIEW PANEL */}
@@ -3681,9 +3687,15 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                 onNavigate={onNavigate}
                 onBack={() => onNavigate('/admin/parents')}
                 adminUser={adminUser}
+                currentEvent={overviewData?.event || overviewData?.currentEvent}
               />
             ) : (
-              <AdminParentsView onBackToOverview={() => handleTabChange('overview')} onNavigate={onNavigate} adminUser={adminUser} />
+              <AdminParentsView 
+                onBackToOverview={() => handleTabChange('overview')} 
+                onNavigate={onNavigate} 
+                adminUser={adminUser} 
+                currentEvent={overviewData?.event || overviewData?.currentEvent}
+              />
             )
           )}
 

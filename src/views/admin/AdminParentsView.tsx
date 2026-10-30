@@ -22,7 +22,8 @@ import {
   Globe,
   Building2,
   UserCheck,
-  HeartHandshake
+  HeartHandshake,
+  Loader2
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -36,6 +37,7 @@ interface AdminParentsViewProps {
   onBackToOverview?: () => void;
   onNavigate: (route: AppRoute) => void;
   adminUser?: any;
+  currentEvent?: any;
 }
 
 type ParentTab = 'active' | 'removed';
@@ -43,13 +45,19 @@ type WorkerFilterType = 'all' | 'worker' | 'non_worker';
 type ChildrenFilterType = 'all' | 'has_children' | 'no_children';
 type LocationFilterType = 'all' | 'has_location' | 'missing_location';
 
-export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, adminUser }) => {
+export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, adminUser, currentEvent }) => {
   const isSuperAdmin = adminUser?.role === 'super_admin';
   const { showError, showSuccess } = useNotification();
+  const [activeEvent, setActiveEvent] = useState<any>(currentEvent || null);
   const [parents, setParents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<ParentTab>('active');
+
+  // Quick View Child Action States
+  const [submittingModalChildActionId, setSubmittingModalChildActionId] = useState<string | null>(null);
+  const [modalChildToRestore, setModalChildToRestore] = useState<any | null>(null);
+  const [restoringModalChild, setRestoringModalChild] = useState(false);
 
   // Enhanced Filter States
   const [workerFilter, setWorkerFilter] = useState<WorkerFilterType>('all');
@@ -159,6 +167,24 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     setHasLocationFilter('all');
   };
 
+  // Resolve active event if not provided
+  useEffect(() => {
+    if (!activeEvent) {
+      api.admin.getEvents().then(res => {
+        if (res.success && res.events?.length > 0) {
+          const cur = res.events.find((e: any) => e.status === 'current') || res.events[0];
+          setActiveEvent(cur);
+        }
+      }).catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    if (currentEvent) {
+      setActiveEvent(currentEvent);
+    }
+  }, [currentEvent]);
+
   const fetchParents = async () => {
     setLoading(true);
     try {
@@ -171,7 +197,8 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
         stateRegion: selectedState,
         city: selectedCity,
         hasChildren: hasChildrenFilter,
-        hasLocation: hasLocationFilter
+        hasLocation: hasLocationFilter,
+        eventId: activeEvent?.id
       });
 
       if (res.success) {
@@ -216,8 +243,112 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     selectedState,
     selectedCity,
     hasChildrenFilter,
-    hasLocationFilter
+    hasLocationFilter,
+    activeEvent?.id
   ]);
+
+  // Quick View Child Action Handlers
+  const handleSelectModalChild = async (child: any) => {
+    const actionKey = child.id + '-select';
+    setSubmittingModalChildActionId(actionKey);
+    try {
+      const res = await api.admin.reviewApplication(child.applicationId || child.id, {
+        status: 'selected',
+        eventId: activeEvent?.id,
+        sendNotification: true
+      });
+      if (res.success) {
+        showSuccess('Child Selected', `${child.fullName} has been selected for ${activeEvent?.title || activeEvent?.name || 'the event'}.`);
+        const newStatus = res.status || 'pass_ready';
+        const newAppId = res.pass?.child_event_entry_id || res.application?.id || child.applicationId;
+
+        // Immediately update quickViewParent.children
+        setQuickViewParent((prev: any) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            children: (prev.children || []).map((c: any) => 
+              c.id === child.id ? { ...c, entryStatus: newStatus, applicationId: newAppId } : c
+            )
+          };
+        });
+
+        // Immediately update parents state
+        setParents(prev => prev.map((p: any) => {
+          if (p.id !== quickViewParent?.id) return p;
+          return {
+            ...p,
+            children: (p.children || []).map((c: any) => 
+              c.id === child.id ? { ...c, entryStatus: newStatus, applicationId: newAppId } : c
+            )
+          };
+        }));
+      } else {
+        showError('Selection Failed', res.error || 'Could not select child.');
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Selection Failed', parsed.message || 'Could not select child.');
+    } finally {
+      setSubmittingModalChildActionId(null);
+    }
+  };
+
+  const handleReviewModalChild = (child: any) => {
+    setQuickViewParent(null);
+    if (child.applicationId) {
+      onNavigate(`/admin/review/${child.applicationId}` as AppRoute);
+    } else {
+      onNavigate(`/admin/children/${child.id}` as AppRoute);
+    }
+  };
+
+  const handleViewModalChild = (child: any) => {
+    setQuickViewParent(null);
+    onNavigate(`/admin/children/${child.id}` as AppRoute);
+  };
+
+  const handleRestoreModalChildConfirm = async () => {
+    if (!modalChildToRestore) return;
+    setRestoringModalChild(true);
+    try {
+      const res = await api.admin.restoreChild(modalChildToRestore.applicationId || modalChildToRestore.id);
+      if (res.success) {
+        showSuccess('Child Restored', `${modalChildToRestore.fullName} has been restored to event review.`);
+        const restoredChildId = modalChildToRestore.id;
+        setModalChildToRestore(null);
+
+        // Immediately update quickViewParent.children
+        setQuickViewParent((prev: any) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            children: (prev.children || []).map((c: any) => 
+              c.id === restoredChildId ? { ...c, entryStatus: 'under_review' } : c
+            )
+          };
+        });
+
+        // Immediately update parents state
+        setParents(prev => prev.map((p: any) => {
+          if (p.id !== quickViewParent?.id) return p;
+          return {
+            ...p,
+            children: (p.children || []).map((c: any) => 
+              c.id === restoredChildId ? { ...c, entryStatus: 'under_review' } : c
+            )
+          };
+        }));
+      } else {
+        showError('Restore Failed', res.error || 'Could not restore child.');
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Restore Failed', parsed.message || 'Could not restore child.');
+    } finally {
+      setRestoringModalChild(false);
+    }
+  };
 
   // Clear bulk selection on tab switch or search change
   useEffect(() => {
@@ -583,33 +714,117 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
 
           {/* Connected Children Section */}
           <div className="space-y-2.5">
-            <h4 className="font-semibold text-neutral-900 dark:text-neutral-100 flex items-center gap-1.5">
-              <Users className="w-3.5 h-3.5 text-[#C59B27]" />
-              <span>Connected Children ({quickViewParent.children?.length || 0})</span>
-            </h4>
+            <div className="flex items-center justify-between">
+              <h4 className="font-semibold text-neutral-900 dark:text-neutral-100 flex items-center gap-1.5 text-xs">
+                <Users className="w-3.5 h-3.5 text-[#C59B27]" />
+                <span>Connected Children ({quickViewParent.children?.length || 0})</span>
+              </h4>
+              <span className="text-[10px] text-neutral-400 dark:text-neutral-500 font-medium">
+                {activeEvent?.title || activeEvent?.name || 'Current Event'}
+              </span>
+            </div>
 
             {(!quickViewParent.children || quickViewParent.children.length === 0) ? (
-              <div className="p-3.5 rounded-md bg-neutral-50 dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926] text-center text-neutral-400 dark:text-neutral-500">
+              <div className="p-3.5 rounded-md bg-neutral-50 dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926] text-center text-neutral-400 dark:text-neutral-500 text-xs">
                 No children profiles linked to this parent yet.
               </div>
             ) : (
               <div className="space-y-1.5">
-                {quickViewParent.children.map((child: any) => (
-                  <div
-                    key={child.id}
-                    className="p-3 rounded-md bg-white dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926] flex items-center justify-between"
-                  >
-                    <div>
-                      <p className="font-semibold text-neutral-900 dark:text-neutral-100">{child.fullName}</p>
-                      <p className="text-[11px] text-neutral-400 dark:text-neutral-500">
-                        {child.gender || 'Unknown gender'} · {child.age ? `${child.age} yrs` : 'Age not calculated'} {child.ageGroup ? `(${child.ageGroup})` : ''}
-                      </p>
+                {quickViewParent.children.map((child: any) => {
+                  const status = child.entryStatus || 'not_registered';
+                  let statusLabel = 'Not selected';
+                  let statusClass = 'bg-zinc-100 dark:bg-[#262520] text-zinc-600 dark:text-[#7A7570] border-zinc-200 dark:border-[#3A3835]';
+
+                  if (status === 'pass_ready') {
+                    statusLabel = 'Pass Ready';
+                    statusClass = 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/40';
+                  } else if (status === 'selected') {
+                    statusLabel = 'Selected';
+                    statusClass = 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/40';
+                  } else if (status === 'under_review' || status === 'review_reopened') {
+                    statusLabel = 'Awaiting Review';
+                    statusClass = 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/40';
+                  } else if (status === 'checked_in' || status === 'inside') {
+                    statusLabel = 'Checked In';
+                    statusClass = 'bg-sky-50 dark:bg-sky-950/30 text-sky-700 dark:text-sky-400 border-sky-200 dark:border-sky-800/40';
+                  } else if (status === 'picked_up' || status === 'checked_out') {
+                    statusLabel = 'Picked Up';
+                    statusClass = 'bg-purple-50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800/40';
+                  } else if (status === 'withdrawn') {
+                    statusLabel = 'Withdrawn';
+                    statusClass = 'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800/40';
+                  } else if (status === 'waiting_list') {
+                    statusLabel = 'Waiting List';
+                    statusClass = 'bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800/40';
+                  }
+
+                  const isSelecting = submittingModalChildActionId === `${child.id}-select`;
+                  const canSelect = !child.entryStatus || child.entryStatus === 'not_registered' || child.entryStatus === 'not_selected' || child.entryStatus === 'incomplete' || child.entryStatus === 'draft' || child.entryStatus === 'waiting_list';
+                  const isAwaitingReview = child.entryStatus === 'under_review' || child.entryStatus === 'review_reopened';
+                  const isWithdrawn = child.entryStatus === 'withdrawn';
+
+                  return (
+                    <div
+                      key={child.id}
+                      className="p-2.5 rounded-md bg-white dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926] flex items-center justify-between gap-3 text-left"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-semibold text-xs text-neutral-900 dark:text-neutral-100 truncate">{child.fullName}</p>
+                        <p className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-0.5">
+                          {child.gender || 'Unknown gender'} · {child.age ? `${child.age} yrs` : 'Age not calculated'} {child.ageGroup ? `(${child.ageGroup})` : ''}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-medium border ${statusClass}`}>
+                          {statusLabel}
+                        </span>
+
+                        {canSelect && (
+                          <button
+                            type="button"
+                            disabled={isSelecting}
+                            onClick={() => handleSelectModalChild(child)}
+                            className="px-2.5 py-1 text-[11px] font-semibold text-white bg-[#C59B27] hover:bg-[#B08921] disabled:opacity-60 rounded transition-colors flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed focus:outline-none"
+                          >
+                            {isSelecting ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                            <span>Select for event</span>
+                          </button>
+                        )}
+
+                        {isAwaitingReview && (
+                          <button
+                            type="button"
+                            onClick={() => handleReviewModalChild(child)}
+                            className="px-2.5 py-1 text-[11px] font-medium text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 border border-amber-200 dark:border-amber-800/50 rounded transition-colors cursor-pointer focus:outline-none"
+                          >
+                            Review
+                          </button>
+                        )}
+
+                        {isWithdrawn && (
+                          <button
+                            type="button"
+                            onClick={() => setModalChildToRestore(child)}
+                            className="px-2.5 py-1 text-[11px] font-medium text-neutral-700 dark:text-neutral-200 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded transition-colors cursor-pointer focus:outline-none"
+                          >
+                            Restore
+                          </button>
+                        )}
+
+                        {!canSelect && !isAwaitingReview && !isWithdrawn && (
+                          <button
+                            type="button"
+                            onClick={() => handleViewModalChild(child)}
+                            className="px-2.5 py-1 text-[11px] font-medium text-neutral-700 dark:text-neutral-200 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded transition-colors cursor-pointer focus:outline-none"
+                          >
+                            View child
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40">
-                      Registered
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -633,6 +848,49 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
             className="px-3.5 py-1.5 text-xs rounded-md"
           >
             Close
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  const modalChildRestoreModal = (modalChildToRestore && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10002] flex items-center justify-center p-4">
+      <div
+        onClick={() => setModalChildToRestore(null)}
+        className="fixed inset-0 bg-black/50 backdrop-blur-2xs"
+      />
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-xl w-full max-w-md shadow-xl p-5 text-neutral-900 dark:text-neutral-100 text-left space-y-3">
+        <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <h3 className="font-semibold text-sm">Restore Child to Event</h3>
+        </div>
+        <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
+          Restore <strong>{modalChildToRestore.fullName}</strong> to the event review list for <strong>{activeEvent?.title || activeEvent?.name || 'the current event'}</strong>?
+        </p>
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#2A2926]">
+          <Button
+            variant="secondary"
+            onClick={() => setModalChildToRestore(null)}
+            className="px-3 py-1.5 text-xs rounded-md"
+            disabled={restoringModalChild}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleRestoreModalChildConfirm}
+            className="px-3.5 py-1.5 text-xs rounded-md bg-[#C59B27] hover:bg-[#B08921] text-white font-semibold"
+            disabled={restoringModalChild}
+          >
+            {restoringModalChild ? (
+              <>
+                <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                Restoring...
+              </>
+            ) : (
+              'Restore to Event'
+            )}
           </Button>
         </div>
       </div>
@@ -929,6 +1187,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       {bulkRestoreModal}
       {bulkPurgeModal}
       {quickViewModal}
+      {modalChildRestoreModal}
 
       {/* 1. Header with title and actions */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-[#EAE8E1] dark:border-[#2A2926]">
