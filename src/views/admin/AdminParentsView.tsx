@@ -493,120 +493,119 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
   const isDomReady = typeof document !== 'undefined' && Boolean(document.body);
 
   // ---- QUICK FAMILY OVERVIEW MODAL ----
+  // ---- QUICK FAMILY OVERVIEW MODAL ----
   const quickViewModal = (quickViewParent && isDomReady) ? createPortal(
     <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
       <div
         onClick={() => setQuickViewParent(null)}
-        className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
+        className="fixed inset-0 bg-black/50 transition-opacity backdrop-blur-2xs"
       />
-      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden animate-scale-in text-[#18181B] dark:text-[#F0EBE3]">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-xl w-full max-w-xl shadow-xl overflow-hidden text-neutral-900 dark:text-neutral-100">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-[#EAE8E1] dark:border-[#302E29] bg-[#FAF9F6] dark:bg-[#21211E]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#EAE8E1] dark:border-[#2A2926] bg-[#FAF9F6] dark:bg-[#20201E]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#C59B27]/10 text-[#C59B27] flex items-center justify-center font-bold text-base shrink-0">
+            <div className="w-9 h-9 rounded-md bg-[#C59B27]/10 text-[#C59B27] flex items-center justify-center font-bold text-sm shrink-0 border border-[#C59B27]/20">
               {getInitials(getDisplayName(quickViewParent))}
             </div>
             <div>
-              <h3 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3] leading-tight flex items-center gap-2">
+              <h3 className="font-semibold text-sm text-neutral-900 dark:text-neutral-100 leading-tight flex items-center gap-2">
                 <span>{getDisplayName(quickViewParent)}</span>
                 {quickViewParent.isKoinoniaWorker && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#C59B27]/15 text-[#C59B27] border border-[#C59B27]/30">
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#C59B27]/15 text-[#C59B27] border border-[#C59B27]/30">
                     Worker
                   </span>
                 )}
               </h3>
-              <p className="text-xs text-zinc-500 dark:text-[#B8B0A5]">{quickViewParent.email || 'No email registered'}</p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">{quickViewParent.email || 'No email registered'}</p>
             </div>
           </div>
           <button
             onClick={() => setQuickViewParent(null)}
-            className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-600 dark:hover:text-[#F0EBE3] hover:bg-zinc-100 dark:hover:bg-[#262520] transition-colors cursor-pointer"
+            className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-[#20201E] transition-colors cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Content Body */}
-        <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
-          {/* Quick Stat Pill Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-[#24231F] border border-[#EAE8E1] dark:border-[#302E29]">
-              <span className="text-[10px] font-medium text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block mb-1">Role / Status</span>
-              <p className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">
+        <div className="p-5 space-y-5 max-h-[75vh] overflow-y-auto text-xs">
+          {/* Quick Stat Strip */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            <div className="p-3 rounded-md bg-neutral-50/70 dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926]">
+              <span className="text-[10px] font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block mb-1">Role / Status</span>
+              <p className="font-semibold text-neutral-900 dark:text-neutral-100">
                 {quickViewParent.isKoinoniaWorker ? `Worker (${quickViewParent.department || 'General'})` : 'Regular Parent'}
               </p>
             </div>
 
-            <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-[#24231F] border border-[#EAE8E1] dark:border-[#302E29]">
-              <span className="text-[10px] font-medium text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block mb-1">Phone & WhatsApp</span>
-              <p className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">
+            <div className="p-3 rounded-md bg-neutral-50/70 dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926]">
+              <span className="text-[10px] font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block mb-1">Phone & WhatsApp</span>
+              <p className="font-semibold text-neutral-900 dark:text-neutral-100">
                 {quickViewParent.phone || 'None'}
               </p>
             </div>
 
-            <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-[#24231F] border border-[#EAE8E1] dark:border-[#302E29] col-span-2 sm:col-span-1">
-              <span className="text-[10px] font-medium text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block mb-1">Children Registered</span>
-              <p className="text-xs font-semibold text-[#C59B27]">
+            <div className="p-3 rounded-md bg-neutral-50/70 dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926] col-span-2 sm:col-span-1">
+              <span className="text-[10px] font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block mb-1">Children Registered</span>
+              <p className="font-semibold text-[#C59B27]">
                 {formatChildrenCount(quickViewParent.childrenCount || 0)}
               </p>
             </div>
           </div>
 
           {/* Location Origin Section */}
-          <div className="p-4 rounded-2xl bg-[#FAF9F6] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] space-y-2">
-            <div className="flex items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-[#F0EBE3]">
-              <MapPin className="w-4 h-4 text-[#C59B27]" />
+          <div className="p-3.5 rounded-md bg-[#FAF9F6] dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926] space-y-2">
+            <div className="flex items-center gap-1.5 font-semibold text-neutral-900 dark:text-neutral-100">
+              <MapPin className="w-3.5 h-3.5 text-[#C59B27]" />
               <span>Geographic Origin & Residence</span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 border-t border-[#EAE8E1] dark:border-[#2A2926]">
               <div>
-                <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block">City</span>
-                <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">{quickViewParent.city || 'Not specified'}</span>
+                <span className="text-[10px] text-neutral-400 dark:text-neutral-500 block">City</span>
+                <span className="font-medium text-neutral-800 dark:text-neutral-200">{quickViewParent.city || 'Not specified'}</span>
               </div>
               <div>
-                <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block">State / Region</span>
-                <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">{quickViewParent.stateRegion || 'Not specified'}</span>
+                <span className="text-[10px] text-neutral-400 dark:text-neutral-500 block">State / Region</span>
+                <span className="font-medium text-neutral-800 dark:text-neutral-200">{quickViewParent.stateRegion || 'Not specified'}</span>
               </div>
               <div>
-                <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block">Country</span>
-                <span className="font-medium text-zinc-800 dark:text-[#F0EBE3]">{quickViewParent.country || 'Nigeria'}</span>
+                <span className="text-[10px] text-neutral-400 dark:text-neutral-500 block">Country</span>
+                <span className="font-medium text-neutral-800 dark:text-neutral-200">{quickViewParent.country || 'Nigeria'}</span>
               </div>
             </div>
             {quickViewParent.homeAddress && (
-              <div className="pt-2 border-t border-[#EAE8E1] dark:border-[#302E29] text-xs">
-                <span className="text-[10px] text-zinc-400 dark:text-[#7A7570] block">Home Address</span>
-                <p className="text-zinc-700 dark:text-[#B8B0A5] font-medium leading-relaxed">{quickViewParent.homeAddress}</p>
+              <div className="pt-2 border-t border-[#EAE8E1] dark:border-[#2A2926]">
+                <span className="text-[10px] text-neutral-400 dark:text-neutral-500 block">Home Address</span>
+                <p className="text-neutral-700 dark:text-neutral-300 font-medium leading-relaxed">{quickViewParent.homeAddress}</p>
               </div>
             )}
           </div>
 
           {/* Connected Children Section */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] flex items-center gap-2">
-                <Users className="w-4 h-4 text-[#C59B27]" />
-                <span>Connected Children ({quickViewParent.children?.length || 0})</span>
-              </h4>
-            </div>
+          <div className="space-y-2.5">
+            <h4 className="font-semibold text-neutral-900 dark:text-neutral-100 flex items-center gap-1.5">
+              <Users className="w-3.5 h-3.5 text-[#C59B27]" />
+              <span>Connected Children ({quickViewParent.children?.length || 0})</span>
+            </h4>
 
             {(!quickViewParent.children || quickViewParent.children.length === 0) ? (
-              <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-[#24231F] border border-[#EAE8E1] dark:border-[#302E29] text-center text-xs text-zinc-400 dark:text-[#7A7570]">
+              <div className="p-3.5 rounded-md bg-neutral-50 dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926] text-center text-neutral-400 dark:text-neutral-500">
                 No children profiles linked to this parent yet.
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {quickViewParent.children.map((child: any) => (
                   <div
                     key={child.id}
-                    className="p-3.5 rounded-2xl bg-white dark:bg-[#24231F] border border-[#EAE8E1] dark:border-[#302E29] flex items-center justify-between"
+                    className="p-3 rounded-md bg-white dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926] flex items-center justify-between"
                   >
                     <div>
-                      <p className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">{child.fullName}</p>
-                      <p className="text-[11px] text-zinc-400 dark:text-[#7A7570]">
+                      <p className="font-semibold text-neutral-900 dark:text-neutral-100">{child.fullName}</p>
+                      <p className="text-[11px] text-neutral-400 dark:text-neutral-500">
                         {child.gender || 'Unknown gender'} · {child.age ? `${child.age} yrs` : 'Age not calculated'} {child.ageGroup ? `(${child.ageGroup})` : ''}
                       </p>
                     </div>
-                    <span className="px-2.5 py-1 rounded-xl text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40">
                       Registered
                     </span>
                   </div>
@@ -617,21 +616,21 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
         </div>
 
         {/* Modal Footer */}
-        <div className="px-6 py-4 bg-[#FAF9F6] dark:bg-[#21211E] border-t border-[#EAE8E1] dark:border-[#302E29] flex items-center justify-between">
+        <div className="px-5 py-3.5 bg-[#FAF9F6] dark:bg-[#20201E] border-t border-[#EAE8E1] dark:border-[#2A2926] flex items-center justify-between">
           <button
             onClick={() => {
               const pid = quickViewParent.id;
               setQuickViewParent(null);
               onNavigate(`/admin/parents/${pid}` as AppRoute);
             }}
-            className="px-4 py-2 text-xs font-semibold text-[#C59B27] hover:text-[#B08921] transition-colors cursor-pointer"
+            className="text-xs font-semibold text-[#C59B27] hover:text-[#B08921] transition-colors cursor-pointer"
           >
             Open Full Profile & History →
           </button>
           <Button
             onClick={() => setQuickViewParent(null)}
             variant="secondary"
-            className="px-4 py-2 text-xs"
+            className="px-3.5 py-1.5 text-xs rounded-md"
           >
             Close
           </Button>
@@ -646,22 +645,21 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
       <div
         onClick={() => setParentToRemove(null)}
-        className="fixed inset-0 bg-black/50"
-        style={{ backdropFilter: 'blur(2px)' }}
+        className="fixed inset-0 bg-black/50 backdrop-blur-2xs"
       />
-      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
-        <div className="flex items-center gap-3 mb-4 text-amber-600 dark:text-amber-400">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-xl w-full max-w-md shadow-xl p-5 text-neutral-900 dark:text-neutral-100">
+        <div className="flex items-center gap-2.5 mb-3 text-amber-600 dark:text-amber-400">
           <AlertTriangle className="w-5 h-5 shrink-0" />
-          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
+          <h4 className="font-semibold text-sm">
             Remove this parent?
           </h4>
         </div>
-        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-4 leading-relaxed">
+        <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4 leading-relaxed">
           Their account will move to Removed and can be restored later. Linked children records remain safe.
         </p>
-        <form onSubmit={handleRemoveParentSubmit} className="space-y-4">
+        <form onSubmit={handleRemoveParentSubmit} className="space-y-3.5">
           <div>
-            <label className="text-zinc-500 dark:text-[#7A7570] text-[10px] font-semibold uppercase tracking-wider block mb-1.5">
+            <label className="text-neutral-500 dark:text-neutral-400 text-[10px] font-semibold uppercase tracking-wider block mb-1">
               Reason for removal (optional)
             </label>
             <textarea
@@ -669,15 +667,15 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
               value={removeReason}
               onChange={(e) => setRemoveReason(e.target.value)}
               rows={3}
-              className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] focus:outline-none focus:border-red-400 transition-all bg-zinc-50 dark:bg-[#262520] resize-none text-zinc-700 dark:text-[#F0EBE3]"
+              className="w-full px-3 py-2 text-xs rounded-md border border-[#EAE8E1] dark:border-[#2A2926] focus:outline-none focus:border-red-400 bg-neutral-50 dark:bg-[#20201E] resize-none text-neutral-800 dark:text-neutral-200"
             />
           </div>
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#2A2926]">
             <Button
               type="button"
               onClick={() => setParentToRemove(null)}
               variant="secondary"
-              className="px-4 py-2 text-xs"
+              className="px-3.5 py-1.5 text-xs rounded-md"
             >
               Cancel
             </Button>
@@ -685,7 +683,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
               type="submit"
               loading={submittingRemove}
               disabled={submittingRemove}
-              className="bg-red-600 hover:bg-red-700 text-white px-5 py-2 text-xs font-semibold rounded-xl focus:outline-none"
+              className="bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 text-xs font-semibold rounded-md focus:outline-none"
             >
               Remove parent
             </Button>
@@ -700,24 +698,23 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
       <div
         onClick={() => setParentToRestore(null)}
-        className="fixed inset-0 bg-black/50"
-        style={{ backdropFilter: 'blur(2px)' }}
+        className="fixed inset-0 bg-black/50 backdrop-blur-2xs"
       />
-      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
-        <div className="flex items-center gap-3 text-emerald-600 mb-4">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-xl w-full max-w-md shadow-xl p-5 text-neutral-900 dark:text-neutral-100">
+        <div className="flex items-center gap-2.5 text-emerald-600 dark:text-emerald-400 mb-3">
           <RotateCcw className="w-5 h-5 shrink-0" />
-          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
+          <h4 className="font-semibold text-sm">
             Restore this parent?
           </h4>
         </div>
-        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-6 leading-relaxed">
+        <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4 leading-relaxed">
           This parent will be restored and will appear under Active parents again.
         </p>
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#2A2926]">
           <Button
             onClick={() => setParentToRestore(null)}
             variant="secondary"
-            className="px-4 py-2 text-xs"
+            className="px-3.5 py-1.5 text-xs rounded-md"
           >
             Cancel
           </Button>
@@ -725,7 +722,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
             onClick={handleRestoreParentSubmit}
             loading={submittingRestore}
             disabled={submittingRestore}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 text-xs font-semibold rounded-xl focus:outline-none"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 text-xs font-semibold rounded-md focus:outline-none"
           >
             Restore parent
           </Button>
@@ -736,29 +733,28 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
   ) : null;
 
   const permanentDeleteModal = (parentToDelete && isDomReady) ? createPortal(
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-fade-in font-sans" id="confirm-single-parent-delete-modal">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 font-sans" id="confirm-single-parent-delete-modal">
       <div
-        className="fixed inset-0 bg-black/50"
+        className="fixed inset-0 bg-black/50 backdrop-blur-2xs"
         onClick={() => !submittingDelete && setParentToDelete(null)}
-        style={{ backdropFilter: 'blur(2px)' }}
       />
-      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-red-200 dark:border-red-900/40 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
-        <div className="flex items-center gap-2 text-red-600">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-red-200 dark:border-red-900/40 rounded-xl w-full max-w-md p-5 shadow-xl space-y-3.5 text-neutral-900 dark:text-neutral-100">
+        <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
           <Trash2 className="w-5 h-5 shrink-0" />
-          <h3 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
+          <h3 className="font-semibold text-sm">
             Delete {getDisplayName(parentToDelete)} permanently?
           </h3>
         </div>
-        <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+        <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
           This cannot be undone. The selected parent record will be permanently removed.
         </p>
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#2A2926]">
           <Button
             type="button"
             onClick={() => setParentToDelete(null)}
             variant="secondary"
             disabled={submittingDelete}
-            className="px-4 py-2 text-xs"
+            className="px-3.5 py-1.5 text-xs rounded-md"
           >
             Cancel
           </Button>
@@ -766,7 +762,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
             type="button"
             onClick={() => handlePermanentDeleteSubmit()}
             disabled={submittingDelete}
-            className="px-5 py-2 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
+            className="px-4 py-1.5 text-xs font-semibold rounded-md bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
             id="confirm-single-parent-delete-btn"
           >
             {submittingDelete ? 'Deleting…' : 'Delete permanently'}
@@ -781,22 +777,21 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
       <div
         onClick={() => setShowBulkRemoveModal(false)}
-        className="fixed inset-0 bg-black/50"
-        style={{ backdropFilter: 'blur(2px)' }}
+        className="fixed inset-0 bg-black/50 backdrop-blur-2xs"
       />
-      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
-        <div className="flex items-center gap-3 text-red-600 mb-4">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-xl w-full max-w-md shadow-xl p-5 text-neutral-900 dark:text-neutral-100">
+        <div className="flex items-center gap-2.5 text-red-600 dark:text-red-400 mb-3">
           <Trash2 className="w-5 h-5 shrink-0" />
-          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
+          <h4 className="font-semibold text-sm">
             Remove {selectedParentIds.length} parents?
           </h4>
         </div>
-        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-4 leading-relaxed">
+        <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3 leading-relaxed">
           These parents will be moved to the Removed tab. All linked children and attendance records will be safely preserved.
         </p>
-        <form onSubmit={handleBulkRemoveSubmit} className="space-y-4">
+        <form onSubmit={handleBulkRemoveSubmit} className="space-y-3.5">
           <div>
-            <label className="text-[10px] font-semibold text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block mb-1">
+            <label className="text-[10px] font-semibold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block mb-1">
               Reason (optional)
             </label>
             <input
@@ -804,16 +799,16 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
               value={bulkRemoveReason}
               onChange={(e) => setBulkRemoveReason(e.target.value)}
               placeholder="e.g., Requested account closure"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] focus:outline-none focus:border-[#C59B27] text-zinc-800 dark:text-[#F0EBE3]"
+              className="w-full px-3 py-1.5 text-xs rounded-md border border-[#EAE8E1] dark:border-[#2A2926] bg-white dark:bg-[#20201E] focus:outline-none focus:border-[#C59B27] text-neutral-800 dark:text-neutral-200"
             />
           </div>
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#2A2926]">
             <Button
               type="button"
               onClick={() => setShowBulkRemoveModal(false)}
               variant="secondary"
               disabled={submittingBulkRemove}
-              className="px-4 py-2 text-xs"
+              className="px-3.5 py-1.5 text-xs rounded-md"
             >
               Cancel
             </Button>
@@ -821,7 +816,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
               type="submit"
               loading={submittingBulkRemove}
               disabled={submittingBulkRemove}
-              className="bg-red-600 hover:bg-red-700 text-white px-5 py-2 text-xs font-semibold rounded-xl focus:outline-none"
+              className="bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 text-xs font-semibold rounded-md focus:outline-none"
             >
               Remove parents
             </Button>
@@ -836,26 +831,25 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
       <div
         onClick={() => !submittingBulkRestore && setShowBulkRestoreModal(false)}
-        className="fixed inset-0 bg-black/50"
-        style={{ backdropFilter: 'blur(2px)' }}
+        className="fixed inset-0 bg-black/50 backdrop-blur-2xs"
       />
-      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md shadow-2xl p-6">
-        <div className="flex items-center gap-3 text-emerald-600 mb-4">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-xl w-full max-w-md shadow-xl p-5 text-neutral-900 dark:text-neutral-100">
+        <div className="flex items-center gap-2.5 text-emerald-600 dark:text-emerald-400 mb-3">
           <RotateCcw className="w-5 h-5 shrink-0" />
-          <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
+          <h4 className="font-semibold text-sm">
             Restore {selectedParentIds.length} parents?
           </h4>
         </div>
-        <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] mb-6 leading-relaxed">
+        <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4 leading-relaxed">
           These parent profiles will be restored and will appear under Active parents again.
         </p>
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#2A2926]">
           <Button
             type="button"
             onClick={() => setShowBulkRestoreModal(false)}
             variant="secondary"
             disabled={submittingBulkRestore}
-            className="px-4 py-2 text-xs"
+            className="px-3.5 py-1.5 text-xs rounded-md"
           >
             Cancel
           </Button>
@@ -864,7 +858,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
             onClick={handleBulkRestoreSubmit}
             loading={submittingBulkRestore}
             disabled={submittingBulkRestore}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 text-xs font-semibold rounded-xl focus:outline-none"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 text-xs font-semibold rounded-md focus:outline-none"
           >
             Restore parents
           </Button>
@@ -875,20 +869,19 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
   ) : null;
 
   const bulkPurgeModal = (showBulkPurgeModal && isDomReady) ? createPortal(
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-fade-in font-sans">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 font-sans">
       <div
-        className="fixed inset-0 bg-black/50"
+        className="fixed inset-0 bg-black/50 backdrop-blur-2xs"
         onClick={() => !submittingBulkPurge && setShowBulkPurgeModal(false)}
-        style={{ backdropFilter: 'blur(2px)' }}
       />
-      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-red-200 dark:border-red-900/40 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
-        <div className="flex items-center gap-2 text-red-600">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-red-200 dark:border-red-900/40 rounded-xl w-full max-w-md p-5 shadow-xl space-y-3.5 text-neutral-900 dark:text-neutral-100">
+        <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
           <Trash2 className="w-5 h-5 shrink-0" />
-          <h3 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3]">
+          <h3 className="font-semibold text-sm">
             Permanently delete {selectedParentIds.length} parents?
           </h3>
         </div>
-        <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+        <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
           Type <strong>DELETE</strong> below to confirm. This action cannot be reversed.
         </p>
         <input
@@ -896,15 +889,15 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
           value={bulkPurgeConfirmText}
           onChange={(e) => setBulkPurgeConfirmText(e.target.value)}
           placeholder="Type DELETE to confirm"
-          className="w-full px-3.5 py-2 text-xs rounded-xl border border-red-300 dark:border-red-800 bg-white dark:bg-[#262520] focus:outline-none focus:border-red-500 text-zinc-800 dark:text-[#F0EBE3]"
+          className="w-full px-3 py-1.5 text-xs rounded-md border border-red-300 dark:border-red-800 bg-white dark:bg-[#20201E] focus:outline-none focus:border-red-500 text-neutral-800 dark:text-neutral-200"
         />
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#2A2926]">
           <Button
             type="button"
             onClick={() => setShowBulkPurgeModal(false)}
             variant="secondary"
             disabled={submittingBulkPurge}
-            className="px-4 py-2 text-xs"
+            className="px-3.5 py-1.5 text-xs rounded-md"
           >
             Cancel
           </Button>
@@ -912,7 +905,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
             type="button"
             onClick={() => handleBulkPurge()}
             disabled={submittingBulkPurge || bulkPurgeConfirmText !== 'DELETE'}
-            className="px-5 py-2 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
+            className="px-4 py-1.5 text-xs font-semibold rounded-md bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
           >
             {submittingBulkPurge ? 'Deleting…' : 'Confirm purge'}
           </button>
@@ -938,121 +931,136 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       {quickViewModal}
 
       {/* 1. Header with title and actions */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-4 border-b border-[#EAE8E1] dark:border-[#302E29]">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-[#EAE8E1] dark:border-[#2A2926]">
         <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="type-h1-app text-[#18181B] dark:text-[#F0EBE3]">
-              Parents & Workers Directory
-            </h1>
-            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-[#C59B27]/15 text-[#C59B27] border border-[#C59B27]/30">
-              {parents.length} Records
-            </span>
-          </div>
-          <p className="text-xs text-zinc-500 dark:text-[#7A7570] mt-1">
-            Filter, search, and inspect registered parents, Koinonia workers, origin locations, and linked families.
+          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-neutral-900 dark:text-neutral-100">
+            Parents & Workers
+          </h1>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+            View and manage registered parents, Koinonia workers, locations and linked children.
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2 shrink-0">
           <Button
             onClick={handleExportCSV}
             variant="secondary"
-            className="text-xs px-3.5 py-2 flex items-center gap-1.5 shrink-0"
+            className="text-xs px-3.5 py-1.5 flex items-center gap-1.5 shrink-0 rounded-md shadow-2xs"
           >
-            <Download className="w-3.5 h-3.5" />
+            <Download className="w-3.5 h-3.5 text-neutral-500 dark:text-neutral-400" />
             <span>Export CSV</span>
           </Button>
           <Button
             onClick={() => setShowAddParentModal(true)}
             variant="primary"
-            className="text-xs px-4 py-2 flex items-center gap-1.5 shrink-0"
+            className="text-xs px-3.5 py-1.5 flex items-center gap-1.5 shrink-0 rounded-md shadow-2xs"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-3.5 h-3.5" />
             <span>Add parent</span>
           </Button>
         </div>
       </div>
 
-      {/* 2. Rich KPI Metrics Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 transition-all">
-          <div className="flex items-center justify-between mb-1.5">
-            <p className="text-[11px] font-medium text-zinc-500 dark:text-[#7A7570]">Total Parents</p>
-            <Users className="w-4 h-4 text-zinc-400 dark:text-[#7A7570]" />
+      {/* 2. Unified Flat Directory Summary Strip */}
+      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-lg shadow-2xs overflow-hidden">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 divide-y sm:divide-y-0 sm:divide-x divide-[#EAE8E1] dark:divide-[#2A2926]">
+          {/* 1. Total Parents */}
+          <div className="p-3.5 sm:p-4 flex flex-col justify-between">
+            <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 mb-1">
+              <span className="text-[11px] font-medium uppercase tracking-wider">Total Parents</span>
+              <Users className="w-4 h-4 text-[#C59B27]" />
+            </div>
+            <div>
+              <div className="text-xl sm:text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">{stats.parents}</div>
+              <div className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-0.5">Profiles in view</div>
+            </div>
           </div>
-          <p className="text-xl font-bold text-[#18181B] dark:text-[#F0EBE3]">{stats.parents}</p>
-          <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mt-0.5">Profiles in view</p>
-        </div>
 
-        <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 transition-all">
-          <div className="flex items-center justify-between mb-1.5">
-            <p className="text-[11px] font-medium text-[#C59B27]">Koinonia Workers</p>
-            <Briefcase className="w-4 h-4 text-[#C59B27]" />
+          {/* 2. Koinonia Workers */}
+          <div className="p-3.5 sm:p-4 flex flex-col justify-between">
+            <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 mb-1">
+              <span className="text-[11px] font-medium uppercase tracking-wider">Koinonia Workers</span>
+              <Briefcase className="w-4 h-4 text-[#C59B27]" />
+            </div>
+            <div>
+              <div className="text-xl sm:text-2xl font-bold tracking-tight text-[#C59B27]">{stats.teamMembers}</div>
+              <div className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-0.5">Ministry team</div>
+            </div>
           </div>
-          <p className="text-xl font-bold text-[#C59B27]">{stats.teamMembers}</p>
-          <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mt-0.5">Ministry team</p>
-        </div>
 
-        <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 transition-all">
-          <div className="flex items-center justify-between mb-1.5">
-            <p className="text-[11px] font-medium text-zinc-500 dark:text-[#7A7570]">Regular Parents</p>
-            <HeartHandshake className="w-4 h-4 text-zinc-400 dark:text-[#7A7570]" />
+          {/* 3. Regular Parents */}
+          <div className="p-3.5 sm:p-4 flex flex-col justify-between">
+            <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 mb-1">
+              <span className="text-[11px] font-medium uppercase tracking-wider">Regular Parents</span>
+              <HeartHandshake className="w-4 h-4 text-[#C59B27]" />
+            </div>
+            <div>
+              <div className="text-xl sm:text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">{stats.regularParents}</div>
+              <div className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-0.5">Non-worker guardians</div>
+            </div>
           </div>
-          <p className="text-xl font-bold text-zinc-800 dark:text-[#F0EBE3]">{stats.regularParents}</p>
-          <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mt-0.5">Non-worker guardians</p>
-        </div>
 
-        <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 transition-all">
-          <div className="flex items-center justify-between mb-1.5">
-            <p className="text-[11px] font-medium text-zinc-500 dark:text-[#7A7570]">Children Linked</p>
-            <Users className="w-4 h-4 text-amber-500" />
+          {/* 4. Children Linked */}
+          <div className="p-3.5 sm:p-4 flex flex-col justify-between">
+            <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 mb-1">
+              <span className="text-[11px] font-medium uppercase tracking-wider">Children Linked</span>
+              <Users className="w-4 h-4 text-[#C59B27]" />
+            </div>
+            <div>
+              <div className="text-xl sm:text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">{stats.childrenLinked}</div>
+              <div className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-0.5">Connected family</div>
+            </div>
           </div>
-          <p className="text-xl font-bold text-zinc-800 dark:text-[#F0EBE3]">{stats.childrenLinked}</p>
-          <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mt-0.5">Connected family</p>
-        </div>
 
-        <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 transition-all">
-          <div className="flex items-center justify-between mb-1.5">
-            <p className="text-[11px] font-medium text-zinc-500 dark:text-[#7A7570]">Locations / Cities</p>
-            <MapPin className="w-4 h-4 text-blue-500" />
+          {/* 5. Locations / Cities */}
+          <div className="p-3.5 sm:p-4 flex flex-col justify-between">
+            <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 mb-1">
+              <span className="text-[11px] font-medium uppercase tracking-wider">Locations / Cities</span>
+              <MapPin className="w-4 h-4 text-[#C59B27]" />
+            </div>
+            <div>
+              <div className="text-xl sm:text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">{stats.locationsCount}</div>
+              <div className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-0.5">Regions represented</div>
+            </div>
           </div>
-          <p className="text-xl font-bold text-zinc-800 dark:text-[#F0EBE3]">{stats.locationsCount}</p>
-          <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mt-0.5">Regions represented</p>
-        </div>
 
-        <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 transition-all">
-          <div className="flex items-center justify-between mb-1.5">
-            <p className="text-[11px] font-medium text-zinc-500 dark:text-[#7A7570]">WhatsApp Ready</p>
-            <MessageSquare className="w-4 h-4 text-emerald-500" />
+          {/* 6. WhatsApp Ready */}
+          <div className="p-3.5 sm:p-4 flex flex-col justify-between">
+            <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 mb-1">
+              <span className="text-[11px] font-medium uppercase tracking-wider">WhatsApp Ready</span>
+              <MessageSquare className="w-4 h-4 text-[#C59B27]" />
+            </div>
+            <div>
+              <div className="text-xl sm:text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">{stats.whatsAppOptedIn}</div>
+              <div className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-0.5">Verified & opted in</div>
+            </div>
           </div>
-          <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{stats.whatsAppOptedIn}</p>
-          <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] mt-0.5">Verified & opted in</p>
         </div>
       </div>
 
       {/* 3. Status Tabs (Active vs Removed) */}
-      <div className="flex items-center justify-between border-b border-[#EAE8E1] dark:border-[#302E29]" id="parents-directory-tabs">
-        <div className="flex gap-2">
+      <div className="flex items-center justify-between border-b border-[#EAE8E1] dark:border-[#2A2926]" id="parents-directory-tabs">
+        <div className="flex gap-6">
           <button
             onClick={() => handleTabChange('active')}
-            className={`px-4 py-2.5 text-xs font-semibold transition-all border-b-2 cursor-pointer focus:outline-none flex items-center gap-2 ${
+            className={`pb-2.5 text-xs font-medium transition-colors border-b-2 cursor-pointer focus:outline-none flex items-center gap-1.5 ${
               activeTab === 'active'
-                ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3]'
-                : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5]'
+                ? 'border-[#C59B27] text-neutral-950 dark:text-neutral-100 font-semibold'
+                : 'border-transparent text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
             }`}
             id="tab-active-parents"
           >
             <span>Active Accounts</span>
             {activeTab === 'active' && (
-              <span className="w-2 h-2 rounded-full bg-[#C59B27]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[#C59B27]" />
             )}
           </button>
           <button
             onClick={() => handleTabChange('removed')}
-            className={`px-4 py-2.5 text-xs font-semibold transition-all border-b-2 cursor-pointer focus:outline-none flex items-center gap-2 ${
+            className={`pb-2.5 text-xs font-medium transition-colors border-b-2 cursor-pointer focus:outline-none flex items-center gap-1.5 ${
               activeTab === 'removed'
-                ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3]'
-                : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5]'
+                ? 'border-[#C59B27] text-neutral-950 dark:text-neutral-100 font-semibold'
+                : 'border-transparent text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
             }`}
             id="tab-removed-parents"
           >
@@ -1063,7 +1071,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
         {activeFiltersCount > 0 && (
           <button
             onClick={handleResetFilters}
-            className="text-xs text-[#C59B27] hover:underline cursor-pointer flex items-center gap-1 focus:outline-none"
+            className="pb-2.5 text-xs text-[#C59B27] hover:underline cursor-pointer flex items-center gap-1 focus:outline-none font-medium"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span>Reset {activeFiltersCount} filter{activeFiltersCount > 1 ? 's' : ''}</span>
@@ -1071,48 +1079,49 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
         )}
       </div>
 
-      {/* 4. Comprehensive Interactive Filter Control Panel */}
-      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4">
-        {/* Top Filter Bar: Search + Worker Segment Pill Selector */}
-        <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
+      {/* 4. Single Unified Search & Filter Toolbar */}
+      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-lg p-3 sm:p-3.5 shadow-2xs space-y-3">
+        {/* Top: Search + Restrained Worker Segment */}
+        <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between">
           {/* Search bar */}
           <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 dark:text-[#7A7570]" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 dark:text-neutral-500 pointer-events-none" />
             <input
               type="text"
               placeholder="Search by parent name, phone, email, city, state, address, or child name..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] focus:outline-none focus:border-[#C59B27] transition-all bg-zinc-50/70 dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#5A5550]"
+              className="w-full h-9 pl-9 pr-8 text-xs rounded-md border border-[#EAE8E1] dark:border-[#2A2926] focus:outline-none focus:border-[#C59B27] bg-[#FAF9F6]/50 dark:bg-[#20201E] text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 transition-colors"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-[#F0EBE3] cursor-pointer"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 cursor-pointer p-0.5"
+                title="Clear search"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
 
-          {/* Role Segment Toggle Pills */}
-          <div className="inline-flex p-1 rounded-2xl bg-zinc-100 dark:bg-[#24231F] border border-[#EAE8E1] dark:border-[#302E29] shrink-0">
+          {/* Role Segment Toggle (Restrained, not large pills) */}
+          <div className="inline-flex p-0.5 rounded-md bg-neutral-100/80 dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926] shrink-0 h-9 items-center">
             <button
               onClick={() => setWorkerFilter('all')}
-              className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all cursor-pointer ${
+              className={`h-full px-3 text-xs rounded transition-all cursor-pointer font-medium ${
                 workerFilter === 'all'
-                  ? 'bg-white dark:bg-[#1D1D1A] text-[#18181B] dark:text-[#F0EBE3] shadow-xs'
-                  : 'text-zinc-500 dark:text-[#7A7570] hover:text-zinc-800 dark:hover:text-[#F0EBE3]'
+                  ? 'bg-white dark:bg-[#2A2926] text-neutral-950 dark:text-neutral-100 font-semibold shadow-2xs'
+                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-200'
               }`}
             >
               All Members
             </button>
             <button
               onClick={() => setWorkerFilter('worker')}
-              className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`h-full px-3 text-xs rounded transition-all cursor-pointer flex items-center gap-1.5 font-medium ${
                 workerFilter === 'worker'
-                  ? 'bg-[#C59B27] text-white shadow-xs'
-                  : 'text-zinc-500 dark:text-[#7A7570] hover:text-zinc-800 dark:hover:text-[#F0EBE3]'
+                  ? 'bg-[#C59B27] text-white font-semibold shadow-2xs'
+                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-200'
               }`}
             >
               <Briefcase className="w-3 h-3" />
@@ -1120,10 +1129,10 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
             </button>
             <button
               onClick={() => setWorkerFilter('non_worker')}
-              className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all cursor-pointer ${
+              className={`h-full px-3 text-xs rounded transition-all cursor-pointer font-medium ${
                 workerFilter === 'non_worker'
-                  ? 'bg-white dark:bg-[#1D1D1A] text-[#18181B] dark:text-[#F0EBE3] shadow-xs'
-                  : 'text-zinc-500 dark:text-[#7A7570] hover:text-zinc-800 dark:hover:text-[#F0EBE3]'
+                  ? 'bg-white dark:bg-[#2A2926] text-neutral-950 dark:text-neutral-100 font-semibold shadow-2xs'
+                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-200'
               }`}
             >
               Regular Parents
@@ -1132,16 +1141,16 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
         </div>
 
         {/* Detailed Geographical & Status Selectors */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-1 border-t border-[#EAE8E1] dark:border-[#302E29]">
-          {/* Department Filter (Active/Highlighted when worker filter is on) */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#2A2926]">
+          {/* Department Filter */}
           <div className="space-y-1">
-            <label className="text-[10px] font-semibold text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block">
+            <label className="text-[10px] font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500 block">
               Department
             </label>
             <select
               value={selectedDepartment}
               onChange={(e) => setSelectedDepartment(e.target.value)}
-              className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+              className="w-full h-8 px-2 text-xs rounded-md border border-[#EAE8E1] dark:border-[#2A2926] bg-[#FAF9F6]/40 dark:bg-[#20201E] text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-[#C59B27] cursor-pointer"
             >
               <option value="all">All Departments</option>
               {filterOptions.departments.map(d => (
@@ -1154,13 +1163,13 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
 
           {/* Country Filter */}
           <div className="space-y-1">
-            <label className="text-[10px] font-semibold text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block">
+            <label className="text-[10px] font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500 block">
               Country
             </label>
             <select
               value={selectedCountry}
               onChange={(e) => setSelectedCountry(e.target.value)}
-              className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+              className="w-full h-8 px-2 text-xs rounded-md border border-[#EAE8E1] dark:border-[#2A2926] bg-[#FAF9F6]/40 dark:bg-[#20201E] text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-[#C59B27] cursor-pointer"
             >
               <option value="all">All Countries</option>
               {filterOptions.countries.map(c => (
@@ -1173,13 +1182,13 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
 
           {/* State / Region Filter */}
           <div className="space-y-1">
-            <label className="text-[10px] font-semibold text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block">
+            <label className="text-[10px] font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500 block">
               State / Region
             </label>
             <select
               value={selectedState}
               onChange={(e) => setSelectedState(e.target.value)}
-              className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+              className="w-full h-8 px-2 text-xs rounded-md border border-[#EAE8E1] dark:border-[#2A2926] bg-[#FAF9F6]/40 dark:bg-[#20201E] text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-[#C59B27] cursor-pointer"
             >
               <option value="all">All States / Regions</option>
               {filterOptions.states.map(s => (
@@ -1192,13 +1201,13 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
 
           {/* City Filter */}
           <div className="space-y-1">
-            <label className="text-[10px] font-semibold text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block">
+            <label className="text-[10px] font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500 block">
               City
             </label>
             <select
               value={selectedCity}
               onChange={(e) => setSelectedCity(e.target.value)}
-              className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+              className="w-full h-8 px-2 text-xs rounded-md border border-[#EAE8E1] dark:border-[#2A2926] bg-[#FAF9F6]/40 dark:bg-[#20201E] text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-[#C59B27] cursor-pointer"
             >
               <option value="all">All Cities</option>
               {filterOptions.cities.map(c => (
@@ -1211,13 +1220,13 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
 
           {/* Children Connected Filter */}
           <div className="space-y-1">
-            <label className="text-[10px] font-semibold text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block">
+            <label className="text-[10px] font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500 block">
               Children Status
             </label>
             <select
               value={hasChildrenFilter}
               onChange={(e) => setHasChildrenFilter(e.target.value as ChildrenFilterType)}
-              className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+              className="w-full h-8 px-2 text-xs rounded-md border border-[#EAE8E1] dark:border-[#2A2926] bg-[#FAF9F6]/40 dark:bg-[#20201E] text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-[#C59B27] cursor-pointer"
             >
               <option value="all">All Parents</option>
               <option value="has_children">Has Children Linked</option>
@@ -1227,13 +1236,13 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
 
           {/* Location Details Filter */}
           <div className="space-y-1">
-            <label className="text-[10px] font-semibold text-zinc-400 dark:text-[#7A7570] uppercase tracking-wider block">
+            <label className="text-[10px] font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500 block">
               Location Data
             </label>
             <select
               value={hasLocationFilter}
               onChange={(e) => setHasLocationFilter(e.target.value as LocationFilterType)}
-              className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27] cursor-pointer"
+              className="w-full h-8 px-2 text-xs rounded-md border border-[#EAE8E1] dark:border-[#2A2926] bg-[#FAF9F6]/40 dark:bg-[#20201E] text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-[#C59B27] cursor-pointer"
             >
               <option value="all">All Records</option>
               <option value="has_location">Has Address / Location</option>
@@ -1245,10 +1254,10 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
 
       {/* Contextual Action Bar when rows are selected */}
       {selectedParentIds.length > 0 && (
-        <div className="bg-[#FAF8F2] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-2xl px-5 py-3 flex items-center justify-between shadow-xs animate-fade-in">
+        <div className="bg-[#FAF8F2] dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926] rounded-md px-4 py-2.5 flex items-center justify-between shadow-2xs animate-fade-in">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-[#C59B27]" />
-            <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">
+            <span className="text-xs font-semibold text-neutral-900 dark:text-neutral-100">
               {selectedParentIds.length} {selectedParentIds.length === 1 ? 'parent selected' : 'parents selected'}
             </span>
           </div>
@@ -1257,14 +1266,14 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
             {activeTab === 'active' ? (
               <button
                 onClick={() => setShowBulkRemoveModal(true)}
-                className="px-3 py-1.5 text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 rounded-xl transition-colors cursor-pointer"
+                className="px-3 py-1 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 rounded transition-colors cursor-pointer"
               >
                 Remove selected
               </button>
             ) : (
               <button
                 onClick={() => setShowBulkRestoreModal(true)}
-                className="px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-950/50 rounded-xl transition-colors cursor-pointer"
+                className="px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-950/50 rounded transition-colors cursor-pointer"
               >
                 Restore selected
               </button>
@@ -1276,7 +1285,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                   setBulkPurgeConfirmText('');
                   setShowBulkPurgeModal(true);
                 }}
-                className="px-3 py-1.5 text-xs font-semibold text-red-700 dark:text-red-400 bg-red-100/70 dark:bg-red-950/60 hover:bg-red-200 dark:hover:bg-red-900/60 rounded-xl transition-colors cursor-pointer"
+                className="px-3 py-1 text-xs font-medium text-red-700 dark:text-red-400 bg-red-100/70 dark:bg-red-950/60 hover:bg-red-200 dark:hover:bg-red-900/60 rounded transition-colors cursor-pointer"
               >
                 Permanently delete
               </button>
@@ -1284,7 +1293,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
 
             <button
               onClick={() => setSelectedParentIds([])}
-              className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-[#F0EBE3] px-2 py-1 transition-colors cursor-pointer"
+              className="text-xs text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 px-2 py-1 transition-colors cursor-pointer"
             >
               Clear selection
             </button>
@@ -1293,7 +1302,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       )}
 
       {/* 5. Comprehensive Parents & Workers Table */}
-      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl overflow-hidden shadow-xs">
+      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-lg overflow-hidden shadow-2xs">
         {loading ? (
           <div className="p-12">
             <KoinoniaInlineLoader
@@ -1304,13 +1313,13 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
             />
           </div>
         ) : parents.length === 0 ? (
-          <div className="text-center py-16 text-zinc-400 dark:text-[#5A5550] space-y-3">
-            <Users className="w-8 h-8 stroke-[1.5] mx-auto text-zinc-300 dark:text-[#5A5550]" />
+          <div className="text-center py-16 text-neutral-400 dark:text-neutral-500 space-y-3">
+            <Users className="w-8 h-8 stroke-[1.5] mx-auto text-neutral-300 dark:text-neutral-600" />
             <div>
-              <p className="text-sm text-zinc-600 dark:text-[#B8B0A5] font-semibold">
+              <p className="text-sm text-neutral-700 dark:text-neutral-300 font-semibold">
                 {activeTab === 'active' ? 'No parents match the selected criteria.' : 'No removed parents found.'}
               </p>
-              <p className="text-xs text-zinc-400 dark:text-[#7A7570] mt-1">
+              <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">
                 Try adjusting your search query, location filters, or worker status pills.
               </p>
             </div>
@@ -1318,7 +1327,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
               <Button
                 onClick={handleResetFilters}
                 variant="secondary"
-                className="text-xs px-4 py-1.5 mx-auto mt-2"
+                className="text-xs px-3.5 py-1.5 mx-auto mt-2 rounded-md"
               >
                 Clear all filters
               </Button>
@@ -1328,8 +1337,8 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left text-xs">
               <thead>
-                <tr className="bg-[#FAF9F6] dark:bg-[#21211E] border-b border-[#EAE8E1] dark:border-[#302E29] text-zinc-500 dark:text-[#7A7570]">
-                  <th className="p-4 pl-6 w-10 text-center">
+                <tr className="bg-[#FAF9F6] dark:bg-[#20201E] border-b border-[#EAE8E1] dark:border-[#2A2926] text-neutral-500 dark:text-neutral-400">
+                  <th className="py-3 px-3 pl-4 w-10 text-center">
                     <AdminSelectionCheckbox
                       checked={isAllVisibleSelected}
                       indeterminate={isIndeterminate}
@@ -1337,15 +1346,15 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                       ariaLabel="Select all visible parents"
                     />
                   </th>
-                  <th className="p-4 text-[11px] font-semibold tracking-wider uppercase">Parent Profile</th>
-                  <th className="p-4 text-[11px] font-semibold tracking-wider uppercase">Worker Status</th>
-                  <th className="p-4 text-[11px] font-semibold tracking-wider uppercase">Origin & Location</th>
-                  <th className="p-4 text-[11px] font-semibold tracking-wider uppercase">Connected Children</th>
-                  <th className="p-4 text-[11px] font-semibold tracking-wider uppercase">WhatsApp</th>
-                  <th className="p-4 pr-6 text-right text-[11px] font-semibold tracking-wider uppercase">Actions</th>
+                  <th className="py-3 px-4 text-[11px] font-semibold tracking-wider uppercase">Parent Profile</th>
+                  <th className="py-3 px-4 text-[11px] font-semibold tracking-wider uppercase">Worker Status</th>
+                  <th className="py-3 px-4 text-[11px] font-semibold tracking-wider uppercase">Origin & Location</th>
+                  <th className="py-3 px-4 text-[11px] font-semibold tracking-wider uppercase">Connected Children</th>
+                  <th className="py-3 px-4 text-[11px] font-semibold tracking-wider uppercase">WhatsApp</th>
+                  <th className="py-3 px-4 pr-6 text-right text-[11px] font-semibold tracking-wider uppercase">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#EAE8E1] dark:divide-[#302E29]">
+              <tbody className="divide-y divide-[#EAE8E1] dark:divide-[#2A2926]">
                 {parents.map((p) => {
                   const displayName = getDisplayName(p);
                   const isRemoved = p.isDeleted || activeTab === 'removed';
@@ -1358,13 +1367,13 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                       key={p.id}
                       className={`transition-colors ${
                         isSelected
-                          ? 'bg-[#FAF8F2] dark:bg-[#262520]'
-                          : 'hover:bg-zinc-50/50 dark:hover:bg-[#21211E]/60'
+                          ? 'bg-[#FAF8F2] dark:bg-[#20201E]'
+                          : 'hover:bg-neutral-50/70 dark:hover:bg-[#22211E]'
                       }`}
                       data-parent-row-id={p.id}
                     >
                       {/* Checkbox */}
-                      <td className="p-4 pl-6 w-10 text-center" onClick={(e) => e.stopPropagation()}>
+                      <td className="py-3 px-3 pl-4 w-10 text-center" onClick={(e) => e.stopPropagation()}>
                         <AdminSelectionCheckbox
                           checked={isSelected}
                           onChange={() => handleToggleSelectParent(String(p.id))}
@@ -1372,21 +1381,21 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                         />
                       </td>
 
-                      {/* Parent name, avatar, email & phone */}
-                      <td className="p-4">
+                      {/* Parent Profile */}
+                      <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
                           {p.photoUrl ? (
                             <img
                               src={p.photoUrl}
                               alt={displayName}
                               referrerPolicy="no-referrer"
-                              className="w-10 h-10 rounded-2xl object-cover border border-[#EAE8E1] dark:border-[#3A3835] shrink-0"
+                              className="w-9 h-9 rounded-full object-cover border border-[#EAE8E1] dark:border-[#3A3835] shrink-0"
                             />
                           ) : (
-                            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-xs uppercase shrink-0 border ${
+                            <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs uppercase shrink-0 border ${
                               p.isKoinoniaWorker
                                 ? 'bg-[#C59B27]/10 text-[#C59B27] border-[#C59B27]/30'
-                                : 'bg-[#FAF9F6] dark:bg-[#262520] text-zinc-500 dark:text-[#7A7570] border-[#EAE8E1] dark:border-[#3A3835]'
+                                : 'bg-[#FAF9F6] dark:bg-[#20201E] text-neutral-600 dark:text-neutral-400 border-[#EAE8E1] dark:border-[#2A2926]'
                             }`}>
                               {getInitials(displayName)}
                             </div>
@@ -1394,16 +1403,16 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                           <div className="min-w-0">
                             <span 
                               onClick={() => setQuickViewParent(p)}
-                              className="font-semibold text-[#18181B] dark:text-[#F0EBE3] block text-xs leading-snug truncate hover:text-[#C59B27] cursor-pointer"
+                              className="font-semibold text-neutral-900 dark:text-neutral-100 block text-xs leading-tight hover:text-[#C59B27] cursor-pointer truncate"
                               title="Click for quick family overview"
                             >
                               {displayName}
                             </span>
-                            <span className="text-[11px] text-zinc-500 dark:text-[#7A7570] block truncate">
+                            <span className="text-[11px] text-neutral-500 dark:text-neutral-400 block truncate mt-0.5">
                               {p.email || 'No email registered'}
                             </span>
                             {p.phone && (
-                              <span className="text-[10px] text-zinc-400 dark:text-[#5A5550] block truncate">
+                              <span className="text-[10px] text-neutral-400 dark:text-neutral-500 block truncate">
                                 📞 {p.phone}
                               </span>
                             )}
@@ -1412,107 +1421,87 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                       </td>
 
                       {/* Worker / Ministry Role Status */}
-                      <td className="p-4">
+                      <td className="py-3 px-4">
                         {p.isKoinoniaWorker ? (
-                          <div className="space-y-1">
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-[#C59B27]/15 text-[#C59B27] border border-[#C59B27]/30">
-                              <Briefcase className="w-3 h-3" />
+                          <div className="space-y-0.5">
+                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#C59B27]">
+                              <Briefcase className="w-3.5 h-3.5" />
                               <span>Koinonia Worker</span>
                             </span>
                             {p.department && (
-                              <span className="block text-[11px] text-zinc-600 dark:text-[#B8B0A5] font-medium pl-1">
+                              <span className="block text-[11px] text-neutral-500 dark:text-neutral-400 font-medium">
                                 {p.department}
                               </span>
                             )}
                           </div>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-100 dark:bg-[#262520] text-zinc-600 dark:text-[#7A7570]">
+                          <span className="text-xs text-neutral-500 dark:text-neutral-400 font-normal">
                             Parent
                           </span>
                         )}
                       </td>
 
                       {/* Geographic Origin & Residence */}
-                      <td className="p-4 max-w-xs">
+                      <td className="py-3 px-4 max-w-xs">
                         {hasLocationData ? (
                           <div className="space-y-0.5">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {p.city && (
-                                <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] text-xs">
-                                  {p.city}
-                                </span>
-                              )}
-                              {p.stateRegion && (
-                                <span className="text-zinc-500 dark:text-[#B8B0A5] text-xs">
-                                  {p.city ? `· ${p.stateRegion}` : p.stateRegion}
-                                </span>
-                              )}
-                              {p.country && (
-                                <span className="px-1.5 py-0.5 rounded-md text-[9px] font-medium bg-zinc-100 dark:bg-[#262520] text-zinc-500 dark:text-[#7A7570]">
-                                  {p.country}
-                                </span>
-                              )}
+                            <div className="text-xs font-semibold text-neutral-900 dark:text-neutral-100">
+                              {p.city ? p.city : (p.stateRegion || 'Nigeria')}
+                              {p.stateRegion && p.city ? ` · ${p.stateRegion}` : ''}
+                              {p.country ? `, ${p.country}` : ''}
                             </div>
                             {p.homeAddress && (
-                              <p className="text-[10px] text-zinc-400 dark:text-[#5A5550] truncate flex items-center gap-1" title={p.homeAddress}>
-                                <Home className="w-2.5 h-2.5 shrink-0" />
+                              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate flex items-center gap-1" title={p.homeAddress}>
+                                <Home className="w-3 h-3 text-neutral-400 shrink-0" />
                                 <span className="truncate">{p.homeAddress}</span>
                               </p>
                             )}
                           </div>
                         ) : (
-                          <span className="text-zinc-400 dark:text-[#5A5550] italic text-[11px]">
+                          <span className="text-neutral-400 dark:text-neutral-500 italic text-[11px]">
                             Location not provided
                           </span>
                         )}
                       </td>
 
-                      {/* Connected Children & Chips */}
-                      <td className="p-4">
+                      {/* Connected Children */}
+                      <td className="py-3 px-4">
                         <div className="space-y-1">
-                          <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3] text-xs block">
+                          <span className="font-semibold text-neutral-900 dark:text-neutral-100 text-xs block">
                             {formatChildrenCount(Number(p.childrenCount || 0))}
                           </span>
                           {p.children && p.children.length > 0 && (
-                            <div className="flex flex-wrap gap-1 max-w-xs">
-                              {p.children.map((child: any) => (
-                                <span
-                                  key={child.id}
-                                  className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-zinc-100 dark:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] border border-[#EAE8E1] dark:border-[#302E29]"
-                                  title={`${child.fullName} (${child.age ? `${child.age} yrs` : 'Age unknown'})`}
-                                >
-                                  {child.fullName?.split(' ')[0] || 'Child'}{child.age ? ` (${child.age}y)` : ''}
-                                </span>
-                              ))}
+                            <div className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate max-w-xs" title={p.children.map((c: any) => c.fullName).join(', ')}>
+                              {p.children.map((c: any) => `${c.fullName?.split(' ')[0] || 'Child'}${c.age ? ` (${c.age}y)` : ''}`).join(', ')}
                             </div>
                           )}
                         </div>
                       </td>
 
                       {/* WhatsApp Readiness */}
-                      <td className="p-4">
+                      <td className="py-3 px-4">
                         {p.whatsappConsentStatus === 'opted_in' ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40">
-                            <CheckCircle2 className="w-3 h-3" />
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                             <span>Opted in</span>
                           </span>
                         ) : p.whatsapp ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-100 dark:bg-[#262520] text-zinc-500 dark:text-[#7A7570]">
+                          <span className="text-[11px] text-neutral-500 dark:text-neutral-400 font-medium">
                             Provided
                           </span>
                         ) : (
-                          <span className="text-[10px] text-zinc-400 dark:text-[#5A5550] italic">
+                          <span className="text-[11px] text-neutral-400 dark:text-neutral-500 italic">
                             None
                           </span>
                         )}
                       </td>
 
                       {/* Actions */}
-                      <td className="p-4 pr-6 text-right">
-                        <div className="inline-flex items-center gap-1.5 justify-end">
+                      <td className="py-3 px-4 pr-6 text-right">
+                        <div className="inline-flex items-center gap-1 justify-end">
                           <button
                             onClick={() => setQuickViewParent(p)}
-                            className="p-1.5 text-zinc-500 hover:text-zinc-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] hover:bg-zinc-100 dark:hover:bg-[#262520] rounded-xl transition-colors cursor-pointer"
+                            className="p-1.5 text-neutral-400 hover:text-neutral-800 dark:text-neutral-500 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-[#20201E] rounded transition-colors cursor-pointer"
                             title="Quick preview"
                           >
                             <Eye className="w-3.5 h-3.5" />
@@ -1520,7 +1509,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
 
                           <button
                             onClick={() => onNavigate(`/admin/parents/${p.id}` as AppRoute)}
-                            className="px-3 py-1.5 text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] hover:border-zinc-300 dark:hover:border-[#4A4740] rounded-xl transition-all cursor-pointer focus:outline-none"
+                            className="px-2.5 py-1 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:text-neutral-950 dark:hover:text-white bg-white dark:bg-[#20201E] hover:bg-neutral-50 dark:hover:bg-neutral-800 border border-[#EAE8E1] dark:border-[#2A2926] rounded transition-colors cursor-pointer focus:outline-none"
                           >
                             Profile
                           </button>
@@ -1529,22 +1518,22 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                           <div className="relative inline-block text-left" ref={openActionMenuId === p.id ? actionMenuRef : undefined}>
                             <button
                               onClick={() => setOpenActionMenuId(openActionMenuId === p.id ? null : p.id)}
-                              className="p-1.5 text-zinc-400 dark:text-[#7A7570] hover:text-zinc-700 dark:hover:text-[#F0EBE3] hover:bg-zinc-100 dark:hover:bg-[#262520] rounded-lg transition-colors cursor-pointer focus:outline-none"
+                              className="p-1.5 text-neutral-400 hover:text-neutral-800 dark:text-neutral-500 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-[#20201E] rounded transition-colors cursor-pointer focus:outline-none"
                               aria-label="More options"
                             >
-                              <MoreHorizontal className="w-4 h-4" />
+                              <MoreHorizontal className="w-3.5 h-3.5" />
                             </button>
 
                             {openActionMenuId === p.id && (
-                              <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl shadow-xl py-1.5 z-30 animate-fade-in text-left">
+                              <div className="absolute right-0 mt-1 w-44 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-md shadow-lg py-1 z-30 text-left">
                                 <button
                                   onClick={() => {
                                     setOpenActionMenuId(null);
                                     setQuickViewParent(p);
                                   }}
-                                  className="w-full text-left px-3.5 py-2 text-xs text-zinc-700 dark:text-[#F0EBE3] hover:bg-zinc-50 dark:hover:bg-[#262520] flex items-center gap-2 transition-colors cursor-pointer"
+                                  className="w-full text-left px-3 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-[#242320] flex items-center gap-2 transition-colors cursor-pointer"
                                 >
-                                  <Eye className="w-3.5 h-3.5 text-zinc-400" />
+                                  <Eye className="w-3.5 h-3.5 text-neutral-400" />
                                   <span>Quick family view</span>
                                 </button>
 
@@ -1553,13 +1542,13 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                                     setOpenActionMenuId(null);
                                     onNavigate(`/admin/parents/${p.id}` as AppRoute);
                                   }}
-                                  className="w-full text-left px-3.5 py-2 text-xs text-zinc-700 dark:text-[#F0EBE3] hover:bg-zinc-50 dark:hover:bg-[#262520] flex items-center gap-2 transition-colors cursor-pointer"
+                                  className="w-full text-left px-3 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-[#242320] flex items-center gap-2 transition-colors cursor-pointer"
                                 >
-                                  <Users className="w-3.5 h-3.5 text-zinc-400" />
+                                  <Users className="w-3.5 h-3.5 text-neutral-400" />
                                   <span>View full details</span>
                                 </button>
 
-                                <div className="h-px bg-zinc-100 dark:bg-[#302E29] my-1" />
+                                <div className="h-px bg-[#EAE8E1] dark:bg-[#2A2926] my-1" />
 
                                 {!isRemoved ? (
                                   <button
@@ -1567,7 +1556,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                                       setOpenActionMenuId(null);
                                       setParentToRemove(p);
                                     }}
-                                    className="w-full text-left px-3.5 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2 transition-colors cursor-pointer"
+                                    className="w-full text-left px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2 transition-colors cursor-pointer"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                     <span>Remove parent</span>
@@ -1579,21 +1568,21 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                                         setOpenActionMenuId(null);
                                         setParentToRestore(p);
                                       }}
-                                      className="w-full text-left px-3.5 py-2 text-xs text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 flex items-center gap-2 transition-colors cursor-pointer"
+                                      className="w-full text-left px-3 py-1.5 text-xs text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 flex items-center gap-2 transition-colors cursor-pointer"
                                     >
                                       <RotateCcw className="w-3.5 h-3.5" />
                                       <span>Restore parent</span>
                                     </button>
                                     {isSuperAdmin && (
                                       <>
-                                        <div className="h-px bg-zinc-100 dark:bg-[#302E29] my-1" />
+                                        <div className="h-px bg-[#EAE8E1] dark:bg-[#2A2926] my-1" />
                                         <button
                                           onClick={() => {
                                             setOpenActionMenuId(null);
                                             setParentToDelete(p);
                                             setDeleteConfirmationText('');
                                           }}
-                                          className="w-full text-left px-3.5 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2 transition-colors cursor-pointer"
+                                          className="w-full text-left px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2 transition-colors cursor-pointer"
                                         >
                                           <Trash2 className="w-3.5 h-3.5" />
                                           <span>Delete permanently</span>
