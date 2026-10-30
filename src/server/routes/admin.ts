@@ -10622,6 +10622,7 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
     const city = typeof req.query.city === 'string' ? req.query.city.trim() : 'all';
     const hasChildren = typeof req.query.hasChildren === 'string' ? req.query.hasChildren.trim() : 'all';
     const hasLocation = typeof req.query.hasLocation === 'string' ? req.query.hasLocation.trim() : 'all';
+    const ageGroup = typeof req.query.ageGroup === 'string' ? req.query.ageGroup.trim() : 'all';
 
     let queryStr = `
       SELECT 
@@ -10686,6 +10687,46 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
       queryStr += ` AND (p.city IS NULL OR p.city = '') AND (p.state_region IS NULL OR p.state_region = '') AND (p.country IS NULL OR p.country = '')`;
     }
 
+    if (ageGroup && ageGroup !== 'all') {
+      const match = ageGroup.match(/(\d+)\s*[-–to_]+\s*(\d+)/i);
+      if (match) {
+        const minA = parseInt(match[1], 10);
+        const maxA = parseInt(match[2], 10);
+        queryStr += ` AND EXISTS (
+          SELECT 1 FROM children c 
+          WHERE c.parent_profile_id = p.id 
+            AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+            AND (
+              (c.calculated_age >= ? AND c.calculated_age <= ?)
+              OR c.age_group LIKE ?
+            )
+        )`;
+        queryParams.push(minA, maxA, `%${minA}%`);
+      } else if (/under\s*1|below\s*1/i.test(ageGroup)) {
+        queryStr += ` AND EXISTS (
+          SELECT 1 FROM children c 
+          WHERE c.parent_profile_id = p.id 
+            AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+            AND (c.calculated_age < 1 OR c.age_group LIKE '%below%' OR c.age_group LIKE '%under%')
+        )`;
+      } else if (/teen/i.test(ageGroup)) {
+        queryStr += ` AND EXISTS (
+          SELECT 1 FROM children c 
+          WHERE c.parent_profile_id = p.id 
+            AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+            AND (c.calculated_age >= 13 OR c.age_group LIKE '%teen%')
+        )`;
+      } else {
+        queryStr += ` AND EXISTS (
+          SELECT 1 FROM children c 
+          WHERE c.parent_profile_id = p.id 
+            AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+            AND c.age_group LIKE ?
+        )`;
+        queryParams.push(`%${ageGroup}%`);
+      }
+    }
+
     if (q) {
       queryStr += ` AND (
         p.full_name LIKE ? OR 
@@ -10725,7 +10766,7 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
       const placeholders = parentIds.map(() => '?').join(',');
       const childrenRows = await query(`
         SELECT 
-          c.id, c.parent_profile_id, c.full_name, c.calculated_age, c.age_group, c.gender,
+          c.id, c.parent_profile_id, c.full_name, c.date_of_birth, c.calculated_age, c.age_group, c.gender,
           e.id as application_id,
           e.status as entry_status,
           e.checked_in_at,
@@ -10745,6 +10786,7 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
           id: ch.id,
           applicationId: ch.application_id || null,
           fullName: ch.full_name,
+          dateOfBirth: ch.date_of_birth,
           age: ch.calculated_age,
           ageGroup: ch.age_group,
           gender: ch.gender,
