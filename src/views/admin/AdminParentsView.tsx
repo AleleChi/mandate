@@ -67,6 +67,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
   const [selectedCity, setSelectedCity] = useState<string>('all');
   const [hasChildrenFilter, setHasChildrenFilter] = useState<ChildrenFilterType>('all');
   const [hasLocationFilter, setHasLocationFilter] = useState<LocationFilterType>('all');
+  const [selectedAgeGroup, setSelectedAgeGroup] = useState<string>('all');
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
 
   // Available filter options returned by backend
@@ -81,6 +82,95 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     states: [],
     cities: []
   });
+
+  // Canonical age groups for event matching
+  const availableAgeGroups = useMemo(() => {
+    if (activeEvent?.ageGroups && Array.isArray(activeEvent.ageGroups) && activeEvent.ageGroups.length > 0) {
+      return activeEvent.ageGroups.map((g: any) => ({
+        id: String(g.id || `${g.minAge}-${g.maxAge}`),
+        label: g.label || (g.maxAge ? `Ages ${g.minAge}–${g.maxAge}` : `Age ${g.minAge}+`),
+        minAge: Number(g.minAge ?? g.min_age ?? 0),
+        maxAge: Number(g.maxAge ?? g.max_age ?? 99)
+      }));
+    }
+    return [
+      { id: '4-6', label: 'Ages 4–6', minAge: 4, maxAge: 6 },
+      { id: '7-9', label: 'Ages 7–9', minAge: 7, maxAge: 9 },
+      { id: '10-12', label: 'Ages 10–12', minAge: 10, maxAge: 12 },
+      { id: '13-14', label: 'Ages 13–14', minAge: 13, maxAge: 14 }
+    ];
+  }, [activeEvent]);
+
+  // Calendar date parsing preserving strict timezone-independent date
+  const parseCalendarDateParts = (dateInput?: string | Date | null): { year: number; month: number; day: number } | null => {
+    if (!dateInput) return null;
+    if (typeof dateInput === 'string') {
+      const trimmed = dateInput.trim();
+      const match = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+      if (match) {
+        const year = parseInt(match[1], 10);
+        const month = parseInt(match[2], 10);
+        const day = parseInt(match[3], 10);
+        if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+          return { year, month, day };
+        }
+      }
+      const d = new Date(trimmed);
+      if (isNaN(d.getTime())) return null;
+      return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
+    } else if (dateInput instanceof Date) {
+      if (isNaN(dateInput.getTime())) return null;
+      return { year: dateInput.getUTCFullYear(), month: dateInput.getUTCMonth() + 1, day: dateInput.getUTCDate() };
+    }
+    return null;
+  };
+
+  const calculateChildAgeOnEvent = (dobStr?: string, eventDateStr?: string | Date | null, fallbackAge?: number): number | null => {
+    if (dobStr) {
+      const dobParts = parseCalendarDateParts(dobStr);
+      if (dobParts) {
+        const refParts = parseCalendarDateParts(eventDateStr) || parseCalendarDateParts(new Date());
+        if (refParts) {
+          let age = refParts.year - dobParts.year;
+          const isBeforeBirthdayThisYear =
+            refParts.month < dobParts.month ||
+            (refParts.month === dobParts.month && refParts.day < dobParts.day);
+          if (isBeforeBirthdayThisYear) {
+            age--;
+          }
+          return age >= 0 ? age : 0;
+        }
+      }
+    }
+    if (typeof fallbackAge === 'number' && !isNaN(fallbackAge) && fallbackAge >= 0) {
+      return fallbackAge;
+    }
+    return null;
+  };
+
+  const doesChildMatchAgeGroup = (child: any, ageGroup: { minAge: number; maxAge: number; label: string; id: string }) => {
+    const age = calculateChildAgeOnEvent(child.dateOfBirth, activeEvent?.starts_at, child.age);
+    if (age !== null) {
+      return age >= ageGroup.minAge && age <= ageGroup.maxAge;
+    }
+    if (child.ageGroup) {
+      const norm = String(child.ageGroup).toLowerCase().replace(/[–—]/g, '-');
+      const labelNorm = String(ageGroup.label).toLowerCase().replace(/[–—]/g, '-');
+      const idNorm = String(ageGroup.id).toLowerCase();
+      if (norm.includes(idNorm) || norm.includes(`${ageGroup.minAge}-${ageGroup.maxAge}`) || labelNorm.includes(norm)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const doesParentMatchAgeGroup = (parent: any, selectedGroupId: string) => {
+    if (!selectedGroupId || selectedGroupId === 'all') return true;
+    const group = availableAgeGroups.find(g => g.id === selectedGroupId);
+    if (!group) return true;
+    if (!parent.children || parent.children.length === 0) return false;
+    return parent.children.some((child: any) => doesChildMatchAgeGroup(child, group));
+  };
 
   // Bulk selection & actions
   const [selectedParentIds, setSelectedParentIds] = useState<string[]>([]);
@@ -142,6 +232,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     if (selectedState !== 'all') count++;
     if (selectedCity !== 'all') count++;
     if (hasChildrenFilter !== 'all') count++;
+    if (selectedAgeGroup !== 'all') count++;
     if (hasLocationFilter !== 'all') count++;
     if (searchQuery.trim()) count++;
     return count;
@@ -152,6 +243,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     selectedState,
     selectedCity,
     hasChildrenFilter,
+    selectedAgeGroup,
     hasLocationFilter,
     searchQuery
   ]);
@@ -164,6 +256,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     setSelectedState('all');
     setSelectedCity('all');
     setHasChildrenFilter('all');
+    setSelectedAgeGroup('all');
     setHasLocationFilter('all');
   };
 
@@ -198,6 +291,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
         city: selectedCity,
         hasChildren: hasChildrenFilter,
         hasLocation: hasLocationFilter,
+        ageGroup: selectedAgeGroup,
         eventId: activeEvent?.id
       });
 
@@ -244,6 +338,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     selectedCity,
     hasChildrenFilter,
     hasLocationFilter,
+    selectedAgeGroup,
     activeEvent?.id
   ]);
 
@@ -350,6 +445,12 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     }
   };
 
+  // Filtered parent records combining backend response with client age-group verification
+  const displayParents = useMemo(() => {
+    if (selectedAgeGroup === 'all') return parents;
+    return parents.filter(p => doesParentMatchAgeGroup(p, selectedAgeGroup));
+  }, [parents, selectedAgeGroup, availableAgeGroups, activeEvent]);
+
   // Clear bulk selection on tab switch or search change
   useEffect(() => {
     setSelectedParentIds([]);
@@ -360,18 +461,21 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     selectedDepartment,
     selectedCountry,
     selectedState,
-    selectedCity
+    selectedCity,
+    hasChildrenFilter,
+    hasLocationFilter,
+    selectedAgeGroup
   ]);
 
-  const isAllVisibleSelected = parents.length > 0 && parents.every(p => selectedParentIds.includes(String(p.id)));
-  const isSomeVisibleSelected = parents.some(p => selectedParentIds.includes(String(p.id)));
+  const isAllVisibleSelected = displayParents.length > 0 && displayParents.every(p => selectedParentIds.includes(String(p.id)));
+  const isSomeVisibleSelected = displayParents.some(p => selectedParentIds.includes(String(p.id)));
   const isIndeterminate = isSomeVisibleSelected && !isAllVisibleSelected;
 
   const handleToggleSelectAll = () => {
     if (isAllVisibleSelected) {
       setSelectedParentIds([]);
     } else {
-      setSelectedParentIds(parents.map(p => String(p.id)));
+      setSelectedParentIds(displayParents.map(p => String(p.id)));
     }
   };
 
@@ -541,7 +645,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
 
   // Export filtered parents list as CSV
   const handleExportCSV = () => {
-    if (parents.length === 0) {
+    if (displayParents.length === 0) {
       showError('Export empty', 'There are no parents matching your current filters.');
       return;
     }
@@ -569,7 +673,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       return `"${str}"`;
     };
 
-    const rows = parents.map(p => {
+    const rows = displayParents.map(p => {
       const childrenNames = (p.children || []).map((c: any) => `${c.fullName}${c.age ? ` (${c.age}y)` : ''}`).join('; ');
       return [
         escapeCsv(p.fullName),
@@ -599,7 +703,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    showSuccess('Export Complete', `Exported ${parents.length} parent records to CSV.`);
+    showSuccess('Export Complete', `Exported ${displayParents.length} parent records to CSV.`);
   };
 
   const getInitials = (name: any): string => {
@@ -1400,7 +1504,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
         </div>
 
         {/* Detailed Geographical & Status Selectors */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#2A2926]">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#2A2926]">
           {/* Department Filter */}
           <div className="space-y-1">
             <label className="text-[10px] font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500 block">
@@ -1493,6 +1597,26 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
             </select>
           </div>
 
+          {/* Age / Age Group Filter */}
+          <div className="space-y-1">
+            <label className="text-[10px] font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500 block">
+              Age / Age Group
+            </label>
+            <select
+              value={selectedAgeGroup}
+              onChange={(e) => setSelectedAgeGroup(e.target.value)}
+              className="w-full h-8 px-2 text-xs rounded-md border border-[#EAE8E1] dark:border-[#2A2926] bg-[#FAF9F6]/40 dark:bg-[#20201E] text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-[#C59B27] cursor-pointer"
+              id="admin-parents-age-filter"
+            >
+              <option value="all">All Age Groups</option>
+              {availableAgeGroups.map(ag => (
+                <option key={ag.id} value={ag.id}>
+                  {ag.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Location Details Filter */}
           <div className="space-y-1">
             <label className="text-[10px] font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500 block">
@@ -1571,7 +1695,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
               centered
             />
           </div>
-        ) : parents.length === 0 ? (
+        ) : displayParents.length === 0 ? (
           <div className="text-center py-16 text-neutral-400 dark:text-neutral-500 space-y-3">
             <Users className="w-8 h-8 stroke-[1.5] mx-auto text-neutral-300 dark:text-neutral-600" />
             <div>
@@ -1614,7 +1738,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#EAE8E1] dark:divide-[#2A2926]">
-                {parents.map((p) => {
+                {displayParents.map((p) => {
                   const displayName = getDisplayName(p);
                   const isRemoved = p.isDeleted || activeTab === 'removed';
                   const isSelected = selectedParentIds.includes(String(p.id));

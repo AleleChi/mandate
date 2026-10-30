@@ -1757,7 +1757,8 @@ export const api = {
       stateRegion?: string; 
       city?: string; 
       hasChildren?: string;
-      hasLocation?: string; 
+      hasLocation?: string;
+      ageGroup?: string;
       eventId?: string;
     }) {
       const queryParams = new URLSearchParams();
@@ -1770,6 +1771,7 @@ export const api = {
       if (params?.city && params.city !== 'all') queryParams.append('city', params.city);
       if (params?.hasChildren && params.hasChildren !== 'all') queryParams.append('hasChildren', params.hasChildren);
       if (params?.hasLocation && params.hasLocation !== 'all') queryParams.append('hasLocation', params.hasLocation);
+      if (params?.ageGroup && params.ageGroup !== 'all') queryParams.append('ageGroup', params.ageGroup);
       if (params?.eventId) queryParams.append('eventId', params.eventId);
       const queryString = queryParams.toString();
       return api.request<{ 
