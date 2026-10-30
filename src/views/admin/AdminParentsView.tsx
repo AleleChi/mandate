@@ -30,6 +30,7 @@ import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { AddParentModal } from '../../components/admin/modals/AddParentModal';
+import { ChildReviewModal } from '../../components/admin/modals/ChildReviewModal';
 import { AdminSelectionCheckbox } from '../../components/common/AdminSelectionCheckbox';
 import { AppRoute } from '../../types';
 
@@ -58,6 +59,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
   const [submittingModalChildActionId, setSubmittingModalChildActionId] = useState<string | null>(null);
   const [modalChildToRestore, setModalChildToRestore] = useState<any | null>(null);
   const [restoringModalChild, setRestoringModalChild] = useState(false);
+  const [reviewingChild, setReviewingChild] = useState<any | null>(null);
 
   // Enhanced Filter States
   const [workerFilter, setWorkerFilter] = useState<WorkerFilterType>('all');
@@ -348,14 +350,14 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     setSubmittingModalChildActionId(actionKey);
     try {
       const res = await api.admin.reviewApplication(child.applicationId || child.id, {
-        status: 'selected',
+        status: 'under_review',
         eventId: activeEvent?.id,
-        sendNotification: true
+        sendNotification: false
       });
       if (res.success) {
-        showSuccess('Child Selected', `${child.fullName} has been selected for ${activeEvent?.title || activeEvent?.name || 'the event'}.`);
-        const newStatus = res.status || 'pass_ready';
-        const newAppId = res.pass?.child_event_entry_id || res.application?.id || child.applicationId;
+        showSuccess('Child Entered for Event', `${child.fullName} is now entered for ${activeEvent?.title || activeEvent?.name || 'the event'} and awaiting review.`);
+        const newStatus = res.status || 'under_review';
+        const newAppId = res.applicationId || res.pass?.child_event_entry_id || res.application?.id || child.applicationId;
 
         // Immediately update quickViewParent.children
         setQuickViewParent((prev: any) => {
@@ -390,12 +392,35 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
   };
 
   const handleReviewModalChild = (child: any) => {
-    setQuickViewParent(null);
-    if (child.applicationId) {
-      onNavigate(`/admin/review/${child.applicationId}` as AppRoute);
-    } else {
-      onNavigate(`/admin/children/${child.id}` as AppRoute);
-    }
+    setReviewingChild(child);
+  };
+
+  const handleStatusUpdatedFromReviewModal = (newStatus: string, newApplicationId?: string) => {
+    if (!reviewingChild) return;
+    const targetChildId = reviewingChild.id;
+
+    // Immediately update quickViewParent.children
+    setQuickViewParent((prev: any) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        children: (prev.children || []).map((c: any) => 
+          c.id === targetChildId ? { ...c, entryStatus: newStatus, applicationId: newApplicationId || c.applicationId } : c
+        )
+      };
+    });
+
+    // Immediately update parents state
+    setParents(prev => prev.map((p: any) => {
+      const hasTargetChild = (p.children || []).some((c: any) => c.id === targetChildId);
+      if (!hasTargetChild) return p;
+      return {
+        ...p,
+        children: (p.children || []).map((c: any) => 
+          c.id === targetChildId ? { ...c, entryStatus: newStatus, applicationId: newApplicationId || c.applicationId } : c
+        )
+      };
+    }));
   };
 
   const handleViewModalChild = (child: any) => {
@@ -897,13 +922,22 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                         )}
 
                         {isAwaitingReview && (
-                          <button
-                            type="button"
-                            onClick={() => handleReviewModalChild(child)}
-                            className="px-2.5 py-1 text-[11px] font-medium text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 border border-amber-200 dark:border-amber-800/50 rounded transition-colors cursor-pointer focus:outline-none"
-                          >
-                            Review
-                          </button>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleReviewModalChild(child)}
+                              className="px-2.5 py-1 text-[11px] font-medium text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 border border-amber-200 dark:border-amber-800/50 rounded transition-colors cursor-pointer focus:outline-none"
+                            >
+                              Review application
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleViewModalChild(child)}
+                              className="px-2 py-1 text-[11px] font-medium text-neutral-600 dark:text-neutral-300 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded transition-colors cursor-pointer focus:outline-none"
+                            >
+                              View child
+                            </button>
+                          </div>
                         )}
 
                         {isWithdrawn && (
@@ -1291,6 +1325,23 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       {bulkRestoreModal}
       {bulkPurgeModal}
       {quickViewModal}
+      {reviewingChild && (
+        <ChildReviewModal
+          isOpen={Boolean(reviewingChild)}
+          applicationId={reviewingChild.applicationId || reviewingChild.id}
+          childId={reviewingChild.id}
+          childName={reviewingChild.fullName}
+          activeEvent={activeEvent}
+          onClose={() => setReviewingChild(null)}
+          onStatusUpdated={handleStatusUpdatedFromReviewModal}
+          onNavigateToChild={(cid) => {
+            setQuickViewParent(null);
+            onNavigate(`/admin/children/${cid}` as AppRoute);
+          }}
+          adminUser={adminUser}
+          isSuperAdmin={isSuperAdmin}
+        />
+      )}
       {modalChildRestoreModal}
 
       {/* 1. Header with title and actions */}
