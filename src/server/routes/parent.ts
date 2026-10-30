@@ -1229,7 +1229,12 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
     const pName = (req.parentProfile?.full_name || '').split(' ')[0] || 'Parent';
     const cName = c.full_name || 'your child';
     const waText = `Hello ${pName},\n\nWe have received ${cName}'s application for ${currentEvent.title || 'the event'}. It is currently under review by our team.\n\nYou will receive a message when there is a decision.`;
-    sendWhatsApp(parentPhone, waText, 'child_under_review').catch(err => {
+    sendWhatsApp(parentPhone, waText, {
+      intent: 'child_under_review',
+      parentFirstName: pName,
+      childFirstName: cName,
+      eventName: currentEvent.title || 'the event'
+    }).catch(err => {
       console.error('[ParentReview] Failed to dispatch WhatsApp under-review message:', err);
     });
   }

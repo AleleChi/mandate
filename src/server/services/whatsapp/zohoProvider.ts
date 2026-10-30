@@ -9,6 +9,8 @@ import {
   WhatsAppStatusUpdate
 } from './types';
 import { normalizePhoneNumberToE164 } from '../../utils/phone';
+import { getRequiredMergeFieldsForIntent } from './templateRegistry';
+import { validateMergeInfo } from './personalization';
 
 export const DEFAULT_ZOHO_WHATSAPP_API_URL = 'https://cpaas.zoho.com/v1.1/whatsapp';
 export const DEFAULT_ZOHO_WHATSAPP_TIMEOUT_MS = 10000;
@@ -66,7 +68,10 @@ export function resolveZohoTemplateConfig(intentOrName?: string): ResolvedZohoTe
     not_selected: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_NOT_SELECTED,
     child_waitlisted: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_WAITLISTED,
     waiting_list: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_WAITLISTED,
-    pass_ready: process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY || process.env.ZOHO_WA_TEMPLATE_REGISTRATION_ACK,
+    pass_ready: process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY_V2 || process.env.ZOHO_WA_TEMPLATE_PASS_READY_V2 || process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY || process.env.ZOHO_WA_TEMPLATE_REGISTRATION_ACK,
+    pass_ready_v2: process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY_V2 || process.env.ZOHO_WA_TEMPLATE_PASS_READY_V2 || process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY,
+    koinonia_pass_ready_v2: process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY_V2 || process.env.ZOHO_WA_TEMPLATE_PASS_READY_V2 || process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY,
+    koinonia_pass_ready: process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY_V2 || process.env.ZOHO_WA_TEMPLATE_PASS_READY_V2 || process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY,
     return_to_draft: process.env.ZOHO_WA_TEMPLATE_RETURN_TO_DRAFT || process.env.ZOHO_WA_TEMPLATE_KOINONIA_APPLICATION_INCOMPLETE || process.env.ZOHO_WA_TEMPLATE_COMPLETION_REMINDER,
     completion_reminder: process.env.ZOHO_WA_TEMPLATE_COMPLETION_REMINDER || process.env.ZOHO_WA_TEMPLATE_KOINONIA_APPLICATION_INCOMPLETE,
     inquiry_reply: process.env.ZOHO_WA_TEMPLATE_INQUIRY_REPLY,
@@ -74,6 +79,7 @@ export function resolveZohoTemplateConfig(intentOrName?: string): ResolvedZohoTe
     duty_reminder: process.env.ZOHO_WA_TEMPLATE_DUTY_REMINDER,
     pickup_reminder: process.env.ZOHO_WA_TEMPLATE_PICKUP_REMINDER,
     checkin_opening: process.env.ZOHO_WA_TEMPLATE_CHECKIN_OPENING || process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHECKIN_REMINDER,
+    checkin_reminder: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHECKIN_REMINDER || process.env.ZOHO_WA_TEMPLATE_CHECKIN_OPENING,
     broadcast: process.env.ZOHO_WA_TEMPLATE_BROADCAST || process.env.ZOHO_WA_DEFAULT_TEMPLATE || process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY,
     manual_broadcast: process.env.ZOHO_WA_TEMPLATE_BROADCAST || process.env.ZOHO_WA_DEFAULT_TEMPLATE,
     escalation: process.env.ZOHO_WA_TEMPLATE_ESCALATION,
@@ -186,6 +192,8 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
     clientReference?: string;
     intent?: string;
     bodyFallback?: string;
+    headerMedia?: { type?: 'image' | 'video' | 'document'; url: string };
+    channelUrl?: string;
   }): Promise<ProviderSendResult> {
     const config = this.getConfig();
 
@@ -307,7 +315,7 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
     }
 
     if (params.mergeInfo && Object.keys(params.mergeInfo).length > 0) {
-      payload.merge_info = params.mergeInfo;
+      payload.merge_info = { ...params.mergeInfo };
     } else if (params.bodyFallback) {
       const activeTemplate = (templateAlias || templateKey || '').toLowerCase();
       if (
@@ -318,6 +326,68 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
         payload.merge_info = { first_name: 'Parent' };
       } else {
         payload.merge_info = { '1': params.bodyFallback };
+      }
+    }
+
+    // Attach channel_url to merge_info if channelUrl or WHATSAPP_CHANNEL_URL is configured
+    const effectiveChannelUrl = (
+      params.channelUrl ||
+      process.env.WHATSAPP_CHANNEL_URL ||
+      process.env.PUBLIC_WHATSAPP_CHANNEL_URL ||
+      ''
+    ).trim();
+    if (effectiveChannelUrl) {
+      payload.merge_info = payload.merge_info || {};
+      if (!payload.merge_info.channel_url) {
+        payload.merge_info.channel_url = effectiveChannelUrl;
+      }
+    }
+
+    // Attach header media if provided
+    if (params.headerMedia && params.headerMedia.url && params.headerMedia.url.trim()) {
+      payload.header_media = {
+        type: params.headerMedia.type || 'image',
+        image_url: params.headerMedia.url.trim()
+      };
+    }
+
+    // Pre-dispatch Personalization & Data Integrity Validation
+    // 1. A required merge variable must NEVER be empty string, null, undefined, or whitespace.
+    if (payload.merge_info) {
+      for (const [k, v] of Object.entries(payload.merge_info)) {
+        if (v === null || v === undefined || (typeof v === 'string' && !v.trim())) {
+          console.error(
+            `[Zoho Personalization Error] Outbound message blocked. Merge variable "${k}" is blank/empty. ` +
+            `Intent: ${params.intent || 'none'}, Template: ${templateKey || templateAlias || 'none'}`
+          );
+          return {
+            success: false,
+            provider: this.name,
+            status: 'failed',
+            clientReference: clientRef,
+            error: `PERSONALIZATION_ERROR: Blank merge variable detected for key "${k}".`
+          };
+        }
+      }
+    }
+
+    // 2. Enforce required merge variables for known templates / intents
+    const templateLookupId = params.intent || templateAlias || templateKey;
+    const requiredFields = getRequiredMergeFieldsForIntent(templateLookupId);
+    if (requiredFields.length > 0) {
+      const valResult = validateMergeInfo(requiredFields, payload.merge_info);
+      if (!valResult.valid) {
+        console.error(
+          `[Zoho Personalization Error] Outbound message blocked. Missing or empty required merge fields: ${valResult.missingKeys.join(', ')}. ` +
+          `Intent: ${params.intent || 'none'}, Template: ${templateKey || templateAlias || 'none'}`
+        );
+        return {
+          success: false,
+          provider: this.name,
+          status: 'failed',
+          clientReference: clientRef,
+          error: `PERSONALIZATION_ERROR: Missing required template merge variable(s): ${valResult.missingKeys.join(', ')}`
+        };
       }
     }
 
@@ -492,7 +562,9 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
       templateAlias: params.templateAlias || params.templateName,
       mergeInfo,
       clientReference: params.clientReference || params.idempotencyKey,
-      intent: params.templateName
+      intent: params.templateName,
+      headerMedia: params.headerMedia,
+      channelUrl: params.channelUrl
     });
   }
 
@@ -522,8 +594,10 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
       templateAlias: params.templateAlias,
       mergeInfo: params.mergeInfo,
       clientReference: params.clientReference || params.idempotencyKey,
-      intent: intent || 'broadcast',
-      bodyFallback: params.body
+      intent: intent,
+      bodyFallback: params.body,
+      headerMedia: params.headerMedia,
+      channelUrl: params.channelUrl
     });
   }
 

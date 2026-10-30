@@ -3,7 +3,7 @@ import { execute, query, queryOne, transaction } from '../db';
 import { validateBody, normalizeSingleLineText } from './messageService';
 import { notifyCompletionReminderSent } from './messagingNotificationService';
 import { evaluateWhatsAppEligibility } from './whatsapp/consent';
-import { getWhatsAppProvider, getWhatsAppProviderReadiness, logWhatsAppDelivery } from './whatsapp';
+import { getWhatsAppProvider, getWhatsAppProviderReadiness, logWhatsAppDelivery, buildMergeInfo } from './whatsapp';
 import { evaluateApplicationNeedsAttention, REASON_LABELS } from './applicationNeedsAttentionService';
 import { CANONICAL_GA_EVENT_DATE } from './eligibilityService';
 
@@ -983,6 +983,10 @@ export async function sendWhatsAppNudge(
     to: eligibility.normalizedNumber!,
     body: nudgeBody,
     intent: 'completion_reminder',
+    mergeInfo: buildMergeInfo({
+      parentFirstName: context.parentFirstName,
+      childFirstName: context.childFirstName
+    }),
     idempotencyKey: `nudge:entry:${params.entryId}:${Date.now()}`
   });
 

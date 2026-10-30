@@ -224,7 +224,11 @@ Koinonia Children and Teens Ministry`;
             const snippet = messageBody.length > 280 ? `${messageBody.substring(0, 277)}...` : messageBody;
             const waText = `Hello ${parentFirstName},\n\nThe Koinonia Registration Team has replied to your inquiry ("${threadSubject}"${childName ? ` for ${childName}` : ''}):\n\n"${snippet}"\n\nYou can read and reply in your Parent Portal here:\n${portalUrl}`;
 
-            sendWhatsApp(targetPhone, waText).catch(err => console.error('[notifyMessageCreated] Failed to dispatch WhatsApp to parent:', err));
+            sendWhatsApp(targetPhone, waText, {
+              intent: 'inquiry_reply',
+              parentFirstName,
+              childFirstName: childName ? childName.split(' ')[0] : undefined
+            }).catch(err => console.error('[notifyMessageCreated] Failed to dispatch WhatsApp to parent:', err));
           }
         } else if (recipient.role === 'volunteer') {
           // Volunteer contact lookup
@@ -278,7 +282,10 @@ Koinonia Children and Teens Ministry`;
           if (volPhone) {
             const snippet = messageBody.length > 280 ? `${messageBody.substring(0, 277)}...` : messageBody;
             const waText = `Hello ${volFirstName},\n\nThe Koinonia Team has replied to your message ("${threadSubject}"):\n\n"${snippet}"\n\nYou can read and reply here:\n${volPortalUrl}`;
-            sendWhatsApp(volPhone, waText).catch(err => console.error('[notifyMessageCreated] Failed to dispatch WhatsApp to volunteer:', err));
+            sendWhatsApp(volPhone, waText, {
+              intent: 'volunteer_reply',
+              volunteerFirstName: volFirstName
+            }).catch(err => console.error('[notifyMessageCreated] Failed to dispatch WhatsApp to volunteer:', err));
           }
         }
       }
@@ -526,7 +533,11 @@ export async function notifyCompletionReminderSent(params: {
         const snippet = messageBody.length > 250 ? `${messageBody.substring(0, 247)}...` : messageBody;
         const waText = `Hello ${parentFirstName},\n\nThis is a reminder regarding ${childFirstName}'s registration for The General Assembly Children & Teens Session:\n\n"${snippet}"\n\nImportant: If you have already filled in all the details, please ensure you review and click "Submit Application" so our team can review it.\n\nPlease complete and submit it here:\n${portalUrl}`;
 
-        await sendWhatsApp(parentPhone, waText, 'completion_reminder');
+        await sendWhatsApp(parentPhone, waText, {
+          intent: 'completion_reminder',
+          parentFirstName,
+          childFirstName
+        });
         console.log(`[notifyCompletionReminderSent] WhatsApp reminder dispatched to ${parentPhone}`);
       } catch (waErr) {
         console.error('[notifyCompletionReminderSent] Failed to dispatch WhatsApp reminder:', waErr);

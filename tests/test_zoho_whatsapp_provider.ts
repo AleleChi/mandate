@@ -1397,6 +1397,110 @@ async function runTestSuite() {
       );
     }
 
+    // ----------------------------------------------------
+    // SECTION 10: PERSONALIZATION PIPELINE & MERGE INTEGRITY
+    // ----------------------------------------------------
+    console.log('\n--- SECTION 10: PERSONALIZATION PIPELINE & MERGE INTEGRITY ---');
+
+    const { extractFirstName, buildMergeInfo, validateMergeInfo } = await import('../src/server/services/whatsapp/personalization');
+
+    // 10.1: extractFirstName honorific stripping & title-casing
+    assert(extractFirstName('Pastor Chigozie') === 'Chigozie', 'extractFirstName strips "Pastor" prefix');
+    assert(extractFirstName('Brother Samuel') === 'Samuel', 'extractFirstName strips "Brother" prefix');
+    assert(extractFirstName('Sister Mary') === 'Mary', 'extractFirstName strips "Sister" prefix');
+    assert(extractFirstName('Dr. Jane Smith') === 'Jane', 'extractFirstName strips "Dr." prefix');
+    assert(extractFirstName('Deaconess Ruth') === 'Ruth', 'extractFirstName strips "Deaconess" prefix');
+    assert(extractFirstName('chijioke obi') === 'Chijioke', 'extractFirstName title-cases lowercase name');
+    assert(extractFirstName('MARY-JANE DOE') === 'Mary-Jane', 'extractFirstName title-cases hyphenated name');
+    assert(extractFirstName('   David   ') === 'David', 'extractFirstName trims whitespace');
+
+    // 10.2: buildMergeInfo key mapping
+    const parentChildMerge = buildMergeInfo({
+      parentFirstName: 'Blessing',
+      childFirstName: 'David',
+      eventName: 'Grand Finale 2026'
+    });
+    assert(parentChildMerge.parent_first_name === 'Blessing', 'buildMergeInfo maps parent_first_name');
+    assert(parentChildMerge.child_first_name === 'David', 'buildMergeInfo maps child_first_name');
+    assert(parentChildMerge.event_name === 'Grand Finale 2026', 'buildMergeInfo maps event_name');
+
+    const volMerge = buildMergeInfo({
+      volunteerFirstName: 'Pastor Peter',
+      teamName: 'Security & Protocol'
+    });
+    assert(volMerge.volunteer_first_name === 'Peter', 'buildMergeInfo extracts clean volunteer_first_name');
+    assert(volMerge.team_name === 'Security & Protocol', 'buildMergeInfo maps team_name');
+
+    // 10.3: validateMergeInfo integrity
+    const validCheck = validateMergeInfo(['parent_first_name', 'child_first_name'], {
+      parent_first_name: 'Blessing',
+      child_first_name: 'David'
+    });
+    assert(validCheck.valid === true, 'validateMergeInfo passes when all keys present and non-empty');
+
+    const missingCheck = validateMergeInfo(['parent_first_name', 'child_first_name'], {
+      parent_first_name: 'Blessing'
+    });
+    assert(missingCheck.valid === false && missingCheck.missingKeys.includes('child_first_name'), 'validateMergeInfo catches missing child_first_name');
+
+    const emptyCheck = validateMergeInfo(['parent_first_name', 'child_first_name'], {
+      parent_first_name: 'Blessing',
+      child_first_name: '   '
+    });
+    assert(emptyCheck.valid === false && emptyCheck.missingKeys.includes('child_first_name'), 'validateMergeInfo catches whitespace child_first_name');
+
+    // 10.4: Pre-dispatch rejection in ZohoWhatsAppProvider
+    process.env.WHATSAPP_PROVIDER = 'zoho';
+    process.env.ZOHO_WHATSAPP_API_KEY = FAKE_ZOHO_KEY;
+    process.env.ZOHO_WHATSAPP_FROM = FAKE_ZOHO_FROM;
+    process.env.ZOHO_WA_TEMPLATE_PASS_READY = 'alias:koinonia_pass_ready';
+    resetWhatsAppProviderCache();
+    const zohoValidationProvider = new ZohoWhatsAppProvider();
+
+    mockFetchCalls = [];
+    const blankDispatchResult = await zohoValidationProvider.sendTemplate({
+      to: '+2348012345678',
+      templateName: 'pass_ready',
+      templateAlias: 'koinonia_pass_ready',
+      mergeInfo: {
+        parent_first_name: 'Blessing',
+        child_first_name: '   ' // BLANK
+      }
+    });
+    assert(blankDispatchResult.success === false, 'Blank personalization rejected before dispatch');
+    assert(blankDispatchResult.error?.includes('PERSONALIZATION_ERROR'), 'Error specifies PERSONALIZATION_ERROR');
+    assert(mockFetchCalls.length === 0, 'Zero network calls made when personalization fails validation');
+
+    // 10.5: pass_ready_v2 with header_media and channel_url CTA
+    process.env.WHATSAPP_CHANNEL_URL = 'https://whatsapp.com/channel/0029Vaexample';
+    process.env.ZOHO_WA_TEMPLATE_PASS_READY_V2 = 'alias:koinonia_pass_ready_v2';
+    mockFetchCalls = [];
+    mockFetchResponse = {
+      status: 200,
+      json: { message_id: 'wa_pass_v2_1001', request_id: 'req_pass_v2_1001' }
+    };
+
+    const passV2Result = await zohoValidationProvider.sendTemplate({
+      to: '+2348012345678',
+      templateName: 'pass_ready_v2',
+      templateAlias: 'koinonia_pass_ready_v2',
+      mergeInfo: {
+        parent_first_name: 'Blessing',
+        child_first_name: 'David'
+      },
+      headerMedia: {
+        type: 'image',
+        url: 'https://example.com/passes/pass_123.png'
+      }
+    });
+    assert(passV2Result.success === true, 'pass_ready_v2 template dispatches successfully');
+    assert(mockFetchCalls.length === 1, 'Exactly one dispatch made for pass_ready_v2');
+    const sentBody = JSON.parse(mockFetchCalls[0].options.body);
+    assert(sentBody.merge_info.parent_first_name === 'Blessing', 'pass_ready_v2 sent correct parent_first_name');
+    assert(sentBody.merge_info.child_first_name === 'David', 'pass_ready_v2 sent correct child_first_name');
+    assert(sentBody.merge_info.channel_url === 'https://whatsapp.com/channel/0029Vaexample', 'pass_ready_v2 injected WHATSAPP_CHANNEL_URL');
+    assert(sentBody.header_media?.image_url === 'https://example.com/passes/pass_123.png', 'pass_ready_v2 sent header_media image_url');
+
     console.log('\n====================================================');
     console.log(`TEST SUMMARY: ${passedTests} passed, 0 failed out of ${totalTests} assertions`);
     console.log('====================================================\n');

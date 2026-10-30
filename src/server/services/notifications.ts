@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { query, queryOne, execute, transaction } from '../db';
 import { sendEmail } from './email';
 import { sendWebPush } from './push';
-import { getWhatsAppProvider, logWhatsAppDelivery } from './whatsapp';
+import { getWhatsAppProvider, logWhatsAppDelivery, buildMergeInfo, extractFirstName } from './whatsapp';
 
 // Helper to format date/time in Koinonia's timezone (Africa/Lagos)
 export function formatInTimezone(date: Date, timezone: string = 'Africa/Lagos'): string {
@@ -38,14 +38,87 @@ export function formatWhatsAppTo(phone: string): string {
   return `whatsapp:${cleaned}`;
 }
 
-// WhatsApp sending helper with robust Twilio Sandbox integration
-export async function sendWhatsApp(to: string, message: string, intent?: string): Promise<{ success: boolean; error?: string; messageSid?: string }> {
+export interface SendWhatsAppOptions {
+  intent?: string;
+  mergeInfo?: Record<string, string>;
+  parentFirstName?: string;
+  parentFullName?: string;
+  childFirstName?: string;
+  childFullName?: string;
+  volunteerFirstName?: string;
+  volunteerFullName?: string;
+  eventName?: string;
+  passUrl?: string;
+  statusUrl?: string;
+  channelUrl?: string;
+  headerMedia?: { type?: 'image' | 'video' | 'document'; url: string };
+  idempotencyKey?: string;
+}
+
+// WhatsApp sending helper with robust Zoho CPaaS & Twilio Sandbox integration
+export async function sendWhatsApp(
+  to: string,
+  message: string,
+  intentOrOptions?: string | SendWhatsAppOptions,
+  extraOptions?: SendWhatsAppOptions
+): Promise<{ success: boolean; error?: string; messageSid?: string }> {
   const rawProvider = (process.env.WHATSAPP_PROVIDER || '').trim().toLowerCase();
   const effectiveProvider = !rawProvider ? 'twilio' : rawProvider;
 
+  const opts: SendWhatsAppOptions = typeof intentOrOptions === 'object' && intentOrOptions !== null
+    ? { ...intentOrOptions, ...extraOptions }
+    : { intent: intentOrOptions, ...extraOptions };
+
+  let intent = opts.intent;
+
+  // Build mergeInfo if not explicitly provided
+  let mergeInfo = opts.mergeInfo;
+  if (!mergeInfo) {
+    let pFirst = opts.parentFirstName || opts.parentFullName;
+    let cFirst = opts.childFirstName || opts.childFullName;
+    let vFirst = opts.volunteerFirstName || opts.volunteerFullName;
+
+    // Fallback conversational name extraction from message text if no explicit names supplied
+    // E.g. "Hello Chigozie,\n\nAction required for David's registration..."
+    if (!pFirst && !vFirst) {
+      const helloMatch = message.match(/^(?:Hello|Hi|Dear)\s+([A-Za-z\u00C0-\u024F\u1E00-\u1EFF\-']+)[,\s]/i);
+      if (helloMatch && helloMatch[1] && !['Parent', 'Volunteer', 'Family'].includes(helloMatch[1])) {
+        if (intent?.includes('volunteer') || intent?.includes('duty')) {
+          vFirst = helloMatch[1];
+        } else {
+          pFirst = helloMatch[1];
+        }
+      }
+    }
+    if (!cFirst) {
+      const childMatch = message.match(/(?:for|that|have)\s+([A-Za-z\u00C0-\u024F\u1E00-\u1EFF\-']+)'s\s+(?:registration|application|event pass|pass)/i);
+      if (childMatch && childMatch[1] && !['child', 'your child'].includes(childMatch[1].toLowerCase())) {
+        cFirst = childMatch[1];
+      }
+    }
+
+    mergeInfo = buildMergeInfo({
+      parentFirstName: pFirst,
+      childFirstName: cFirst,
+      volunteerFirstName: vFirst,
+      eventName: opts.eventName,
+      passUrl: opts.passUrl,
+      statusUrl: opts.statusUrl,
+      channelUrl: opts.channelUrl
+    });
+  }
+
   if (effectiveProvider === 'zoho') {
     const waProvider = getWhatsAppProvider();
-    const res = await waProvider.sendSessionMessage({ to, body: message, intent });
+    const res = await waProvider.sendSessionMessage({
+      to,
+      body: message,
+      intent,
+      mergeInfo,
+      headerMedia: opts.headerMedia,
+      channelUrl: opts.channelUrl,
+      idempotencyKey: opts.idempotencyKey
+    });
     if (res.success && res.messageId) {
       await logWhatsAppDelivery({
         recipientPhone: to,

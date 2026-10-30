@@ -10,6 +10,8 @@ export interface SendTemplateParams {
   templateAlias?: string;
   mergeInfo?: Record<string, string>;
   clientReference?: string;
+  headerMedia?: { type: 'image' | 'document' | 'video'; url: string };
+  channelUrl?: string;
 }
 
 export interface SendSessionMessageParams {
@@ -21,6 +23,8 @@ export interface SendSessionMessageParams {
   templateAlias?: string;
   mergeInfo?: Record<string, string>;
   clientReference?: string;
+  headerMedia?: { type: 'image' | 'document' | 'video'; url: string };
+  channelUrl?: string;
 }
 
 export interface ProviderSendResult {

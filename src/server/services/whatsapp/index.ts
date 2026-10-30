@@ -17,6 +17,8 @@ export * from './types';
 export * from './consent';
 export * from './queue';
 export * from './worker';
+export * from './personalization';
+export * from './templateRegistry';
 export { TwilioWhatsAppProvider } from './twilioProvider';
 export { MetaWhatsAppProvider } from './metaProvider';
 export { SimulatedWhatsAppProvider } from './simulatedProvider';

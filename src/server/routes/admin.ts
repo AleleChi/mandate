@@ -3333,7 +3333,11 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
           : finalStatus === 'waiting_list' ? 'child_waitlisted'
           : status === 'not_selected' ? 'child_not_selected'
           : 'review_decision';
-        await sendWhatsApp(app.parent_phone, message, decisionIntent).catch(err => console.error('Failed to send review WhatsApp notification:', err));
+        await sendWhatsApp(app.parent_phone, message, {
+          intent: decisionIntent,
+          parentFirstName: pName,
+          childFirstName: cName
+        }).catch(err => console.error('Failed to send review WhatsApp notification:', err));
       }
 
       // 3. Create In-App Notification
@@ -3461,7 +3465,11 @@ router.post('/applications/:id/reopen-review', async (req: AuthenticatedRequest,
 
     // 2. Dispatch WhatsApp if phone is available
     if (app.parent_phone) {
-      await sendWhatsApp(app.parent_phone, `Hello ${pName}, ${message}`).catch(err => console.error('Failed to send revoke WhatsApp notification:', err));
+      await sendWhatsApp(app.parent_phone, `Hello ${pName}, ${message}`, {
+        intent: 'broadcast',
+        parentFirstName: pName,
+        childFirstName: cName
+      }).catch(err => console.error('Failed to send revoke WhatsApp notification:', err));
     }
 
     // 3. Create In-App Notification
@@ -3662,7 +3670,12 @@ We have temporarily reopened your application in draft mode. Please sign in to y
     if (notifyWhatsApp && targetPhone) {
       const baseUrl = process.env.PUBLIC_APP_URL || 'https://kgachildren.koinoniageneralassembly.com';
       const waText = `Hello ${parentFirstName},\n\nAction required for ${childFirstName}'s registration at ${eventName}:\n• ${effectiveReason}\n\nYour application has been unlocked. Please sign in to your Parent account at ${baseUrl}/parent/home to update the details and re-submit.`;
-      sendWhatsApp(targetPhone, waText, 'return_to_draft').catch(err => console.error('[ReturnToDraft] Failed to dispatch WhatsApp:', err));
+      sendWhatsApp(targetPhone, waText, {
+        intent: 'return_to_draft',
+        parentFirstName,
+        childFirstName,
+        eventName
+      }).catch(err => console.error('[ReturnToDraft] Failed to dispatch WhatsApp:', err));
     }
 
     // 7. Audit Log
@@ -3885,7 +3898,11 @@ router.post('/applications/bulk-review', authMiddleware, async (req: Authenticat
             : finalDecision === 'waiting_list' ? 'child_waitlisted'
             : decision === 'not_selected' ? 'child_not_selected'
             : 'review_decision';
-          await sendWhatsApp(app.parent_phone, message, decisionIntent).catch(err => console.error('Failed to send bulk review WhatsApp notification:', err));
+          await sendWhatsApp(app.parent_phone, message, {
+            intent: decisionIntent,
+            parentFirstName: pName,
+            childFirstName: cName
+          }).catch(err => console.error('Failed to send bulk review WhatsApp notification:', err));
         }
 
         const notifId = `notif-${crypto.randomUUID()}`;
