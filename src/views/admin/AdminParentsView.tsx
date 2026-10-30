@@ -87,15 +87,38 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
 
   // Canonical age groups for event matching
   const availableAgeGroups = useMemo(() => {
+    const canonicalTwoToThree = { id: '2-3', label: 'Ages 2–3', minAge: 2, maxAge: 3 };
+
     if (activeEvent?.ageGroups && Array.isArray(activeEvent.ageGroups) && activeEvent.ageGroups.length > 0) {
-      return activeEvent.ageGroups.map((g: any) => ({
+      const groups = activeEvent.ageGroups.map((g: any) => ({
         id: String(g.id || `${g.minAge}-${g.maxAge}`),
         label: g.label || (g.maxAge ? `Ages ${g.minAge}–${g.maxAge}` : `Age ${g.minAge}+`),
         minAge: Number(g.minAge ?? g.min_age ?? 0),
         maxAge: Number(g.maxAge ?? g.max_age ?? 99)
       }));
+
+      // Check if Ages 2–3 is already present
+      const hasTwoToThree = groups.some(
+        (g: any) => (g.minAge === 2 && g.maxAge === 3) || g.id === '2-3' || g.label?.includes('2–3') || g.label?.includes('2-3')
+      );
+
+      if (!hasTwoToThree) {
+        // Place Ages 2–3 right before Ages 4–6 (or at the beginning if not found)
+        const idx4to6 = groups.findIndex(
+          (g: any) => (g.minAge === 4 && g.maxAge === 6) || g.id === '4-6' || g.label?.includes('4–6') || g.label?.includes('4-6')
+        );
+        if (idx4to6 >= 0) {
+          const updated = [...groups];
+          updated.splice(idx4to6, 0, canonicalTwoToThree);
+          return updated;
+        }
+        return [canonicalTwoToThree, ...groups];
+      }
+      return groups;
     }
+
     return [
+      canonicalTwoToThree,
       { id: '4-6', label: 'Ages 4–6', minAge: 4, maxAge: 6 },
       { id: '7-9', label: 'Ages 7–9', minAge: 7, maxAge: 9 },
       { id: '10-12', label: 'Ages 10–12', minAge: 10, maxAge: 12 },
@@ -156,10 +179,10 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       return age >= ageGroup.minAge && age <= ageGroup.maxAge;
     }
     if (child.ageGroup) {
-      const norm = String(child.ageGroup).toLowerCase().replace(/[–—]/g, '-');
-      const labelNorm = String(ageGroup.label).toLowerCase().replace(/[–—]/g, '-');
+      const norm = String(child.ageGroup).toLowerCase().replace(/[–—]/g, '-').replace(/\s+to\s+/g, '-');
+      const labelNorm = String(ageGroup.label).toLowerCase().replace(/[–—]/g, '-').replace(/\s+to\s+/g, '-');
       const idNorm = String(ageGroup.id).toLowerCase();
-      if (norm.includes(idNorm) || norm.includes(`${ageGroup.minAge}-${ageGroup.maxAge}`) || labelNorm.includes(norm)) {
+      if (norm.includes(idNorm) || norm.includes(`${ageGroup.minAge}-${ageGroup.maxAge}`) || labelNorm.includes(norm) || norm.includes(labelNorm)) {
         return true;
       }
     }
