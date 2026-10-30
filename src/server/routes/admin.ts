@@ -3264,7 +3264,7 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
         UPDATE child_event_entries 
         SET status = 'selected', note_to_team = ?, reviewed_at = ?, updated_at = ?
         WHERE id = ?
-      `, [noteToTeam || app.note_to_team, now, now, id]);
+      `, [noteToTeam || app.note_to_team, now, now, app.id]);
 
       try {
         passData = await issuePassForChild({ childId: app.child_id, eventId: app.event_id });
@@ -3281,7 +3281,7 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
       UPDATE child_event_entries 
       SET status = ?, note_to_team = ?, reviewed_at = ?, updated_at = ?
       WHERE id = ?
-    `, [finalStatus, noteToTeam || app.note_to_team, now, now, id]);
+    `, [finalStatus, noteToTeam || app.note_to_team, now, now, app.id]);
 
     // Process notification if requested
     if (sendNotification) {
@@ -3372,7 +3372,9 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
       message: 'Application review submitted successfully.',
       status: finalStatus,
       pass: passData,
-      passErrorReason
+      passErrorReason,
+      applicationId: app.id,
+      application: app
     });
   } catch (err: any) {
     console.error('Error submitting application review:', err);
