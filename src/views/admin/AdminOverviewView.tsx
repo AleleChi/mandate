@@ -124,7 +124,6 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
     pickedUp: 0
   });
   const [recentSubmissions, setRecentSubmissions] = useState<any[]>([]);
-  const [unreadDirectMessagesCount, setUnreadDirectMessagesCount] = useState<number>(0);
 
   // Password change states
   const [automationActionModalState, setAutomationActionModalState] = useState<{
@@ -1061,13 +1060,6 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       if (readinessRes && readinessRes.success && readinessRes.report) {
         setReadinessReport(readinessRes.report);
       }
-
-      // Fetch unread direct messages count for admin sidebar
-      api.admin.messages.getUnreadCount().then((unreadRes) => {
-        if (unreadRes && unreadRes.success && typeof unreadRes.unreadCount === 'number') {
-          setUnreadDirectMessagesCount(unreadRes.unreadCount);
-        }
-      }).catch(() => {});
     } catch (err: any) {
       if (err.name === 'AbortError') {
         // Stale request successfully aborted, do nothing
@@ -1349,12 +1341,12 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
     </div>
   );
 
-  // Sidebar navigation element markup - Approved Light Design with Dark mode support
+  // Sidebar navigation element markup - Refined professional styling
   const renderSidebarContent = () => (
-    <div className="flex flex-col h-full justify-between" data-component-version="admin-sidebar-approved-v1">
-      <div className="flex flex-col">
-        {/* Brand block - Light warm design */}
-        <div className="h-20 px-6 border-b border-[#EAE8E1] dark:border-[#2A2926] flex items-center justify-between">
+    <div className="flex flex-col h-full justify-between select-none" data-component-version="admin-sidebar-refined-v2">
+      <div className="flex flex-col min-h-0">
+        {/* Brand block */}
+        <div className="h-16 px-5 border-b border-[#EAE8E1] dark:border-[#2A2926] flex items-center justify-between shrink-0">
           <div className="flex flex-col justify-center items-start">
             <BrandLogo
               context="admin"
@@ -1364,15 +1356,15 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
           {/* Mobile close button */}
           <button
             onClick={() => setMobileMenuOpen(false)}
-            className="lg:hidden text-zinc-500 hover:text-[#18181B] dark:text-[#938C81] dark:hover:text-[#F7F4ED] p-1 rounded-lg focus:outline-none"
+            className="lg:hidden text-zinc-500 hover:text-[#18181B] dark:text-[#938C81] dark:hover:text-[#F7F4ED] p-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-[#20201E] focus:outline-none"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Nav Items - Approved Light styling with Dark mode support */}
-        <nav className="p-4 space-y-1">
-          <div className="text-[10px] font-semibold text-zinc-400 dark:text-[#938C81] uppercase tracking-widest px-3 mb-2">
+        {/* Nav Items */}
+        <nav className="p-3 space-y-0.5 overflow-y-auto">
+          <div className="text-[10px] font-semibold text-zinc-400 dark:text-[#938C81] uppercase tracking-wider px-2.5 py-1.5 mb-0.5">
             Ministry Admin
           </div>
 
@@ -1402,22 +1394,17 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               <button
                 key={item.id}
                 onClick={() => handleTabChange(item.id as AdminTab)}
-                className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
+                className={`w-full flex items-center space-x-2.5 px-2.5 py-2 rounded-md text-xs transition-colors cursor-pointer text-left ${
                   isActive
-                    ? 'admin-nav-active bg-[#C59B27]/5 text-[#18181B] border-l-4 border-[#C59B27] pl-2 font-semibold dark:bg-[#C59B27]/10 dark:text-[#F7F4ED]'
-                    : 'text-zinc-500 hover:bg-zinc-50 hover:text-[#18181B] border-l-4 border-transparent dark:text-[#938C81] dark:hover:bg-[#20201E] dark:hover:text-[#F7F4ED]'
+                    ? 'bg-[#C59B27]/10 text-zinc-950 font-semibold dark:bg-[#C59B27]/15 dark:text-[#F7F4ED] border-l-2 border-[#C59B27]'
+                    : 'text-zinc-600 hover:text-zinc-950 hover:bg-zinc-100/70 dark:text-[#938C81] dark:hover:text-[#F7F4ED] dark:hover:bg-[#20201E]/70 font-medium'
                 }`}
               >
-                <IconComponent className={`admin-nav-icon w-4 h-4 ${isActive ? 'text-[#C59B27]' : 'text-zinc-400 dark:text-[#938C81]'}`} />
-                <span>{item.label}</span>
+                <IconComponent className={`admin-nav-icon w-4 h-4 shrink-0 ${isActive ? 'text-[#C59B27]' : 'text-zinc-400 dark:text-[#938C81]'}`} />
+                <span className="truncate">{item.label}</span>
                 {item.id === 'review' && stats.pendingVolunteers > 0 && (
-                  <span className="ml-auto bg-[#C59B27] text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                  <span className="ml-auto bg-[#C59B27]/15 text-[#C59B27] border border-[#C59B27]/30 text-[10px] font-semibold px-1.5 py-0.2 rounded">
                     {stats.pendingVolunteers}
-                  </span>
-                )}
-                {item.id === 'messages' && unreadDirectMessagesCount > 0 && (
-                  <span className="ml-auto bg-[#C59B27] text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
-                    {unreadDirectMessagesCount}
                   </span>
                 )}
               </button>
@@ -1426,23 +1413,26 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
         </nav>
       </div>
 
-      {/* User profile & Sign Out inside Sidebar - Approved Light aesthetics with Dark mode support */}
-      <div className="p-4 border-t border-[#EAE8E1] dark:border-[#2A2926] bg-[#FAF9F6] dark:bg-[#181817]">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center space-x-3 min-w-0">
-            <div className="w-9 h-9 rounded-full bg-[#C59B27]/10 flex items-center justify-center text-[#C59B27] font-bold text-xs shrink-0 border border-[#C59B27]/20">
+      {/* User profile & Sign Out inside Sidebar */}
+      <div className="p-3 border-t border-[#EAE8E1] dark:border-[#2A2926] bg-[#FAF9F6] dark:bg-[#181817] shrink-0">
+        <div className="flex items-center justify-between mb-2.5">
+          <div className="flex items-center space-x-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-md bg-[#C59B27]/10 flex items-center justify-center text-[#C59B27] font-semibold text-xs shrink-0 border border-[#C59B27]/20">
               {adminFullName.substring(0, 2).toUpperCase()}
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-xs font-semibold text-[#18181B] dark:text-[#F7F4ED] truncate">
+              <span className="text-xs font-semibold text-zinc-900 dark:text-[#F7F4ED] truncate leading-tight">
                 {adminFullName}
+              </span>
+              <span className="text-[10px] text-zinc-500 dark:text-[#938C81] truncate">
+                Admin
               </span>
             </div>
           </div>
         </div>
         <button
           onClick={handleSignOut}
-          className="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-xl text-xs font-semibold bg-red-50 text-red-600 border border-red-100 dark:bg-red-950/30 dark:text-red-400 dark:border-red-900/40 hover:bg-red-100 hover:text-red-700 dark:hover:bg-red-900/50 transition-all focus:outline-none cursor-pointer"
+          className="w-full flex items-center justify-center space-x-2 px-2.5 py-1.5 rounded-md text-xs font-medium text-zinc-600 hover:text-red-600 dark:text-zinc-400 dark:hover:text-red-400 hover:bg-red-50/70 dark:hover:bg-red-950/20 border border-transparent hover:border-red-200/50 transition-colors focus:outline-none cursor-pointer"
         >
           <LogOut className="w-3.5 h-3.5" />
           <span>Sign Out</span>
@@ -1924,40 +1914,40 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       {/* RIGHT MAIN WINDOW */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
 
-        {/* Top bar header - Styled with warm ivory theme & dark mode support */}
-        <header className="h-20 bg-white dark:bg-[#181817] border-b border-[#EAE8E1] dark:border-[#2A2926] px-4 sm:px-8 flex items-center justify-between shrink-0">
+        {/* Top bar header - Refined clean horizontal utility bar */}
+        <header className="h-16 bg-white dark:bg-[#181817] border-b border-[#EAE8E1] dark:border-[#2A2926] px-4 sm:px-6 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3 sm:space-x-4">
             {/* Hamburger Button */}
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="p-2 -ml-2 rounded-xl text-zinc-500 hover:text-[#18181B] hover:bg-zinc-50 dark:text-[#938C81] dark:hover:text-[#F7F4ED] dark:hover:bg-[#20201E] lg:hidden focus:outline-none"
+              className="p-1.5 -ml-1 rounded-md text-zinc-500 hover:text-[#18181B] hover:bg-zinc-100 dark:text-[#938C81] dark:hover:text-[#F7F4ED] dark:hover:bg-[#20201E] lg:hidden focus:outline-none"
               title="Toggle Menu"
             >
-              <Menu className="w-5.5 h-5.5" />
+              <Menu className="w-5 h-5" />
             </button>
 
-            <h1 className="text-base sm:text-lg font-sans font-semibold text-zinc-800 dark:text-[#F7F4ED] tracking-normal">
+            <h1 className="text-sm font-semibold text-zinc-900 dark:text-[#F7F4ED] tracking-tight">
               Children and Teens Admin
             </h1>
 
-            {/* Custom Tabs */}
-            <div className="hidden sm:flex items-center bg-zinc-50 dark:bg-[#20201E] p-1 rounded-xl border border-[#EAE8E1] dark:border-[#2A2926] ml-4">
+            {/* Event Tabs */}
+            <div className="hidden sm:flex items-center bg-zinc-100/80 dark:bg-[#20201E] p-0.5 rounded-md border border-[#EAE8E1] dark:border-[#2A2926] ml-3">
               <button
                 onClick={() => setHeaderTab('current')}
-                className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                className={`px-2.5 py-1 text-xs font-medium rounded transition-all cursor-pointer ${
                   headerTab === 'current'
-                    ? 'bg-white text-[#18181B] dark:bg-[#2A2926] dark:text-[#F7F4ED] shadow-xs'
-                    : 'text-zinc-500 hover:text-[#18181B] dark:text-[#938C81] dark:hover:text-[#F7F4ED]'
+                    ? 'bg-white text-zinc-950 dark:bg-[#2A2926] dark:text-[#F7F4ED] shadow-2xs font-semibold'
+                    : 'text-zinc-500 hover:text-zinc-900 dark:text-[#938C81] dark:hover:text-[#F7F4ED]'
                 }`}
               >
                 Current Event
               </button>
               <button
                 onClick={() => setHeaderTab('upcoming')}
-                className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                className={`px-2.5 py-1 text-xs font-medium rounded transition-all cursor-pointer ${
                   headerTab === 'upcoming'
-                    ? 'bg-white text-[#18181B] dark:bg-[#2A2926] dark:text-[#F7F4ED] shadow-xs'
-                    : 'text-zinc-500 hover:text-[#18181B] dark:text-[#938C81] dark:hover:text-[#F7F4ED]'
+                    ? 'bg-white text-zinc-950 dark:bg-[#2A2926] dark:text-[#F7F4ED] shadow-2xs font-semibold'
+                    : 'text-zinc-500 hover:text-zinc-900 dark:text-[#938C81] dark:hover:text-[#F7F4ED]'
                 }`}
               >
                 Upcoming
@@ -1965,18 +1955,18 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center space-x-2 sm:space-x-4">
+          <div className="flex items-center space-x-2 sm:space-x-3">
             {/* Search Input field (Desktop) */}
             <div className="relative max-w-xs hidden md:block">
-              <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-zinc-400 dark:text-[#938C81]">
-                <Search className="w-4 h-4" />
+              <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-zinc-400 dark:text-[#938C81] pointer-events-none">
+                <Search className="w-3.5 h-3.5" />
               </span>
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search children, parents, applications..."
-                className="w-56 lg:w-72 pl-9 pr-3 py-1.5 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#2A2926] bg-[#FAF9F6] dark:bg-[#20201E] text-zinc-800 dark:text-[#F7F4ED] placeholder:text-zinc-400 dark:placeholder:text-[#938C81] focus:outline-none focus:ring-2 focus:ring-[#C59B27]/10 focus:border-[#C59B27] transition-all"
+                placeholder="Search children, parents, records..."
+                className="w-52 lg:w-64 pl-8 pr-2.5 py-1.5 text-xs rounded-md border border-[#EAE8E1] dark:border-[#2A2926] bg-[#FAF9F6] dark:bg-[#20201E] text-zinc-900 dark:text-[#F7F4ED] placeholder:text-zinc-400 dark:placeholder:text-[#938C81] focus:outline-none focus:border-[#C59B27] transition-colors"
               />
             </div>
 
@@ -1984,10 +1974,10 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             <button
               onClick={() => activeTab === 'overview' ? fetchDashboardData(true) : fetchAdminsList()}
               disabled={refreshing || (activeTab === 'settings' && loadingAdmins)}
-              className="p-2 text-zinc-500 hover:text-[#18181B] hover:bg-zinc-50 dark:text-[#938C81] dark:hover:text-[#F7F4ED] dark:hover:bg-[#20201E] rounded-full transition-colors focus:outline-none cursor-pointer"
+              className="p-1.5 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-[#938C81] dark:hover:text-[#F7F4ED] dark:hover:bg-[#20201E] rounded-md transition-colors focus:outline-none cursor-pointer"
               title="Refresh Analytics"
             >
-              <RefreshCw className={`w-4 h-4 ${(refreshing || loadingAdmins) ? 'animate-spin text-[#C59B27]' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${(refreshing || loadingAdmins) ? 'animate-spin text-[#C59B27]' : ''}`} />
             </button>
 
             {/* Admin Theme Switcher */}
@@ -3675,7 +3665,6 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               onBackToOverview={() => handleTabChange('overview')}
               onNavigate={onNavigate}
               adminUser={adminUser}
-              currentRoute={currentRoute}
             />
           )}
 
