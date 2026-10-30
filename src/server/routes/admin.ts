@@ -2670,7 +2670,7 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
 router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const app = await queryOne(`
+    let app = await queryOne(`
       SELECT 
         e.id as entry_id,
         e.child_id,
@@ -2719,6 +2719,135 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
       LEFT JOIN media_files pm ON pm.id = p.photo_file_id
       WHERE e.id = ?
     `, [id]);
+
+    if (!app) {
+      app = await queryOne(`
+        SELECT 
+          e.id as entry_id,
+          e.child_id,
+          e.status,
+          e.is_deleted,
+          e.deleted_at,
+          e.deleted_by,
+          e.delete_reason,
+          e.school_class,
+          e.school_name,
+          e.previous_children_programme,
+          e.note_to_team,
+          e.has_medical_notes,
+          e.medical_notes,
+          e.needs_extra_support,
+          e.support_notes,
+          e.submitted_at,
+          e.reviewed_at,
+          e.checked_in_at,
+          e.picked_up_at,
+          e.updated_at,
+          c.full_name as child_name,
+          c.gender,
+          c.date_of_birth,
+          c.calculated_age,
+          c.age_group,
+          c.relationship_to_child,
+          c.needs_age_review,
+          c.photo_file_id as child_photo_file_id,
+          c.photo_file_id,
+          COALESCE(m.optimized_url, m.secure_url, m.file_url) as child_photo_url,
+          p.id as parent_id,
+          p.full_name as parent_name,
+          p.phone_number,
+          p.whatsapp_number,
+          p.email as parent_email,
+          p.is_koinonia_worker,
+          p.department as parent_department,
+          p.home_address as parent_address,
+          p.photo_file_id as parent_photo_file_id,
+          COALESCE(pm.optimized_url, pm.secure_url, pm.file_url) as parent_photo_url
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        LEFT JOIN media_files m ON m.id = c.photo_file_id
+        LEFT JOIN media_files pm ON pm.id = p.photo_file_id
+        WHERE e.child_id = ?
+        ORDER BY e.created_at DESC LIMIT 1
+      `, [id]);
+    }
+
+    if (!app) {
+      const ch = await queryOne(`
+        SELECT 
+          c.id as child_id,
+          c.full_name as child_name,
+          c.gender,
+          c.date_of_birth,
+          c.calculated_age,
+          c.age_group,
+          c.relationship_to_child,
+          c.needs_age_review,
+          c.photo_file_id as child_photo_file_id,
+          c.photo_file_id,
+          COALESCE(m.optimized_url, m.secure_url, m.file_url) as child_photo_url,
+          p.id as parent_id,
+          p.full_name as parent_name,
+          p.phone_number,
+          p.whatsapp_number,
+          p.email as parent_email,
+          p.is_koinonia_worker,
+          p.department as parent_department,
+          p.home_address as parent_address,
+          p.photo_file_id as parent_photo_file_id,
+          COALESCE(pm.optimized_url, pm.secure_url, pm.file_url) as parent_photo_url
+        FROM children c
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        LEFT JOIN media_files m ON m.id = c.photo_file_id
+        LEFT JOIN media_files pm ON pm.id = p.photo_file_id
+        WHERE c.id = ?
+      `, [id]);
+
+      if (ch) {
+        app = {
+          entry_id: ch.child_id,
+          child_id: ch.child_id,
+          status: 'not_selected',
+          is_deleted: 0,
+          deleted_at: null,
+          deleted_by: null,
+          delete_reason: null,
+          school_class: null,
+          school_name: null,
+          previous_children_programme: null,
+          note_to_team: null,
+          has_medical_notes: 0,
+          medical_notes: null,
+          needs_extra_support: 0,
+          support_notes: null,
+          submitted_at: null,
+          reviewed_at: null,
+          checked_in_at: null,
+          picked_up_at: null,
+          updated_at: null,
+          child_name: ch.child_name,
+          gender: ch.gender,
+          date_of_birth: ch.date_of_birth,
+          calculated_age: ch.calculated_age,
+          age_group: ch.age_group,
+          relationship_to_child: ch.relationship_to_child,
+          needs_age_review: ch.needs_age_review,
+          child_photo_file_id: ch.child_photo_file_id,
+          child_photo_url: ch.child_photo_url,
+          parent_id: ch.parent_id,
+          parent_name: ch.parent_name,
+          parent_phone: ch.phone_number,
+          parent_whatsapp: ch.whatsapp_number,
+          parent_email: ch.parent_email,
+          parent_is_worker: ch.is_koinonia_worker,
+          parent_department: ch.parent_department,
+          parent_address: ch.parent_address,
+          parent_photo_file_id: ch.parent_photo_file_id,
+          parent_photo_url: ch.parent_photo_url
+        };
+      }
+    }
 
     if (!app) {
       return res.status(404).json({ success: false, error: 'Application entry not found.' });
@@ -2936,7 +3065,9 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
       return res.status(400).json({ success: false, error: 'Invalid review status.' });
     }
 
-    const app = await queryOne(`
+    const targetEventId = await resolveAdminEventId((req.body.eventId || req.query.eventId) as string);
+
+    let app = await queryOne(`
       SELECT e.*, 
         c.full_name as child_name, 
         c.date_of_birth,
@@ -2961,11 +3092,112 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
       WHERE e.id = ?
     `, [id]);
 
+    if (!app && targetEventId) {
+      app = await queryOne(`
+        SELECT e.*, 
+          c.full_name as child_name, 
+          c.date_of_birth,
+          c.date_of_birth as dob,
+          c.photo_file_id as child_photo_file_id,
+          c.photo_file_id,
+          cm.secure_url as child_photo_url,
+          c.gender,
+          c.age_group,
+          p.full_name as parent_name, 
+          p.email as parent_email, 
+          p.phone_number as parent_phone, 
+          p.phone_number,
+          p.id as parent_profile_id,
+          p.photo_file_id as parent_photo_file_id,
+          pm.secure_url as parent_photo_url
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
+        LEFT JOIN media_files cm ON cm.id = c.photo_file_id
+        LEFT JOIN media_files pm ON pm.id = p.photo_file_id
+        WHERE e.child_id = ? AND e.event_id = ?
+        ORDER BY e.created_at DESC LIMIT 1
+      `, [id, targetEventId]);
+    }
+
+    if (!app) {
+      app = await queryOne(`
+        SELECT e.*, 
+          c.full_name as child_name, 
+          c.date_of_birth,
+          c.date_of_birth as dob,
+          c.photo_file_id as child_photo_file_id,
+          c.photo_file_id,
+          cm.secure_url as child_photo_url,
+          c.gender,
+          c.age_group,
+          p.full_name as parent_name, 
+          p.email as parent_email, 
+          p.phone_number as parent_phone, 
+          p.phone_number,
+          p.id as parent_profile_id,
+          p.photo_file_id as parent_photo_file_id,
+          pm.secure_url as parent_photo_url
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
+        LEFT JOIN media_files cm ON cm.id = c.photo_file_id
+        LEFT JOIN media_files pm ON pm.id = p.photo_file_id
+        WHERE e.child_id = ?
+        ORDER BY e.created_at DESC LIMIT 1
+      `, [id]);
+    }
+
+    // If still no entry exists for this event, create an entry for this child in targetEventId
+    if (!app || (targetEventId && app.event_id !== targetEventId)) {
+      const child = await queryOne(`
+        SELECT c.*, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.id as parent_profile_id
+        FROM children c
+        LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
+        WHERE c.id = ?
+      `, [id]);
+
+      if (child && targetEventId) {
+        const newEntryId = `entry-${crypto.randomUUID()}`;
+        const nowStr = new Date().toISOString();
+        await execute(`
+          INSERT INTO child_event_entries (
+            id, child_id, event_id, status, submitted_at, created_at, updated_at
+          ) VALUES (?, ?, ?, 'under_review', ?, ?, ?)
+        `, [newEntryId, child.id, targetEventId, nowStr, nowStr, nowStr]);
+
+        app = await queryOne(`
+          SELECT e.*, 
+            c.full_name as child_name, 
+            c.date_of_birth,
+            c.date_of_birth as dob,
+            c.photo_file_id as child_photo_file_id,
+            c.photo_file_id,
+            cm.secure_url as child_photo_url,
+            c.gender,
+            c.age_group,
+            p.full_name as parent_name, 
+            p.email as parent_email, 
+            p.phone_number as parent_phone, 
+            p.phone_number,
+            p.id as parent_profile_id,
+            p.photo_file_id as parent_photo_file_id,
+            pm.secure_url as parent_photo_url
+          FROM child_event_entries e
+          JOIN children c ON c.id = e.child_id
+          LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
+          LEFT JOIN media_files cm ON cm.id = c.photo_file_id
+          LEFT JOIN media_files pm ON pm.id = p.photo_file_id
+          WHERE e.id = ?
+        `, [newEntryId]);
+      }
+    }
+
     if (!app) {
       return res.status(404).json({ success: false, error: 'Application entry not found.' });
     }
 
-    if (app.status === 'incomplete' || app.status === 'draft') {
+    if ((app.status === 'incomplete' || app.status === 'draft') && status !== 'selected' && status !== 'pass_ready') {
       return res.status(400).json({
         success: false,
         code: 'APPLICATION_INCOMPLETE',
@@ -10484,18 +10716,26 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
 
     const rows = await query(queryStr, queryParams);
 
+    const targetEventId = await resolveAdminEventId(req.query.eventId as string);
+
     // Fetch linked children for these parents so we can display them concisely
     const parentIds = rows.map((r: any) => r.id);
     let childrenByParentId: Record<string, any[]> = {};
     if (parentIds.length > 0) {
       const placeholders = parentIds.map(() => '?').join(',');
       const childrenRows = await query(`
-        SELECT id, parent_profile_id, full_name, calculated_age, age_group, gender
-        FROM children
-        WHERE parent_profile_id IN (${placeholders})
-          AND (is_deleted = 0 OR is_deleted IS NULL)
-        ORDER BY full_name ASC
-      `, parentIds);
+        SELECT 
+          c.id, c.parent_profile_id, c.full_name, c.calculated_age, c.age_group, c.gender,
+          e.id as application_id,
+          e.status as entry_status,
+          e.checked_in_at,
+          e.picked_up_at
+        FROM children c
+        LEFT JOIN child_event_entries e ON e.child_id = c.id AND e.event_id = ? AND COALESCE(e.is_deleted, 0) = 0
+        WHERE c.parent_profile_id IN (${placeholders})
+          AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        ORDER BY c.full_name ASC
+      `, [targetEventId || '', ...parentIds]);
 
       for (const ch of childrenRows) {
         if (!childrenByParentId[ch.parent_profile_id]) {
@@ -10503,10 +10743,14 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
         }
         childrenByParentId[ch.parent_profile_id].push({
           id: ch.id,
+          applicationId: ch.application_id || null,
           fullName: ch.full_name,
           age: ch.calculated_age,
           ageGroup: ch.age_group,
-          gender: ch.gender
+          gender: ch.gender,
+          entryStatus: ch.entry_status || 'not_registered',
+          checkedInAt: ch.checked_in_at,
+          pickedUpAt: ch.picked_up_at
         });
       }
     }
