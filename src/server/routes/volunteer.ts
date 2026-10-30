@@ -6,7 +6,6 @@ import { getCurrentEvent, getCurrentEventId, getEventById } from '../services/ev
 import { hashPassword, verifyPassword, generateToken, authMiddleware, AuthenticatedRequest, resolveParentProfileForUser } from '../auth';
 import { sendEmail, sendVolunteerVerificationEmail, sendVolunteerPasswordResetEmail, sendVolunteerApprovedEmail } from '../services/email';
 import { validateEmailAddress, validatePhoneNumber, validateName } from '../utils/validation';
-import { validateCountryIso, inferCountryIsoFromE164, getCountryByIso, resolveConsistentCountryIso } from '../../utils/countries';
 import { uploadMedia } from '../services/media/cloudinary';
 import { sendWebPush } from '../services/push';
 import { broadcastSSEEvent } from '../services/sse';
@@ -255,7 +254,6 @@ router.post('/create-account', upload.single('photo'), async (req: Authenticated
       password,
       phone,
       whatsapp,
-      whatsappCountryIso,
       whatsappConsent,
       isKoinoniaWorker,
       department,
@@ -428,66 +426,21 @@ router.post('/create-account', upload.single('photo'), async (req: Authenticated
       });
     }
 
-    // 7. NEW-SUBMISSION CONSENT REQUIREMENT: whatsappConsent === true required
-    const isConsentGranted = (whatsappConsent === true || whatsappConsent === 'true');
-    if (!isConsentGranted) {
-      return res.status(400).json({
-        success: false,
-        code: 'WHATSAPP_CONSENT_REQUIRED',
-        field: 'whatsappConsent',
-        message: 'Please enable WhatsApp updates to continue. Important volunteer information and duty updates are sent through WhatsApp.',
-        error: 'Please enable WhatsApp updates to continue. Important volunteer information and duty updates are sent through WhatsApp.'
-      });
-    }
-
-    // Resolve WhatsApp country ISO
-    const rawWaCountryIso = whatsappCountryIso || req.body.whatsapp_country_iso;
-    let targetWaIso = 'NG';
-    if (rawWaCountryIso !== undefined && rawWaCountryIso !== null && String(rawWaCountryIso).trim() !== '') {
-      const waIsoRes = validateCountryIso(rawWaCountryIso);
-      if (!waIsoRes.valid || !waIsoRes.countryIso) {
+    // Validate WhatsApp if present
+    let cleanWhatsapp = phoneVal.normalizedPhone!;
+    if (whatsapp) {
+      const whatsappVal = validatePhoneNumber(whatsapp, 'NG');
+      if (!whatsappVal.valid) {
         return res.status(400).json({
           success: false,
-          code: 'INVALID_WHATSAPP_COUNTRY_ISO',
-          field: 'whatsappCountryIso',
-          message: 'Enter a valid country for WhatsApp.',
-          error: 'Enter a valid country for WhatsApp.'
+          code: whatsappVal.code,
+          field: 'whatsapp',
+          message: whatsappVal.message,
+          error: whatsappVal.message
         });
       }
-      targetWaIso = waIsoRes.countryIso;
-    } else {
-      const inferred = inferCountryIsoFromE164(whatsapp);
-      if (inferred) {
-        targetWaIso = inferred;
-      }
+      cleanWhatsapp = whatsappVal.normalizedPhone!;
     }
-
-    // Validate WhatsApp (required for new volunteer accounts)
-    const rawWhatsapp = (whatsapp || '').trim();
-    if (!rawWhatsapp) {
-      return res.status(400).json({
-        success: false,
-        code: 'WHATSAPP_REQUIRED',
-        field: 'whatsapp',
-        message: 'A valid WhatsApp number is required to register as a volunteer.',
-        error: 'A valid WhatsApp number is required to register as a volunteer.'
-      });
-    }
-
-    const whatsappVal = validatePhoneNumber(rawWhatsapp, targetWaIso, 'whatsapp');
-    if (!whatsappVal.valid || !whatsappVal.normalizedPhone) {
-      const countryObj = getCountryByIso(targetWaIso);
-      const countryName = countryObj?.name || 'selected country';
-      return res.status(400).json({
-        success: false,
-        code: whatsappVal.code || 'INVALID_PHONE_FORMAT',
-        field: 'whatsapp',
-        message: `Enter a valid WhatsApp number for ${countryName}.`,
-        error: `Enter a valid WhatsApp number for ${countryName}.`
-      });
-    }
-    const cleanWhatsapp = whatsappVal.normalizedPhone;
-    const finalWaCountryIso = resolveConsistentCountryIso(targetWaIso, cleanWhatsapp, 'NG');
 
     // Validate Password
     const hasLetter = /[a-zA-Z]/.test(password || '');
@@ -521,6 +474,11 @@ router.post('/create-account', upload.single('photo'), async (req: Authenticated
     const now = new Date().toISOString();
     const hashedPwd = hashPassword(password);
 
+    const isConsentGranted = (whatsappConsent === true || whatsappConsent === 'true') && Boolean(cleanWhatsapp || cleanPhone);
+    const consentStatus = isConsentGranted ? 'opted_in' : 'unknown';
+    const consentAt = isConsentGranted ? now : null;
+    const consentSource = isConsentGranted ? 'registration' : null;
+
     await transaction(async () => {
       await execute(`
         INSERT INTO users (id, email, password_hash, role, email_verified, created_at, updated_at)
@@ -529,12 +487,12 @@ router.post('/create-account', upload.single('photo'), async (req: Authenticated
 
       await execute(`
         INSERT INTO volunteer_profiles (
-          id, user_id, photo_file_id, full_name, phone, whatsapp, whatsapp_country_iso,
+          id, user_id, photo_file_id, full_name, phone, whatsapp,
           is_koinonia_worker, department, preferred_team, serving_experience,
           note, status,
           whatsapp_consent_status, whatsapp_consent_at, whatsapp_consent_source,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', 'opted_in', ?, 'registration', ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?, ?, ?, ?, ?)
       `, [
         volunteerProfileId,
         userId,
@@ -542,13 +500,14 @@ router.post('/create-account', upload.single('photo'), async (req: Authenticated
         fullName.trim(),
         cleanPhone,
         cleanWhatsapp,
-        finalWaCountryIso,
         isKoinoniaWorkerBool ? 1 : 0,
         department || null,
         preferredTeam,
         servingExperienceBool ? 1 : 0,
         note || null,
-        now,
+        consentStatus,
+        consentAt,
+        consentSource,
         now,
         now
       ]);
@@ -620,17 +579,11 @@ router.post('/create-account', upload.single('photo'), async (req: Authenticated
       }
     }
 
-    const profileObj = profile ? {
-      ...profile,
-      whatsappCountryIso: profile.whatsapp_country_iso || null,
-      whatsapp_country_iso: profile.whatsapp_country_iso || null
-    } : null;
-
     if (emailSent) {
       res.status(201).json({
         success: true,
         user,
-        profile: profileObj,
+        profile,
         token,
         emailSent,
         message: 'Volunteer Access created. Please check your email to confirm your address.'
@@ -639,7 +592,7 @@ router.post('/create-account', upload.single('photo'), async (req: Authenticated
       res.status(201).json({
         success: true,
         user,
-        profile: profileObj,
+        profile,
         token,
         emailSent,
         emailMessage
@@ -750,11 +703,6 @@ router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
     }
 
     const token = generateToken(user.id);
-    const profileWithIso = profile ? {
-      ...profile,
-      whatsappCountryIso: profile.whatsapp_country_iso || null,
-      whatsapp_country_iso: profile.whatsapp_country_iso || null
-    } : null;
 
     // 9. If volunteerProfile.status === "pending_review": return success with token, user, volunteerProfile, nextRoute: "/volunteer/pending-review".
     if (volunteerStatus === 'pending_review') {
@@ -763,8 +711,8 @@ router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
       return res.json({
         success: true,
         user: { id: user.id, email: user.email, role: user.role, email_verified: user.email_verified },
-        profile: profileWithIso,
-        volunteerProfile: profileWithIso,
+        profile,
+        volunteerProfile: profile,
         token,
         nextRoute: '/volunteer/pending-review'
       });
@@ -777,8 +725,8 @@ router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
       return res.json({
         success: true,
         user: { id: user.id, email: user.email, role: user.role, email_verified: user.email_verified },
-        profile: profileWithIso,
-        volunteerProfile: profileWithIso,
+        profile,
+        volunteerProfile: profile,
         token,
         nextRoute: '/volunteer/event'
       });
@@ -791,8 +739,8 @@ router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
       return res.json({
         success: true,
         user: { id: user.id, email: user.email, role: user.role, email_verified: user.email_verified },
-        profile: profileWithIso,
-        volunteerProfile: profileWithIso,
+        profile,
+        volunteerProfile: profile,
         token,
         nextRoute: '/volunteer/pending-review'
       });
@@ -804,8 +752,8 @@ router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
       return res.json({
         success: true,
         user: { id: user.id, email: user.email, role: user.role, email_verified: user.email_verified },
-        profile: profileWithIso,
-        volunteerProfile: profileWithIso,
+        profile,
+        volunteerProfile: profile,
         token,
         nextRoute: '/volunteer/pending-review'
       });
@@ -816,8 +764,8 @@ router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
     res.json({
       success: true,
       user: { id: user.id, email: user.email, role: user.role, email_verified: user.email_verified },
-      profile: profileWithIso,
-      volunteerProfile: profileWithIso,
+      profile,
+      volunteerProfile: profile,
       token,
       nextRoute: '/volunteer/pending-review'
     });
@@ -1322,8 +1270,6 @@ router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Respons
       phone: profile.phone || '',
       whatsapp: profile.whatsapp || '',
       whatsappNumber: profile.whatsapp || profile.phone || '',
-      whatsappCountryIso: profile.whatsapp_country_iso || null,
-      whatsapp_country_iso: profile.whatsapp_country_iso || null,
       whatsappConsentStatus: volunteerConsent,
       whatsapp_consent_status: volunteerConsent,
       whatsappConsentAt: profile.whatsapp_consent_at,
@@ -1459,8 +1405,6 @@ router.get('/me/status', authMiddleware, async (req: AuthenticatedRequest, res: 
     phone: profile.phone,
     whatsapp: profile.whatsapp,
     whatsappNumber: profile.whatsapp || profile.phone || '',
-    whatsappCountryIso: profile.whatsapp_country_iso || null,
-    whatsapp_country_iso: profile.whatsapp_country_iso || null,
     whatsappConsentStatus: volunteerConsent,
     whatsapp_consent_status: volunteerConsent,
     whatsappConsentAt: profile.whatsapp_consent_at,
@@ -1508,7 +1452,7 @@ router.post('/whatsapp/consent', authMiddleware, async (req: AuthenticatedReques
   const parentProfile = req.parentProfile || await resolveParentProfileForUser(req.user.id, req.user.email);
   const isDualRole = Boolean(parentProfile && parentProfile.id);
 
-  const { action, whatsappNumber, whatsappCountryIso } = req.body || {};
+  const { action, whatsappNumber } = req.body || {};
   const now = new Date().toISOString();
 
   if (action === 'opt_in') {
@@ -1528,67 +1472,28 @@ router.post('/whatsapp/consent', authMiddleware, async (req: AuthenticatedReques
       });
     }
 
-    // Resolve WhatsApp country ISO
-    const rawWaIso = whatsappCountryIso || req.body?.whatsapp_country_iso;
-    let targetWaIso = volProfile.whatsapp_country_iso;
-    if (rawWaIso !== undefined && rawWaIso !== null && String(rawWaIso).trim() !== '') {
-      const waIsoRes = validateCountryIso(rawWaIso);
-      if (!waIsoRes.valid || !waIsoRes.countryIso) {
-        return res.status(400).json({
-          success: false,
-          code: 'INVALID_WHATSAPP_COUNTRY_ISO',
-          error: 'Enter a valid country for WhatsApp.'
-        });
-      }
-      targetWaIso = waIsoRes.countryIso;
-    }
-    if (!targetWaIso) {
-      targetWaIso = inferCountryIsoFromE164(candidatePhone) || 'NG';
-    }
-
-    const val = validatePhoneNumber(candidatePhone, targetWaIso, 'whatsapp');
+    const val = validatePhoneNumber(candidatePhone, 'NG');
     if (!val.valid || !val.normalizedPhone) {
-      const countryObj = getCountryByIso(targetWaIso);
-      const countryName = countryObj?.name || 'selected country';
       return res.status(400).json({
         success: false,
         code: 'INVALID_PHONE',
-        error: `Please provide a valid WhatsApp number for ${countryName}.`
+        error: val.message || 'Please provide a valid phone number (e.g. 08012345678).'
       });
     }
 
     const normalizedPhone = val.normalizedPhone;
-    const finalWaIso = resolveConsistentCountryIso(targetWaIso, normalizedPhone, 'NG');
 
-    // Persist to volunteer_profiles:
-    // If whatsappNumber was explicitly supplied in the request body, always update whatsapp and whatsapp_country_iso
-    // Otherwise fallback to preserving or setting normalizedPhone and finalWaIso
-    const explicitlyProvidedNumber = Boolean(whatsappNumber && String(whatsappNumber).trim());
-    if (explicitlyProvidedNumber) {
-      await execute(`
-        UPDATE volunteer_profiles SET
-          whatsapp_consent_status = 'opted_in',
-          whatsapp_consent_at = ?,
-          whatsapp_opt_out_at = NULL,
-          whatsapp_consent_source = 'volunteer_portal',
-          whatsapp = ?,
-          whatsapp_country_iso = ?,
-          updated_at = ?
-        WHERE id = ?
-      `, [now, normalizedPhone, finalWaIso, now, volProfile.id]);
-    } else {
-      await execute(`
-        UPDATE volunteer_profiles SET
-          whatsapp_consent_status = 'opted_in',
-          whatsapp_consent_at = ?,
-          whatsapp_opt_out_at = NULL,
-          whatsapp_consent_source = 'volunteer_portal',
-          whatsapp = COALESCE(NULLIF(whatsapp, ''), ?),
-          whatsapp_country_iso = COALESCE(NULLIF(whatsapp_country_iso, ''), ?),
-          updated_at = ?
-        WHERE id = ?
-      `, [now, normalizedPhone, finalWaIso, now, volProfile.id]);
-    }
+    // Persist to volunteer_profiles
+    await execute(`
+      UPDATE volunteer_profiles SET
+        whatsapp_consent_status = 'opted_in',
+        whatsapp_consent_at = ?,
+        whatsapp_opt_out_at = NULL,
+        whatsapp_consent_source = 'volunteer_portal',
+        whatsapp = COALESCE(NULLIF(whatsapp, ''), ?),
+        updated_at = ?
+      WHERE id = ?
+    `, [now, normalizedPhone, now, volProfile.id]);
 
     // Role-specific consent rule:
     // Consent is role-specific. Do NOT copy consent value into parent_profiles.
@@ -1603,10 +1508,7 @@ router.post('/whatsapp/consent', authMiddleware, async (req: AuthenticatedReques
       profile: updatedVol ? {
         ...updatedVol,
         whatsappConsentStatus: updatedVol.whatsapp_consent_status,
-        whatsapp_consent_status: updatedVol.whatsapp_consent_status,
-        whatsappNumber: updatedVol.whatsapp || updatedVol.phone || '',
-        whatsappCountryIso: updatedVol.whatsapp_country_iso || null,
-        whatsapp_country_iso: updatedVol.whatsapp_country_iso || null
+        whatsappNumber: updatedVol.whatsapp || updatedVol.phone || ''
       } : null
     });
   } else if (action === 'opt_out') {
@@ -1632,10 +1534,7 @@ router.post('/whatsapp/consent', authMiddleware, async (req: AuthenticatedReques
       profile: updatedVol ? {
         ...updatedVol,
         whatsappConsentStatus: updatedVol.whatsapp_consent_status,
-        whatsapp_consent_status: updatedVol.whatsapp_consent_status,
-        whatsappNumber: updatedVol.whatsapp || updatedVol.phone || '',
-        whatsappCountryIso: updatedVol.whatsapp_country_iso || null,
-        whatsapp_country_iso: updatedVol.whatsapp_country_iso || null
+        whatsappNumber: updatedVol.whatsapp || updatedVol.phone || ''
       } : null
     });
   } else {
@@ -1657,8 +1556,6 @@ router.post('/request', authMiddleware, async (req: AuthenticatedRequest, res: R
       fullName,
       phone,
       whatsapp,
-      whatsappCountryIso,
-      whatsappConsent,
       isKoinoniaWorker,
       department,
       preferredTeam,
@@ -1696,51 +1593,19 @@ router.post('/request', authMiddleware, async (req: AuthenticatedRequest, res: R
       });
     }
 
-    let profile = req.volunteerProfile;
-    const isConsentProvided = (whatsappConsent === true || whatsappConsent === 'true');
-    // 7. NEW-SUBMISSION CONSENT REQUIREMENT: new volunteer request requires explicit WhatsApp consent
-    if (!profile && !isConsentProvided) {
-      return res.status(400).json({
-        success: false,
-        code: 'WHATSAPP_CONSENT_REQUIRED',
-        field: 'whatsappConsent',
-        message: 'Please enable WhatsApp updates to continue. Important volunteer information and duty updates are sent through WhatsApp.'
-      });
-    }
-
-    // Resolve WhatsApp country ISO
-    const rawWaCountryIso = whatsappCountryIso || req.body.whatsapp_country_iso;
-    let targetWaIso = profile?.whatsapp_country_iso;
-    if (rawWaCountryIso !== undefined && rawWaCountryIso !== null && String(rawWaCountryIso).trim() !== '') {
-      const waIsoRes = validateCountryIso(rawWaCountryIso);
-      if (!waIsoRes.valid || !waIsoRes.countryIso) {
+    let cleanWhatsapp = phoneVal.normalizedPhone!;
+    if (whatsapp) {
+      const whatsappVal = validatePhoneNumber(whatsapp, 'NG');
+      if (!whatsappVal.valid) {
         return res.status(400).json({
           success: false,
-          code: 'INVALID_WHATSAPP_COUNTRY_ISO',
-          field: 'whatsappCountryIso',
-          message: 'Enter a valid country for WhatsApp.'
+          code: whatsappVal.code,
+          field: 'whatsapp',
+          message: whatsappVal.message
         });
       }
-      targetWaIso = waIsoRes.countryIso;
+      cleanWhatsapp = whatsappVal.normalizedPhone!;
     }
-    if (!targetWaIso) {
-      targetWaIso = inferCountryIsoFromE164(whatsapp || phone) || 'NG';
-    }
-
-    const candidateWhatsapp = (whatsapp && String(whatsapp).trim()) || phoneVal.normalizedPhone!;
-    const whatsappVal = validatePhoneNumber(candidateWhatsapp, targetWaIso, 'whatsapp');
-    if (!whatsappVal.valid || !whatsappVal.normalizedPhone) {
-      const countryObj = getCountryByIso(targetWaIso);
-      const countryName = countryObj?.name || 'selected country';
-      return res.status(400).json({
-        success: false,
-        code: whatsappVal.code || 'INVALID_PHONE_FORMAT',
-        field: 'whatsapp',
-        message: `Enter a valid WhatsApp number for ${countryName}.`
-      });
-    }
-    const cleanWhatsapp = whatsappVal.normalizedPhone;
-    const finalWaCountryIso = resolveConsistentCountryIso(targetWaIso, cleanWhatsapp, 'NG');
 
     let resolvedPhotoId = photoFileId || null;
     if (photoFileId && photoFileId.includes('/api/media/files/')) {
@@ -1751,6 +1616,7 @@ router.post('/request', authMiddleware, async (req: AuthenticatedRequest, res: R
     }
 
     const now = new Date().toISOString();
+    let profile = req.volunteerProfile;
 
     if (profile) {
       // Update existing profile
@@ -1760,7 +1626,6 @@ router.post('/request', authMiddleware, async (req: AuthenticatedRequest, res: R
             full_name = ?,
             phone = ?,
             whatsapp = ?,
-            whatsapp_country_iso = ?,
             is_koinonia_worker = ?,
             department = ?,
             preferred_team = ?,
@@ -1774,7 +1639,6 @@ router.post('/request', authMiddleware, async (req: AuthenticatedRequest, res: R
         fullName.trim(),
         phoneVal.normalizedPhone!,
         cleanWhatsapp,
-        finalWaCountryIso,
         isKoinoniaWorker ? 1 : 0,
         department || null,
         preferredTeam,
@@ -1788,12 +1652,10 @@ router.post('/request', authMiddleware, async (req: AuthenticatedRequest, res: R
       const volunteerProfileId = crypto.randomUUID();
       await execute(`
         INSERT INTO volunteer_profiles (
-          id, user_id, photo_file_id, full_name, phone, whatsapp, whatsapp_country_iso,
+          id, user_id, photo_file_id, full_name, phone, whatsapp,
           is_koinonia_worker, department, preferred_team, serving_experience,
-          note, status,
-          whatsapp_consent_status, whatsapp_consent_at, whatsapp_consent_source,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', 'opted_in', ?, 'volunteer_request', ?, ?)
+          note, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?, ?)
       `, [
         volunteerProfileId,
         req.user.id,
@@ -1801,13 +1663,11 @@ router.post('/request', authMiddleware, async (req: AuthenticatedRequest, res: R
         fullName.trim(),
         phoneVal.normalizedPhone!,
         cleanWhatsapp,
-        finalWaCountryIso,
         isKoinoniaWorker ? 1 : 0,
         department || null,
         preferredTeam,
         servingExperience ? 1 : 0,
         note || null,
-        now,
         now,
         now
       ]);
@@ -1835,14 +1695,7 @@ router.post('/request', authMiddleware, async (req: AuthenticatedRequest, res: R
       console.error('Failed to send volunteer request email:', e);
     }
 
-    res.json({
-      success: true,
-      profile: updatedProfile ? {
-        ...updatedProfile,
-        whatsappCountryIso: updatedProfile.whatsapp_country_iso || null,
-        whatsapp_country_iso: updatedProfile.whatsapp_country_iso || null
-      } : null
-    });
+    res.json({ success: true, profile: updatedProfile });
   } catch (err) {
     console.error('Volunteer request access error:', err);
     res.status(500).json({ error: 'Internal server error processing volunteer request' });
@@ -1860,7 +1713,6 @@ router.put('/profile', authMiddleware, async (req: AuthenticatedRequest, res: Re
       fullName,
       phone,
       whatsapp,
-      whatsappCountryIso,
       isKoinoniaWorker,
       department,
       preferredTeam,
@@ -1877,36 +1729,7 @@ router.put('/profile', authMiddleware, async (req: AuthenticatedRequest, res: Re
     }
 
     const cleanPhone = phone ? validatePhoneNumber(phone, 'NG').normalizedPhone : undefined;
-
-    // Resolve WhatsApp country ISO
-    const rawWaIso = whatsappCountryIso || req.body.whatsapp_country_iso;
-    let targetWaIso = req.volunteerProfile?.whatsapp_country_iso;
-    if (rawWaIso !== undefined && rawWaIso !== null && String(rawWaIso).trim() !== '') {
-      const waIsoRes = validateCountryIso(rawWaIso);
-      if (!waIsoRes.valid || !waIsoRes.countryIso) {
-        return res.status(400).json({ error: 'Enter a valid country for WhatsApp.' });
-      }
-      targetWaIso = waIsoRes.countryIso;
-    }
-    if (!targetWaIso) {
-      targetWaIso = inferCountryIsoFromE164(whatsapp || req.volunteerProfile?.whatsapp) || 'NG';
-    }
-
-    let cleanWhatsapp: string | undefined = undefined;
-    let cleanWaIso: string | undefined = undefined;
-    if (whatsapp) {
-      const whatsappVal = validatePhoneNumber(whatsapp, targetWaIso, 'whatsapp');
-      if (!whatsappVal.valid || !whatsappVal.normalizedPhone) {
-        const countryObj = getCountryByIso(targetWaIso);
-        const countryName = countryObj?.name || 'selected country';
-        return res.status(400).json({ error: `Enter a valid WhatsApp number for ${countryName}.` });
-      }
-      cleanWhatsapp = whatsappVal.normalizedPhone;
-      cleanWaIso = resolveConsistentCountryIso(targetWaIso, cleanWhatsapp, 'NG');
-    } else if (rawWaIso && targetWaIso !== req.volunteerProfile?.whatsapp_country_iso) {
-      cleanWaIso = targetWaIso;
-    }
-
+    const cleanWhatsapp = whatsapp ? validatePhoneNumber(whatsapp, 'NG').normalizedPhone : undefined;
     const now = new Date().toISOString();
 
     // Extract file UUID if a full URL is passed
@@ -1923,7 +1746,6 @@ router.put('/profile', authMiddleware, async (req: AuthenticatedRequest, res: Re
       SET full_name = COALESCE(?, full_name),
           phone = COALESCE(?, phone),
           whatsapp = COALESCE(?, whatsapp),
-          whatsapp_country_iso = COALESCE(?, whatsapp_country_iso),
           is_koinonia_worker = COALESCE(?, is_koinonia_worker),
           department = COALESCE(?, department),
           preferred_team = COALESCE(?, preferred_team),
@@ -1936,7 +1758,6 @@ router.put('/profile', authMiddleware, async (req: AuthenticatedRequest, res: Re
       fullName || null,
       cleanPhone || null,
       cleanWhatsapp || null,
-      cleanWaIso || null,
       isKoinoniaWorker !== undefined ? (isKoinoniaWorker ? 1 : 0) : null,
       department || null,
       preferredTeam || null,
@@ -1948,14 +1769,7 @@ router.put('/profile', authMiddleware, async (req: AuthenticatedRequest, res: Re
     ]);
 
     const updatedProfile = await queryOne('SELECT * FROM volunteer_profiles WHERE user_id = ?', [req.user.id]);
-    res.json({
-      success: true,
-      profile: updatedProfile ? {
-        ...updatedProfile,
-        whatsappCountryIso: updatedProfile.whatsapp_country_iso || null,
-        whatsapp_country_iso: updatedProfile.whatsapp_country_iso || null
-      } : null
-    });
+    res.json({ success: true, profile: updatedProfile });
   } catch (err) {
     console.error('Update volunteer profile error:', err);
     res.status(500).json({ error: 'Internal server error updating profile' });
@@ -1991,7 +1805,6 @@ const handleMeProfileUpdate = async (req: AuthenticatedRequest, res: Response) =
       fullName,
       phone,
       whatsapp,
-      whatsappCountryIso,
       isKoinoniaWorker,
       department,
       preferredTeam,
@@ -2077,33 +1890,13 @@ const handleMeProfileUpdate = async (req: AuthenticatedRequest, res: Response) =
       updatedPhone = phoneVal.normalizedPhone!;
     }
 
-    // Resolve WhatsApp country ISO
-    const rawWaIso = whatsappCountryIso || req.body.whatsapp_country_iso;
-    let targetWaIso = profile.whatsapp_country_iso;
-    if (rawWaIso !== undefined && rawWaIso !== null && String(rawWaIso).trim() !== '') {
-      const waIsoRes = validateCountryIso(rawWaIso);
-      if (!waIsoRes.valid || !waIsoRes.countryIso) {
-        return res.status(400).json({ success: false, message: 'Enter a valid country for WhatsApp.' });
-      }
-      targetWaIso = waIsoRes.countryIso;
-    }
-    if (!targetWaIso) {
-      targetWaIso = inferCountryIsoFromE164(whatsapp || profile.whatsapp) || 'NG';
-    }
-
     let updatedWhatsapp = profile.whatsapp;
-    let updatedWhatsappCountryIso = profile.whatsapp_country_iso || targetWaIso;
-    if (whatsapp !== undefined && whatsapp !== null && String(whatsapp).trim() !== '') {
-      const whatsappVal = validatePhoneNumber(whatsapp, targetWaIso, 'whatsapp');
-      if (!whatsappVal.valid || !whatsappVal.normalizedPhone) {
-        const countryObj = getCountryByIso(targetWaIso);
-        const countryName = countryObj?.name || 'selected country';
-        return res.status(400).json({ success: false, message: `Enter a valid WhatsApp number for ${countryName}.` });
+    if (whatsapp !== undefined && whatsapp !== null && whatsapp !== '') {
+      const whatsappVal = validatePhoneNumber(whatsapp, 'NG');
+      if (!whatsappVal.valid) {
+        return res.status(400).json({ success: false, message: whatsappVal.message || 'Invalid WhatsApp number' });
       }
-      updatedWhatsapp = whatsappVal.normalizedPhone;
-      updatedWhatsappCountryIso = resolveConsistentCountryIso(targetWaIso, updatedWhatsapp, 'NG');
-    } else if (rawWaIso && targetWaIso !== profile.whatsapp_country_iso) {
-      updatedWhatsappCountryIso = targetWaIso;
+      updatedWhatsapp = whatsappVal.normalizedPhone!;
     }
 
     let updatedIsKoinoniaWorker = profile.is_koinonia_worker;
@@ -2139,7 +1932,6 @@ const handleMeProfileUpdate = async (req: AuthenticatedRequest, res: Response) =
           full_name = ?,
           phone = ?,
           whatsapp = ?,
-          whatsapp_country_iso = ?,
           is_koinonia_worker = ?,
           department = ?,
           preferred_team = ?,
@@ -2152,7 +1944,6 @@ const handleMeProfileUpdate = async (req: AuthenticatedRequest, res: Response) =
       updatedFullName,
       updatedPhone,
       updatedWhatsapp,
-      updatedWhatsappCountryIso,
       updatedIsKoinoniaWorker,
       updatedDepartment,
       updatedPreferredTeam,
@@ -2190,11 +1981,6 @@ const handleMeProfileUpdate = async (req: AuthenticatedRequest, res: Response) =
       full_name: freshProfile.full_name,
       phone: freshProfile.phone,
       whatsapp: freshProfile.whatsapp,
-      whatsappNumber: freshProfile.whatsapp || freshProfile.phone || '',
-      whatsappCountryIso: freshProfile.whatsapp_country_iso || null,
-      whatsapp_country_iso: freshProfile.whatsapp_country_iso || null,
-      whatsappConsentStatus: freshProfile.whatsapp_consent_status,
-      whatsapp_consent_status: freshProfile.whatsapp_consent_status,
       isKoinoniaWorker: freshProfile.is_koinonia_worker === 1,
       is_koinonia_worker: freshProfile.is_koinonia_worker,
       department: freshProfile.department,

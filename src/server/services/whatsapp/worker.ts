@@ -6,6 +6,8 @@ import { isTransientError } from './queue';
 import { resolveMessageTokens, buildParentStatusUrl, buildParentPassUrl } from '../../utils/urlHelper';
 import { normalizePhoneNumberToE164 } from '../../utils/phone';
 import { resolveUserDutyLocation } from '../../routes/duty';
+import { extractFirstName, buildMergeInfo, validateMergeInfo } from './personalization';
+import { getRequiredMergeFieldsForIntent, ZOHO_TEMPLATE_REGISTRY } from './templateRegistry';
 
 export interface WhatsAppWorkerOptions {
   maxBatchSize?: number;
@@ -451,12 +453,14 @@ export async function processQueuedWhatsAppJobs(
         }
 
         let childName = 'your child';
+        let childFirstName = '';
         let passUrl = buildParentPassUrl();
         let reviewUrl = buildParentStatusUrl();
         if (candidate.child_id) {
-          const childRow = await queryOne(`SELECT id, full_name FROM children WHERE id = ?`, [candidate.child_id]);
+          const childRow = await queryOne(`SELECT id, full_name, first_name FROM children WHERE id = ?`, [candidate.child_id]);
           if (childRow) {
             childName = (childRow.full_name || '').trim() || 'your child';
+            childFirstName = extractFirstName(childRow);
             passUrl = buildParentPassUrl(childRow.id);
             reviewUrl = buildParentStatusUrl(childRow.id);
           }
@@ -496,6 +500,8 @@ export async function processQueuedWhatsAppJobs(
               .replace(/\{Volunteer\s+name\}/gi, recipientName);
           }
 
+          const supportContact = (process.env.SUPPORT_PHONE_NUMBER || process.env.ZOHO_WHATSAPP_FROM || '').trim();
+
           messageBody = resolveMessageTokens(rendered, {
             volunteerName: recipientName,
             team: vTeam,
@@ -503,7 +509,7 @@ export async function processQueuedWhatsAppJobs(
             parentName: recipientName,
             childName: recipientName,
             eventName,
-            supportContact: '+234 803 123 4567'
+            supportContact
           });
         } else {
           const parentDisplayName = (parent?.full_name || '').trim() || 'Parent';
@@ -513,6 +519,8 @@ export async function processQueuedWhatsAppJobs(
               .replace(/^Dear\s+(?:Parents?|\{Parent\s+name\}),?/i, `Dear ${parentDisplayName},`)
               .replace(/\{Parent\s+name\}/gi, parentDisplayName);
           }
+          const supportContact = (process.env.SUPPORT_PHONE_NUMBER || process.env.ZOHO_WHATSAPP_FROM || '').trim();
+
           messageBody = resolveMessageTokens(rendered, {
             parentName: parentDisplayName,
             eventName,
@@ -520,14 +528,84 @@ export async function processQueuedWhatsAppJobs(
             reviewUrl,
             passUrl,
             pickupTime: '4:00 PM',
-            supportContact: '+234 803 123 4567'
+            supportContact
           });
         }
 
-        // 5. Send message via selected WhatsApp provider
+        // 5. Personalization and merge variable preparation
+        const parentFirstName = extractFirstName(parent?.full_name || recipientName);
+        const volunteerFirstName = extractFirstName(volunteerProfile?.full_name || recipientName);
+
+        // Determine intent from idempotency_key, rule_id, or job characteristics
+        let jobIntent: string = 'broadcast';
+        if (isRegistrationAck || candidate.idempotency_key?.startsWith('registration_ack:') || candidate.rule_id === 'registration_acknowledgement') {
+          jobIntent = 'registration_ack';
+        } else if (candidate.idempotency_key?.startsWith('pass_ready:') || candidate.rule_id === 'pass_ready' || candidate.rule_id === 'koinonia_pass_ready') {
+          jobIntent = 'pass_ready';
+        } else if (candidate.idempotency_key?.startsWith('checkin_reminder:') || candidate.rule_id === 'checkin_reminder' || candidate.rule_id === 'koinonia_checkin_reminder' || candidate.rule_id === 'checkin_opening') {
+          jobIntent = 'checkin_reminder';
+        } else if (candidate.idempotency_key?.startsWith('duty_reminder:') || candidate.rule_id === 'duty_reminder' || candidate.rule_id === 'koinonia_duty_reminder' || (isVolunteerJob && candidate.event_id)) {
+          jobIntent = 'duty_reminder';
+        } else if (candidate.idempotency_key?.startsWith('nudge:') || candidate.idempotency_key?.startsWith('completion_reminder:') || candidate.rule_id === 'completion_reminder' || candidate.rule_id === 'return_to_draft') {
+          jobIntent = 'completion_reminder';
+        } else if (candidate.rule_id && ZOHO_TEMPLATE_REGISTRY[candidate.rule_id.toLowerCase()]) {
+          jobIntent = candidate.rule_id.toLowerCase();
+        } else if (candidate.child_id && candidate.parent_id) {
+          jobIntent = 'checkin_reminder';
+        }
+
+        const jobMergeInfo = buildMergeInfo({
+          parentFirstName: isVolunteerJob ? undefined : parentFirstName,
+          parentFullName: isVolunteerJob ? undefined : (parent?.full_name || recipientName),
+          childFirstName: childFirstName || undefined,
+          childFullName: childName !== 'your child' ? childName : undefined,
+          volunteerFirstName: isVolunteerJob ? volunteerFirstName : undefined,
+          volunteerFullName: isVolunteerJob ? (volunteerProfile?.full_name || recipientName) : undefined,
+          eventName,
+          passUrl,
+          statusUrl: reviewUrl
+        });
+
+        // Pre-flight check: verify required merge fields exist and are not blank before provider dispatch
+        const reqFields = getRequiredMergeFieldsForIntent(jobIntent);
+        if (reqFields.length > 0) {
+          const precheck = validateMergeInfo(reqFields, jobMergeInfo);
+          if (!precheck.valid) {
+            const termError = `PERSONALIZATION_ERROR: Missing required merge variable(s): ${precheck.missingKeys.join(', ')}`;
+            console.error(`[WhatsApp Worker] Job ${candidate.id} failed personalization pre-check for intent ${jobIntent}: missing ${precheck.missingKeys.join(', ')}`);
+            await execute(`
+              UPDATE notification_jobs
+              SET status = 'failed',
+                  failure_reason = ?,
+                  last_error = ?,
+                  updated_at = ?
+              WHERE id = ?
+            `, [termError, termError, new Date().toISOString(), candidate.id]);
+
+            await logWhatsAppDelivery({
+              jobId: candidate.id,
+              campaignId: resolvedCampaignId,
+              parentProfileId: candidate.parent_id,
+              userId: targetUserId,
+              childEventEntryId: resolvedEntryId || null,
+              recipientPhone,
+              provider: provider.name,
+              status: 'failed',
+              errorMessage: termError,
+              failedAt: new Date().toISOString()
+            });
+
+            failed++;
+            continue;
+          }
+        }
+
+        // 6. Send message via selected WhatsApp provider
         const sendResult = await provider.sendSessionMessage({
           to: recipientPhone,
           body: messageBody,
+          intent: jobIntent,
+          mergeInfo: jobMergeInfo,
           idempotencyKey: candidate.idempotency_key || undefined
         });
 
@@ -561,7 +639,8 @@ export async function processQueuedWhatsAppJobs(
         } else {
           // Provider reported failure
           const errMsg = sendResult.error || 'WhatsApp provider dispatch rejected';
-          const isTransient = isTransientError(errMsg);
+          const isPersonalizationErr = errMsg.includes('PERSONALIZATION_ERROR');
+          const isTransient = !isPersonalizationErr && isTransientError(errMsg);
 
           if (isTransient && currentAttempt < config.maxAttempts) {
             // Transient error: schedule exponential backoff retry

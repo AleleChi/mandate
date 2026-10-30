@@ -4,7 +4,7 @@ import { queryOne, execute, transaction, query } from '../db';
 import { hashPassword, verifyPassword, generateToken, authMiddleware, optionalAuthMiddleware, AuthenticatedRequest, resolveParentProfileForUser } from '../auth';
 import { sendEmailVerificationEmail, sendPasswordResetEmail, sendVolunteerUnderReviewEmail } from '../services/email';
 import { validateEmailAddress, validatePhoneNumber, validateName } from '../utils/validation';
-import { buildPublicAppUrl } from '../utils/urlHelper';
+import { buildPublicAppUrl, TRUSTED_FRONTEND_ORIGINS } from '../utils/urlHelper';
 import { authorizeChildPass, revokeChildPassAuthorizations, isChildPassAuthorized } from '../services/passService';
 import { enqueueWhatsAppJob } from '../services/whatsapp/queue';
 import { getCurrentEventId, getEventById } from '../services/eventService';
@@ -40,6 +40,24 @@ router.post(['/create-account', '/register'], async (req: AuthenticatedRequest, 
       if (registrationEventId) {
         targetEvent = await getEventById(registrationEventId);
       }
+    }
+
+    let genSettings: any = null;
+    try {
+      genSettings = await queryOne<any>(`
+        SELECT *
+        FROM admin_general_settings
+        WHERE id = 'primary_general_settings'
+      `);
+    } catch (e) {}
+
+    if (genSettings && (genSettings.parent_registration_enabled === 0 || genSettings.parent_registration_enabled === false)) {
+      return res.status(403).json({
+        success: false,
+        code: 'REGISTRATION_CLOSED',
+        message: 'New parent account registration is currently disabled.',
+        error: 'New parent account registration is currently disabled.'
+      });
     }
 
     if (targetEvent) {
@@ -787,7 +805,8 @@ router.delete('/passkeys/:passkeyId', authMiddleware, async (req: AuthenticatedR
 
 const TRUSTED_PRODUCTION_HOSTNAMES = [
   'koinonia12.netlify.app',
-  'themandate.dontechservicesconst.com'
+  'themandate.dontechservicesconst.com',
+  ...TRUSTED_FRONTEND_ORIGINS.map((origin) => new URL(origin).hostname)
 ];
 
 function getConfiguredEnvHostnames(): string[] {
@@ -1217,19 +1236,37 @@ router.get('/registration-status', async (req: AuthenticatedRequest, res: Respon
 
     const nowIso = new Date().toISOString();
 
+    let genSettings: any = null;
+    try {
+      genSettings = await queryOne<any>(`
+        SELECT *
+        FROM admin_general_settings
+        WHERE id = 'primary_general_settings'
+      `);
+    } catch (e) {}
+
+    const parentToggleEnabled = genSettings ? (genSettings.parent_registration_enabled === 1 || genSettings.parent_registration_enabled === true || genSettings.parent_registration_enabled === undefined) : true;
+    const volunteerToggleEnabled = genSettings && genSettings.volunteer_registration_enabled !== undefined && genSettings.volunteer_registration_enabled !== null
+      ? (genSettings.volunteer_registration_enabled === 1 || genSettings.volunteer_registration_enabled === true || genSettings.volunteer_registration_enabled === 'true')
+      : true;
+
     // Parent status
     let parentState: 'open' | 'not_open_yet' | 'closed' | 'disabled' = 'open';
-    if (targetEvent.parents_can_create_account === 0 || targetEvent.parents_can_create_account === false) {
+    if (!parentToggleEnabled || targetEvent.parents_can_create_account === 0 || targetEvent.parents_can_create_account === false) {
       parentState = 'disabled';
     } else if (targetEvent.parent_access_opens_at && nowIso < targetEvent.parent_access_opens_at) {
       parentState = 'not_open_yet';
-    } else if (targetEvent.parent_access_closes_at && nowIso > targetEvent.parent_access_closes_at) {
+    }
+    // Deadline ALWAYS overrides Parent enabled state
+    if (targetEvent.parent_access_closes_at && nowIso > targetEvent.parent_access_closes_at) {
       parentState = 'closed';
     }
 
     // Volunteer status
-    let volunteerState: 'open' | 'not_open_yet' | 'closed' = 'open';
-    if (targetEvent.volunteer_registration_opens_at && nowIso < targetEvent.volunteer_registration_opens_at) {
+    let volunteerState: 'open' | 'not_open_yet' | 'closed' | 'disabled' = 'open';
+    if (!volunteerToggleEnabled) {
+      volunteerState = 'disabled';
+    } else if (targetEvent.volunteer_registration_opens_at && nowIso < targetEvent.volunteer_registration_opens_at) {
       volunteerState = 'not_open_yet';
     } else if (targetEvent.volunteer_registration_closes_at && nowIso > targetEvent.volunteer_registration_closes_at) {
       volunteerState = 'closed';
@@ -1240,9 +1277,12 @@ router.get('/registration-status', async (req: AuthenticatedRequest, res: Respon
       hasEvent: true,
       eventName: targetEvent.title || 'The General Assembly',
       eventId: targetEvent.id,
+      parentRegistrationEnabled: parentToggleEnabled,
+      volunteerRegistrationEnabled: volunteerToggleEnabled,
       parent: {
         isOpen: parentState === 'open',
         state: parentState,
+        enabled: parentToggleEnabled,
         opensAt: targetEvent.parent_access_opens_at || null,
         closesAt: targetEvent.parent_access_closes_at || null,
         opensAtFormatted: formatFriendlyDateTime(targetEvent.parent_access_opens_at),
@@ -1251,6 +1291,7 @@ router.get('/registration-status', async (req: AuthenticatedRequest, res: Respon
       volunteer: {
         isOpen: volunteerState === 'open',
         state: volunteerState,
+        enabled: volunteerToggleEnabled,
         opensAt: targetEvent.volunteer_registration_opens_at || null,
         closesAt: targetEvent.volunteer_registration_closes_at || null,
         opensAtFormatted: formatFriendlyDateTime(targetEvent.volunteer_registration_opens_at),

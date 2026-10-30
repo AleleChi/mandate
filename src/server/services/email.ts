@@ -143,6 +143,9 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
     // Simulation / Test Provider: No external network transmission
     if (provider === 'simulated' || provider === 'test' || provider === 'mock') {
       const simId = `sim_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[EmailService] Simulated email to ${options.to} (${options.subject}):\n${options.text}\n`);
+      }
       return {
         success: true,
         provider: 'simulated',
@@ -513,6 +516,97 @@ export async function sendChildReviewDecisionEmail(params: {
   }
 
   const html = wrapHtmlTemplate(subject, bodyHtml, actionButton);
+  return sendEmail({ to: params.parentEmail, subject, html, text });
+}
+
+/**
+ * 4b. Application returned to parent for correction / update
+ */
+export async function sendChildReturnToDraftEmail(params: {
+  parentEmail: string;
+  parentFirstName?: string;
+  childName: string;
+  reason: string;
+  customMessage?: string;
+  parentPortalLink?: string;
+}): Promise<SendEmailResult> {
+  const childName = params.childName || 'your child';
+  const suffix = childName.endsWith('s') ? '’' : '’s';
+  const subject = `Update needed for ${childName}${suffix} details`;
+  const firstName = getFirstName(params.parentFirstName);
+  const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
+  const portalUrl = params.parentPortalLink || buildPublicAppUrl('/parent/home');
+
+  const reasonSnippet = params.reason ? params.reason.trim() : 'Some registration information needs review or updating.';
+  
+  const bodyHtml = `
+    <p style="margin-top: 0;">${greeting}</p>
+    <p>Our review team noticed that <strong>${childName}</strong>’s registration details require an update:</p>
+    <div style="background-color: #FAF8F4; border-left: 3px solid #C59B27; padding: 12px 16px; margin: 16px 0; border-radius: 4px; font-size: 14px; color: #27272A; line-height: 1.5;">
+      ${reasonSnippet.replace(/\n/g, '<br/>')}
+    </div>
+    <p>We have reopened ${childName}’s application in draft mode. Please sign in to Parent Access, update the required details, and re-submit.</p>
+    <br>
+    <p style="margin-bottom: 0;">Thank you,<br>Koinonia Children and Teens</p>
+  `;
+
+  const text = `${greeting}\n\nOur review team noticed that ${childName}’s registration details require an update:\n• ${reasonSnippet}\n\nWe have reopened ${childName}’s application in draft mode. Please sign in to Parent Access, update the required details, and re-submit:\n${portalUrl}\n\nThank you,\nKoinonia Children and Teens`;
+
+  const html = wrapHtmlTemplate(subject, bodyHtml, { label: 'Update details', url: portalUrl });
+
+  return sendEmail({ to: params.parentEmail, subject, html, text });
+}
+
+/**
+ * 4c. Application completion reminder email to parent
+ */
+export async function sendApplicationCompletionReminderEmail(params: {
+  parentEmail: string;
+  parentFirstName?: string;
+  childName: string;
+  messageBody?: string;
+  formattedDeadline?: string;
+  parentPortalLink?: string;
+}): Promise<SendEmailResult> {
+  const childName = params.childName || 'your child';
+  const suffix = childName.endsWith('s') ? '’' : '’s';
+  const subject = `Action required: Complete and submit ${childName}${suffix} registration`;
+  const firstName = getFirstName(params.parentFirstName);
+  const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
+  const portalUrl = params.parentPortalLink || buildPublicAppUrl('/parent/home');
+
+  let rawSnippet = params.messageBody
+    ? params.messageBody.trim()
+    : `The registration for ${childName} has not yet been submitted. Please sign in to Parent Access to complete and submit the application before registration closes.`;
+
+  // Prevent duplicate greeting inside the quote box when already present in the email header
+  rawSnippet = rawSnippet.replace(/^Hello\s+[^,\n]+,\s*/i, '');
+
+  const bodySnippet = rawSnippet.replace(/\n/g, '<br/>');
+
+  const deadlineHtml = params.formattedDeadline
+    ? `<p style="margin-top: 14px; color: #9A7326; font-weight: 500;">Registration deadline: <strong>${params.formattedDeadline}</strong></p>`
+    : '';
+
+  const bodyHtml = `
+    <p style="margin-top: 0;">${greeting}</p>
+    <p>This is a reminder regarding <strong>${childName}</strong>’s registration for Children and Teens at The General Assembly:</p>
+    <div style="background-color: #FAF8F4; border-left: 3px solid #C59B27; padding: 12px 16px; margin: 16px 0; border-radius: 4px; font-size: 14px; color: #27272A; line-height: 1.5;">
+      ${bodySnippet}
+    </div>
+    <div style="background-color: #FEF9EC; border: 1px solid #EAD89C; border-radius: 6px; padding: 12px 16px; margin: 16px 0; font-size: 13px; color: #8C6718; line-height: 1.5;">
+      <strong>Important reminder:</strong> Even if you have already filled in all the details, your application remains in draft until you proceed to the final review screen and click <strong>"Submit Application"</strong>. Only submitted applications can be reviewed by our team.
+    </div>
+    ${deadlineHtml}
+    <p>Please open Parent Access to review, complete, and submit ${childName}’s application.</p>
+    <br>
+    <p style="margin-bottom: 0;">Thank you,<br>Koinonia Children and Teens</p>
+  `;
+
+  const text = `${greeting}\n\nThis is a reminder regarding ${childName}’s registration for Children and Teens at The General Assembly:\n\n${rawSnippet}\n\nImportant reminder: Even if you have already filled in all the details, your application remains in draft until you proceed to the final review screen and click "Submit Application". Only submitted applications can be reviewed by our team.\n\n${params.formattedDeadline ? `Registration deadline: ${params.formattedDeadline}\n\n` : ''}Please open Parent Access to review, complete, and submit your application:\n${portalUrl}\n\nThank you,\nKoinonia Children and Teens`;
+
+  const html = wrapHtmlTemplate(subject, bodyHtml, { label: 'Review & Submit Application', url: portalUrl });
+
   return sendEmail({ to: params.parentEmail, subject, html, text });
 }
 

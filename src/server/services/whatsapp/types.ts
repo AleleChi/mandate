@@ -1,25 +1,41 @@
-export type WhatsAppProviderName = 'twilio' | 'meta' | 'simulated';
+export type WhatsAppProviderName = 'twilio' | 'meta' | 'simulated' | 'zoho';
 
 export interface SendTemplateParams {
   to: string; // E.164 formatted phone number
-  templateName: string;
+  templateName?: string;
   templateLanguage?: string;
-  parameters: Array<{ type: 'text' | 'currency' | 'date_time'; text?: string }>;
+  parameters?: Array<{ type: 'text' | 'currency' | 'date_time'; text?: string }>;
   idempotencyKey?: string;
+  templateKey?: string;
+  templateAlias?: string;
+  mergeInfo?: Record<string, string>;
+  clientReference?: string;
+  headerMedia?: { type: 'image' | 'document' | 'video'; url: string };
+  channelUrl?: string;
 }
 
 export interface SendSessionMessageParams {
   to: string; // E.164 formatted phone number
   body: string;
   idempotencyKey?: string;
+  intent?: string;
+  templateKey?: string;
+  templateAlias?: string;
+  mergeInfo?: Record<string, string>;
+  clientReference?: string;
+  headerMedia?: { type: 'image' | 'document' | 'video'; url: string };
+  channelUrl?: string;
 }
 
 export interface ProviderSendResult {
   success: boolean;
   provider: WhatsAppProviderName;
   messageId?: string;
+  requestId?: string;
+  clientReference?: string;
   status: 'queued' | 'sent' | 'failed';
   error?: string;
+  retryAfter?: number;
   rawResponse?: any;
 }
 

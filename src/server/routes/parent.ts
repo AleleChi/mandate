@@ -3,12 +3,14 @@ import crypto from 'crypto';
 import { query, queryOne, execute, transaction } from '../db';
 import { authMiddleware, AuthenticatedRequest } from '../auth';
 import { sendChildReviewReceivedEmail } from '../services/email';
+import { sendWhatsApp } from '../services/notifications';
 import { validateParentProfile, validateChildDraftStep, validatePhoneNumber, validateChildName, validateDateOfBirth, isValidUploadedPhoto } from '../utils/validation';
 import { resolveCountryIso, resolveWhatsAppCountryIso, getCountryByIso, inferCountryIsoFromE164 } from '../../utils/countries';
 import { normalizePhoneNumberToE164 } from '../utils/phone';
+import { buildParentStatusUrl } from '../utils/urlHelper';
 import { getPassesForParent, issuePassForChild, isChildPassAuthorized } from '../services/passService';
 import { getCurrentEvent, getCurrentEventId, getEventById } from '../services/eventService';
-import { checkEventEligibility } from '../services/eligibilityService';
+import { checkEventEligibility, resolveCanonicalAgeGroup, CANONICAL_GA_EVENT_DATE } from '../services/eligibilityService';
 
 const router = Router();
 router.use(authMiddleware);
@@ -24,33 +26,14 @@ router.use((req: AuthenticatedRequest, res: Response, next) => {
   next();
 });
 
-function calculateAgeAndGroup(dobStr: string) {
-  if (!dobStr) return { calculatedAge: 0, ageGroup: 'Not specified', needsAgeReview: false };
-  const dob = new Date(dobStr);
-  const now = new Date();
-  let age = now.getFullYear() - dob.getFullYear();
-  const m = now.getMonth() - dob.getMonth();
-  if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) {
-    age--;
-  }
-  let ageGroup = 'Ages 4 to 6';
-  let needsAgeReview = false;
-  if (age < 1) {
-    ageGroup = 'Below 1';
-    needsAgeReview = true;
-  } else if (age < 4) {
-    ageGroup = 'Ages 1 to 3';
-    needsAgeReview = true;
-  } else if (age >= 4 && age <= 6) {
-    ageGroup = 'Ages 4 to 6';
-  } else if (age >= 7 && age <= 9) {
-    ageGroup = 'Ages 7 to 9';
-  } else if (age >= 10 && age <= 12) {
-    ageGroup = 'Ages 10 to 12';
-  } else {
-    ageGroup = 'Teens';
-  }
-  return { calculatedAge: age, ageGroup, needsAgeReview };
+function calculateAgeAndGroup(dobStr: string, referenceDate: string | Date = CANONICAL_GA_EVENT_DATE) {
+  if (!dobStr) return { calculatedAge: 0, ageGroup: 'Not specified', needsAgeReview: true };
+  const res = resolveCanonicalAgeGroup(dobStr, referenceDate);
+  return {
+    calculatedAge: res.age ?? 0,
+    ageGroup: res.label,
+    needsAgeReview: res.isOutOfRange
+  };
 }
 
 async function resolvePhotoUrlAsync(photoRef?: string | null): Promise<string> {
@@ -290,9 +273,9 @@ async function mapChildToFrontend(
 
   const { calculatedAge, ageGroup: calcAgeGroup } = calculateAgeAndGroup(childRow.date_of_birth);
   const rawChildGroup = (childRow.age_group || '').replace(/\s*\(Review Needed\)/gi, '').trim();
-  const effectiveAgeGroup = rawChildGroup === 'Under 4'
-    ? (calculatedAge < 1 ? 'Below 1' : 'Ages 1 to 3')
-    : (rawChildGroup || calcAgeGroup);
+  const effectiveAgeGroup = rawChildGroup && !rawChildGroup.includes('Under') && !rawChildGroup.includes('Ages 1') && !rawChildGroup.includes('Below')
+    ? rawChildGroup
+    : calcAgeGroup;
   const effectiveAge = childRow.calculated_age !== null && childRow.calculated_age !== undefined ? childRow.calculated_age : calculatedAge;
 
   const eventForEligibility = currentEventId ? await getEventById(currentEventId) : await getCurrentEvent();
@@ -891,12 +874,31 @@ async function performSaveDraftInternal(req: AuthenticatedRequest, draft: any, c
     }
 
     const pickupType = draft.pickup?.pickupType || draft.pickup?.mode || draft.pickupType || 'parent';
-    const pickupPhoto = draft.pickup?.pickupPersonPhoto || draft.pickup?.pickupPersonPhotoUrl || draft.pickup?.photo_url || draft.pickupPersonPhotoUrl || '';
-    const pickupName = draft.pickup?.pickupPersonFullName || draft.pickup?.full_name || draft.pickupPersonFullName || '';
-    const pickupRel = draft.pickup?.pickupPersonRelationship || draft.pickup?.relationship_to_child || draft.pickupPersonRelationship || '';
+    let pickupPhoto = draft.pickup?.pickupPersonPhoto || draft.pickup?.pickupPersonPhotoUrl || draft.pickup?.photo_url || draft.pickupPersonPhotoUrl || '';
+    let pickupName = draft.pickup?.pickupPersonFullName || draft.pickup?.full_name || draft.pickupPersonFullName || '';
+    let pickupRel = draft.pickup?.pickupPersonRelationship || draft.pickup?.relationship_to_child || draft.pickupPersonRelationship || '';
     let pickupPhone = draft.pickup?.pickupPersonPhone || draft.pickup?.phone_number || draft.pickupPersonPhone || '';
     let pickupWa = draft.pickup?.pickupPersonWhatsApp || draft.pickup?.whatsapp_number || draft.pickupPersonWhatsapp || '';
-    const pickupAppr = draft.pickup?.approvedByParent || draft.pickup?.approved_by_parent || draft.pickupPersonApproved ? 1 : 0;
+    let pickupAppr = draft.pickup?.approvedByParent || draft.pickup?.approved_by_parent || draft.pickupPersonApproved ? 1 : 0;
+
+    if (pickupType === 'parent' && req.parentProfile) {
+      if (!pickupPhoto && req.parentProfile.photo_file_id) {
+        pickupPhoto = req.parentProfile.photo_file_id;
+      }
+      if (!pickupName && req.parentProfile.full_name) {
+        pickupName = req.parentProfile.full_name;
+      }
+      if (!pickupPhone && req.parentProfile.phone_number) {
+        pickupPhone = req.parentProfile.phone_number;
+      }
+      if (!pickupWa && req.parentProfile.whatsapp_number) {
+        pickupWa = req.parentProfile.whatsapp_number;
+      }
+      if (!pickupRel) {
+        pickupRel = 'Parent';
+      }
+      pickupAppr = 1;
+    }
 
     if (pickupPhone && pickupPhone.trim()) {
       const countryForPickup = inferCountryIsoFromE164(pickupPhone) || draft.pickup?.pickupPersonCountryIso || draft.pickupPersonCountryIso || 'NG';
@@ -1074,13 +1076,13 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
     },
     pickup: {
       pickupType: pickup.pickup_type,
-      pickupPersonPhoto: pickup.photo_file_id,
-      pickupPersonFullName: pickup.full_name,
-      pickupPersonRelationship: pickup.relationship_to_child,
-      pickupPersonPhone: pickup.phone_number,
+      pickupPersonPhoto: pickup.photo_file_id || (pickup.pickup_type === 'parent' ? req.parentProfile.photo_file_id : ''),
+      pickupPersonFullName: pickup.full_name || (pickup.pickup_type === 'parent' ? req.parentProfile.full_name : ''),
+      pickupPersonRelationship: pickup.relationship_to_child || (pickup.pickup_type === 'parent' ? 'Parent' : ''),
+      pickupPersonPhone: pickup.phone_number || (pickup.pickup_type === 'parent' ? req.parentProfile.phone_number : ''),
       pickupPersonCountryIso: req.body?.pickup?.pickupPersonCountryIso || req.body?.pickupPersonCountryIso || inferCountryIsoFromE164(pickup.phone_number) || 'NG',
-      pickupPersonWhatsApp: pickup.whatsapp_number,
-      approvedByParent: Boolean(pickup.approved_by_parent)
+      pickupPersonWhatsApp: pickup.whatsapp_number || (pickup.pickup_type === 'parent' ? req.parentProfile.whatsapp_number : ''),
+      approvedByParent: Boolean(pickup.approved_by_parent || pickup.pickup_type === 'parent')
     },
     review: {
       detailsConfirmed: true
@@ -1128,11 +1130,14 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
   // Server-authoritative event age eligibility check evaluated on event date
   const eligibility = checkEventEligibility(c.date_of_birth, currentEvent);
   if (!eligibility.eligible) {
+    const defaultReason = (currentEvent?.minimum_age && currentEvent?.maximum_age)
+      ? `This programme is currently open to children ages ${currentEvent.minimum_age}–${currentEvent.maximum_age}.`
+      : 'This programme is currently open to children ages 2–14.';
     return res.status(400).json({
       success: false,
-      code: 'CHILD_INELIGIBLE_FOR_EVENT',
-      message: eligibility.reason || 'This child does not meet the age eligibility requirements for this event.',
-      error: eligibility.reason || 'This child does not meet the age eligibility requirements for this event.',
+      code: 'AGE_NOT_ELIGIBLE',
+      message: eligibility.reason || defaultReason,
+      error: eligibility.reason || defaultReason,
       eligibility
     });
   }
@@ -1210,14 +1215,28 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
 
   const updatedEntry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [entry.id]);
   if (req.user && req.user.email) {
-    const baseUrl = process.env.APP_BASE_URL || 'https://koinonia12.netlify.app';
-    const childStatusLink = `${baseUrl}/#/parent/children/${childId}/status`;
+    const childStatusLink = buildParentStatusUrl(childId);
     sendChildReviewReceivedEmail({
       parentEmail: req.user.email,
       parentFirstName: req.parentProfile?.full_name,
       childName: c.full_name,
       childStatusLink
     }).catch(() => {});
+  }
+
+  const parentPhone = req.parentProfile?.whatsapp_number || req.parentProfile?.phone_number;
+  if (parentPhone) {
+    const pName = (req.parentProfile?.full_name || '').split(' ')[0] || 'Parent';
+    const cName = c.full_name || 'your child';
+    const waText = `Hello ${pName},\n\nWe have received ${cName}'s application for ${currentEvent.title || 'the event'}. It is currently under review by our team.\n\nYou will receive a message when there is a decision.`;
+    sendWhatsApp(parentPhone, waText, {
+      intent: 'child_under_review',
+      parentFirstName: pName,
+      childFirstName: cName,
+      eventName: currentEvent.title || 'the event'
+    }).catch(err => {
+      console.error('[ParentReview] Failed to dispatch WhatsApp under-review message:', err);
+    });
   }
 
   const mapped = await mapChildToFrontend(c, updatedEntry, pickup, req.parentProfile.id, false, currentEventId);

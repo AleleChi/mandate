@@ -97,6 +97,17 @@ function convertPlaceholders(sql: string): string {
   return sql.replace(/\?/g, () => `$${idx++}`);
 }
 
+function normalizePostgresSql(sql: string): string {
+  let pgSql = sql;
+  if (/insert\s+or\s+ignore\s+into/i.test(pgSql)) {
+    pgSql = pgSql.replace(/insert\s+or\s+ignore\s+into/gi, 'INSERT INTO');
+    if (!/on\s+conflict/i.test(pgSql)) {
+      pgSql = `${pgSql.trim()} ON CONFLICT DO NOTHING`;
+    }
+  }
+  return convertPlaceholders(pgSql);
+}
+
 import { AsyncLocalStorage } from 'async_hooks';
 
 const pgTxStorage = new AsyncLocalStorage<any>();
@@ -105,7 +116,7 @@ export async function query<T = any>(sql: string, params: any[] = []): Promise<T
   const db = getDb();
   if (isPostgres && pgPool) {
     if (pgInitPromise) await pgInitPromise;
-    const pgSql = convertPlaceholders(sql);
+    const pgSql = normalizePostgresSql(sql);
     const txClient = pgTxStorage.getStore();
     const runner = txClient || pgPool;
     try {
@@ -135,7 +146,7 @@ export async function execute(sql: string, params: any[] = []): Promise<{ change
   const db = getDb();
   if (isPostgres && pgPool) {
     if (pgInitPromise) await pgInitPromise;
-    const pgSql = convertPlaceholders(sql);
+    const pgSql = normalizePostgresSql(sql);
     const txClient = pgTxStorage.getStore();
     const runner = txClient || pgPool;
     try {
@@ -546,7 +557,6 @@ function initSqliteSchema(db: Database.Database) {
       whatsapp_consent_source TEXT,
       country TEXT,
       country_iso TEXT,
-      whatsapp_country_iso TEXT,
       is_koinonia_worker INTEGER DEFAULT 0,
       department TEXT,
       preferred_team TEXT NOT NULL,
@@ -616,6 +626,7 @@ function initSqliteSchema(db: Database.Database) {
     CREATE TABLE IF NOT EXISTS admin_general_settings (
       id TEXT PRIMARY KEY,
       parent_registration_enabled INTEGER DEFAULT 1,
+      volunteer_registration_enabled INTEGER DEFAULT 1,
       parent_login_enabled INTEGER DEFAULT 1,
       required_child_photo INTEGER DEFAULT 1,
       required_parent_photo INTEGER DEFAULT 1,
@@ -983,6 +994,82 @@ function initSqliteSchema(db: Database.Database) {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS message_threads (
+      id TEXT PRIMARY KEY,
+      event_id TEXT REFERENCES events(id) ON DELETE SET NULL,
+      category TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      linked_child_id TEXT REFERENCES children(id) ON DELETE SET NULL,
+      linked_entry_id TEXT REFERENCES child_event_entries(id) ON DELETE SET NULL,
+      created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      last_message_at TEXT NOT NULL,
+      last_message_preview TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_message_threads_event ON message_threads(event_id);
+    CREATE INDEX IF NOT EXISTS idx_message_threads_child ON message_threads(linked_child_id);
+    CREATE INDEX IF NOT EXISTS idx_message_threads_entry ON message_threads(linked_entry_id);
+    CREATE INDEX IF NOT EXISTS idx_message_threads_last_msg ON message_threads(last_message_at DESC);
+
+    CREATE TABLE IF NOT EXISTS message_thread_participants (
+      id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL REFERENCES message_threads(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role TEXT NOT NULL,
+      last_read_at TEXT,
+      is_archived INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      UNIQUE(thread_id, user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_thread_participants_user ON message_thread_participants(user_id);
+    CREATE INDEX IF NOT EXISTS idx_thread_participants_thread ON message_thread_participants(thread_id);
+
+    CREATE TABLE IF NOT EXISTS messages (
+      id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL REFERENCES message_threads(id) ON DELETE CASCADE,
+      sender_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      sender_role TEXT NOT NULL,
+      message_type TEXT NOT NULL DEFAULT 'standard',
+      body TEXT NOT NULL,
+      action_type TEXT,
+      action_payload_json TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_messages_thread_created ON messages(thread_id, created_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_messages_type_created ON messages(message_type, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS announcements (
+      id TEXT PRIMARY KEY,
+      event_id TEXT REFERENCES events(id) ON DELETE SET NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      audience_type TEXT NOT NULL,
+      target_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      published_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_announcements_audience ON announcements(audience_type, published_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_announcements_target_user ON announcements(target_user_id);
+
+    CREATE TABLE IF NOT EXISTS announcement_reads (
+      id TEXT PRIMARY KEY,
+      announcement_id TEXT NOT NULL REFERENCES announcements(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      read_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(announcement_id, user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_announcement_reads_user ON announcement_reads(user_id);
   `);
 
   // Run safe column migrations for existing SQLite databases
@@ -1221,9 +1308,6 @@ function initSqliteSchema(db: Database.Database) {
   } catch (e) {}
   try {
     db.exec(`ALTER TABLE volunteer_profiles ADD COLUMN country_iso TEXT;`);
-  } catch (e) {}
-  try {
-    db.exec(`ALTER TABLE volunteer_profiles ADD COLUMN whatsapp_country_iso TEXT;`);
   } catch (e) {}
 
   // Idempotency and worker retry state for notification_jobs in SQLite
@@ -1854,20 +1938,25 @@ function initSqliteSchema(db: Database.Database) {
   db.prepare(`
     INSERT OR IGNORE INTO events (
       id, title, section_name, theme, scripture, starts_at, ends_at,
-      daily_start_time, daily_end_time, location, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      daily_start_time, daily_end_time, location, status,
+      minimum_age, maximum_age, parent_access_closes_at,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     REAL_EVENT_ID,
     'The General Assembly',
     'Children and Teens',
     'More Than Conquerors',
     'Romans 8:37',
-    '2026-11-18',
-    '2026-11-22',
+    '2026-11-21',
+    '2026-11-21',
     '9:00 AM',
     '7:00 PM',
     'Koinonia Global Auditorium & Children Pavilion, Abuja',
     'current',
+    2,
+    14,
+    '2026-10-17T23:59:00+01:00',
     now,
     now
   );
@@ -1875,14 +1964,26 @@ function initSqliteSchema(db: Database.Database) {
   // Safely migrate existing databases for consistency
   db.prepare("UPDATE events SET title = 'The General Assembly', section_name = 'Children and Teens' WHERE id = ? AND title = 'Children and Teens'").run(REAL_EVENT_ID);
   db.prepare("UPDATE events SET status = 'current' WHERE id = ? AND status IN ('open', 'active')").run(REAL_EVENT_ID);
+  db.prepare(`
+    UPDATE events SET
+      starts_at = '2026-11-21',
+      ends_at = '2026-11-21',
+      minimum_age = 2,
+      maximum_age = 14,
+      parent_access_closes_at = '2026-10-25T23:59:00+01:00',
+      status = 'current'
+    WHERE id = ?
+  `).run(REAL_EVENT_ID);
+
 
   db.prepare(`
     INSERT OR IGNORE INTO admin_general_settings (
-      id, parent_registration_enabled, parent_login_enabled, required_child_photo, required_parent_photo,
+      id, parent_registration_enabled, volunteer_registration_enabled, parent_login_enabled, required_child_photo, required_parent_photo,
       required_medical_notes, required_pickup_person, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     'primary_general_settings',
+    1,
     1,
     1,
     1,
@@ -2455,6 +2556,7 @@ async function initPostgresSchema(pool: any) {
       CREATE TABLE IF NOT EXISTS admin_general_settings (
         id VARCHAR(64) PRIMARY KEY,
         parent_registration_enabled INTEGER DEFAULT 1,
+        volunteer_registration_enabled INTEGER DEFAULT 1,
         parent_login_enabled INTEGER DEFAULT 1,
         required_child_photo INTEGER DEFAULT 1,
         required_parent_photo INTEGER DEFAULT 1,
@@ -3634,8 +3736,10 @@ async function initPostgresSchema(pool: any) {
     await pool.query(`
       INSERT INTO events (
         id, title, section_name, theme, scripture, starts_at, ends_at,
-        daily_start_time, daily_end_time, location, status, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        daily_start_time, daily_end_time, location, status,
+        minimum_age, maximum_age, parent_access_closes_at,
+        created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       ON CONFLICT (id) DO NOTHING
     `, [
       REAL_EVENT_ID,
@@ -3643,12 +3747,15 @@ async function initPostgresSchema(pool: any) {
       'Children and Teens',
       'More Than Conquerors',
       'Romans 8:37',
-      '2026-11-18',
-      '2026-11-22',
+      '2026-11-21',
+      '2026-11-21',
       '9:00 AM',
       '7:00 PM',
       'Koinonia Global Auditorium & Children Pavilion, Abuja',
       'current',
+      2,
+      14,
+      '2026-10-25T23:59:00+01:00',
       now,
       now
     ]);

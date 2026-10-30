@@ -3,7 +3,7 @@ import { execute, query, queryOne } from '../../../db';
 import { normalizePhoneNumberToE164 } from '../../../utils/phone';
 import { sendEmail } from '../../email';
 import { sendWebPush } from '../../push';
-import { getWhatsAppProvider } from '../../whatsapp';
+import { getWhatsAppProvider, buildMergeInfo } from '../../whatsapp';
 import { formatNumber, formatPlural } from '../presentation';
 import { ToolContext } from '../types';
 import { getVolunteersNotReportedForDuty } from '../tools/dutyTools';
@@ -260,7 +260,13 @@ export const sendDutyRemindersAction: OperationsActionDefinition = {
 
           await waProvider.sendSessionMessage({
             to: normalized,
-            body: messageBody
+            body: messageBody,
+            intent: 'duty_reminder',
+            mergeInfo: buildMergeInfo({
+              volunteerFirstName: rawFirst,
+              eventName: eventTitle
+            }),
+            idempotencyKey: `duty_reminder:${eventId}:${userId}:${token.id}`
           });
 
           sentByChannel.whatsapp = (sentByChannel.whatsapp || 0) + 1;

@@ -24,7 +24,11 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   try {
     const userId = req.user?.id;
-    const parentProfileId = req.parentProfile?.id;
+    let parentProfileId = req.parentProfile?.id;
+    if (!parentProfileId && userId) {
+      const pProfile = await queryOne('SELECT id FROM parent_profiles WHERE user_id = ?', [userId]);
+      if (pProfile) parentProfileId = pProfile.id;
+    }
 
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -106,7 +110,17 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
            OR visible_to_event_team = 1
         ORDER BY created_at DESC
       `);
-      notifications = rawNotifs.map((n: any) => ({
+      const filteredVolunteerNotifs = rawNotifs.filter((n: any) => {
+        if (n.audience_scope === 'individual') {
+          let meta: any = null;
+          try { meta = n.metadata_json ? JSON.parse(n.metadata_json) : null; } catch (_) {}
+          if (meta && meta.targetUserId && meta.targetUserId !== userId) {
+            return false;
+          }
+        }
+        return true;
+      });
+      notifications = filteredVolunteerNotifs.map((n: any) => ({
         id: `notifications:${n.id}`,
         rawId: n.id,
         source: 'notifications',
@@ -129,37 +143,80 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
       }));
     } else {
       // Parents can see:
-      // - broad announcements (audience_role = 'parent' or 'all', and both parent_id and child_id are NULL)
-      // - notifications specifically for this parent (parent_id = parentProfileId)
-      // - notifications specifically for their children (child_id in their child list)
+      // 1. Broad broadcast announcements meant for ALL parents (parent_id IS NULL AND child_id IS NULL, and NOT child-specific)
+      // 2. Notifications specifically for this parent (parent_id = parentProfileId)
+      // 3. Notifications specifically for their own children (child_id IN their child list)
       let childIds: string[] = [];
       if (parentProfileId) {
-        const children = await query('SELECT id FROM children WHERE parent_profile_id = ?', [parentProfileId]);
+        const children = await query('SELECT id FROM children WHERE parent_profile_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)', [parentProfileId]);
         childIds = children.map((c: any) => c.id);
       }
 
       let queryStr = `
         SELECT * FROM notifications 
         WHERE (
-          (parent_id IS NULL AND child_id IS NULL AND (audience_role IN ('parent', 'all') OR audience_role IS NULL))
+          (
+            parent_id IS NULL 
+            AND child_id IS NULL 
+            AND (audience_role IN ('parent', 'all') OR audience_role IS NULL)
+            AND (audience_scope IN ('all', 'broadcast') OR audience_scope IS NULL)
+            AND (type IS NULL OR type IN ('broadcast', 'announcement', 'general', 'info'))
+            AND (type NOT IN ('application_submitted', 'new_application', 'pass_ready', 'review', 'status_change', 'child_update', 'individual', 'child_attention', 'safety_alert_child') OR type IS NULL)
+            AND LOWER(title) NOT IN ('new child application', 'pass ready', 'application submitted', 'application selected', 'application under review', 'application waitlist', 'application rejected', 'application status', 'application update')
+            AND LOWER(message) NOT LIKE '%event pass is ready%'
+            AND LOWER(message) NOT LIKE '%application has been received%'
+            AND LOWER(message) NOT LIKE '%new application submitted for%'
+            AND LOWER(message) NOT LIKE '%has been selected%'
+            AND LOWER(message) NOT LIKE '%waiting list%'
+          )
       `;
       const params: any[] = [];
 
       if (parentProfileId) {
-        queryStr += ` OR (parent_id = ? AND (audience_role IN ('parent', 'all') OR audience_role IS NULL OR title = 'New child application'))`;
+        queryStr += ` OR (parent_id = ? AND (audience_role IN ('parent', 'all') OR audience_role IS NULL))`;
         params.push(parentProfileId);
       }
 
       if (childIds.length > 0) {
         const placeholders = childIds.map(() => '?').join(',');
-        queryStr += ` OR (child_id IN (${placeholders}) AND (audience_role IN ('parent', 'all') OR audience_role IS NULL OR title = 'New child application'))`;
+        queryStr += ` OR (child_id IN (${placeholders}) AND (audience_role IN ('parent', 'all') OR audience_role IS NULL))`;
         params.push(...childIds);
       }
 
       queryStr += ` ) ORDER BY created_at DESC`;
       const rawNotifs = await query(queryStr, params);
 
-      const mappedGeneral = rawNotifs.map((n: any) => {
+      // Strict defensive filter in JS to guarantee zero cross-parent or unowned-child leakage
+      const filteredRawNotifs = rawNotifs.filter((n: any) => {
+        // If notification has a child_id, it MUST be one of this parent's own registered children
+        if (n.child_id && !childIds.includes(n.child_id)) {
+          return false;
+        }
+        // If notification has a parent_id, it MUST match this parent's profile ID
+        if (n.parent_id && n.parent_id !== parentProfileId) {
+          return false;
+        }
+        // If broadcast notification (no parent_id and no child_id):
+        if (!n.parent_id && !n.child_id) {
+          const titleLower = (n.title || '').toLowerCase().trim();
+          const msgLower = (n.message || '').toLowerCase();
+          const typeLower = (n.type || '').toLowerCase();
+          if (
+            ['new child application', 'pass ready', 'application submitted', 'application selected', 'application under review', 'application waitlist', 'application rejected', 'application status', 'application update'].includes(titleLower) ||
+            ['application_submitted', 'new_application', 'pass_ready', 'review', 'status_change', 'child_update', 'individual', 'child_attention', 'safety_alert_child'].includes(typeLower) ||
+            msgLower.includes('event pass is ready') ||
+            msgLower.includes('application has been received') ||
+            msgLower.includes('new application submitted for') ||
+            msgLower.includes('has been selected') ||
+            msgLower.includes('waiting list')
+          ) {
+            return false;
+          }
+        }
+        return true;
+      });
+
+      const mappedGeneral = filteredRawNotifs.map((n: any) => {
         let title = n.title;
         let message = n.message;
         if (title === 'New child application' || title?.toLowerCase() === 'new child application') {
@@ -197,7 +254,14 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
           'SELECT * FROM parent_notifications WHERE parent_id = ? ORDER BY created_at DESC',
           [parentProfileId]
         );
-        mappedParentNotifs = parentNotifs.map((pn: any) => ({
+        // Defensively filter parent_notifications as well
+        const validParentNotifs = parentNotifs.filter((pn: any) => {
+          if (pn.child_id && !childIds.includes(pn.child_id)) {
+            return false;
+          }
+          return true;
+        });
+        mappedParentNotifs = validParentNotifs.map((pn: any) => ({
           id: `parent_notifications:${pn.id}`,
           rawId: pn.id,
           source: 'parent_notifications',
@@ -319,7 +383,11 @@ router.post('/read-all', async (req: AuthenticatedRequest, res: Response) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   try {
     const userId = req.user?.id;
-    const parentProfileId = req.parentProfile?.id;
+    let parentProfileId = req.parentProfile?.id;
+    if (!parentProfileId && userId) {
+      const pProfile = await queryOne('SELECT id FROM parent_profiles WHERE user_id = ?', [userId]);
+      if (pProfile) parentProfileId = pProfile.id;
+    }
 
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -355,30 +423,48 @@ router.post('/read-all', async (req: AuthenticatedRequest, res: Response) => {
     } else {
       let childIds: string[] = [];
       if (parentProfileId) {
-        const children = await query('SELECT id FROM children WHERE parent_profile_id = ?', [parentProfileId]);
+        const children = await query('SELECT id FROM children WHERE parent_profile_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)', [parentProfileId]);
         childIds = children.map((c: any) => c.id);
       }
 
       let queryStr = `
-        SELECT id FROM notifications 
+        SELECT id, parent_id, child_id FROM notifications 
         WHERE (
-          (parent_id IS NULL AND child_id IS NULL AND (audience_role IN ('parent', 'all') OR audience_role IS NULL))
+          (
+            parent_id IS NULL 
+            AND child_id IS NULL 
+            AND (audience_role IN ('parent', 'all') OR audience_role IS NULL)
+            AND (audience_scope IN ('all', 'broadcast') OR audience_scope IS NULL)
+            AND (type IS NULL OR type IN ('broadcast', 'announcement', 'general', 'info'))
+            AND (type NOT IN ('application_submitted', 'new_application', 'pass_ready', 'review', 'status_change', 'child_update', 'individual', 'child_attention', 'safety_alert_child') OR type IS NULL)
+            AND LOWER(title) NOT IN ('new child application', 'pass ready', 'application submitted', 'application selected', 'application under review', 'application waitlist', 'application rejected', 'application status', 'application update')
+            AND LOWER(message) NOT LIKE '%event pass is ready%'
+            AND LOWER(message) NOT LIKE '%application has been received%'
+            AND LOWER(message) NOT LIKE '%new application submitted for%'
+            AND LOWER(message) NOT LIKE '%has been selected%'
+            AND LOWER(message) NOT LIKE '%waiting list%'
+          )
       `;
       const params: any[] = [];
 
       if (parentProfileId) {
-        queryStr += ` OR parent_id = ?`;
+        queryStr += ` OR (parent_id = ? AND (audience_role IN ('parent', 'all') OR audience_role IS NULL))`;
         params.push(parentProfileId);
       }
 
       if (childIds.length > 0) {
         const placeholders = childIds.map(() => '?').join(',');
-        queryStr += ` OR child_id IN (${placeholders})`;
+        queryStr += ` OR (child_id IN (${placeholders}) AND (audience_role IN ('parent', 'all') OR audience_role IS NULL))`;
         params.push(...childIds);
       }
 
       queryStr += ` )`;
-      notifications = await query(queryStr, params);
+      const rawNotifications = await query(queryStr, params);
+      notifications = rawNotifications.filter((n: any) => {
+        if (n.child_id && !childIds.includes(n.child_id)) return false;
+        if (n.parent_id && n.parent_id !== parentProfileId) return false;
+        return true;
+      });
     }
 
     const reads = await query('SELECT notification_id FROM notification_reads WHERE user_id = ?', [userId]);

@@ -102,7 +102,7 @@ export async function getChildSummaryStats(
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
       WHERE e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
-        AND e.status IN ('checked_in', 'inside', 'picked_up')
+        AND (e.status IN ('checked_in', 'inside', 'picked_up') OR e.checked_in_at IS NOT NULL)
     `, [eventId]),
 
     queryOne(`
@@ -110,7 +110,7 @@ export async function getChildSummaryStats(
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
       WHERE e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
-        AND e.status IN ('checked_in', 'inside')
+        AND ((e.status IN ('checked_in', 'inside') OR e.checked_in_at IS NOT NULL) AND e.status != 'picked_up' AND e.picked_up_at IS NULL)
     `, [eventId]),
 
     queryOne(`
@@ -118,7 +118,7 @@ export async function getChildSummaryStats(
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
       WHERE e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
-        AND e.status = 'picked_up'
+        AND (e.status = 'picked_up' OR e.picked_up_at IS NOT NULL)
     `, [eventId]),
 
     queryOne(`
@@ -133,6 +133,7 @@ export async function getChildSummaryStats(
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
       WHERE e.event_id = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
         AND (e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1)
     `, [eventId]),
 

@@ -6,7 +6,7 @@ import { query, queryOne, execute, transaction } from '../db';
 import { authMiddleware, AuthenticatedRequest, verifyPassword, hashPassword, generateToken } from '../auth';
 import { syncJobsForEvent, executeTestNotification, sendWhatsApp } from '../services/notifications';
 import { sendWebPush } from '../services/push';
-import { sendEmail, sendVolunteerApprovedEmail, sendInvitationEmail, formatInvitationExpiry, isEmailConfigured, resolveEmailProvider } from '../services/email';
+import { sendEmail, sendVolunteerApprovedEmail, sendInvitationEmail, formatInvitationExpiry, isEmailConfigured, resolveEmailProvider, sendChildReturnToDraftEmail } from '../services/email';
 import { issuePassForChild, revokePassForChild } from '../services/passService';
 import { uploadMedia, buildCloudinaryOptimizedVideoUrl, buildCloudinaryVideoPosterUrl } from '../services/media/cloudinary';
 import { processImage } from '../services/media/imageProcessor';
@@ -48,6 +48,17 @@ import {
   generateCodeOnlyWristbandBatch,
   markCodeOnlyWristbandsReady
 } from '../services/wristbandService';
+import { isAuthoritativeIncomplete } from '../services/applicationReminderService';
+import { evaluateApplicationNeedsAttention, REASON_LABELS } from '../services/applicationNeedsAttentionService';
+import {
+  calculateAgeOnDate,
+  CANONICAL_GA_EVENT_DATE,
+  CANONICAL_MIN_AGE,
+  CANONICAL_MAX_AGE,
+  resolveCanonicalAgeGroup,
+  getDobCutoffsForEvent,
+  CANONICAL_PROGRAMME_AGE_GROUPS
+} from '../services/eligibilityService';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -74,6 +85,27 @@ async function resolveAdminEventId(explicitEventId?: string | null): Promise<str
 }
 
 /**
+ * Resolves a media file reference (UUID, API URL, or Cloudinary URL) to a media_files ID.
+ */
+async function resolveToMediaFileId(photoRef?: string | null): Promise<string> {
+  if (!photoRef) return '';
+  const ref = String(photoRef).trim();
+  if (!ref) return '';
+  if (!ref.startsWith('http://') && !ref.startsWith('https://') && !ref.startsWith('/') && !ref.startsWith('data:')) {
+    return ref;
+  }
+  const fileIdMatch = ref.match(/\/api\/media\/files\/([a-zA-Z0-9-]+)/);
+  if (fileIdMatch && fileIdMatch[1]) {
+    return fileIdMatch[1];
+  }
+  const matchingMedia = await queryOne('SELECT id FROM media_files WHERE secure_url = ? OR file_url = ? OR optimized_url = ?', [ref, ref, ref]);
+  if (matchingMedia && matchingMedia.id) {
+    return matchingMedia.id;
+  }
+  return ref;
+}
+
+/**
  * Resolves the operational event record for Admin routes.
  * 1. If explicitEventId is provided, validates that the event exists; throws 404 if not found.
  * 2. Otherwise resolves canonical current event via getCurrentEvent().
@@ -94,25 +126,23 @@ async function resolveAdminEvent(explicitEventId?: string | null): Promise<Event
   return await getCurrentEvent();
 }
 
-function getChildAge(c: any): number {
-  let age = -1;
+function getChildAge(c: any, referenceDate?: string | Date | null): number {
   if (c.date_of_birth) {
-    try {
-      const dob = new Date(c.date_of_birth);
-      if (!isNaN(dob.getTime())) {
-        const now = new Date();
-        age = now.getFullYear() - dob.getFullYear();
-        const m = now.getMonth() - dob.getMonth();
-        if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) {
-          age--;
-        }
-      }
-    } catch (_) {}
+    const age = calculateAgeOnDate(c.date_of_birth, referenceDate || CANONICAL_GA_EVENT_DATE);
+    if (age !== null) return age;
   }
-  if (age < 0 && c.calculated_age !== null && c.calculated_age !== undefined) {
-    age = Number(c.calculated_age);
+  if (c.calculated_age !== null && c.calculated_age !== undefined && !isNaN(Number(c.calculated_age))) {
+    return Number(c.calculated_age);
   }
-  return age;
+  return -1;
+}
+
+export function deriveAgeGroup(age: number | null, storedGroup?: string | null): string {
+  if (age === null || age < 0) {
+    return 'Age review needed';
+  }
+  const resolution = resolveCanonicalAgeGroup(age);
+  return resolution.label;
 }
 
 // Canonical statuses representing genuine completed/submitted registrations
@@ -585,10 +615,11 @@ router.post('/accept-invite', async (req, res) => {
 
       // Audit log
       try {
+        const userRec = await queryOne('SELECT role FROM users WHERE id = ?', [dbToken.user_id]);
         await execute(
-          `INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [crypto.randomUUID(), dbToken.user_id, 'ACCEPT_INVITATION', 'user', dbToken.user_id, JSON.stringify({ emailVerified: true }), nowStr]
+          `INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [crypto.randomUUID(), dbToken.user_id, userRec?.role || 'admin', 'ACCEPT_INVITATION', 'user', dbToken.user_id, JSON.stringify({ emailVerified: true }), nowStr]
         );
       } catch (e) {}
     });
@@ -712,14 +743,34 @@ router.get('/public-landing-page', async (req, res) => {
       } else {
         // Canonical default cohorts for the current event
         currentEventAgeGroups = [
-          { id: 'ag-below-1', label: 'Below 1', minAge: 0, maxAge: 0, sortOrder: 1 },
-          { id: 'ag-1-3', label: 'Ages 1 to 3', minAge: 1, maxAge: 3, sortOrder: 2 },
-          { id: 'ag-4-6', label: 'Ages 4 to 6', minAge: 4, maxAge: 6, sortOrder: 3 },
-          { id: 'ag-7-9', label: 'Ages 7 to 9', minAge: 7, maxAge: 9, sortOrder: 4 },
-          { id: 'ag-10-12', label: 'Ages 10 to 12', minAge: 10, maxAge: 12, sortOrder: 5 }
+          { id: 'ag-2-3', label: 'Early Years', minAge: 2, maxAge: 3, sortOrder: 1 },
+          { id: 'ag-4-6', label: '4–6 Years', minAge: 4, maxAge: 6, sortOrder: 2 },
+          { id: 'ag-7-9', label: '7–9 Years', minAge: 7, maxAge: 9, sortOrder: 3 },
+          { id: 'ag-10-12', label: '10–12 Years', minAge: 10, maxAge: 12, sortOrder: 4 },
+          { id: 'ag-13-14', label: '13–14 Years', minAge: 13, maxAge: 14, sortOrder: 5 }
         ];
       }
     }
+
+    let genSettings: any = null;
+    try {
+      genSettings = await queryOne(`
+        SELECT *
+        FROM admin_general_settings
+        WHERE id = 'primary_general_settings'
+      `);
+    } catch (e) {}
+
+    const parentRegistrationEnabled = genSettings ? (genSettings.parent_registration_enabled === 1 || genSettings.parent_registration_enabled === true || genSettings.parent_registration_enabled === undefined) : true;
+    const volunteerRegistrationEnabled = genSettings && genSettings.volunteer_registration_enabled !== undefined && genSettings.volunteer_registration_enabled !== null
+      ? (genSettings.volunteer_registration_enabled === 1 || genSettings.volunteer_registration_enabled === true || genSettings.volunteer_registration_enabled === 'true')
+      : true;
+
+    settings.parent_registration_enabled = parentRegistrationEnabled ? 'true' : 'false';
+    settings.volunteer_registration_enabled = volunteerRegistrationEnabled ? 'true' : 'false';
+
+    const showVenueOnLanding = settings.show_venue_on_landing !== undefined ? settings.show_venue_on_landing !== 'false' : true;
+    settings.show_venue_on_landing = showVenueOnLanding ? 'true' : 'false';
 
     const currentEvent = rawEvent ? {
       id: rawEvent.id,
@@ -731,9 +782,14 @@ router.get('/public-landing-page', async (req, res) => {
       daily_end_time: rawEvent.daily_end_time || null,
       theme: rawEvent.theme || null,
       scripture: rawEvent.scripture || null,
-      location: rawEvent.location || null,
+      location: showVenueOnLanding ? (rawEvent.location || null) : null,
+      show_venue_on_landing: showVenueOnLanding,
       timezone: rawEvent.timezone || null,
+      minimum_age: rawEvent.minimum_age !== undefined && rawEvent.minimum_age !== null ? rawEvent.minimum_age : 2,
+      maximum_age: rawEvent.maximum_age !== undefined && rawEvent.maximum_age !== null ? rawEvent.maximum_age : 14,
       parents_can_create_account: rawEvent.parents_can_create_account ?? 1,
+      parent_registration_enabled: parentRegistrationEnabled,
+      volunteer_registration_enabled: volunteerRegistrationEnabled,
       parent_access_opens_at: rawEvent.parent_access_opens_at || null,
       parent_access_closes_at: rawEvent.parent_access_closes_at || null,
       ageGroups: currentEventAgeGroups
@@ -1659,22 +1715,32 @@ router.post('/volunteers', authMiddleware, async (req: AuthenticatedRequest, res
 // GET list of child applications
 router.get('/applications', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const eventId = await resolveAdminEventId(req.query.eventId as string);
+    const event = await resolveAdminEvent(req.query.eventId as string);
+    const eventId = event?.id || null;
+    const eventDate = event?.starts_at || (event as any)?.event_start_at || CANONICAL_GA_EVENT_DATE;
     const page = parseInt(req.query.page as string, 10) || 1;
-    const limit = parseInt(req.query.limit as string, 10) || 25;
+    const limit = req.query.limit
+      ? parseInt(req.query.limit as string, 10)
+      : (req.query.page ? 25 : 10000);
     const offset = (page - 1) * limit;
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
+    const needsAttentionReason = typeof req.query.needsAttentionReason === 'string'
+      ? req.query.needsAttentionReason.trim()
+      : (typeof req.query.issue === 'string' ? req.query.issue.trim() : '');
 
     if (!eventId) {
       return res.json({
         success: true,
         applications: [],
         stats: {
+          total: 0,
+          incomplete: 0,
           sentReview: 0,
           selected: 0,
           waitingList: 0,
           notSelected: 0,
+          needsAttention: 0,
           removed: 0
         },
         pagination: {
@@ -1685,6 +1751,13 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
         }
       });
     }
+
+    const { minAgeDobCutoff, maxAgeDobCutoff } = getDobCutoffsForEvent(
+      eventDate,
+      event?.minimum_age !== null && event?.minimum_age !== undefined ? Number(event.minimum_age) : 2,
+      event?.maximum_age !== null && event?.maximum_age !== undefined ? Number(event.maximum_age) : 14
+    );
+    const ageConditionSql = `(c.date_of_birth IS NULL OR c.date_of_birth = '' OR c.needs_age_review = 1 OR c.date_of_birth > '${minAgeDobCutoff}' OR c.date_of_birth <= '${maxAgeDobCutoff}')`;
 
     // Build WHERE clauses
     const whereClauses = ['e.event_id = ?'];
@@ -1702,13 +1775,35 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
       } else if (status === 'review' || status === 'under_review') {
         whereClauses.push(`e.status = 'under_review' AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
       } else if (status === 'needs_attention') {
-        whereClauses.push(`(e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1 OR NOT EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id)) AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND e.status != 'removed'`);
+        const needsAttnBase = `(e.is_deleted = 0 OR e.is_deleted IS NULL) AND e.status != 'removed'`;
+        if (needsAttentionReason === 'missing_pickup_person') {
+          whereClauses.push(`${needsAttnBase} AND NOT EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id)`);
+        } else if (needsAttentionReason === 'missing_pickup_photo') {
+          whereClauses.push(`${needsAttnBase} AND EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id AND (pp.photo_file_id IS NULL OR pp.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files m WHERE m.id = pp.photo_file_id AND m.secure_url IS NOT NULL AND m.secure_url != '' AND m.secure_url NOT LIKE 'blob:%' AND m.secure_url NOT LIKE 'data:%' AND m.secure_url NOT LIKE '%placeholder%' AND m.secure_url NOT LIKE '%default_avatar%')))` );
+        } else if (needsAttentionReason === 'missing_child_photo') {
+          whereClauses.push(`${needsAttnBase} AND (c.photo_file_id IS NULL OR c.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files cm WHERE cm.id = c.photo_file_id AND cm.secure_url IS NOT NULL AND cm.secure_url != '' AND cm.secure_url NOT LIKE 'blob:%' AND cm.secure_url NOT LIKE 'data:%' AND cm.secure_url NOT LIKE '%placeholder%' AND cm.secure_url NOT LIKE '%default_avatar%'))`);
+        } else if (needsAttentionReason === 'missing_parent_photo') {
+          whereClauses.push(`${needsAttnBase} AND (p.photo_file_id IS NULL OR p.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files pm WHERE pm.id = p.photo_file_id AND pm.secure_url IS NOT NULL AND pm.secure_url != '' AND pm.secure_url NOT LIKE 'blob:%' AND pm.secure_url NOT LIKE 'data:%' AND pm.secure_url NOT LIKE '%placeholder%' AND pm.secure_url NOT LIKE '%default_avatar%'))`);
+        } else if (needsAttentionReason === 'age_issue' || needsAttentionReason === 'age_not_eligible') {
+          whereClauses.push(`${needsAttnBase} AND ${ageConditionSql}`);
+        } else {
+          whereClauses.push(`${needsAttnBase} AND (
+            e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1
+            OR ${ageConditionSql}
+            OR NOT EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id)
+            OR EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id AND (pp.photo_file_id IS NULL OR pp.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files m WHERE m.id = pp.photo_file_id AND m.secure_url IS NOT NULL AND m.secure_url != '' AND m.secure_url NOT LIKE 'blob:%' AND m.secure_url NOT LIKE 'data:%' AND m.secure_url NOT LIKE '%placeholder%' AND m.secure_url NOT LIKE '%default_avatar%')))
+            OR (c.photo_file_id IS NULL OR c.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files cm WHERE cm.id = c.photo_file_id AND cm.secure_url IS NOT NULL AND cm.secure_url != '' AND cm.secure_url NOT LIKE 'blob:%' AND cm.secure_url NOT LIKE 'data:%' AND cm.secure_url NOT LIKE '%placeholder%' AND cm.secure_url NOT LIKE '%default_avatar%'))
+            OR (p.photo_file_id IS NULL OR p.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files pm WHERE pm.id = p.photo_file_id AND pm.secure_url IS NOT NULL AND pm.secure_url != '' AND pm.secure_url NOT LIKE 'blob:%' AND pm.secure_url NOT LIKE 'data:%' AND pm.secure_url NOT LIKE '%placeholder%' AND pm.secure_url NOT LIKE '%default_avatar%'))
+          )`);
+        }
       } else if (status === 'selected') {
         whereClauses.push(`e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up') AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
       } else if (status === 'waiting_list') {
         whereClauses.push(`e.status = 'waiting_list' AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
       } else if (status === 'not_selected') {
         whereClauses.push(`e.status = 'not_selected' AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
+      } else if (status === 'incomplete' || status === 'draft') {
+        whereClauses.push(`e.status IN ('incomplete', 'draft') AND e.submitted_at IS NULL AND (e.details_confirmed = 0 OR e.details_confirmed IS NULL) AND (e.is_deleted = 0 OR e.is_deleted IS NULL) AND e.status != 'removed'`);
       } else {
         whereClauses.push(`e.status = ? AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
         params.push(status);
@@ -1717,6 +1812,20 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
       whereClauses.push(`e.status IN ('under_review', 'selected', 'pass_ready', 'waiting_list', 'not_selected') AND (e.is_deleted = 0 OR e.is_deleted IS NULL)`);
     } else {
       whereClauses.push(`(e.is_deleted = 0 OR e.is_deleted IS NULL) AND e.status != 'removed'`);
+    }
+
+    if (needsAttentionReason && status !== 'needs_attention' && needsAttentionReason !== 'all') {
+      if (needsAttentionReason === 'missing_pickup_person') {
+        whereClauses.push(`NOT EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id)`);
+      } else if (needsAttentionReason === 'missing_pickup_photo') {
+        whereClauses.push(`EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id AND (pp.photo_file_id IS NULL OR pp.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files m WHERE m.id = pp.photo_file_id AND m.secure_url IS NOT NULL AND m.secure_url != '' AND m.secure_url NOT LIKE 'blob:%' AND m.secure_url NOT LIKE 'data:%' AND m.secure_url NOT LIKE '%placeholder%' AND m.secure_url NOT LIKE '%default_avatar%')))` );
+      } else if (needsAttentionReason === 'missing_child_photo') {
+        whereClauses.push(`(c.photo_file_id IS NULL OR c.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files cm WHERE cm.id = c.photo_file_id AND cm.secure_url IS NOT NULL AND cm.secure_url != '' AND cm.secure_url NOT LIKE 'blob:%' AND cm.secure_url NOT LIKE 'data:%' AND cm.secure_url NOT LIKE '%placeholder%' AND cm.secure_url NOT LIKE '%default_avatar%'))`);
+      } else if (needsAttentionReason === 'missing_parent_photo') {
+        whereClauses.push(`(p.photo_file_id IS NULL OR p.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files pm WHERE pm.id = p.photo_file_id AND pm.secure_url IS NOT NULL AND pm.secure_url != '' AND pm.secure_url NOT LIKE 'blob:%' AND pm.secure_url NOT LIKE 'data:%' AND pm.secure_url NOT LIKE '%placeholder%' AND pm.secure_url NOT LIKE '%default_avatar%'))`);
+      } else if (needsAttentionReason === 'age_issue' || needsAttentionReason === 'age_not_eligible') {
+        whereClauses.push(ageConditionSql);
+      }
     }
 
     const whereSql = whereClauses.join(' AND ');
@@ -1738,6 +1847,48 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
         e.id as entry_id,
         e.child_id,
         e.status,
+        e.details_confirmed,
+        e.created_at as entry_created_at,
+        e.updated_at as entry_updated_at,
+        (
+          SELECT m.created_at
+          FROM messages m
+          JOIN message_threads t ON t.id = m.thread_id
+          WHERE t.linked_entry_id = e.id
+            AND m.message_type IN ('application_completion_reminder', 'application_correction_required')
+          ORDER BY m.created_at DESC
+          LIMIT 1
+        ) as last_reminder_sent_at,
+        (
+          SELECT m.message_type
+          FROM messages m
+          JOIN message_threads t ON t.id = m.thread_id
+          WHERE t.linked_entry_id = e.id
+            AND m.message_type IN ('application_completion_reminder', 'application_correction_required')
+          ORDER BY m.created_at DESC
+          LIMIT 1
+        ) as last_reminder_type,
+        (
+          SELECT COALESCE(l.sent_at, l.created_at)
+          FROM whatsapp_delivery_logs l
+          WHERE l.child_event_entry_id = e.id
+            AND l.status IN ('sent', 'delivered', 'read')
+          ORDER BY COALESCE(l.sent_at, l.created_at) DESC
+          LIMIT 1
+        ) as last_whatsapp_sent_at,
+        (
+          SELECT COUNT(*)
+          FROM messages m
+          JOIN message_threads t ON t.id = m.thread_id
+          WHERE t.linked_entry_id = e.id
+            AND m.message_type IN ('application_completion_reminder', 'application_correction_required')
+        ) as portal_reminder_count,
+        (
+          SELECT COUNT(*)
+          FROM whatsapp_delivery_logs l
+          WHERE l.child_event_entry_id = e.id
+            AND l.status IN ('sent', 'delivered', 'read')
+        ) as whatsapp_reminder_count,
         e.school_class,
         e.school_name,
         e.previous_children_programme,
@@ -1757,6 +1908,8 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
         c.age_group,
         c.relationship_to_child,
         c.needs_age_review,
+        c.photo_file_id as child_photo_file_id,
+        c.photo_file_id,
         m.secure_url as child_photo_url,
         p.id as parent_id,
         p.full_name as parent_name,
@@ -1798,19 +1951,51 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
         const entryPickups = pickupPeople.filter((p: any) => p.child_event_entry_id === app.entry_id)
           .map((p: any) => ({
             id: p.id,
+            pickupType: p.pickup_type || 'parent',
+            pickup_type: p.pickup_type || 'parent',
             fullName: p.full_name,
+            full_name: p.full_name,
             relationship: p.relationship_to_child,
+            relationship_to_child: p.relationship_to_child,
             phone: p.phone_number,
+            phone_number: p.phone_number,
+            whatsapp: p.whatsapp_number,
+            whatsapp_number: p.whatsapp_number,
+            photoFileId: p.photo_file_id,
+            photo_file_id: p.photo_file_id,
             photoUrl: p.photo_url || null,
-            approvedByParent: !!p.approved_by_parent
+            photo_url: p.photo_url || null,
+            approvedByParent: p.approved_by_parent === 1 || p.pickup_type === 'parent',
+            approved_by_parent: p.approved_by_parent === 1 || p.pickup_type === 'parent',
+            approved: p.approved_by_parent === 1 || p.pickup_type === 'parent'
           }));
 
         const pass = eventPasses.find((p: any) => p.child_event_entry_id === app.entry_id);
+
+        const childAge = getChildAge(app, CANONICAL_GA_EVENT_DATE);
+        const childAgeGroup = deriveAgeGroup(childAge, app.age_group);
+        const ageRes = app.date_of_birth ? resolveCanonicalAgeGroup(app.date_of_birth, CANONICAL_GA_EVENT_DATE) : null;
+        const isOutOfRange = !ageRes || ageRes.isOutOfRange;
+        const hasReviewNeededLabel = Boolean(app.age_group && app.age_group.includes('Review Needed'));
+        const effectiveNeedsAgeReview = isOutOfRange || hasReviewNeededLabel;
+        const attnResult = evaluateApplicationNeedsAttention(app, entryPickups, CANONICAL_GA_EVENT_DATE);
 
         return {
           id: app.entry_id,
           childId: app.child_id,
           status: app.status,
+          isIncomplete: isAuthoritativeIncomplete(app),
+          needsAttention: attnResult.needsAttention,
+          needsAttentionReasons: attnResult.reasons,
+          blockingAttention: attnResult.blocking,
+          needsAttentionSummary: attnResult.summary,
+          lastReminderSentAt: app.last_reminder_sent_at || null,
+          lastReminderType: app.last_reminder_type || null,
+          lastWhatsAppSentAt: app.last_whatsapp_sent_at || null,
+          portalReminderCount: Number(app.portal_reminder_count) || 0,
+          whatsappReminderCount: Number(app.whatsapp_reminder_count) || 0,
+          reminderCount: (Number(app.portal_reminder_count) || 0) + (Number(app.whatsapp_reminder_count) || 0) || ((app.last_reminder_sent_at ? 1 : 0) + (app.last_whatsapp_sent_at ? 1 : 0)),
+          updatedAt: app.entry_updated_at || app.entry_created_at || null,
           checkedInAt: app.checked_in_at,
           pickedUpAt: app.picked_up_at,
           isDeleted: app.is_deleted === 1,
@@ -1826,14 +2011,19 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
           needsExtraSupport: app.needs_extra_support === 1,
           supportNotes: app.support_notes,
           submittedAt: app.submitted_at,
+          dob: app.date_of_birth || null,
+          dateOfBirth: app.date_of_birth || null,
+          date_of_birth: app.date_of_birth || null,
           child: {
             fullName: app.child_name,
             gender: app.gender,
-            dob: app.date_of_birth,
-            age: app.calculated_age,
-            ageGroup: app.age_group,
+            dob: app.date_of_birth || null,
+            dateOfBirth: app.date_of_birth || null,
+            date_of_birth: app.date_of_birth || null,
+            age: childAge >= 0 ? childAge : app.calculated_age,
+            ageGroup: childAgeGroup,
             relationship: app.relationship_to_child,
-            needsAgeReview: app.needs_age_review === 1,
+            needsAgeReview: effectiveNeedsAgeReview,
             photoUrl: app.child_photo_url
           },
           parent: {
@@ -1856,15 +2046,36 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
     const statWaitingList = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'waiting_list' AND (is_deleted = 0 OR is_deleted IS NULL)`, [eventId]))?.count || 0;
     const statNotSelected = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status = 'not_selected' AND (is_deleted = 0 OR is_deleted IS NULL)`, [eventId]))?.count || 0;
     const statRemoved = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND (is_deleted = 1 OR status = 'removed')`, [eventId]))?.count || 0;
+    const statIncomplete = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND status IN ('incomplete', 'draft') AND submitted_at IS NULL AND (details_confirmed = 0 OR details_confirmed IS NULL) AND (is_deleted = 0 OR is_deleted IS NULL) AND status != 'removed'`, [eventId]))?.count || 0;
+    const statTotal = (await queryOne(`SELECT COUNT(*) as count FROM child_event_entries WHERE event_id = ? AND (is_deleted = 0 OR is_deleted IS NULL) AND status != 'removed'`, [eventId]))?.count || 0;
+    const statNeedsAttention = (await queryOne(`
+      SELECT COUNT(DISTINCT e.id) as count
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE e.event_id = ?
+        AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+        AND e.status != 'removed'
+        AND (
+          ${ageConditionSql}
+          OR NOT EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id)
+          OR EXISTS (SELECT 1 FROM pickup_people pp WHERE pp.child_event_entry_id = e.id AND (pp.photo_file_id IS NULL OR pp.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files m WHERE m.id = pp.photo_file_id AND m.secure_url IS NOT NULL AND m.secure_url != '' AND m.secure_url NOT LIKE 'blob:%' AND m.secure_url NOT LIKE 'data:%' AND m.secure_url NOT LIKE '%placeholder%' AND m.secure_url NOT LIKE '%default_avatar%')))
+          OR (c.photo_file_id IS NULL OR c.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files cm WHERE cm.id = c.photo_file_id AND cm.secure_url IS NOT NULL AND cm.secure_url != '' AND cm.secure_url NOT LIKE 'blob:%' AND cm.secure_url NOT LIKE 'data:%' AND cm.secure_url NOT LIKE '%placeholder%' AND cm.secure_url NOT LIKE '%default_avatar%'))
+          OR (p.photo_file_id IS NULL OR p.photo_file_id = '' OR NOT EXISTS (SELECT 1 FROM media_files pm WHERE pm.id = p.photo_file_id AND pm.secure_url IS NOT NULL AND pm.secure_url != '' AND pm.secure_url NOT LIKE 'blob:%' AND pm.secure_url NOT LIKE 'data:%' AND pm.secure_url NOT LIKE '%placeholder%' AND pm.secure_url NOT LIKE '%default_avatar%'))
+        )
+    `, [eventId]))?.count || 0;
 
     return res.json({ 
       success: true, 
       applications: formatted,
       stats: {
+        total: statTotal,
+        incomplete: statIncomplete,
         sentReview: statSentReview,
         selected: statSelected,
         waitingList: statWaitingList,
         notSelected: statNotSelected,
+        needsAttention: statNeedsAttention,
         removed: statRemoved
       },
       pagination: {
@@ -1875,7 +2086,14 @@ router.get('/applications', async (req: AuthenticatedRequest, res: Response) => 
       }
     });
   } catch (err: any) {
-    console.error('Error fetching applications list:', err);
+    console.error('[AdminReview /applications Fetch Error]:', {
+      route: req.originalUrl || '/api/admin/applications',
+      eventId: req.query.eventId || 'current',
+      adminUserId: req.user?.id,
+      adminRole: req.user?.role,
+      errorMessage: err?.message,
+      errorCode: err?.code
+    });
     return res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch child applications.' });
   }
 });
@@ -2115,7 +2333,10 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
 
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
 
-    const eventId = await resolveAdminEventId(req.query.eventId as string);
+    const currentEvent = await resolveAdminEvent(req.query.eventId as string);
+    const eventId = currentEvent?.id;
+    const eventDate = currentEvent?.starts_at || CANONICAL_GA_EVENT_DATE;
+    const { minAgeDobCutoff, maxAgeDobCutoff } = getDobCutoffsForEvent(eventDate, CANONICAL_MIN_AGE, CANONICAL_MAX_AGE);
     const status = typeof req.query.status === 'string' ? req.query.status : 'all';
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
 
@@ -2171,6 +2392,8 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
         e.checked_in_at,
         e.picked_up_at,
         c.full_name as child_name,
+        c.date_of_birth,
+        c.calculated_age,
         c.age_group,
         c.needs_age_review,
         p.full_name as parent_name,
@@ -2194,13 +2417,13 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
     }
 
     if (status === 'inside') {
-      queryStr += " AND e.status IN ('checked_in', 'inside') AND e.checked_in_at IS NOT NULL AND e.picked_up_at IS NULL";
+      queryStr += " AND ((e.status IN ('checked_in', 'inside') OR e.checked_in_at IS NOT NULL) AND e.status != 'picked_up' AND e.picked_up_at IS NULL)";
     } else if (status === 'picked_up') {
-      queryStr += " AND e.status = 'picked_up' AND e.picked_up_at IS NOT NULL";
+      queryStr += " AND (e.status = 'picked_up' OR e.picked_up_at IS NOT NULL)";
     } else if (status === 'not_arrived') {
-      queryStr += " AND (e.status IN ('selected', 'pass_ready') OR e.checked_in_at IS NULL)";
+      queryStr += " AND (e.status IN ('selected', 'pass_ready') AND e.checked_in_at IS NULL)";
     } else if (status === 'needs_attention') {
-      queryStr += " AND (e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1)";
+      queryStr += ` AND (e.has_medical_notes = 1 OR e.needs_extra_support = 1 OR c.needs_age_review = 1 OR (c.date_of_birth IS NOT NULL AND (c.date_of_birth > '${minAgeDobCutoff}' OR c.date_of_birth <= '${maxAgeDobCutoff}')))`;
     }
 
     queryStr += ` ORDER BY c.full_name ASC`;
@@ -2208,23 +2431,30 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
     const childrenRows = await query(queryStr, queryParams);
 
     const rows = childrenRows.map((app: any) => {
+      const isPickedUp = app.status === 'picked_up' || Boolean(app.picked_up_at);
+      const isInside = !isPickedUp && (app.status === 'inside' || app.status === 'checked_in' || Boolean(app.checked_in_at));
+      const ageRes = resolveCanonicalAgeGroup(app.date_of_birth || getChildAge(app, eventDate), eventDate);
+      const chAge = ageRes.age !== null ? ageRes.age : getChildAge(app, eventDate);
+      const cleanAgeGroupLabel = ageRes.label;
+      const needsAgeReview = app.needs_age_review === 1 || ageRes.isOutOfRange || Boolean(app.age_group && app.age_group.includes('Review Needed'));
+      const hasNeedsAttention = app.has_medical_notes === 1 || app.needs_extra_support === 1 || needsAgeReview;
+
       let rowStatus: 'checked_in' | 'picked_up' | 'not_arrived' | 'needs_attention' = 'not_arrived';
       let rowLocation: 'inside' | 'picked_up' | 'not_arrived' | null = 'not_arrived';
 
-      if (app.status === 'picked_up' && app.picked_up_at) {
+      if (isPickedUp) {
         rowStatus = 'picked_up';
         rowLocation = 'picked_up';
-      } else if ((app.status === 'checked_in' || app.status === 'inside') && app.checked_in_at && !app.picked_up_at) {
+      } else if (isInside) {
         rowStatus = 'checked_in';
         rowLocation = 'inside';
       } else {
-        const needsAttention = app.has_medical_notes === 1 || app.needs_extra_support === 1 || app.needs_age_review === 1;
-        if (needsAttention) {
-          rowStatus = 'needs_attention';
-        } else {
-          rowStatus = 'not_arrived';
-        }
+        rowStatus = 'not_arrived';
         rowLocation = 'not_arrived';
+      }
+
+      if (hasNeedsAttention && (status === 'needs_attention' || (!isInside && !isPickedUp))) {
+        rowStatus = 'needs_attention';
       }
 
       let notesSummary = 'No care note';
@@ -2235,33 +2465,15 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       }
 
       // Only current lifecycle activity should be reported
-      const lastActAt = (rowStatus === 'picked_up' ? app.picked_up_at : (rowStatus === 'checked_in' ? app.checked_in_at : null)) || null;
+      const lastActAt = (isPickedUp ? app.picked_up_at : (isInside ? app.checked_in_at : null)) || null;
       const lastActLabel = lastActAt ? formatTime(lastActAt) : 'No activity';
-
-      const rawAgeGroup = app.age_group || '';
-      const needsAgeReview = app.needs_age_review === 1 || rawAgeGroup.includes('Review Needed');
-      let cleanAgeGroupLabel = rawAgeGroup.replace(/\s*\(Review Needed\)/gi, '').trim();
-      if (cleanAgeGroupLabel === 'Under 4' || !cleanAgeGroupLabel) {
-        const chAge = getChildAge(app);
-        if (chAge < 1) cleanAgeGroupLabel = 'Below 1';
-        else if (chAge <= 3) cleanAgeGroupLabel = 'Ages 1 to 3';
-        else if (chAge <= 6) cleanAgeGroupLabel = 'Ages 4 to 6';
-        else if (chAge <= 9) cleanAgeGroupLabel = 'Ages 7 to 9';
-        else if (chAge <= 12) cleanAgeGroupLabel = 'Ages 10 to 12';
-        else cleanAgeGroupLabel = 'Teens';
-      } else if (cleanAgeGroupLabel === 'Ages 4-6') {
-        cleanAgeGroupLabel = 'Ages 4 to 6';
-      } else if (cleanAgeGroupLabel === 'Ages 7-9') {
-        cleanAgeGroupLabel = 'Ages 7 to 9';
-      } else if (cleanAgeGroupLabel === 'Ages 10-12') {
-        cleanAgeGroupLabel = 'Ages 10 to 12';
-      }
 
       return {
         id: app.entry_id,
         childId: app.child_id,
         applicationId: app.entry_id,
         childName: app.child_name,
+        age: chAge >= 0 ? chAge : null,
         ageGroup: cleanAgeGroupLabel,
         needsAgeReview,
         parentName: app.parent_name,
@@ -2274,12 +2486,15 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       };
     });
 
-    // 3. Compute Age Group statistical breakdown from database using canonical event age groups
+    // 3. Compute Age Group statistical breakdown from database using canonical programme age groups
     const allEntriesForAgeGroups = await query(`
       SELECT 
+        e.id as entry_id,
         e.status,
         e.checked_in_at,
         e.picked_up_at,
+        e.has_medical_notes,
+        e.needs_extra_support,
         c.age_group,
         c.calculated_age,
         c.date_of_birth,
@@ -2292,29 +2507,16 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
         AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
     `, [eventId]);
 
-    // Query canonical age groups configured for this event
-    const dbConfiguredGroups = await query(
-      'SELECT id, label, min_age, max_age, sort_order FROM event_age_groups WHERE event_id = ? ORDER BY sort_order ASC, min_age ASC',
-      [eventId]
-    );
+    const ageGroupsMap = new Map<string, {
+      ageGroup: string;
+      expected: number;
+      checkedIn: number;
+      inside: number;
+      pickedUp: number;
+      notArrived: number;
+    }>();
 
-    const canonicalCohorts = (dbConfiguredGroups && dbConfiguredGroups.length > 0)
-      ? dbConfiguredGroups.map((g: any) => ({
-          key: g.label,
-          label: g.label,
-          min: Number(g.min_age),
-          max: Number(g.max_age)
-        }))
-      : [
-          { key: 'Below 1', label: 'Below 1', min: 0, max: 0 },
-          { key: 'Ages 1 to 3', label: 'Ages 1 to 3', min: 1, max: 3 },
-          { key: 'Ages 4 to 6', label: 'Ages 4 to 6', min: 4, max: 6 },
-          { key: 'Ages 7 to 9', label: 'Ages 7 to 9', min: 7, max: 9 },
-          { key: 'Ages 10 to 12', label: 'Ages 10 to 12', min: 10, max: 12 }
-        ];
-
-    const ageGroupsMap = new Map<string, any>();
-    for (const cohort of canonicalCohorts) {
+    for (const cohort of CANONICAL_PROGRAMME_AGE_GROUPS) {
       ageGroupsMap.set(cohort.key, {
         ageGroup: cohort.label,
         expected: 0,
@@ -2325,25 +2527,30 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
+    let dynamicAttentionCount = 0;
     for (const entry of allEntriesForAgeGroups) {
-      const age = getChildAge(entry);
-      let matchedCohort = canonicalCohorts.find(c => age >= c.min && age <= c.max);
-      if (!matchedCohort && entry.age_group) {
-        const cleanAg = entry.age_group.replace(/\s*\(Review Needed\)/gi, '').trim();
-        const norm = cleanAg.toLowerCase().replace(/[^a-z0-9]/g, '');
-        matchedCohort = canonicalCohorts.find(c => {
-          const cNorm = c.label.toLowerCase().replace(/[^a-z0-9]/g, '');
-          return norm === cNorm || norm.includes(cNorm) || cNorm.includes(norm);
-        });
+      const ageRes = resolveCanonicalAgeGroup(entry.date_of_birth || getChildAge(entry, eventDate), eventDate);
+      const isAttention = entry.has_medical_notes === 1 || entry.needs_extra_support === 1 || entry.needs_age_review === 1 || ageRes.isOutOfRange;
+      if (isAttention) {
+        dynamicAttentionCount++;
       }
-      const groupKey = matchedCohort ? matchedCohort.key : canonicalCohorts[0].key;
-      const statsObj = ageGroupsMap.get(groupKey);
+
+      // OUT-OF-RANGE / LEGACY CHILDREN:
+      // Exclude out-of-range child from valid 2–14 age-group aggregation so they do not distort totals!
+      if (ageRes.isOutOfRange || !ageRes.group) {
+        continue;
+      }
+
+      const statsObj = ageGroupsMap.get(ageRes.group);
       if (statsObj) {
         statsObj.expected++;
-        if (entry.status === 'picked_up' && entry.picked_up_at) {
+        const isPickedUp = entry.status === 'picked_up' || Boolean(entry.picked_up_at);
+        const isInside = !isPickedUp && (entry.status === 'inside' || entry.status === 'checked_in' || Boolean(entry.checked_in_at));
+
+        if (isPickedUp) {
           statsObj.checkedIn++;
           statsObj.pickedUp++;
-        } else if ((entry.status === 'checked_in' || entry.status === 'inside') && entry.checked_in_at && !entry.picked_up_at) {
+        } else if (isInside) {
           statsObj.checkedIn++;
           statsObj.inside++;
         } else {
@@ -2352,6 +2559,12 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       }
     }
     const ageGroups = Array.from(ageGroupsMap.values());
+
+    const sumExpected = ageGroups.reduce((acc, curr) => acc + curr.expected, 0);
+    const sumCheckedIn = ageGroups.reduce((acc, curr) => acc + curr.checkedIn, 0);
+    const sumInside = ageGroups.reduce((acc, curr) => acc + curr.inside, 0);
+    const sumPickedUp = ageGroups.reduce((acc, curr) => acc + curr.pickedUp, 0);
+    const sumNotArrived = ageGroups.reduce((acc, curr) => acc + curr.notArrived, 0);
 
     // 4. Fetch Recent Scans logs (max 10) - strictly limited to current active lifecycle
     const recentScansRows = await query(`
@@ -2426,12 +2639,12 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
     return res.json({
       success: true,
       stats: {
-        expected: summaryStats.selected,
-        checkedIn: summaryStats.checkedIn,
-        inside: summaryStats.inside,
-        pickedUp: summaryStats.pickedUp,
-        notArrived: Math.max(0, summaryStats.selected - summaryStats.checkedIn),
-        needsAttention: summaryStats.needsAttention
+        expected: sumExpected,
+        checkedIn: sumCheckedIn,
+        inside: sumInside,
+        pickedUp: sumPickedUp,
+        notArrived: sumNotArrived,
+        needsAttention: Math.max(summaryStats.needsAttention, dynamicAttentionCount)
       },
       rows,
       ageGroups,
@@ -2441,7 +2654,14 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
       nextCursor: null
     });
   } catch (err: any) {
-    console.error('Error in /api/admin/attendance:', err);
+    console.error('Error in /api/admin/attendance:', {
+      route: '/api/admin/attendance',
+      eventId: req.query?.eventId,
+      adminId: req.user?.id,
+      adminRole: req.user?.role,
+      message: err.message,
+      stack: err.stack
+    });
     return res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch attendance records.' });
   }
 });
@@ -2479,7 +2699,9 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
         c.age_group,
         c.relationship_to_child,
         c.needs_age_review,
-        m.secure_url as child_photo_url,
+        c.photo_file_id as child_photo_file_id,
+        c.photo_file_id,
+        COALESCE(m.optimized_url, m.secure_url, m.file_url) as child_photo_url,
         p.id as parent_id,
         p.full_name as parent_name,
         p.phone_number,
@@ -2489,7 +2711,7 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
         p.department as parent_department,
         p.home_address as parent_address,
         p.photo_file_id as parent_photo_file_id,
-        pm.secure_url as parent_photo_url
+        COALESCE(pm.optimized_url, pm.secure_url, pm.file_url) as parent_photo_url
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
       JOIN parent_profiles p ON p.id = c.parent_profile_id
@@ -2528,7 +2750,9 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
           c.age_group,
           c.relationship_to_child,
           c.needs_age_review,
-          m.secure_url as child_photo_url,
+          c.photo_file_id as child_photo_file_id,
+          c.photo_file_id,
+          COALESCE(m.optimized_url, m.secure_url, m.file_url) as child_photo_url,
           p.id as parent_id,
           p.full_name as parent_name,
           p.phone_number,
@@ -2538,7 +2762,7 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
           p.department as parent_department,
           p.home_address as parent_address,
           p.photo_file_id as parent_photo_file_id,
-          pm.secure_url as parent_photo_url
+          COALESCE(pm.optimized_url, pm.secure_url, pm.file_url) as parent_photo_url
         FROM child_event_entries e
         JOIN children c ON c.id = e.child_id
         JOIN parent_profiles p ON p.id = c.parent_profile_id
@@ -2560,7 +2784,9 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
           c.age_group,
           c.relationship_to_child,
           c.needs_age_review,
-          m.secure_url as child_photo_url,
+          c.photo_file_id as child_photo_file_id,
+          c.photo_file_id,
+          COALESCE(m.optimized_url, m.secure_url, m.file_url) as child_photo_url,
           p.id as parent_id,
           p.full_name as parent_name,
           p.phone_number,
@@ -2570,7 +2796,7 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
           p.department as parent_department,
           p.home_address as parent_address,
           p.photo_file_id as parent_photo_file_id,
-          pm.secure_url as parent_photo_url
+          COALESCE(pm.optimized_url, pm.secure_url, pm.file_url) as parent_photo_url
         FROM children c
         JOIN parent_profiles p ON p.id = c.parent_profile_id
         LEFT JOIN media_files m ON m.id = c.photo_file_id
@@ -2607,6 +2833,7 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
           age_group: ch.age_group,
           relationship_to_child: ch.relationship_to_child,
           needs_age_review: ch.needs_age_review,
+          child_photo_file_id: ch.child_photo_file_id,
           child_photo_url: ch.child_photo_url,
           parent_id: ch.parent_id,
           parent_name: ch.parent_name,
@@ -2636,12 +2863,23 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
 
     const formattedPickups = pickups.map((p: any) => ({
       id: p.id,
+      pickupType: p.pickup_type || 'parent',
+      pickup_type: p.pickup_type || 'parent',
       fullName: p.full_name,
+      full_name: p.full_name,
       relationship: p.relationship_to_child,
+      relationship_to_child: p.relationship_to_child,
       phone: p.phone_number,
+      phone_number: p.phone_number,
       whatsapp: p.whatsapp_number,
-      photoUrl: p.photo_url,
-      approved: p.approved_by_parent === 1
+      whatsapp_number: p.whatsapp_number,
+      photoFileId: p.photo_file_id,
+      photo_file_id: p.photo_file_id,
+      photoUrl: p.photo_url || null,
+      photo_url: p.photo_url || null,
+      approvedByParent: p.approved_by_parent === 1 || p.pickup_type === 'parent',
+      approved_by_parent: p.approved_by_parent === 1 || p.pickup_type === 'parent',
+      approved: p.approved_by_parent === 1 || p.pickup_type === 'parent'
     }));
 
     const auditEvents = await query(`
@@ -2689,10 +2927,72 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
     const pass = await queryOne('SELECT pass_reference, status, issued_at, revoked_at FROM event_passes WHERE child_event_entry_id = ? ORDER BY created_at DESC LIMIT 1', [id]);
     const passReference = pass ? pass.pass_reference : undefined;
 
+    const childAge = getChildAge(app, CANONICAL_GA_EVENT_DATE);
+    const childAgeGroup = deriveAgeGroup(childAge, app.age_group);
+    const ageRes = app.date_of_birth ? resolveCanonicalAgeGroup(app.date_of_birth, CANONICAL_GA_EVENT_DATE) : null;
+    const isOutOfRange = !ageRes || ageRes.isOutOfRange;
+    const hasReviewNeededLabel = Boolean(app.age_group && app.age_group.includes('Review Needed'));
+    const effectiveNeedsAgeReview = isOutOfRange || hasReviewNeededLabel;
+
+    if (app.needs_age_review === 1 && !isOutOfRange && !hasReviewNeededLabel && app.child_id && ageRes) {
+      execute('UPDATE children SET needs_age_review = 0, calculated_age = ?, age_group = ? WHERE id = ?',
+        [childAge, childAgeGroup, app.child_id]).catch((e: any) => console.error('Failed to clear stale age review flag:', e));
+    }
+
+    const attnResult = evaluateApplicationNeedsAttention(app, formattedPickups, CANONICAL_GA_EVENT_DATE);
+    const lastReminder = await queryOne(`
+      SELECT m.created_at, m.message_type
+      FROM messages m
+      JOIN message_threads t ON t.id = m.thread_id
+      WHERE t.linked_entry_id = ?
+        AND m.message_type IN ('application_completion_reminder', 'application_correction_required')
+      ORDER BY m.created_at DESC
+      LIMIT 1
+    `, [id]);
+    const lastWhatsApp = await queryOne(`
+      SELECT COALESCE(sent_at, created_at) as sent_at
+      FROM whatsapp_delivery_logs
+      WHERE child_event_entry_id = ?
+        AND status IN ('sent', 'delivered', 'read')
+      ORDER BY COALESCE(sent_at, created_at) DESC
+      LIMIT 1
+    `, [id]);
+    const reminderCounts = await queryOne(`
+      SELECT 
+        (
+          SELECT COUNT(*)
+          FROM messages m
+          JOIN message_threads t ON t.id = m.thread_id
+          WHERE t.linked_entry_id = ?
+            AND m.message_type IN ('application_completion_reminder', 'application_correction_required')
+        ) as portal_count,
+        (
+          SELECT COUNT(*)
+          FROM whatsapp_delivery_logs l
+          WHERE l.child_event_entry_id = ?
+            AND l.status IN ('sent', 'delivered', 'read')
+        ) as whatsapp_count
+    `, [id, id]);
+
+    const portalRemCount = Number(reminderCounts?.portal_count) || 0;
+    const waRemCount = Number(reminderCounts?.whatsapp_count) || 0;
+    const totalRemCount = portalRemCount + waRemCount || ((lastReminder?.created_at ? 1 : 0) + (lastWhatsApp?.sent_at ? 1 : 0));
+
     const applicationDetails = {
       id: app.entry_id,
       childId: app.child_id,
       status: app.status,
+      isIncomplete: isAuthoritativeIncomplete(app),
+      needsAttention: attnResult.needsAttention,
+      needsAttentionReasons: attnResult.reasons,
+      blockingAttention: attnResult.blocking,
+      needsAttentionSummary: attnResult.summary,
+      lastReminderSentAt: lastReminder?.created_at || null,
+      lastReminderType: lastReminder?.message_type || null,
+      lastWhatsAppSentAt: lastWhatsApp?.sent_at || null,
+      portalReminderCount: portalRemCount,
+      whatsappReminderCount: waRemCount,
+      reminderCount: totalRemCount,
       checkedInAt: app.checked_in_at,
       pickedUpAt: app.picked_up_at,
       hasPass: !!pass,
@@ -2712,15 +3012,21 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
       supportNotes: app.support_notes,
       submittedAt: app.submitted_at,
       reviewedAt: app.reviewed_at,
+      dob: app.date_of_birth || null,
+      dateOfBirth: app.date_of_birth || null,
+      date_of_birth: app.date_of_birth || null,
       child: {
         fullName: app.child_name,
         gender: app.gender,
-        dob: app.date_of_birth,
-        age: app.calculated_age,
-        ageGroup: app.age_group,
+        dob: app.date_of_birth || null,
+        dateOfBirth: app.date_of_birth || null,
+        date_of_birth: app.date_of_birth || null,
+        age: childAge >= 0 ? childAge : app.calculated_age,
+        ageGroup: childAgeGroup,
         relationship: app.relationship_to_child,
-        needsAgeReview: app.needs_age_review === 1,
-        photoUrl: app.child_photo_url
+        needsAgeReview: effectiveNeedsAgeReview,
+        photoUrl: app.child_photo_url || (app.child_photo_file_id ? (String(app.child_photo_file_id).startsWith('http') || String(app.child_photo_file_id).startsWith('/') ? String(app.child_photo_file_id) : `/api/media/files/${app.child_photo_file_id}`) : ''),
+        photoFileId: app.child_photo_file_id || ''
       },
       parent: {
         id: app.parent_id,
@@ -2762,19 +3068,53 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
     const targetEventId = await resolveAdminEventId((req.body.eventId || req.query.eventId) as string);
 
     let app = await queryOne(`
-      SELECT e.*, c.full_name as child_name, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.id as parent_profile_id
+      SELECT e.*, 
+        c.full_name as child_name, 
+        c.date_of_birth,
+        c.date_of_birth as dob,
+        c.photo_file_id as child_photo_file_id,
+        c.photo_file_id,
+        cm.secure_url as child_photo_url,
+        c.gender,
+        c.age_group,
+        p.full_name as parent_name, 
+        p.email as parent_email, 
+        p.phone_number as parent_phone, 
+        p.phone_number,
+        p.id as parent_profile_id,
+        p.photo_file_id as parent_photo_file_id,
+        pm.secure_url as parent_photo_url
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
-      LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      LEFT JOIN media_files cm ON cm.id = c.photo_file_id
+      LEFT JOIN media_files pm ON pm.id = p.photo_file_id
       WHERE e.id = ?
     `, [id]);
 
     if (!app && targetEventId) {
       app = await queryOne(`
-        SELECT e.*, c.full_name as child_name, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.id as parent_profile_id
+        SELECT e.*, 
+          c.full_name as child_name, 
+          c.date_of_birth,
+          c.date_of_birth as dob,
+          c.photo_file_id as child_photo_file_id,
+          c.photo_file_id,
+          cm.secure_url as child_photo_url,
+          c.gender,
+          c.age_group,
+          p.full_name as parent_name, 
+          p.email as parent_email, 
+          p.phone_number as parent_phone, 
+          p.phone_number,
+          p.id as parent_profile_id,
+          p.photo_file_id as parent_photo_file_id,
+          pm.secure_url as parent_photo_url
         FROM child_event_entries e
         JOIN children c ON c.id = e.child_id
         LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
+        LEFT JOIN media_files cm ON cm.id = c.photo_file_id
+        LEFT JOIN media_files pm ON pm.id = p.photo_file_id
         WHERE e.child_id = ? AND e.event_id = ?
         ORDER BY e.created_at DESC LIMIT 1
       `, [id, targetEventId]);
@@ -2782,10 +3122,27 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
 
     if (!app) {
       app = await queryOne(`
-        SELECT e.*, c.full_name as child_name, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.id as parent_profile_id
+        SELECT e.*, 
+          c.full_name as child_name, 
+          c.date_of_birth,
+          c.date_of_birth as dob,
+          c.photo_file_id as child_photo_file_id,
+          c.photo_file_id,
+          cm.secure_url as child_photo_url,
+          c.gender,
+          c.age_group,
+          p.full_name as parent_name, 
+          p.email as parent_email, 
+          p.phone_number as parent_phone, 
+          p.phone_number,
+          p.id as parent_profile_id,
+          p.photo_file_id as parent_photo_file_id,
+          pm.secure_url as parent_photo_url
         FROM child_event_entries e
         JOIN children c ON c.id = e.child_id
         LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
+        LEFT JOIN media_files cm ON cm.id = c.photo_file_id
+        LEFT JOIN media_files pm ON pm.id = p.photo_file_id
         WHERE e.child_id = ?
         ORDER BY e.created_at DESC LIMIT 1
       `, [id]);
@@ -2810,10 +3167,27 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
         `, [newEntryId, child.id, targetEventId, nowStr, nowStr, nowStr]);
 
         app = await queryOne(`
-          SELECT e.*, c.full_name as child_name, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.id as parent_profile_id
+          SELECT e.*, 
+            c.full_name as child_name, 
+            c.date_of_birth,
+            c.date_of_birth as dob,
+            c.photo_file_id as child_photo_file_id,
+            c.photo_file_id,
+            cm.secure_url as child_photo_url,
+            c.gender,
+            c.age_group,
+            p.full_name as parent_name, 
+            p.email as parent_email, 
+            p.phone_number as parent_phone, 
+            p.phone_number,
+            p.id as parent_profile_id,
+            p.photo_file_id as parent_photo_file_id,
+            pm.secure_url as parent_photo_url
           FROM child_event_entries e
           JOIN children c ON c.id = e.child_id
           LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
+          LEFT JOIN media_files cm ON cm.id = c.photo_file_id
+          LEFT JOIN media_files pm ON pm.id = p.photo_file_id
           WHERE e.id = ?
         `, [newEntryId]);
       }
@@ -2830,6 +3204,44 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
         error: 'Cannot review an incomplete application draft.',
         message: 'Cannot review an incomplete application draft.'
       });
+    }
+
+    if (['selected', 'pass_ready', 'waiting_list'].includes(status)) {
+      const rawPickups = await query<any>(
+        'SELECT p.*, m.secure_url as photo_url FROM pickup_people p LEFT JOIN media_files m ON m.id = p.photo_file_id WHERE p.child_event_entry_id = ? OR (p.child_id = ? AND p.event_id = ?)',
+        [id, app.child_id, app.event_id]
+      );
+      const formattedReviewPickups = rawPickups.map((p: any) => ({
+        ...p,
+        id: p.id,
+        pickupType: p.pickup_type || 'parent',
+        pickup_type: p.pickup_type || 'parent',
+        fullName: p.full_name,
+        full_name: p.full_name,
+        relationship: p.relationship_to_child,
+        relationship_to_child: p.relationship_to_child,
+        phone: p.phone_number,
+        phone_number: p.phone_number,
+        whatsapp: p.whatsapp_number,
+        whatsapp_number: p.whatsapp_number,
+        photoFileId: p.photo_file_id,
+        photo_file_id: p.photo_file_id,
+        photoUrl: p.photo_url || null,
+        photo_url: p.photo_url || null,
+        approvedByParent: p.approved_by_parent === 1 || p.pickup_type === 'parent',
+        approved_by_parent: p.approved_by_parent === 1 || p.pickup_type === 'parent',
+        approved: p.approved_by_parent === 1 || p.pickup_type === 'parent'
+      }));
+      const attnCheck = evaluateApplicationNeedsAttention(app, formattedReviewPickups, CANONICAL_GA_EVENT_DATE);
+      if (attnCheck.blocking) {
+        return res.status(400).json({
+          success: false,
+          code: 'APPLICATION_BLOCKING_ATTENTION',
+          error: `Cannot proceed with decision: ${attnCheck.summary}. Mandatory information must be completed before making a final decision.`,
+          message: `Cannot proceed with decision: ${attnCheck.summary}. Mandatory information must be completed before making a final decision.`,
+          reasons: attnCheck.reasons
+        });
+      }
     }
 
     const now = new Date().toISOString();
@@ -2852,7 +3264,7 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
         UPDATE child_event_entries 
         SET status = 'selected', note_to_team = ?, reviewed_at = ?, updated_at = ?
         WHERE id = ?
-      `, [noteToTeam || app.note_to_team, now, now, app.id]);
+      `, [noteToTeam || app.note_to_team, now, now, id]);
 
       try {
         passData = await issuePassForChild({ childId: app.child_id, eventId: app.event_id });
@@ -2869,87 +3281,90 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
       UPDATE child_event_entries 
       SET status = ?, note_to_team = ?, reviewed_at = ?, updated_at = ?
       WHERE id = ?
-    `, [finalStatus, noteToTeam || app.note_to_team, now, now, app.id]);
+    `, [finalStatus, noteToTeam || app.note_to_team, now, now, id]);
 
     // Process notification if requested
     if (sendNotification) {
-      try {
-        let subject = 'Koinonia Application Review Update';
-        let message = '';
-        
-        const pName = app.parent_name?.split(' ')[0] || 'Parent';
-        const cName = app.child_name || 'your child';
+      let subject = 'Koinonia Application Review Update';
+      let message = '';
+      
+      const pName = app.parent_name?.split(' ')[0] || 'Parent';
+      const cName = app.child_name || 'your child';
 
-        if (finalStatus === 'pass_ready') {
-          subject = 'Koinonia Event Pass Ready!';
-          message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nYour secure event pass is now ready in your portal. Please log in to download it and keep it handy during check-in.\n\nWarm regards,\nKoinonia Children and Teens Team`;
-        } else if (finalStatus === 'selected') {
-          subject = 'Koinonia Application Selected!';
-          message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nOur team is finalizing your event details. Your secure event pass will be generated shortly and will be available in your portal.\n\nWarm regards,\nKoinonia Children and Teens Team`;
-        } else if (finalStatus === 'waiting_list') {
-          subject = 'Koinonia Application Waitlist Update';
-          message = `Hello ${pName},\n\nThank you for registering ${cName} for the upcoming Koinonia Children and Teens Event.\n\nDue to venue capacity and safety limits, ${cName} has been placed on our waiting list. We will review seating limits regularly and will notify you immediately if a pass becomes available.\n\nWarm regards,\nKoinonia Children and Teens Team`;
-        } else if (status === 'not_selected') {
-          subject = 'Koinonia Application Status';
-          message = `Hello ${pName},\n\nThank you for registering ${cName} for Koinonia Children and Teens.\n\nDue to high registration volumes and room capacity limits, we are unable to accommodate ${cName} for this upcoming session. We look forward to welcoming your family to future events.\n\nWarm regards,\nKoinonia Children and Teens Team`;
-        } else {
-          subject = 'Koinonia Application Update Needed';
-          message = `Hello ${pName},\n\nOur administrative team has reviewed ${cName}'s application. We kindly ask you to log in to your portal and update the details as requested so we can complete our review.\n\nWarm regards,\nKoinonia Children and Teens Team`;
-        }
-
-        // 1. Send transactional email
-        if (app.parent_email) {
-          await sendEmail({
-            to: app.parent_email,
-            subject,
-            text: message,
-            html: `<div style="font-family: sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 24px; border-radius: 12px; background-color: #FAF9F6;">
-              <div style="text-align: center; margin-bottom: 24px;">
-                <span style="font-family: serif; font-size: 20px; font-weight: bold; color: #18181B; letter-spacing: 2px;">KOINONIA</span>
-                <div style="width: 40px; height: 2px; background-color: #C59B27; margin: 8px auto 0;"></div>
-              </div>
-              <p>${message.replace(/\n/g, '<br>')}</p>
-              <hr style="border: 0; border-top: 1px solid #EAE8E1; margin: 24px 0;">
-              <p style="font-size: 11px; color: #71717A; text-align: center;">This is an official administrative update regarding your Koinonia Children and Teens event registration.</p>
-            </div>`
-          }).catch(err => console.error('Failed to send review email notification:', err));
-        }
-
-        // 2. Dispatch WhatsApp if phone is available
-        if (app.parent_phone) {
-          await sendWhatsApp(app.parent_phone, message).catch(err => console.error('Failed to send review WhatsApp notification:', err));
-        }
-
-        // 3. Create In-App Notification
-        if (app.parent_profile_id) {
-          let inAppTitle = subject;
-          let inAppMessage = message;
-          
-          const childFirstName = app.child_name ? app.child_name.trim().split(' ')[0] : 'your child';
-          if (finalStatus === 'pass_ready') {
-            inAppTitle = 'Pass ready';
-            inAppMessage = `${childFirstName}'s event pass is ready. You can open it from your parent account.`;
-          } else if (finalStatus === 'selected') {
-            inAppTitle = 'Application selected';
-            inAppMessage = `${childFirstName} has been selected. The event pass will be available shortly.`;
-          }
-
-          const notifId = `notif-${crypto.randomUUID()}`;
-          await execute(`
-            INSERT INTO notifications (
-              id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
-            ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
-          `, [notifId, inAppTitle, inAppMessage, app.event_id, app.child_id, app.parent_profile_id, now]).catch(e => console.error('Failed to insert notification:', e));
-
-          const pNotifId = `pnotif-${crypto.randomUUID()}`;
-          await execute(`
-            INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          `, [pNotifId, app.parent_profile_id, app.event_id, app.child_id, inAppTitle, inAppMessage, now]).catch(e => console.error('Failed to insert parent_notifications:', e));
-        }
-      } catch (notifErr) {
-        console.error('Non-critical notification error during admin review:', notifErr);
+      if (finalStatus === 'pass_ready') {
+        subject = 'Koinonia Event Pass Ready!';
+        message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nYour secure event pass is now ready in your portal. Please log in to download it and keep it handy during check-in.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+      } else if (finalStatus === 'selected') {
+        subject = 'Koinonia Application Selected!';
+        message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nOur team is finalizing your event details. Your secure event pass will be generated shortly and will be available in your portal.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+      } else if (finalStatus === 'waiting_list') {
+        subject = 'Koinonia Application Waitlist Update';
+        message = `Hello ${pName},\n\nThank you for registering ${cName} for the upcoming Koinonia Children and Teens Event.\n\nDue to venue capacity and safety limits, ${cName} has been placed on our waiting list. We will review seating limits regularly and will notify you immediately if a pass becomes available.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+      } else if (status === 'not_selected') {
+        subject = 'Koinonia Application Status';
+        message = `Hello ${pName},\n\nThank you for registering ${cName} for Koinonia Children and Teens.\n\nDue to high registration volumes and room capacity limits, we are unable to accommodate ${cName} for this upcoming session. We look forward to welcoming your family to future events.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+      } else {
+        subject = 'Koinonia Application Update Needed';
+        message = `Hello ${pName},\n\nOur administrative team has reviewed ${cName}'s application. We kindly ask you to log in to your portal and update the details as requested so we can complete our review.\n\nWarm regards,\nKoinonia Children and Teens Team`;
       }
+
+      // 1. Send transactional email
+      if (app.parent_email) {
+        await sendEmail({
+          to: app.parent_email,
+          subject,
+          text: message,
+          html: `<div style="font-family: sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 24px; border-radius: 12px; background-color: #FAF9F6;">
+            <div style="text-align: center; margin-bottom: 24px;">
+              <span style="font-family: serif; font-size: 20px; font-weight: bold; color: #18181B; letter-spacing: 2px;">KOINONIA</span>
+              <div style="width: 40px; height: 2px; background-color: #C59B27; margin: 8px auto 0;"></div>
+            </div>
+            <p>${message.replace(/\n/g, '<br>')}</p>
+            <hr style="border: 0; border-top: 1px solid #EAE8E1; margin: 24px 0;">
+            <p style="font-size: 11px; color: #71717A; text-align: center;">This is an official administrative update regarding your Koinonia Children and Teens event registration.</p>
+          </div>`
+        }).catch(err => console.error('Failed to send review email notification:', err));
+      }
+
+      // 2. Dispatch WhatsApp if phone is available
+      if (app.parent_phone) {
+        const decisionIntent = finalStatus === 'pass_ready' ? 'pass_ready'
+          : finalStatus === 'selected' ? 'child_approved'
+          : finalStatus === 'waiting_list' ? 'child_waitlisted'
+          : status === 'not_selected' ? 'child_not_selected'
+          : 'review_decision';
+        await sendWhatsApp(app.parent_phone, message, {
+          intent: decisionIntent,
+          parentFirstName: pName,
+          childFirstName: cName
+        }).catch(err => console.error('Failed to send review WhatsApp notification:', err));
+      }
+
+      // 3. Create In-App Notification
+      let inAppTitle = subject;
+      let inAppMessage = message;
+      
+      const childFirstName = app.child_name ? app.child_name.trim().split(' ')[0] : 'your child';
+      if (finalStatus === 'pass_ready') {
+        inAppTitle = 'Pass ready';
+        inAppMessage = `${childFirstName}'s event pass is ready. You can open it from your parent account.`;
+      } else if (finalStatus === 'selected') {
+        inAppTitle = 'Application selected';
+        inAppMessage = `${childFirstName} has been selected. The event pass will be available shortly.`;
+      }
+
+      const notifId = `notif-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO notifications (
+          id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
+        ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
+      `, [notifId, inAppTitle, inAppMessage, app.event_id, app.child_id, app.parent_profile_id, now]);
+
+      const pNotifId = `pnotif-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [pNotifId, app.parent_profile_id, app.event_id, app.child_id, inAppTitle, inAppMessage, now]);
     }
 
     return res.json({ 
@@ -2961,7 +3376,7 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
     });
   } catch (err: any) {
     console.error('Error submitting application review:', err);
-    return res.status(500).json({ success: false, error: err?.message || 'Failed to submit application review.' });
+    return res.status(500).json({ success: false, error: 'Failed to submit application review.' });
   }
 });
 
@@ -3050,7 +3465,11 @@ router.post('/applications/:id/reopen-review', async (req: AuthenticatedRequest,
 
     // 2. Dispatch WhatsApp if phone is available
     if (app.parent_phone) {
-      await sendWhatsApp(app.parent_phone, `Hello ${pName}, ${message}`).catch(err => console.error('Failed to send revoke WhatsApp notification:', err));
+      await sendWhatsApp(app.parent_phone, `Hello ${pName}, ${message}`, {
+        intent: 'broadcast',
+        parentFirstName: pName,
+        childFirstName: cName
+      }).catch(err => console.error('Failed to send revoke WhatsApp notification:', err));
     }
 
     // 3. Create In-App Notification
@@ -3074,6 +3493,220 @@ router.post('/applications/:id/reopen-review', async (req: AuthenticatedRequest,
   }
 });
 
+// POST return child application to draft / parent for correction
+router.post('/applications/:id/return-to-draft', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const {
+      reason,
+      customMessage,
+      notifyEmail = true,
+      notifyWhatsApp = true
+    } = req.body;
+
+    const entry = await queryOne(`
+      SELECT e.*, 
+             c.id as child_id, c.full_name as child_name, c.date_of_birth,
+             p.id as parent_profile_id, p.full_name as parent_name,
+             u.id as user_id, COALESCE(p.email, u.email) as parent_email,
+             p.phone_number as parent_phone, p.whatsapp_number as parent_whatsapp,
+             ev.title as event_title, ev.starts_at as event_starts_at
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      LEFT JOIN users u ON u.id = p.user_id
+      LEFT JOIN events ev ON ev.id = e.event_id
+      WHERE e.id = ? OR e.child_id = ?
+    `, [id, id]);
+
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Application entry not found.' });
+    }
+
+    // Disallow returning if child is already checked in, inside, or picked up
+    if (['checked_in', 'inside', 'picked_up', 'checked_out'].includes(entry.status)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot return an application for a child who has already arrived or checked in.'
+      });
+    }
+
+    const now = new Date().toISOString();
+    const adminId = req.user?.id || 'admin';
+    const effectiveReason = (reason && String(reason).trim()) ? String(reason).trim() : 'Child photo is missing or needs updating';
+
+    // 1. Update child_event_entries table: reset to incomplete / draft so parent portal unlocks
+    let auditNote = entry.note_to_team || '';
+    const returnNote = `\n\n[Returned to parent for correction on ${new Date().toLocaleDateString()}: ${effectiveReason}]`;
+    auditNote = auditNote ? `${auditNote}${returnNote}` : returnNote;
+
+    await execute(`
+      UPDATE child_event_entries
+      SET status = 'incomplete',
+          details_confirmed = 0,
+          information_confirmed = 0,
+          submitted_at = NULL,
+          reviewed_at = NULL,
+          note_to_team = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [auditNote, now, entry.id]);
+
+    // 2. Revoke any existing event pass
+    await execute(`
+      UPDATE event_passes
+      SET status = 'revoked', revoked_at = ?, updated_at = ?
+      WHERE child_event_entry_id = ? AND status != 'revoked'
+    `, [now, now, entry.id]);
+
+    // 3. Prepare parent notification text
+    const parentFirstName = entry.parent_name?.split(' ')[0] || 'Parent';
+    const childFirstName = entry.child_name ? entry.child_name.split(' ')[0] : 'your child';
+    const eventName = entry.event_title || 'The General Assembly';
+
+    const defaultMessage = `Hello ${parentFirstName},
+
+We noticed that ${childFirstName}'s registration for ${eventName} needs an update:
+• ${effectiveReason}
+
+We have temporarily reopened your application in draft mode. Please sign in to your Parent account, update the required information (under My Passes / Incomplete), and re-submit.`;
+
+    const finalMessage = (customMessage && String(customMessage).trim()) ? String(customMessage).trim() : defaultMessage;
+    const subject = `Action required: Update ${childFirstName}'s registration details`;
+
+    // 4. In-App Message Thread & Messages
+    try {
+      let thread = await queryOne(`
+        SELECT id FROM message_threads
+        WHERE event_id = ? AND linked_entry_id = ? AND category = 'child_application'
+        ORDER BY created_at DESC LIMIT 1
+      `, [entry.event_id, entry.id]);
+
+      let threadId = thread?.id;
+      const preview = finalMessage.slice(0, 100);
+      if (!threadId) {
+        threadId = `th-${crypto.randomUUID()}`;
+        await execute(`
+          INSERT INTO message_threads (
+            id, event_id, category, subject, status, linked_child_id, linked_entry_id, created_by_user_id, last_message_at, last_message_preview, created_at, updated_at
+          ) VALUES (?, ?, 'child_application', ?, 'open', ?, ?, ?, ?, ?, ?, ?)
+        `, [threadId, entry.event_id, subject, entry.child_id, entry.id, adminId, now, preview, now, now]);
+
+        if (entry.user_id) {
+          await execute(`
+            INSERT INTO message_thread_participants (id, thread_id, user_id, role, created_at)
+            VALUES (?, ?, ?, 'parent', ?)
+            ON CONFLICT DO NOTHING
+          `, [`part-${crypto.randomUUID()}`, threadId, entry.user_id, now]);
+        }
+        await execute(`
+          INSERT INTO message_thread_participants (id, thread_id, user_id, role, created_at)
+          VALUES (?, ?, ?, 'admin', ?)
+          ON CONFLICT DO NOTHING
+        `, [`part-${crypto.randomUUID()}`, threadId, adminId, now]);
+      } else {
+        await execute(`
+          UPDATE message_threads
+          SET status = 'open', last_message_at = ?, last_message_preview = ?, updated_at = ?
+          WHERE id = ?
+        `, [now, preview, now, threadId]);
+      }
+
+      const msgId = `msg-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO messages (
+          id, thread_id, sender_user_id, sender_role, body, message_type, action_type, action_payload, created_at
+        ) VALUES (?, ?, ?, 'admin', ?, 'application_correction_required', 'update_application_details', ?, ?)
+      `, [
+        msgId,
+        threadId,
+        adminId,
+        finalMessage,
+        JSON.stringify({ entryId: entry.id, childId: entry.child_id, reason: effectiveReason }),
+        now
+      ]);
+
+      const notifId = `notif-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO notifications (
+          id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
+        ) VALUES (?, ?, ?, 'alert', 'parent', 'individual', ?, ?, ?, ?, 'high', 'in-app')
+      `, [notifId, subject, finalMessage, entry.event_id, entry.child_id, entry.parent_profile_id, now]);
+
+      const pNotifId = `pnotif-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [pNotifId, entry.parent_profile_id, entry.event_id, entry.child_id, subject, finalMessage, now]);
+    } catch (msgErr) {
+      console.error('[ReturnToDraft] Failed to record in-app message/notification:', msgErr);
+    }
+
+    // 5. Send Transactional Email
+    let emailDeliveryResult: any = null;
+    if (notifyEmail && entry.parent_email) {
+      try {
+        emailDeliveryResult = await sendChildReturnToDraftEmail({
+          parentEmail: entry.parent_email,
+          parentFirstName: entry.parent_name,
+          childName: entry.child_name,
+          reason: effectiveReason,
+          customMessage: finalMessage
+        });
+        if (!emailDeliveryResult.success) {
+          console.error(`[ReturnToDraft] Email delivery failed for ${entry.parent_email}: provider=${emailDeliveryResult.provider}, error=${emailDeliveryResult.error}`);
+        } else {
+          console.log(`[ReturnToDraft] Email successfully dispatched to ${entry.parent_email} (provider=${emailDeliveryResult.provider}, id=${emailDeliveryResult.id})`);
+        }
+      } catch (emailErr) {
+        console.error('[ReturnToDraft] Unexpected error dispatching email:', emailErr);
+      }
+    } else if (notifyEmail && !entry.parent_email) {
+      console.warn(`[ReturnToDraft] notifyEmail requested but no parent email address was found for entry ${entry.id}`);
+    }
+
+    // 6. Send WhatsApp if enabled
+    const targetPhone = entry.parent_whatsapp || entry.parent_phone;
+    if (notifyWhatsApp && targetPhone) {
+      const baseUrl = process.env.PUBLIC_APP_URL || 'https://kgachildren.koinoniageneralassembly.com';
+      const waText = `Hello ${parentFirstName},\n\nAction required for ${childFirstName}'s registration at ${eventName}:\n• ${effectiveReason}\n\nYour application has been unlocked. Please sign in to your Parent account at ${baseUrl}/parent/home to update the details and re-submit.`;
+      sendWhatsApp(targetPhone, waText, {
+        intent: 'return_to_draft',
+        parentFirstName,
+        childFirstName,
+        eventName
+      }).catch(err => console.error('[ReturnToDraft] Failed to dispatch WhatsApp:', err));
+    }
+
+    // 7. Audit Log
+    try {
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, 'admin', 'Return application to parent for correction', 'child_event_entry', ?, ?, ?)
+      `, [
+        crypto.randomUUID(),
+        adminId,
+        entry.id,
+        JSON.stringify({ reason: effectiveReason, customMessage: finalMessage, notifyEmail, notifyWhatsApp, emailSent: emailDeliveryResult?.success ?? false }),
+        now
+      ]);
+    } catch (auditErr) {
+      console.error('[ReturnToDraft] Audit log error:', auditErr);
+    }
+
+    return res.json({
+      success: true,
+      message: 'Application successfully returned to parent for correction.',
+      newStatus: 'incomplete',
+      emailSent: emailDeliveryResult?.success ?? false,
+      emailError: emailDeliveryResult?.success ? undefined : emailDeliveryResult?.error
+    });
+  } catch (err: any) {
+    console.error('Error returning application to parent:', err);
+    return res.status(500).json({ success: false, error: 'Failed to return application to parent.' });
+  }
+});
+
 // POST bulk review applications
 router.post('/applications/bulk-review', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -3093,24 +3726,30 @@ router.post('/applications/bulk-review', authMiddleware, async (req: Authenticat
     const failures: { id: string; childName?: string; reason: string }[] = [];
 
     for (const id of applicationIds) {
-      let app = await queryOne(`
-        SELECT e.*, c.full_name as child_name, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.id as parent_profile_id
+      const app = await queryOne(`
+        SELECT e.*, 
+          c.full_name as child_name, 
+          c.date_of_birth,
+          c.date_of_birth as dob,
+          c.photo_file_id as child_photo_file_id,
+          c.photo_file_id,
+          cm.secure_url as child_photo_url,
+          c.gender,
+          c.age_group,
+          p.full_name as parent_name, 
+          p.email as parent_email, 
+          p.phone_number as parent_phone, 
+          p.phone_number,
+          p.id as parent_profile_id,
+          p.photo_file_id as parent_photo_file_id,
+          pm.secure_url as parent_photo_url
         FROM child_event_entries e
         JOIN children c ON c.id = e.child_id
-        LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        LEFT JOIN media_files cm ON cm.id = c.photo_file_id
+        LEFT JOIN media_files pm ON pm.id = p.photo_file_id
         WHERE e.id = ?
       `, [id]);
-
-      if (!app) {
-        app = await queryOne(`
-          SELECT e.*, c.full_name as child_name, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.id as parent_profile_id
-          FROM child_event_entries e
-          JOIN children c ON c.id = e.child_id
-          LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
-          WHERE e.child_id = ?
-          ORDER BY e.created_at DESC LIMIT 1
-        `, [id]);
-      }
 
       if (!app) {
         failures.push({ id, reason: 'Application record not found' });
@@ -3134,6 +3773,43 @@ router.post('/applications/bulk-review', authMiddleware, async (req: Authenticat
           reason: `Child is currently in an event attendance state (${app.status}). Attendance records cannot be altered by registration review.`
         });
         continue;
+      }
+
+      if (['selected', 'waiting_list'].includes(decision)) {
+        const rawPickups = await query<any>(
+          'SELECT p.*, m.secure_url as photo_url FROM pickup_people p LEFT JOIN media_files m ON m.id = p.photo_file_id WHERE p.child_event_entry_id = ? OR (p.child_id = ? AND p.event_id = ?)',
+          [id, app.child_id, app.event_id]
+        );
+        const formattedReviewPickups = rawPickups.map((p: any) => ({
+          ...p,
+          id: p.id,
+          pickupType: p.pickup_type || 'parent',
+          pickup_type: p.pickup_type || 'parent',
+          fullName: p.full_name,
+          full_name: p.full_name,
+          relationship: p.relationship_to_child,
+          relationship_to_child: p.relationship_to_child,
+          phone: p.phone_number,
+          phone_number: p.phone_number,
+          whatsapp: p.whatsapp_number,
+          whatsapp_number: p.whatsapp_number,
+          photoFileId: p.photo_file_id,
+          photo_file_id: p.photo_file_id,
+          photoUrl: p.photo_url || null,
+          photo_url: p.photo_url || null,
+          approvedByParent: p.approved_by_parent === 1 || p.pickup_type === 'parent',
+          approved_by_parent: p.approved_by_parent === 1 || p.pickup_type === 'parent',
+          approved: p.approved_by_parent === 1 || p.pickup_type === 'parent'
+        }));
+        const attnCheck = evaluateApplicationNeedsAttention(app, formattedReviewPickups, CANONICAL_GA_EVENT_DATE);
+        if (attnCheck.blocking) {
+          failures.push({
+            id,
+            childName: app.child_name,
+            reason: `Mandatory requirements missing: ${attnCheck.summary}`
+          });
+          continue;
+        }
       }
 
       let finalDecision = decision;
@@ -3161,86 +3837,86 @@ router.post('/applications/bulk-review', authMiddleware, async (req: Authenticat
         UPDATE child_event_entries 
         SET status = ?, note_to_team = ?, reviewed_at = ?, updated_at = ?
         WHERE id = ?
-      `, [finalDecision, note || app.note_to_team, now, now, app.id]);
+      `, [finalDecision, note || app.note_to_team, now, now, id]);
 
       // If pass_ready, auto-generate pass
       if (finalDecision === 'pass_ready') {
-        const pass = await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ?', [app.id]);
+        const pass = await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ?', [id]);
         if (!pass) {
           const passId = crypto.randomUUID();
-          let eventYear = '2026';
-          const matchYear = String(app.event_id || '').match(/\d{4}/);
-          if (matchYear) eventYear = matchYear[0];
-          const passRef = `KOI-${eventYear}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+          const passRef = `KOI-2026-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
           const passHash = crypto.randomBytes(16).toString('hex');
 
           await execute(`
             INSERT INTO event_passes (id, child_event_entry_id, pass_reference, pass_hash, status, issued_at, created_at, updated_at)
             VALUES (?, ?, ?, ?, 'active', ?, ?, ?)
-          `, [passId, app.id, passRef, passHash, now, now, now]);
+          `, [passId, id, passRef, passHash, now, now, now]);
         }
       }
 
       // Notifications (Only if not under_review)
       if (decision !== 'under_review') {
-        try {
-          let subject = 'Koinonia Application Review Update';
-          let message = '';
-          const pName = app.parent_name?.split(' ')[0] || 'Parent';
-          const cName = app.child_name || 'your child';
+        let subject = 'Koinonia Application Review Update';
+        let message = '';
+        const pName = app.parent_name?.split(' ')[0] || 'Parent';
+        const cName = app.child_name || 'your child';
 
-          if (finalDecision === 'pass_ready') {
-            subject = 'Koinonia Event Pass Ready!';
-            message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nYour secure event pass is now ready in your portal. Please log in to download it and keep it handy during check-in.\n\nWarm regards,\nKoinonia Children and Teens Team`;
-          } else if (finalDecision === 'selected') {
-            subject = 'Koinonia Application Selected!';
-            message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nOur team is finalizing your event details. Your secure event pass will be generated shortly and will be available in your portal.\n\nWarm regards,\nKoinonia Children and Teens Team`;
-          } else if (finalDecision === 'waiting_list') {
-            subject = 'Koinonia Application Waitlist Update';
-            message = `Hello ${pName},\n\nThank you for registering ${cName} for the upcoming Koinonia Children and Teens Event.\n\nDue to venue capacity and safety limits, ${cName} has been placed on our waiting list. We will review seating limits regularly and will notify you immediately if a pass becomes available.\n\nWarm regards,\nKoinonia Children and Teens Team`;
-          } else if (decision === 'not_selected') {
-            subject = 'Koinonia Application Status';
-            message = `Hello ${pName},\n\nThank you for registering ${cName} for Koinonia Children and Teens.\n\nDue to high registration volumes and room capacity limits, we are unable to accommodate ${cName} for this upcoming session. We look forward to welcoming your family to future events.\n\nWarm regards,\nKoinonia Children and Teens Team`;
-          }
-
-          if (app.parent_email) {
-            await sendEmail({
-              to: app.parent_email,
-              subject,
-              text: message,
-              html: `<div style="font-family: sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 24px; border-radius: 12px; background-color: #FAF9F6;">
-                <div style="text-align: center; margin-bottom: 24px;">
-                  <span style="font-family: serif; font-size: 20px; font-weight: bold; color: #18181B; letter-spacing: 2px;">KOINONIA</span>
-                  <div style="width: 40px; height: 2px; background-color: #C59B27; margin: 8px auto 0;"></div>
-                </div>
-                <p>${message.replace(/\n/g, '<br>')}</p>
-                <hr style="border: 0; border-top: 1px solid #EAE8E1; margin: 24px 0;">
-                <p style="font-size: 11px; color: #71717A; text-align: center;">This is an official administrative update regarding your Koinonia Children and Teens event registration.</p>
-              </div>`
-            }).catch(err => console.error('Failed to send bulk review email notification:', err));
-          }
-
-          if (app.parent_phone) {
-            await sendWhatsApp(app.parent_phone, message).catch(err => console.error('Failed to send bulk review WhatsApp notification:', err));
-          }
-
-          if (app.parent_profile_id) {
-            const notifId = `notif-${crypto.randomUUID()}`;
-            await execute(`
-              INSERT INTO notifications (
-                id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
-              ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
-            `, [notifId, subject, message, app.event_id, app.child_id, app.parent_profile_id, now]).catch(e => console.error('Failed to insert bulk notification:', e));
-
-            const pNotifId = `pnotif-${crypto.randomUUID()}`;
-            await execute(`
-              INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?)
-            `, [pNotifId, app.parent_profile_id, app.event_id, app.child_id, subject, message, now]).catch(e => console.error('Failed to insert bulk parent_notifications:', e));
-          }
-        } catch (notifErr) {
-          console.error('Non-critical notification error in bulk review:', notifErr);
+        if (finalDecision === 'pass_ready') {
+          subject = 'Koinonia Event Pass Ready!';
+          message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nYour secure event pass is now ready in your portal. Please log in to download it and keep it handy during check-in.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        } else if (finalDecision === 'selected') {
+          subject = 'Koinonia Application Selected!';
+          message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nOur team is finalizing your event details. Your secure event pass will be generated shortly and will be available in your portal.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        } else if (finalDecision === 'waiting_list') {
+          subject = 'Koinonia Application Waitlist Update';
+          message = `Hello ${pName},\n\nThank you for registering ${cName} for the upcoming Koinonia Children and Teens Event.\n\nDue to venue capacity and safety limits, ${cName} has been placed on our waiting list. We will review seating limits regularly and will notify you immediately if a pass becomes available.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        } else if (decision === 'not_selected') {
+          subject = 'Koinonia Application Status';
+          message = `Hello ${pName},\n\nThank you for registering ${cName} for Koinonia Children and Teens.\n\nDue to high registration volumes and room capacity limits, we are unable to accommodate ${cName} for this upcoming session. We look forward to welcoming your family to future events.\n\nWarm regards,\nKoinonia Children and Teens Team`;
         }
+
+        if (app.parent_email) {
+          await sendEmail({
+            to: app.parent_email,
+            subject,
+            text: message,
+            html: `<div style="font-family: sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 24px; border-radius: 12px; background-color: #FAF9F6;">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <span style="font-family: serif; font-size: 20px; font-weight: bold; color: #18181B; letter-spacing: 2px;">KOINONIA</span>
+                <div style="width: 40px; height: 2px; background-color: #C59B27; margin: 8px auto 0;"></div>
+              </div>
+              <p>${message.replace(/\n/g, '<br>')}</p>
+              <hr style="border: 0; border-top: 1px solid #EAE8E1; margin: 24px 0;">
+              <p style="font-size: 11px; color: #71717A; text-align: center;">This is an official administrative update regarding your Koinonia Children and Teens event registration.</p>
+            </div>`
+          }).catch(err => console.error('Failed to send bulk review email notification:', err));
+        }
+
+        if (app.parent_phone) {
+          const decisionIntent = finalDecision === 'pass_ready' ? 'pass_ready'
+            : finalDecision === 'selected' ? 'child_approved'
+            : finalDecision === 'waiting_list' ? 'child_waitlisted'
+            : decision === 'not_selected' ? 'child_not_selected'
+            : 'review_decision';
+          await sendWhatsApp(app.parent_phone, message, {
+            intent: decisionIntent,
+            parentFirstName: pName,
+            childFirstName: cName
+          }).catch(err => console.error('Failed to send bulk review WhatsApp notification:', err));
+        }
+
+        const notifId = `notif-${crypto.randomUUID()}`;
+        await execute(`
+          INSERT INTO notifications (
+            id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
+          ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
+        `, [notifId, subject, message, app.event_id, app.child_id, app.parent_profile_id, now]);
+
+        const pNotifId = `pnotif-${crypto.randomUUID()}`;
+        await execute(`
+          INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [pNotifId, app.parent_profile_id, app.event_id, app.child_id, subject, message, now]);
       }
 
       // Record audit log for each reviewed application
@@ -3292,10 +3968,7 @@ router.put('/applications/:id/status', async (req: AuthenticatedRequest, res: Re
       return res.status(400).json({ error: 'Invalid status.' });
     }
 
-    let entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [id]);
-    if (!entry) {
-      entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? ORDER BY created_at DESC LIMIT 1', [id]);
-    }
+    const entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [id]);
     if (!entry) {
       return res.status(404).json({ error: 'Application entry not found.' });
     }
@@ -3321,13 +3994,13 @@ router.put('/applications/:id/status', async (req: AuthenticatedRequest, res: Re
           UPDATE child_event_entries 
           SET status = 'selected', note_to_team = ?, reviewed_at = ?, updated_at = ?
           WHERE id = ?
-        `, [noteToTeam, now, now, entry.id]);
+        `, [noteToTeam, now, now, id]);
       } else {
         await execute(`
           UPDATE child_event_entries 
           SET status = 'selected', reviewed_at = ?, updated_at = ?
           WHERE id = ?
-        `, [now, now, entry.id]);
+        `, [now, now, id]);
       }
 
       try {
@@ -3346,13 +4019,13 @@ router.put('/applications/:id/status', async (req: AuthenticatedRequest, res: Re
         UPDATE child_event_entries 
         SET status = ?, note_to_team = ?, reviewed_at = ?, updated_at = ?
         WHERE id = ?
-      `, [finalStatus, noteToTeam, now, now, entry.id]);
+      `, [finalStatus, noteToTeam, now, now, id]);
     } else {
       await execute(`
         UPDATE child_event_entries 
         SET status = ?, reviewed_at = ?, updated_at = ?
         WHERE id = ?
-      `, [finalStatus, now, now, entry.id]);
+      `, [finalStatus, now, now, id]);
     }
 
     return res.json({ 
@@ -3442,12 +4115,11 @@ router.get('/overview', async (req: AuthenticatedRequest, res: Response) => {
     `, [eventId]) : [];
 
     const ageGroupsList = [
-      { min: 0, max: 0, displayLabel: 'Below 1' },
-      { min: 1, max: 3, displayLabel: 'Ages 1 to 3' },
-      { min: 4, max: 6, displayLabel: 'Ages 4 to 6' },
-      { min: 7, max: 9, displayLabel: 'Ages 7 to 9' },
-      { min: 10, max: 12, displayLabel: 'Ages 10 to 12' },
-      { min: 13, max: 999, displayLabel: 'Teens' }
+      { min: 2, max: 3, displayLabel: '2–3' },
+      { min: 4, max: 6, displayLabel: '4–6' },
+      { min: 7, max: 9, displayLabel: '7–9' },
+      { min: 10, max: 12, displayLabel: '10–12' },
+      { min: 13, max: 14, displayLabel: '13–14' }
     ];
 
     const demographics = ageGroupsList.map(g => {
@@ -3684,12 +4356,11 @@ router.get('/reports/demographics', async (req: AuthenticatedRequest, res: Respo
     `, [eventId]);
 
     const ageGroupsList = [
-      { key: 'below_1', min: 0, max: 0, displayLabel: 'Below 1' },
-      { key: 'ages_1_3', min: 1, max: 3, displayLabel: 'Ages 1 to 3' },
-      { key: 'ages_4_6', min: 4, max: 6, displayLabel: 'Ages 4 to 6' },
-      { key: 'ages_7_9', min: 7, max: 9, displayLabel: 'Ages 7 to 9' },
-      { key: 'ages_10_12', min: 10, max: 12, displayLabel: 'Ages 10 to 12' },
-      { key: 'teens', min: 13, max: 999, displayLabel: 'Teens' }
+      { key: '2_3', min: 2, max: 3, displayLabel: '2–3' },
+      { key: '4_6', min: 4, max: 6, displayLabel: '4–6' },
+      { key: '7_9', min: 7, max: 9, displayLabel: '7–9' },
+      { key: '10_12', min: 10, max: 12, displayLabel: '10–12' },
+      { key: '13_14', min: 13, max: 14, displayLabel: '13–14' }
     ];
 
     let totalChildren = 0;
@@ -5160,12 +5831,11 @@ router.get('/reports', async (req: AuthenticatedRequest, res: Response) => {
     `, [eventId]);
 
     const ageGroupsList = [
-      { min: 0, max: 0, displayLabel: 'Below 1' },
-      { min: 1, max: 3, displayLabel: 'Ages 1 to 3' },
-      { min: 4, max: 6, displayLabel: 'Ages 4 to 6' },
-      { min: 7, max: 9, displayLabel: 'Ages 7 to 9' },
-      { min: 10, max: 12, displayLabel: 'Ages 10 to 12' },
-      { min: 13, max: 999, displayLabel: 'Teens' }
+      { min: 2, max: 3, displayLabel: '2–3' },
+      { min: 4, max: 6, displayLabel: '4–6' },
+      { min: 7, max: 9, displayLabel: '7–9' },
+      { min: 10, max: 12, displayLabel: '10–12' },
+      { min: 13, max: 14, displayLabel: '13–14' }
     ];
 
     // Care & Attention items
@@ -6057,10 +6727,10 @@ router.post('/notifications/test-whatsapp', async (req: AuthenticatedRequest, re
       });
     }
 
-    if (req.user.role !== 'super_admin') {
+    if (req.user.role !== 'super_admin' && req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
-        error: 'Only a Super Admin can send WhatsApp test messages.'
+        error: 'Admin access required to send WhatsApp test messages.'
       });
     }
 
@@ -6098,7 +6768,11 @@ router.post('/notifications/test-whatsapp', async (req: AuthenticatedRequest, re
 
     const result = await provider.sendSessionMessage({
       to: normalizedTo,
-      body: safeMessage
+      body: safeMessage,
+      intent: 'super_admin_test',
+      mergeInfo: {
+        first_name: 'Admin'
+      }
     });
 
     const nowIso = new Date().toISOString();
@@ -6128,6 +6802,7 @@ router.post('/notifications/test-whatsapp', async (req: AuthenticatedRequest, re
         error: result.error || 'Failed to send WhatsApp message via configured provider.',
         provider: provider.name,
         status: result.status,
+        rawResponse: result.rawResponse,
         logId
       });
     }
@@ -6853,11 +7528,9 @@ router.get('/messages/settings', async (req: AuthenticatedRequest, res: Response
     const emailProvider = resolveEmailProvider();
     const emailEnabled = isEmailConfigured();
 
-    const whatsappProvider = (process.env.WHATSAPP_PROVIDER || 'twilio').toLowerCase();
-    let whatsappEnabled = false;
-    if (whatsappProvider === 'twilio') {
-      whatsappEnabled = !!process.env.TWILIO_ACCOUNT_SID && !!process.env.TWILIO_AUTH_TOKEN;
-    }
+    const whatsappReadiness = getWhatsAppProviderReadiness();
+    const whatsappEnabled = whatsappReadiness.configured;
+    const whatsappProvider = whatsappReadiness.provider;
 
     const settings = await queryOne(`
       SELECT sender_name as senderName, reply_to_email as replyToEmail
@@ -6873,7 +7546,7 @@ router.get('/messages/settings', async (req: AuthenticatedRequest, res: Response
       emailEnabled,
       whatsappEnabled,
       emailProvider: ['zeptomail', 'resend', 'smtp'].includes(emailProvider) ? emailProvider : null,
-      whatsappProvider: whatsappProvider === 'twilio' ? 'twilio' : null
+      whatsappProvider: whatsappEnabled ? whatsappProvider : null
     });
   } catch (err: any) {
     console.error('Error fetching admin messages settings:', err);
@@ -6913,25 +7586,45 @@ router.post('/messages/settings', async (req: AuthenticatedRequest, res: Respons
 router.get('/general-settings', async (req: AuthenticatedRequest, res: Response) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   try {
-    let settings = await queryOne(`
-      SELECT parent_registration_enabled as parentRegistrationEnabled,
-             parent_login_enabled as parentLoginEnabled,
-             required_child_photo as requiredChildPhoto,
-             required_parent_photo as requiredParentPhoto,
-             required_medical_notes as requiredMedicalNotes,
-             required_pickup_person as requiredPickupPerson
-      FROM admin_general_settings
-      WHERE id = 'primary_general_settings'
-    `);
+    let rawSettings: any = null;
+    try {
+      rawSettings = await queryOne(`
+        SELECT *
+        FROM admin_general_settings
+        WHERE id = 'primary_general_settings'
+      `);
+    } catch (e) {}
 
-    if (!settings) {
+    let settings;
+    let showVenueOnLanding = 1;
+    try {
+      const landingVenueRow = await queryOne("SELECT setting_value FROM admin_landing_settings WHERE setting_key = 'show_venue_on_landing'");
+      if (landingVenueRow) {
+        showVenueOnLanding = landingVenueRow.setting_value !== 'false' ? 1 : 0;
+      }
+    } catch (e) {}
+
+    if (!rawSettings) {
       settings = {
         parentRegistrationEnabled: 1,
+        volunteerRegistrationEnabled: 1,
         parentLoginEnabled: 1,
         requiredChildPhoto: 1,
         requiredParentPhoto: 1,
         requiredMedicalNotes: 0,
-        requiredPickupPerson: 1
+        requiredPickupPerson: 1,
+        showVenueOnLanding
+      };
+    } else {
+      settings = {
+        parentRegistrationEnabled: rawSettings.parent_registration_enabled !== undefined ? (rawSettings.parent_registration_enabled === 1 ? 1 : 0) : 1,
+        volunteerRegistrationEnabled: rawSettings.volunteer_registration_enabled !== undefined && rawSettings.volunteer_registration_enabled !== null ? (rawSettings.volunteer_registration_enabled === 1 ? 1 : 0) : 1,
+        parentLoginEnabled: rawSettings.parent_login_enabled !== undefined ? (rawSettings.parent_login_enabled === 1 ? 1 : 0) : 1,
+        requiredChildPhoto: rawSettings.required_child_photo !== undefined ? (rawSettings.required_child_photo === 1 ? 1 : 0) : 1,
+        requiredParentPhoto: rawSettings.required_parent_photo !== undefined ? (rawSettings.required_parent_photo === 1 ? 1 : 0) : 1,
+        requiredMedicalNotes: rawSettings.required_medical_notes !== undefined ? (rawSettings.required_medical_notes === 1 ? 1 : 0) : 0,
+        requiredPickupPerson: rawSettings.required_pickup_person !== undefined ? (rawSettings.required_pickup_person === 1 ? 1 : 0) : 1,
+        showVenueOnLanding
       };
     }
 
@@ -6948,11 +7641,13 @@ router.post('/general-settings', async (req: AuthenticatedRequest, res: Response
   try {
     const {
       parentRegistrationEnabled,
+      volunteerRegistrationEnabled,
       parentLoginEnabled,
       requiredChildPhoto,
       requiredParentPhoto,
       requiredMedicalNotes,
-      requiredPickupPerson
+      requiredPickupPerson,
+      showVenueOnLanding
     } = req.body;
 
     const id = 'primary_general_settings';
@@ -6960,43 +7655,103 @@ router.post('/general-settings', async (req: AuthenticatedRequest, res: Response
 
     const existing = await queryOne('SELECT id FROM admin_general_settings WHERE id = ?', [id]);
     if (existing) {
-      await execute(`
-        UPDATE admin_general_settings
-        SET parent_registration_enabled = ?,
-            parent_login_enabled = ?,
-            required_child_photo = ?,
-            required_parent_photo = ?,
-            required_medical_notes = ?,
-            required_pickup_person = ?,
-            updated_at = ?
-        WHERE id = ?
-      `, [
-        parentRegistrationEnabled ? 1 : 0,
-        parentLoginEnabled ? 1 : 0,
-        requiredChildPhoto ? 1 : 0,
-        requiredParentPhoto ? 1 : 0,
-        requiredMedicalNotes ? 1 : 0,
-        requiredPickupPerson ? 1 : 0,
-        now,
-        id
-      ]);
+      try {
+        await execute(`
+          UPDATE admin_general_settings
+          SET parent_registration_enabled = ?,
+              volunteer_registration_enabled = ?,
+              parent_login_enabled = ?,
+              required_child_photo = ?,
+              required_parent_photo = ?,
+              required_medical_notes = ?,
+              required_pickup_person = ?,
+              updated_at = ?
+          WHERE id = ?
+        `, [
+          parentRegistrationEnabled ? 1 : 0,
+          volunteerRegistrationEnabled !== undefined ? (volunteerRegistrationEnabled ? 1 : 0) : 1,
+          parentLoginEnabled ? 1 : 0,
+          requiredChildPhoto ? 1 : 0,
+          requiredParentPhoto ? 1 : 0,
+          requiredMedicalNotes ? 1 : 0,
+          requiredPickupPerson ? 1 : 0,
+          now,
+          id
+        ]);
+      } catch (err: any) {
+        // Fallback for older database schemas where volunteer_registration_enabled is not yet migrated
+        await execute(`
+          UPDATE admin_general_settings
+          SET parent_registration_enabled = ?,
+              parent_login_enabled = ?,
+              required_child_photo = ?,
+              required_parent_photo = ?,
+              required_medical_notes = ?,
+              required_pickup_person = ?,
+              updated_at = ?
+          WHERE id = ?
+        `, [
+          parentRegistrationEnabled ? 1 : 0,
+          parentLoginEnabled ? 1 : 0,
+          requiredChildPhoto ? 1 : 0,
+          requiredParentPhoto ? 1 : 0,
+          requiredMedicalNotes ? 1 : 0,
+          requiredPickupPerson ? 1 : 0,
+          now,
+          id
+        ]);
+      }
     } else {
-      await execute(`
-        INSERT INTO admin_general_settings (
-          id, parent_registration_enabled, parent_login_enabled, required_child_photo, required_parent_photo,
-          required_medical_notes, required_pickup_person, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        id,
-        parentRegistrationEnabled ? 1 : 0,
-        parentLoginEnabled ? 1 : 0,
-        requiredChildPhoto ? 1 : 0,
-        requiredParentPhoto ? 1 : 0,
-        requiredMedicalNotes ? 1 : 0,
-        requiredPickupPerson ? 1 : 0,
-        now,
-        now
-      ]);
+      try {
+        await execute(`
+          INSERT INTO admin_general_settings (
+            id, parent_registration_enabled, volunteer_registration_enabled, parent_login_enabled, required_child_photo, required_parent_photo,
+            required_medical_notes, required_pickup_person, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          id,
+          parentRegistrationEnabled ? 1 : 0,
+          volunteerRegistrationEnabled !== undefined ? (volunteerRegistrationEnabled ? 1 : 0) : 1,
+          parentLoginEnabled ? 1 : 0,
+          requiredChildPhoto ? 1 : 0,
+          requiredParentPhoto ? 1 : 0,
+          requiredMedicalNotes ? 1 : 0,
+          requiredPickupPerson ? 1 : 0,
+          now,
+          now
+        ]);
+      } catch (err: any) {
+        await execute(`
+          INSERT INTO admin_general_settings (
+            id, parent_registration_enabled, parent_login_enabled, required_child_photo, required_parent_photo,
+            required_medical_notes, required_pickup_person, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          id,
+          parentRegistrationEnabled ? 1 : 0,
+          parentLoginEnabled ? 1 : 0,
+          requiredChildPhoto ? 1 : 0,
+          requiredParentPhoto ? 1 : 0,
+          requiredMedicalNotes ? 1 : 0,
+          requiredPickupPerson ? 1 : 0,
+          now,
+          now
+        ]);
+      }
+    }
+
+    if (showVenueOnLanding !== undefined) {
+      try {
+        const venueVal = (showVenueOnLanding === 1 || showVenueOnLanding === true || showVenueOnLanding === 'true') ? 'true' : 'false';
+        const existVenue = await queryOne("SELECT setting_key FROM admin_landing_settings WHERE setting_key = 'show_venue_on_landing'");
+        if (existVenue) {
+          await execute("UPDATE admin_landing_settings SET setting_value = ?, updated_at = ? WHERE setting_key = 'show_venue_on_landing'", [venueVal, now]);
+        } else {
+          await execute("INSERT INTO admin_landing_settings (setting_key, setting_value, value_type, updated_at) VALUES ('show_venue_on_landing', ?, 'boolean', ?)", [venueVal, now]);
+        }
+      } catch (syncVenueErr) {
+        console.warn('Could not sync show_venue_on_landing to admin_landing_settings:', syncVenueErr);
+      }
     }
 
     return res.json({ success: true, message: 'General settings updated successfully.' });
@@ -7111,6 +7866,10 @@ router.get('/landing-settings', async (req: AuthenticatedRequest, res: Response)
     const settings: Record<string, string> = {};
     for (const row of rows) {
       settings[row.setting_key] = row.setting_value || '';
+    }
+
+    if (settings.show_venue_on_landing === undefined) {
+      settings.show_venue_on_landing = 'true';
     }
 
     // Resolve canonical media record for heroVideo if configured
@@ -7257,6 +8016,8 @@ router.post('/landing-settings', async (req: AuthenticatedRequest, res: Response
           valueType = 'video';
         } else if (key.startsWith('contact') || key.startsWith('footer')) {
           valueType = 'string';
+        } else if (key.startsWith('show_')) {
+          valueType = 'boolean';
         }
 
         const existing = await queryOne('SELECT setting_key FROM admin_landing_settings WHERE setting_key = ?', [key]);
@@ -7329,7 +8090,7 @@ router.post('/settings/media', upload.single('file'), async (req: AuthenticatedR
     if (!slot) {
       return res.status(400).json({ success: false, error: 'Slot key is required.' });
     }
-    const allowedSlots = ['parent_dashboard_hero', 'volunteer_dashboard_hero', 'default_event_hero', 'site_favicon'];
+    const allowedSlots = ['parent_dashboard_hero', 'volunteer_dashboard_hero', 'default_event_hero', 'site_favicon', 'hero_feature_image'];
     if (!allowedSlots.includes(slot)) {
       return res.status(400).json({ success: false, error: 'Invalid slot key.' });
     }
@@ -9878,6 +10639,7 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
     const city = typeof req.query.city === 'string' ? req.query.city.trim() : 'all';
     const hasChildren = typeof req.query.hasChildren === 'string' ? req.query.hasChildren.trim() : 'all';
     const hasLocation = typeof req.query.hasLocation === 'string' ? req.query.hasLocation.trim() : 'all';
+    const ageGroup = typeof req.query.ageGroup === 'string' ? req.query.ageGroup.trim() : 'all';
 
     let queryStr = `
       SELECT 
@@ -9942,6 +10704,46 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
       queryStr += ` AND (p.city IS NULL OR p.city = '') AND (p.state_region IS NULL OR p.state_region = '') AND (p.country IS NULL OR p.country = '')`;
     }
 
+    if (ageGroup && ageGroup !== 'all') {
+      const match = ageGroup.match(/(\d+)\s*[-–to_]+\s*(\d+)/i);
+      if (match) {
+        const minA = parseInt(match[1], 10);
+        const maxA = parseInt(match[2], 10);
+        queryStr += ` AND EXISTS (
+          SELECT 1 FROM children c 
+          WHERE c.parent_profile_id = p.id 
+            AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+            AND (
+              (c.calculated_age >= ? AND c.calculated_age <= ?)
+              OR c.age_group LIKE ?
+            )
+        )`;
+        queryParams.push(minA, maxA, `%${minA}%`);
+      } else if (/under\s*1|below\s*1/i.test(ageGroup)) {
+        queryStr += ` AND EXISTS (
+          SELECT 1 FROM children c 
+          WHERE c.parent_profile_id = p.id 
+            AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+            AND (c.calculated_age < 1 OR c.age_group LIKE '%below%' OR c.age_group LIKE '%under%')
+        )`;
+      } else if (/teen/i.test(ageGroup)) {
+        queryStr += ` AND EXISTS (
+          SELECT 1 FROM children c 
+          WHERE c.parent_profile_id = p.id 
+            AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+            AND (c.calculated_age >= 13 OR c.age_group LIKE '%teen%')
+        )`;
+      } else {
+        queryStr += ` AND EXISTS (
+          SELECT 1 FROM children c 
+          WHERE c.parent_profile_id = p.id 
+            AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+            AND c.age_group LIKE ?
+        )`;
+        queryParams.push(`%${ageGroup}%`);
+      }
+    }
+
     if (q) {
       queryStr += ` AND (
         p.full_name LIKE ? OR 
@@ -9981,7 +10783,7 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
       const placeholders = parentIds.map(() => '?').join(',');
       const childrenRows = await query(`
         SELECT 
-          c.id, c.parent_profile_id, c.full_name, c.calculated_age, c.age_group, c.gender,
+          c.id, c.parent_profile_id, c.full_name, c.date_of_birth, c.calculated_age, c.age_group, c.gender,
           e.id as application_id,
           e.status as entry_status,
           e.checked_in_at,
@@ -10001,6 +10803,7 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
           id: ch.id,
           applicationId: ch.application_id || null,
           fullName: ch.full_name,
+          dateOfBirth: ch.date_of_birth,
           age: ch.calculated_age,
           ageGroup: ch.age_group,
           gender: ch.gender,
@@ -10642,7 +11445,7 @@ router.post('/children/:childId/pass/generate', authMiddleware, async (req: Auth
       return res.status(404).json({ success: false, error: 'Child registration not found' });
     }
 
-    const pass = await issuePassForChild({ childId, eventId: entry.event_id });
+    const pass = await issuePassForChild({ childId });
     if (!pass) {
       return res.status(400).json({ success: false, error: 'Failed to issue pass' });
     }
@@ -10653,26 +11456,22 @@ router.post('/children/:childId/pass/generate', authMiddleware, async (req: Auth
     
     // Send Pass Ready Notification
     if (parentId) {
-      try {
-        const now = new Date().toISOString();
-        const subject = 'Pass ready';
-        const message = `${childFirstName}'s event pass is ready. You can open it from your parent account.`;
-        
-        const notifId = `notif-${crypto.randomUUID()}`;
-        await execute(`
-          INSERT INTO notifications (
-            id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
-          ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
-        `, [notifId, subject, message, entry.event_id, childId, parentId, now]).catch(e => console.error('Failed to insert pass ready notification:', e));
+      const now = new Date().toISOString();
+      const subject = 'Pass ready';
+      const message = `${childFirstName}'s event pass is ready. You can open it from your parent account.`;
+      
+      const notifId = `notif-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO notifications (
+          id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
+        ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
+      `, [notifId, subject, message, entry.event_id, childId, parentId, now]);
 
-        const pNotifId = `pnotif-${crypto.randomUUID()}`;
-        await execute(`
-          INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `, [pNotifId, parentId, entry.event_id, childId, subject, message, now]).catch(e => console.error('Failed to insert pass ready parent_notifications:', e));
-      } catch (notifErr) {
-        console.error('Non-critical notification error during pass generation:', notifErr);
-      }
+      const pNotifId = `pnotif-${crypto.randomUUID()}`;
+      await execute(`
+        INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [pNotifId, parentId, entry.event_id, childId, subject, message, now]);
     }
 
     return res.json({
@@ -10714,6 +11513,10 @@ router.put('/applications/:id', authMiddleware, async (req: AuthenticatedRequest
       fullName,
       gender,
       dateOfBirth,
+      photoUrl,
+      photoFileId,
+      childPhoto,
+      photo,
       schoolClass,
       schoolName,
       hasMedicalNotes,
@@ -10724,9 +11527,13 @@ router.put('/applications/:id', authMiddleware, async (req: AuthenticatedRequest
       parentPhone,
       parentWhatsApp,
       parentHomeAddress,
+      parentPhotoUrl,
+      parentPhotoFileId,
       pickupPersonName,
       pickupPersonRelationship,
-      pickupPersonPhone
+      pickupPersonPhone,
+      pickupPersonPhotoUrl,
+      pickupPersonPhotoFileId
     } = req.body;
 
     const entry = await queryOne(`SELECT child_id FROM child_event_entries WHERE id = ?`, [id]);
@@ -10745,6 +11552,12 @@ router.put('/applications/:id', authMiddleware, async (req: AuthenticatedRequest
       if (parentPhone !== undefined) { parentUpdates.push('phone_number = ?'); parentParams.push(parentPhone); }
       if (parentWhatsApp !== undefined) { parentUpdates.push('whatsapp_number = ?'); parentParams.push(parentWhatsApp); }
       if (parentHomeAddress !== undefined) { parentUpdates.push('home_address = ?'); parentParams.push(parentHomeAddress); }
+      const rawParentPhoto = parentPhotoUrl !== undefined ? parentPhotoUrl : parentPhotoFileId;
+      if (rawParentPhoto !== undefined) {
+        const resolvedParentPhotoId = await resolveToMediaFileId(rawParentPhoto);
+        parentUpdates.push('photo_file_id = ?');
+        parentParams.push(resolvedParentPhotoId || null);
+      }
       if (parentUpdates.length > 0) {
         parentUpdates.push('updated_at = ?'); parentParams.push(now);
         parentParams.push(childRow.parent_profile_id);
@@ -10753,14 +11566,21 @@ router.put('/applications/:id', authMiddleware, async (req: AuthenticatedRequest
     }
 
     // Update authorized pickup details if specified
-    if (pickupPersonName !== undefined || pickupPersonRelationship !== undefined || pickupPersonPhone !== undefined) {
+    if (pickupPersonName !== undefined || pickupPersonRelationship !== undefined || pickupPersonPhone !== undefined || pickupPersonPhotoUrl !== undefined || pickupPersonPhotoFileId !== undefined) {
       const existingPickup = await queryOne('SELECT id FROM pickup_people WHERE child_event_entry_id = ?', [id]);
+      const rawPickupPhoto = pickupPersonPhotoUrl !== undefined ? pickupPersonPhotoUrl : pickupPersonPhotoFileId;
+      let resolvedPickupPhotoId: string | null = null;
+      if (rawPickupPhoto !== undefined) {
+        resolvedPickupPhotoId = (await resolveToMediaFileId(rawPickupPhoto)) || null;
+      }
+
       if (existingPickup) {
         const pickupUpdates: string[] = [];
         const pickupParams: any[] = [];
         if (pickupPersonName !== undefined) { pickupUpdates.push('full_name = ?'); pickupParams.push(pickupPersonName); }
         if (pickupPersonRelationship !== undefined) { pickupUpdates.push('relationship_to_child = ?'); pickupParams.push(pickupPersonRelationship); }
         if (pickupPersonPhone !== undefined) { pickupUpdates.push('phone_number = ?'); pickupParams.push(pickupPersonPhone); }
+        if (rawPickupPhoto !== undefined) { pickupUpdates.push('photo_file_id = ?'); pickupParams.push(resolvedPickupPhotoId); }
         if (pickupUpdates.length > 0) {
           pickupUpdates.push('updated_at = ?'); pickupParams.push(now);
           pickupParams.push(existingPickup.id);
@@ -10769,9 +11589,9 @@ router.put('/applications/:id', authMiddleware, async (req: AuthenticatedRequest
       } else {
         const newPickupId = 'pickup-' + Math.random().toString(36).substring(2, 11);
         await execute(`
-          INSERT INTO pickup_people (id, child_event_entry_id, pickup_type, full_name, relationship_to_child, phone_number, whatsapp_number, approved_by_parent, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [newPickupId, id, 'other', pickupPersonName || '', pickupPersonRelationship || '', pickupPersonPhone || '', '', 1, now, now]);
+          INSERT INTO pickup_people (id, child_event_entry_id, pickup_type, full_name, relationship_to_child, phone_number, whatsapp_number, photo_file_id, approved_by_parent, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [newPickupId, id, 'other', pickupPersonName || '', pickupPersonRelationship || '', pickupPersonPhone || '', '', resolvedPickupPhotoId, 1, now, now]);
       }
     }
 
@@ -10780,32 +11600,10 @@ router.put('/applications/:id', authMiddleware, async (req: AuthenticatedRequest
     let ageGroup = null;
     let needsAgeReview = 0;
     if (dateOfBirth) {
-      const dobDate = new Date(dateOfBirth);
-      const today = new Date();
-      let age = today.getFullYear() - dobDate.getFullYear();
-      const m = today.getMonth() - dobDate.getMonth();
-      if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) {
-        age--;
-      }
-      calculatedAge = age;
-
-      // Determine age group
-      if (age < 1) {
-        ageGroup = 'Below 1';
-      } else if (age < 3) {
-        ageGroup = 'Ages 1 to 2';
-      } else if (age < 6) {
-        ageGroup = 'Ages 3 to 5';
-      } else if (age < 10) {
-        ageGroup = 'Ages 6 to 9';
-      } else {
-        ageGroup = 'Teens (Ages 10+)';
-      }
-
-      // Under 1 year check for event
-      if (age < 1) {
-        needsAgeReview = 1;
-      }
+      const ageRes = resolveCanonicalAgeGroup(dateOfBirth, CANONICAL_GA_EVENT_DATE);
+      calculatedAge = ageRes.age;
+      ageGroup = ageRes.label;
+      needsAgeReview = ageRes.isOutOfRange ? 1 : 0;
     }
 
     // Update children table
@@ -10819,6 +11617,12 @@ router.put('/applications/:id', authMiddleware, async (req: AuthenticatedRequest
       childUpdates.push('calculated_age = ?'); childParams.push(calculatedAge);
       childUpdates.push('age_group = ?'); childParams.push(ageGroup);
       childUpdates.push('needs_age_review = ?'); childParams.push(needsAgeReview);
+    }
+    const rawChildPhoto = photoUrl !== undefined ? photoUrl : (photoFileId !== undefined ? photoFileId : (childPhoto !== undefined ? childPhoto : photo));
+    if (rawChildPhoto !== undefined) {
+      const resolvedChildPhotoId = await resolveToMediaFileId(rawChildPhoto);
+      childUpdates.push('photo_file_id = ?');
+      childParams.push(resolvedChildPhotoId || null);
     }
     childUpdates.push('updated_at = ?'); childParams.push(now);
 

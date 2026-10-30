@@ -1,12 +1,76 @@
+import { AsyncLocalStorage } from 'async_hooks';
 import { URL } from 'url';
+
+// Frontend origins the app is served from, trusted in addition to any configured in env
+export const TRUSTED_FRONTEND_ORIGINS = [
+  'https://www.kgachildren.koinoniageneralassembly.com',
+  'https://kgachildren.koinoniageneralassembly.com'
+];
+
+// Trusted frontend origin of the request currently being handled (null outside a request, e.g. workers)
+const requestOriginStore = new AsyncLocalStorage<string | null>();
+
+function normalizeOrigin(value: string): string | null {
+  try {
+    const parsed = new URL(value.trim());
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolves the frontend origin a request came from (Origin header, then Referer), but only when it
+ * exactly matches a trusted origin. Deliberately stricter than CORS: wildcard hosts such as
+ * *.netlify.app are never accepted, so a forged Origin header cannot send password-reset or
+ * verification tokens to a domain someone else controls.
+ */
+export function resolveTrustedRequestOrigin(headers: { origin?: string; referer?: string }): string | null {
+  const candidate = headers.origin || headers.referer;
+  const origin = candidate ? normalizeOrigin(candidate) : null;
+  if (!origin) return null;
+
+  if (process.env.NODE_ENV === 'production') {
+    const hostname = new URL(origin).hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') return null;
+  }
+
+  const configuredOrigins = [
+    process.env.PUBLIC_APP_URL,
+    process.env.APP_BASE_URL,
+    process.env.APP_URL,
+    process.env.CORS_ORIGIN
+  ]
+    .filter(Boolean)
+    .flatMap((val) => (val as string).split(','))
+    .map(normalizeOrigin)
+    .filter(Boolean);
+
+  return [...TRUSTED_FRONTEND_ORIGINS, ...configuredOrigins].includes(origin) ? origin : null;
+}
+
+/**
+ * Runs `fn` with the given request origin available to getPublicAppUrl() for everything it calls,
+ * including async continuations.
+ */
+export function runWithRequestOrigin<T>(origin: string | null, fn: () => T): T {
+  return requestOriginStore.run(origin, fn);
+}
 
 /**
  * Server-side Canonical Public Application URL Helper
  *
- * Resolves the canonical public application base URL from environment variables.
- * Priority: PUBLIC_APP_URL -> APP_BASE_URL -> APP_URL
+ * Resolves the public application base URL. Inside a request from a trusted frontend, that
+ * frontend's origin is used so links lead back to the domain the user is on.
+ * Otherwise falls back to env: PUBLIC_APP_URL -> APP_BASE_URL -> APP_URL
  */
 export function getPublicAppUrl(): string {
+  const requestOrigin = requestOriginStore.getStore();
+  if (requestOrigin) {
+    return requestOrigin;
+  }
+
   let rawUrl = (
     process.env.PUBLIC_APP_URL ||
     process.env.APP_BASE_URL ||
@@ -21,7 +85,7 @@ export function getPublicAppUrl(): string {
       console.error('[URL Helper] CRITICAL: Neither PUBLIC_APP_URL nor APP_BASE_URL is configured in production environment!');
       throw new Error('PUBLIC_APP_URL environment variable is required in production mode.');
     }
-    rawUrl = 'http://localhost:3000';
+    rawUrl = 'http://localhost:5173';
   }
 
   // Strip trailing slash
@@ -49,7 +113,7 @@ export function getPublicAppUrl(): string {
       console.error('[URL Helper] Invalid PUBLIC_APP_URL configuration in production:', rawUrl, err?.message);
       throw new Error(`Invalid PUBLIC_APP_URL configuration: ${err?.message || 'Malformed URL'}`);
     }
-    return 'http://localhost:3000';
+    return 'http://localhost:5173';
   }
 }
 
@@ -67,7 +131,7 @@ export function validatePublicAppUrlOnStartup(): string {
     if (process.env.NODE_ENV === 'production') {
       throw err;
     }
-    return 'http://localhost:3000';
+    return 'http://localhost:5173';
   }
 }
 
@@ -191,7 +255,7 @@ export function resolveMessageTokens(template: string, context: RecipientTokenCo
   const pLink = context.passUrl || buildParentPassUrl();
   const rLink = context.reviewUrl || buildParentStatusUrl();
   const pTime = (context.pickupTime || '').trim() || '4:00 PM';
-  const sContact = (context.supportContact || '').trim() || '+234 803 123 4567';
+  const sContact = (context.supportContact || '').trim() || (process.env.SUPPORT_PHONE_NUMBER?.trim() || '');
 
   let result = template
     .replace(/\{Parent name\}/gi, pName)
