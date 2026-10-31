@@ -452,11 +452,13 @@ export async function sendSelectedParentsChannelInvitations(params: {
   const eventTitle = event?.title || 'Koinonia General Assembly Children\'s Session 2026';
 
   const provider = getWhatsAppProvider();
+  // Meta policy prohibits direct WhatsApp URLs in template buttons ("Buttons cannot contain direct links to WhatsApp").
+  // The CTA destination for the template points to the first-party Koinonia protected portal route:
   const channelUrl = (
-    process.env.WHATSAPP_CHANNEL_URL ||
-    process.env.PUBLIC_WHATSAPP_CHANNEL_URL ||
-    'https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U'
-  ).trim();
+    process.env.PUBLIC_APP_URL
+      ? `${process.env.PUBLIC_APP_URL.replace(/\/+$/, '')}/parents/channel`
+      : 'https://koinonia12.netlify.app/parents/channel'
+  );
 
   let sentCount = 0;
   let skippedCount = 0;

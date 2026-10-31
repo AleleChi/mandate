@@ -267,7 +267,7 @@ export const ZOHO_TEMPLATE_REGISTRY: Record<string, ZohoTemplateDefinition> = {
     envVarKeys: ['ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL', 'ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL'],
     category: 'parent',
     requiredMergeFields: ['parent_first_name', 'selected_child_names'],
-    description: 'WhatsApp Parents Channel invitation for parents of selected children'
+    description: 'WhatsApp Parents Channel invitation linking to verified portal (/parents/channel)'
   },
   selected_parents_channel: {
     intent: 'selected_parent_channel',
@@ -275,7 +275,7 @@ export const ZOHO_TEMPLATE_REGISTRY: Record<string, ZohoTemplateDefinition> = {
     envVarKeys: ['ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL', 'ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL'],
     category: 'parent',
     requiredMergeFields: ['parent_first_name', 'selected_child_names'],
-    description: 'WhatsApp Parents Channel invitation (alias)'
+    description: 'WhatsApp Parents Channel invitation linking to verified portal (/parents/channel) (alias)'
   },
 
   // Direct template alias aliases for convenience

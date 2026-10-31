@@ -2,6 +2,8 @@ import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
 import { buildPublicAppUrl } from '../utils/urlHelper';
 import { sendZeptoMailEmail, isZeptoMailConfigured } from './email/zeptomailProvider';
+import { recordChannelInvitationSent } from './selectedParentsChannelService';
+import { extractFirstName, formatSelectedChildNames } from './whatsapp/personalization';
 
 export interface SendEmailOptions {
   to: string;
@@ -454,18 +456,68 @@ export async function sendChildReviewReceivedEmail(params: {
 }
 
 /**
+ * Renders the dedicated Parents Channel invitation section for successful selection / pass-ready emails.
+ * Uses the first-party Koinonia route: https://koinonia12.netlify.app/parents/channel
+ * (Never links directly to WhatsApp channel to protect URL and comply with security rules).
+ */
+export function buildParentsChannelEmailSection(channelUrl: string = 'https://koinonia12.netlify.app/parents/channel') {
+  const html = `
+    <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid #EAE8E1;">
+      <p style="margin: 0 0 10px 0; font-size: 15px; font-weight: bold; color: #18181B;">
+        Official Parents Channel
+      </p>
+      <p style="margin: 0 0 12px 0; font-size: 14px; line-height: 1.5; color: #18181B;">
+        As a parent or guardian of a selected child, you can access the official Parents Channel for important Children's Session updates, including arrival, check-in and pickup information.
+      </p>
+      <div style="margin: 16px 0;">
+        <a href="${channelUrl}" style="background-color: #C59B27; color: #18181B; font-weight: 600; text-decoration: none; padding: 10px 20px; border-radius: 6px; display: inline-block; font-size: 14px;">
+          Access Parents Channel
+        </a>
+      </div>
+      <p style="margin: 0; font-size: 11px; color: #71717A; line-height: 1.4;">
+        Please do not share access with anyone outside the registered parents and guardians of selected children.
+      </p>
+    </div>
+  `;
+
+  const text = `
+---
+Official Parents Channel:
+As a parent or guardian of a selected child, you can access the official Parents Channel for important Children's Session updates, including arrival, check-in and pickup information.
+
+Access Parents Channel:
+${channelUrl}
+
+Please do not share access with anyone outside the registered parents and guardians of selected children.
+  `.trim();
+
+  return { html, text };
+}
+
+/**
  * 4. Review decision (Selected, Not Selected, Needs Info)
  */
 export async function sendChildReviewDecisionEmail(params: {
   parentEmail: string;
   parentFirstName?: string;
-  childName: string;
+  childName?: string;
+  childNames?: string[];
   status: string;
   statusLink?: string;
   passLink?: string;
+  parentId?: string;
+  eventId?: string;
 }): Promise<SendEmailResult> {
-  const childName = params.childName || 'your child';
-  const suffix = childName.endsWith('s') ? '’' : '’s';
+  const rawNames = params.childNames && params.childNames.length > 0
+    ? params.childNames
+    : [params.childName || 'your child'];
+
+  const formattedChildNames = formatSelectedChildNames(rawNames.map(n => extractFirstName(n))) || params.childName || 'your child';
+  const isPlural = rawNames.length > 1 || formattedChildNames.includes(' and ');
+  const childStatement = isPlural
+    ? `${formattedChildNames} have been selected`
+    : `${formattedChildNames} has been selected`;
+  const suffix = formattedChildNames.endsWith('s') ? '’' : '’s';
   const firstName = getFirstName(params.parentFirstName);
   const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
   const statusLower = params.status.toLowerCase();
@@ -477,46 +529,68 @@ export async function sendChildReviewDecisionEmail(params: {
 
   const resolvedStatusLink = params.statusLink || buildPublicAppUrl('/parent/children');
   const resolvedPassLink = params.passLink || resolvedStatusLink;
+  const channelPortalUrl = 'https://koinonia12.netlify.app/parents/channel';
 
   if (statusLower === 'selected' || statusLower === 'pass_ready' || statusLower === 'approved' || statusLower === 'active') {
-    subject = `${childName}${suffix} event pass is ready`;
+    subject = isPlural ? `Event passes ready for ${formattedChildNames}` : `${formattedChildNames}${suffix} event pass is ready`;
+    const passWord = isPlural ? 'The event passes are' : 'The event pass is';
+    const channelSection = buildParentsChannelEmailSection(channelPortalUrl);
+
     bodyHtml = `
       <p style="margin-top: 0;">${greeting}</p>
-      <p>${childName} has been selected for Children and Teens at The General Assembly.</p>
-      <p>The event pass is now ready in Parent Access.</p>
+      <p>${childStatement} for Children and Teens at The General Assembly.</p>
+      <p>${passWord} now ready in Parent Access.</p>
       <p>Please keep the pass available on event day. Our team will check the child photo and pickup details before entry and pickup.</p>
+      ${channelSection.html}
       <br>
       <p style="margin-bottom: 0;">Thank you,<br>Koinonia Children and Teens</p>
     `;
-    text = `${greeting}\n\n${childName} has been selected for Children and Teens at The General Assembly.\n\nThe event pass is now ready in Parent Access.\n\nPlease keep the pass available on event day. Our team will check the child photo and pickup details before entry and pickup.\n\nView pass here:\n${resolvedPassLink}\n\nThank you,\nKoinonia Children and Teens`;
-    actionButton = { label: 'View pass', url: resolvedPassLink };
+    text = `${greeting}\n\n${childStatement} for Children and Teens at The General Assembly.\n\n${passWord} now ready in Parent Access.\n\nPlease keep the pass available on event day. Our team will check the child photo and pickup details before entry and pickup.\n\nView pass here:\n${resolvedPassLink}\n\n${channelSection.text}\n\nThank you,\nKoinonia Children and Teens`;
+    actionButton = { label: isPlural ? 'View event passes' : 'View pass', url: resolvedPassLink };
   } else if (statusLower === 'not_selected' || statusLower === 'rejected') {
-    subject = `Update on ${childName}${suffix} Children and Teens details`;
+    subject = `Update on ${formattedChildNames}${suffix} Children and Teens details`;
     bodyHtml = `
       <p style="margin-top: 0;">${greeting}</p>
-      <p>Thank you for sending ${childName}’s details.</p>
-      <p>After review, ${childName} was not selected for Children and Teens for this event.</p>
+      <p>Thank you for sending ${formattedChildNames}’s details.</p>
+      <p>After review, ${formattedChildNames} was not selected for Children and Teens for this event.</p>
       <p>We understand this may be disappointing. Thank you for your understanding.</p>
       <br>
       <p style="margin-bottom: 0;">Thank you,<br>Koinonia Children and Teens</p>
     `;
-    text = `${greeting}\n\nThank you for sending ${childName}’s details.\n\nAfter review, ${childName} was not selected for Children and Teens for this event.\n\nWe understand this may be disappointing. Thank you for your understanding.\n\nView status here:\n${resolvedStatusLink}\n\nThank you,\nKoinonia Children and Teens`;
+    text = `${greeting}\n\nThank you for sending ${formattedChildNames}’s details.\n\nAfter review, ${formattedChildNames} was not selected for Children and Teens for this event.\n\nWe understand this may be disappointing. Thank you for your understanding.\n\nView status here:\n${resolvedStatusLink}\n\nThank you,\nKoinonia Children and Teens`;
     actionButton = { label: 'View status', url: resolvedStatusLink };
   } else {
-    subject = `More details needed for ${childName}`;
+    subject = `More details needed for ${formattedChildNames}`;
     bodyHtml = `
       <p style="margin-top: 0;">${greeting}</p>
-      <p>Our team needs a little more information before we can complete ${childName}’s review.</p>
+      <p>Our team needs a little more information before we can complete ${formattedChildNames}’s review.</p>
       <p>Please open Parent Access and update the requested details.</p>
       <br>
       <p style="margin-bottom: 0;">Thank you,<br>Koinonia Children and Teens</p>
     `;
-    text = `${greeting}\n\nOur team needs a little more information before we can complete ${childName}’s review.\n\nPlease open Parent Access and update the requested details:\n${resolvedStatusLink}\n\nThank you,\nKoinonia Children and Teens`;
+    text = `${greeting}\n\nOur team needs a little more information before we can complete ${formattedChildNames}’s review.\n\nPlease open Parent Access and update the requested details:\n${resolvedStatusLink}\n\nThank you,\nKoinonia Children and Teens`;
     actionButton = { label: 'Update details', url: resolvedStatusLink };
   }
 
   const html = wrapHtmlTemplate(subject, bodyHtml, actionButton);
-  return sendEmail({ to: params.parentEmail, subject, html, text });
+  const result = await sendEmail({ to: params.parentEmail, subject, html, text });
+
+  if (result.success && (statusLower === 'selected' || statusLower === 'pass_ready' || statusLower === 'approved' || statusLower === 'active') && params.parentId && params.eventId) {
+    try {
+      await recordChannelInvitationSent({
+        parentId: params.parentId,
+        eventId: params.eventId,
+        channel: 'email',
+        selectedChildNames: formattedChildNames,
+        templateKey: null,
+        templateAlias: 'email_selection_pass_ready'
+      });
+    } catch (trackErr) {
+      console.warn('[Email Channel Invitation Tracking]', trackErr);
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -616,29 +690,61 @@ export async function sendApplicationCompletionReminderEmail(params: {
 export async function sendPassReadyEmail(params: {
   parentEmail: string;
   parentFirstName?: string;
-  childName: string;
+  childName?: string;
+  childNames?: string[];
   passLink: string;
+  parentId?: string;
+  eventId?: string;
 }): Promise<SendEmailResult> {
-  const childName = params.childName || 'your child';
-  const suffix = childName.endsWith('s') ? '’' : '’s';
-  const subject = `${childName}${suffix} event pass is ready`;
+  const rawNames = params.childNames && params.childNames.length > 0
+    ? params.childNames
+    : [params.childName || 'your child'];
+
+  const formattedChildNames = formatSelectedChildNames(rawNames.map(n => extractFirstName(n))) || params.childName || 'your child';
+  const isPlural = rawNames.length > 1 || formattedChildNames.includes(' and ');
+  const childStatement = isPlural
+    ? `${formattedChildNames} have been selected`
+    : `${formattedChildNames} has been selected`;
+  const suffix = formattedChildNames.endsWith('s') ? '’' : '’s';
   const firstName = getFirstName(params.parentFirstName);
   const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
+  const subject = isPlural ? `Event passes ready for ${formattedChildNames}` : `${formattedChildNames}${suffix} event pass is ready`;
+  const passWord = isPlural ? 'The event passes are' : 'The event pass is';
+  const channelPortalUrl = 'https://koinonia12.netlify.app/parents/channel';
+  const channelSection = buildParentsChannelEmailSection(channelPortalUrl);
   
   const bodyHtml = `
     <p style="margin-top: 0;">${greeting}</p>
-    <p>${childName} has been selected for Children and Teens at The General Assembly.</p>
-    <p>The event pass is now ready in Parent Access.</p>
+    <p>${childStatement} for Children and Teens at The General Assembly.</p>
+    <p>${passWord} now ready in Parent Access.</p>
     <p>Please keep the pass available on event day. Our team will check the child photo and pickup details before entry and pickup.</p>
+    ${channelSection.html}
     <br>
     <p style="margin-bottom: 0;">Thank you,<br>Koinonia Children and Teens</p>
   `;
   
-  const text = `${greeting}\n\n${childName} has been selected for Children and Teens at The General Assembly.\n\nThe event pass is now ready in Parent Access.\n\nPlease keep the pass available on event day. Our team will check the child photo and pickup details before entry and pickup.\n\nView pass here:\n${params.passLink}\n\nThank you,\nKoinonia Children and Teens`;
+  const text = `${greeting}\n\n${childStatement} for Children and Teens at The General Assembly.\n\n${passWord} now ready in Parent Access.\n\nPlease keep the pass available on event day. Our team will check the child photo and pickup details before entry and pickup.\n\nView pass here:\n${params.passLink}\n\n${channelSection.text}\n\nThank you,\nKoinonia Children and Teens`;
 
-  const html = wrapHtmlTemplate(subject, bodyHtml, { label: 'View pass', url: params.passLink });
+  const html = wrapHtmlTemplate(subject, bodyHtml, { label: isPlural ? 'View event passes' : 'View pass', url: params.passLink });
 
-  return sendEmail({ to: params.parentEmail, subject, html, text });
+  const result = await sendEmail({ to: params.parentEmail, subject, html, text });
+
+  if (result.success && params.parentId && params.eventId) {
+    try {
+      await recordChannelInvitationSent({
+        parentId: params.parentId,
+        eventId: params.eventId,
+        channel: 'email',
+        selectedChildNames: formattedChildNames,
+        templateKey: null,
+        templateAlias: 'email_selection_pass_ready'
+      });
+    } catch (trackErr) {
+      console.warn('[Email Channel Invitation Tracking]', trackErr);
+    }
+  }
+
+  return result;
 }
 
 /**
