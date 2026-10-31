@@ -14,7 +14,7 @@ export function sanitizeParentReturnRoute(route?: string | null): AppRoute {
   try {
     const decoded = decodeURIComponent(route).trim();
     if (
-      decoded.startsWith('/parent/') &&
+      (decoded.startsWith('/parent/') || decoded.startsWith('/parents/')) &&
       !decoded.startsWith('/volunteer') &&
       !decoded.startsWith('/admin') &&
       !decoded.includes('://') &&
@@ -244,7 +244,7 @@ export const SignInView: React.FC<SignInViewProps> = ({
         return;
       }
 
-      if (code === 'INVALID_CREDENTIALS' || message.includes('session has expired') || message.includes('Unauthorized') || message.includes('Authentication required')) {
+      if (code === 'INVALID_CREDENTIALS') {
         setError('Email or password is incorrect.');
         return;
       }

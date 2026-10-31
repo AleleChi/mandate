@@ -17,7 +17,6 @@ import { ForgotPasswordView } from './views/ForgotPasswordView';
 import { NewPasswordView } from './views/NewPasswordView';
 import { ProfileSetupView } from './views/ProfileSetupView';
 import { ParentHomeView } from './views/ParentHomeView';
-import { ParentMessagesView } from './views/ParentMessagesView';
 const VolunteerSignInView = React.lazy(() => import('./views/VolunteerSignInView').then(m => ({ default: m.VolunteerSignInView })));
 const VolunteerCreateAccountView = React.lazy(() => import('./views/VolunteerCreateAccountView').then(m => ({ default: m.VolunteerCreateAccountView })));
 const VolunteerVerifyEmailView = React.lazy(() => import('./views/VolunteerVerifyEmailView').then(m => ({ default: m.VolunteerVerifyEmailView })));
@@ -42,7 +41,7 @@ import { KoinoniaInlineLoader } from './components/common/KoinoniaInlineLoader';
 import { AppLoadingScreen } from './components/common/AppLoadingScreen';
 import { ModuleLoadingState } from './components/common/ModuleLoadingState';
 import { safeStorage } from './utils/storage';
-import { isValidRoute, getInitialRoute, normalizePathname } from './utils/router';
+import { isValidRoute, getInitialRoute } from './utils/router';
 import { isValidUploadedPhoto } from './utils/validation';
 
 const AdminSignInView = React.lazy(() => import('./views/admin/AdminSignInView').then(m => ({ default: m.AdminSignInView })));
@@ -57,8 +56,7 @@ import { PrivacyPolicyView } from './views/PrivacyPolicyView';
 import { TermsOfServiceView } from './views/TermsOfServiceView';
 import { ChildSafetyView } from './views/ChildSafetyView';
 import { ContactView } from './views/ContactView';
-import { NotFoundView } from './views/NotFoundView';
-import { ErrorBoundary } from './components/common/ErrorBoundary';
+import { ParentChannelView } from './views/ParentChannelView';
 
 // Training & Simulation Mode Views
 const PersistentTrainingBanner = React.lazy(() => import('./views/training/PersistentTrainingBanner').then(m => ({ default: m.PersistentTrainingBanner })));
@@ -87,7 +85,7 @@ const getSeoPropsForRoute = (route: string) => {
     return {
       title: 'Privacy Notice | Koinonia Children and Teens',
       description: "Privacy Notice for The Koinonia General Assembly Children & Teens services and events.",
-      canonical: 'https://kgachildren.koinoniageneralassembly.com/#/privacy',
+      canonical: 'https://koinonia12.netlify.app/#/privacy',
       robots: 'index, follow',
       ogTitle: 'Privacy Notice | Koinonia Children and Teens',
       ogDescription: "How we access, collect, store, and process personal information for Children's Session.",
@@ -97,7 +95,7 @@ const getSeoPropsForRoute = (route: string) => {
     return {
       title: 'Terms of Service | Koinonia Children and Teens',
       description: "Terms of Service governing registration, attendance, and child safety for The Koinonia General Assembly.",
-      canonical: 'https://kgachildren.koinoniageneralassembly.com/#/terms',
+      canonical: 'https://koinonia12.netlify.app/#/terms',
       robots: 'index, follow',
       ogTitle: 'Terms of Service | Koinonia Children and Teens',
       ogDescription: "Operational protocols for child registration, exclusive pickup release, and care safety.",
@@ -107,7 +105,7 @@ const getSeoPropsForRoute = (route: string) => {
     return {
       title: 'Child Safety | Koinonia Children and Teens',
       description: "How check-in, care information, supervision ratios, and pickup verification are handled during Koinonia events.",
-      canonical: 'https://kgachildren.koinoniageneralassembly.com/#/child-safety',
+      canonical: 'https://koinonia12.netlify.app/#/child-safety',
       robots: 'index, follow',
       ogTitle: 'Child Safety | Koinonia Children and Teens',
       ogDescription: "Clear operational guidance on how children are registered, protected, supervised, and safely released.",
@@ -117,7 +115,7 @@ const getSeoPropsForRoute = (route: string) => {
     return {
       title: 'Contact Us | Koinonia Children and Teens',
       description: "Contact information and support for The Koinonia General Assembly Children & Teens event portal.",
-      canonical: 'https://kgachildren.koinoniageneralassembly.com/#/contact',
+      canonical: 'https://koinonia12.netlify.app/#/contact',
       robots: 'index, follow',
       ogTitle: 'Contact Us | Koinonia Children and Teens',
       ogDescription: "Reach out directly via email, telephone, WhatsApp, or the on-site Protocol Desk.",
@@ -161,7 +159,13 @@ const getSeoPropsForRoute = (route: string) => {
       ...defaults,
     };
   }
-  if (cleanRoute.startsWith('/parent')) {
+  if (cleanRoute === '/parents/channel' || cleanRoute === '/parent/channel') {
+    return {
+      title: "Children's Session Parents Channel | Koinonia Children and Teens",
+      ...defaults,
+    };
+  }
+  if (cleanRoute.startsWith('/parent') || cleanRoute.startsWith('/parents')) {
     return {
       title: 'Parent Access | Koinonia Children and Teens',
       ...defaults,
@@ -286,7 +290,7 @@ export default function App() {
   useEffect(() => {
     const handleLocationChange = () => {
       if (typeof window === 'undefined') return;
-      const pathname = normalizePathname(window.location.pathname || '');
+      const pathname = window.location.pathname || '';
       let hash = (window.location.hash || '').replace(/^#+/, '');
       if (hash && !hash.startsWith('/')) hash = '/' + hash;
 
@@ -322,11 +326,7 @@ export default function App() {
           window.history.replaceState(null, '', '/' + (window.location.search || ''));
         }
         setCurrentRoute('/');
-        return;
       }
-
-      // Case 4: Unknown path, rendered as the not-found page
-      setCurrentRoute(pathname as AppRoute);
     };
 
     handleLocationChange();
@@ -1168,23 +1168,6 @@ export default function App() {
       );
     }
 
-    if (cleanRoute === '/parent/messages' || cleanRoute.startsWith('/parent/messages/')) {
-      const parts = cleanRoute.split('/');
-      const threadIdParam = parts.length >= 4 && parts[3] ? parts[3] : undefined;
-      return (
-        <ProtectedRoute requiresCompletedProfile={true}>
-          <ParentMessagesView
-            onNavigate={navigate}
-            parentProfile={parentProfile}
-            childrenList={childrenList}
-            initialThreadId={threadIdParam}
-            onResumeChildDraft={handleResumeChildDraft}
-            onSignOut={handleSignOut}
-          />
-        </ProtectedRoute>
-      );
-    }
-
     if (cleanRoute === '/admin/team-alerts') {
       return (
         <AdminProtectedRoute>
@@ -1290,7 +1273,7 @@ export default function App() {
                           ? 'attendance'
                           : cleanRoute === '/admin/reports' || cleanRoute.startsWith('/admin/reports/')
                             ? 'reports'
-                            : cleanRoute === '/admin/messages' || cleanRoute.startsWith('/admin/messages/')
+                            : cleanRoute === '/admin/messages'
                               ? 'messages'
                               : cleanRoute === '/admin/volunteers'
                                 ? 'volunteers'
@@ -1342,23 +1325,6 @@ export default function App() {
       return <ContactView onNavigate={navigate} />;
     }
 
-    if (cleanRoute.startsWith('/volunteer/messages/')) {
-      return (
-        <VolunteerProtectedRoute>
-          <VolunteerEventDashboardView
-            onNavigate={navigate}
-            volunteerProfile={volunteerProfile}
-            onSignOut={handleSignOut}
-            isOffline={isOffline}
-            hasParentProfile={!!parentProfile && !!parentProfile.email}
-            currentRoute={currentRoute}
-            onSwitchExperience={handleSwitchExperience}
-            isSwitchingExperience={isSwitchingExperience}
-          />
-        </VolunteerProtectedRoute>
-      );
-    }
-
     switch (cleanRoute) {
       case '/':
         return (
@@ -1404,6 +1370,16 @@ export default function App() {
         return <ForgotPasswordView onNavigate={navigate} />;
       case '/parent/new-password':
         return <NewPasswordView onNavigate={navigate} />;
+      case '/parents/channel':
+      case '/parent/channel':
+        return (
+          <ProtectedRoute requiresCompletedProfile={false}>
+            <ParentChannelView
+              onNavigate={navigate}
+              onSignOut={handleSignOut}
+            />
+          </ProtectedRoute>
+        );
       case '/parent/profile-setup':
         return (
           <ProtectedRoute requiresCompletedProfile={false}>
@@ -1576,18 +1552,6 @@ export default function App() {
             />
           </ProtectedRoute>
         );
-      case '/parent/messages':
-        return (
-          <ProtectedRoute requiresCompletedProfile={true}>
-            <ParentMessagesView
-              onNavigate={navigate}
-              parentProfile={parentProfile}
-              childrenList={childrenList}
-              onResumeChildDraft={handleResumeChildDraft}
-              onSignOut={handleSignOut}
-            />
-          </ProtectedRoute>
-        );
       case '/parent/volunteer-request':
         return (
           <ProtectedRoute requiresCompletedProfile={true}>
@@ -1679,7 +1643,6 @@ export default function App() {
       case '/volunteer/team-alerts':
       case '/volunteer/readiness':
       case '/volunteer/wristbands':
-      case '/volunteer/messages':
         return (
           <VolunteerProtectedRoute>
             <VolunteerEventDashboardView
@@ -1695,7 +1658,15 @@ export default function App() {
           </VolunteerProtectedRoute>
         );
       default:
-        return <NotFoundView key={cleanRoute} onNavigate={navigate} />;
+        return (
+          <LandingPage
+            onNavigate={navigate}
+            isMobileLandingView={isMobileLandingView}
+            onToggleMobileView={(mobile) => setIsMobileLandingView(mobile)}
+            parentCtaRoute={pRoute}
+            volunteerCtaRoute={vRoute}
+          />
+        );
     }
   };
 
@@ -1718,11 +1689,9 @@ export default function App() {
           </span>
         </div>
       )}
-      <ErrorBoundary variant="page" resetKey={currentRoute}>
-        <Suspense fallback={<AppLoadingScreen title="Loading module..." />}>
-          {renderCurrentRoute()}
-        </Suspense>
-      </ErrorBoundary>
+      <Suspense fallback={<AppLoadingScreen title="Loading module..." />}>
+        {renderCurrentRoute()}
+      </Suspense>
 
       {showPreloader && currentRoute !== '/' && !['/privacy', '/terms', '/child-safety', '/contact'].includes(currentRoute.split('?')[0]) && (
         <AppPreloader 
@@ -1731,11 +1700,10 @@ export default function App() {
         />
       )}
 
-      {/* Screen Navigator strictly restricted: suppressed on ALL Parent, Volunteer, and Admin messaging experiences */}
+      {/* Screen Navigator strictly restricted: suppressed on ALL Parent & Volunteer experiences */}
       {import.meta.env.DEV && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
        currentRoute.startsWith('/admin') &&
-       !currentRoute.split('?')[0].startsWith('/admin/wristbands') &&
-       !currentRoute.split('?')[0].startsWith('/admin/messages') && (
+       !currentRoute.split('?')[0].startsWith('/admin/wristbands') && (
         <DevNavigator
           currentRoute={currentRoute}
           onNavigate={navigate}

@@ -31,15 +31,12 @@ import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { safeStorage } from '../../utils/storage';
 import { buildFrontendParentStatusUrl, buildFrontendParentPassUrl, resolveMessageTokens } from '../../utils/urlHelper';
-
-import { AdminDirectMessagesCenter } from './AdminDirectMessagesCenter';
+import { SelectedParentsChannelTab } from '../../components/admin/messages/SelectedParentsChannelTab';
 
 interface AdminMessagesViewProps {
   onBackToOverview: () => void;
   onNavigate: (route: string) => void;
   adminUser?: any;
-  currentRoute?: string;
-  initialThreadId?: string;
 }
 
 interface EventOption {
@@ -449,13 +446,7 @@ export function evaluateSendButtonState(params: {
   return { isEnabled: true, blockerReason: null };
 }
 
-export function AdminMessagesView({
-  onBackToOverview,
-  onNavigate,
-  adminUser,
-  currentRoute,
-  initialThreadId
-}: AdminMessagesViewProps) {
+export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: AdminMessagesViewProps) {
   const { showSuccess, showError } = useNotification();
   const isSuperAdmin = adminUser?.role === 'super_admin';
   const [initialLoading, setInitialLoading] = useState(true);
@@ -466,8 +457,8 @@ export function AdminMessagesView({
   const [events, setEvents] = useState<EventOption[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string>('event-ga-2026');
 
-  // Main navigation tabs: 'direct' = Direct Messages, 'updates' = Broadcast Log, 'broadcast' = Send Announcement
-  const [activeTab, setActiveTab] = useState<'direct' | 'updates' | 'broadcast'>('direct');
+  // Main navigation tabs: 'updates' = Inbox, 'broadcast' = Send Announcement, 'selected_parents' = Selected Parents
+  const [activeTab, setActiveTab] = useState<'updates' | 'broadcast' | 'selected_parents'>('updates');
 
   // Inbox state
   const [updates, setUpdates] = useState<any[]>([]);
@@ -1725,17 +1716,6 @@ export function AdminMessagesView({
       {/* 2. RESTRAINED TAB NAVIGATION */}
       <div className="flex border-b border-[#EAE8E1] dark:border-[#302E29] space-x-6">
         <button
-          id="tab-messages-direct"
-          onClick={() => setActiveTab('direct')}
-          className={`pb-3 text-xs font-semibold tracking-wide transition-all border-b-2 cursor-pointer focus:outline-none flex items-center space-x-1.5 ${
-            activeTab === 'direct'
-              ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3]'
-              : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5]'
-          }`}
-        >
-          <span>Direct Messages</span>
-        </button>
-        <button
           id="tab-messages-inbox"
           onClick={() => setActiveTab('updates')}
           className={`pb-3 text-xs font-semibold tracking-wide transition-all border-b-2 cursor-pointer focus:outline-none ${
@@ -1744,7 +1724,7 @@ export function AdminMessagesView({
               : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5]'
           }`}
         >
-          <span>Broadcast Log</span>
+          Inbox
         </button>
         <button
           id="tab-messages-compose"
@@ -1755,18 +1735,22 @@ export function AdminMessagesView({
               : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5]'
           }`}
         >
-          <span>Send Announcement</span>
+          Send Announcement
+        </button>
+        <button
+          id="tab-messages-selected-parents"
+          onClick={() => setActiveTab('selected_parents')}
+          className={`pb-3 text-xs font-semibold tracking-wide transition-all border-b-2 cursor-pointer focus:outline-none ${
+            activeTab === 'selected_parents'
+              ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3]'
+              : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5]'
+          }`}
+        >
+          Selected Parents
         </button>
       </div>
 
-      {activeTab === 'direct' ? (
-        <AdminDirectMessagesCenter
-          adminUser={adminUser}
-          currentRoute={currentRoute}
-          initialThreadId={initialThreadId}
-          onNavigate={onNavigate}
-        />
-      ) : activeTab === 'updates' ? (
+      {activeTab === 'updates' ? (
         <div className="space-y-6">
           {/* 3. RESTRAINED SUMMARY METRICS ROW */}
           <div className="space-y-3">
@@ -2342,6 +2326,11 @@ export function AdminMessagesView({
 
           </div>
         </div>
+      ) : activeTab === 'selected_parents' ? (
+        <SelectedParentsChannelTab
+          selectedEventId={selectedEventId}
+          adminUser={adminUser}
+        />
       ) : (
         /* 5. SEND ANNOUNCEMENT COMPOSER TAB */
         <div className="space-y-6">
