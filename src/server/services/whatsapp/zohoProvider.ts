@@ -83,6 +83,9 @@ export function resolveZohoTemplateConfig(intentOrName?: string): ResolvedZohoTe
     broadcast: process.env.ZOHO_WA_TEMPLATE_BROADCAST || process.env.ZOHO_WA_DEFAULT_TEMPLATE || process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY,
     manual_broadcast: process.env.ZOHO_WA_TEMPLATE_BROADCAST || process.env.ZOHO_WA_DEFAULT_TEMPLATE,
     escalation: process.env.ZOHO_WA_TEMPLATE_ESCALATION,
+    selected_parent_channel: process.env.ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL || process.env.ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL,
+    selected_parents_channel: process.env.ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL || process.env.ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL,
+    koinonia_selected_parent_channel: process.env.ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL || process.env.ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL,
     super_admin_test: process.env.ZOHO_WA_TEMPLATE_TEST || process.env.ZOHO_WA_DEFAULT_TEMPLATE,
     test: process.env.ZOHO_WA_TEMPLATE_TEST || process.env.ZOHO_WA_DEFAULT_TEMPLATE
   };
@@ -334,7 +337,7 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
       params.channelUrl ||
       process.env.WHATSAPP_CHANNEL_URL ||
       process.env.PUBLIC_WHATSAPP_CHANNEL_URL ||
-      ''
+      'https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U'
     ).trim();
     if (effectiveChannelUrl) {
       payload.merge_info = payload.merge_info || {};

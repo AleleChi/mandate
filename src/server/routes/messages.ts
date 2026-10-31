@@ -324,6 +324,7 @@ const RESERVED_ADMIN_MESSAGE_PATHS = new Set([
   'settings',
   'send',
   'campaign-status',
+  'selected-parents',
   'threads',
   'unread-count'
 ]);

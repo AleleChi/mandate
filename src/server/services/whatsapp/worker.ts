@@ -635,6 +635,26 @@ export async function processQueuedWhatsAppJobs(
             sentAt: dispatchTimestamp
           });
 
+          // Cross-workflow deduplication: if pass-ready notification delivered successfully,
+          // mark parent channel invitation purpose as sent for this parent & event
+          if (candidate.parent_id && candidate.event_id && (jobIntent === 'pass_ready' || templateName?.includes('pass_ready'))) {
+            try {
+              const { recordChannelInvitationSent } = await import('../selectedParentsChannelService');
+              await recordChannelInvitationSent({
+                parentId: candidate.parent_id,
+                eventId: candidate.event_id,
+                templateKey: templateName || null,
+                templateAlias: 'koinonia_pass_ready_v2',
+                provider: provider.name,
+                providerMessageId: sendResult.messageId || null,
+                initiatingAdminUserId: null,
+                selectedChildNames: childFirstName || null
+              });
+            } catch (crossErr) {
+              console.warn('[WhatsApp Worker] Failed to record cross-workflow channel invitation deduplication:', crossErr);
+            }
+          }
+
           succeeded++;
         } else {
           // Provider reported failure

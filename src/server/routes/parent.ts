@@ -11,6 +11,8 @@ import { buildParentStatusUrl } from '../utils/urlHelper';
 import { getPassesForParent, issuePassForChild, isChildPassAuthorized } from '../services/passService';
 import { getCurrentEvent, getCurrentEventId, getEventById } from '../services/eventService';
 import { checkEventEligibility, resolveCanonicalAgeGroup, CANONICAL_GA_EVENT_DATE } from '../services/eligibilityService';
+import { QUALIFYING_CHILD_STATUSES } from '../services/selectedParentsChannelService';
+import { extractFirstName, formatSelectedChildNames } from '../services/whatsapp/personalization';
 
 const router = Router();
 router.use(authMiddleware);
@@ -325,6 +327,97 @@ async function getFullChildrenList(
   }
   return list;
 }
+
+/**
+ * GET /api/parent/channel-access
+ * Authoritative server-side endpoint verifying whether the authenticated parent
+ * has at least one qualifying selected child for the current/active event.
+ *
+ * Security:
+ * - Requires parent authentication.
+ * - Resolves live database records (cannot be spoofed from frontend state).
+ * - Only reveals the canonical WhatsApp Channel URL if genuinely eligible.
+ * - If ineligible, returns friendly notice with eligible: false and NEVER exposes the URL.
+ */
+router.get('/channel-access', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    let parentProfile = req.parentProfile;
+    if (!parentProfile && req.user) {
+      parentProfile = await queryOne('SELECT * FROM parent_profiles WHERE user_id = ?', [req.user.id]);
+    }
+
+    if (!parentProfile) {
+      return res.status(403).json({
+        success: false,
+        eligible: false,
+        message: 'Parent profile required to access the Parents Channel.'
+      });
+    }
+
+    // 1. Resolve current or upcoming active event
+    const currentEvent = await getCurrentEvent();
+    const eventId = currentEvent?.id || getCurrentEventId();
+
+    if (!eventId) {
+      return res.json({
+        success: true,
+        eligible: false,
+        message: 'No active event found. Parents Channel access will open once an event session is active.',
+        selectedChildren: [],
+        selectedChildNames: ''
+      });
+    }
+
+    // 2. Query live qualifying selected children for this parent in this event
+    const children = await query<any>(
+      `SELECT c.id, c.full_name, cee.status
+       FROM children c
+       JOIN child_event_entries cee ON cee.child_id = c.id AND cee.event_id = ? AND COALESCE(cee.is_deleted, 0) = 0
+       WHERE c.parent_profile_id = ?
+       ORDER BY c.date_of_birth ASC, c.created_at ASC, c.id ASC`,
+      [eventId, parentProfile.id]
+    );
+
+    const qualifyingChildren = children.filter((c: any) => QUALIFYING_CHILD_STATUSES.includes(c.status));
+
+    if (qualifyingChildren.length === 0) {
+      // INELIGIBLE: Do not reveal raw WhatsApp Channel URL
+      return res.json({
+        success: true,
+        eligible: false,
+        eventTitle: currentEvent?.title || "Children's Session",
+        message: "Parents Channel access is available to registered parents and guardians of selected children for this event.",
+        selectedChildren: [],
+        selectedChildNames: ''
+      });
+    }
+
+    // ELIGIBLE: Return selected children, formatted names, and canonical channel destination
+    const selectedChildNames = formatSelectedChildNames(qualifyingChildren.map((c: any) => c.full_name));
+    const channelUrl = process.env.WHATSAPP_CHANNEL_URL || 'https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U';
+
+    return res.json({
+      success: true,
+      eligible: true,
+      eventTitle: currentEvent?.title || "Children's Session",
+      selectedChildren: qualifyingChildren.map((c: any) => ({
+        id: c.id,
+        fullName: c.full_name,
+        firstName: extractFirstName(c.full_name)
+      })),
+      selectedChildNames,
+      channelUrl,
+      notice: "This channel is for registered parents and guardians of selected children. Please do not share the channel link with others."
+    });
+  } catch (err: any) {
+    console.error('[Parent Channel Access] Error checking access:', err);
+    return res.status(500).json({
+      success: false,
+      eligible: false,
+      message: 'Failed to verify channel eligibility. Please try again.'
+    });
+  }
+});
 
 router.get('/profile', async (req: AuthenticatedRequest, res: Response) => {
   if (!req.parentProfile) {
