@@ -504,7 +504,7 @@ export const BulkChildEventActionModal: React.FC<BulkChildEventActionModalProps>
         onClick={() => { if (!submitting) onClose(); }} 
       />
 
-      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[88vh] overflow-hidden">
+      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-lg w-full max-w-2xl shadow-2xl flex flex-col max-h-[88vh] overflow-hidden">
         
         {/* MODAL HEADER */}
         <div className="px-6 py-4 border-b border-[#EAE8E1] dark:border-[#302E29] flex items-center justify-between gap-3 bg-white dark:bg-[#21211E] shrink-0">

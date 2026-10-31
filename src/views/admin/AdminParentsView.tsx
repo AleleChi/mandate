@@ -23,7 +23,9 @@ import {
   Building2,
   UserCheck,
   HeartHandshake,
-  Loader2
+  Loader2,
+  Phone,
+  ArrowRight
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -941,90 +943,143 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
   const isDomReady = typeof document !== 'undefined' && Boolean(document.body);
 
   // ---- QUICK FAMILY OVERVIEW MODAL ----
-  // ---- QUICK FAMILY OVERVIEW MODAL ----
   const quickViewModal = (quickViewParent && isDomReady) ? createPortal(
     <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
       <div
         onClick={() => setQuickViewParent(null)}
         className="fixed inset-0 bg-black/50 transition-opacity backdrop-blur-2xs"
       />
-      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-xl w-full max-w-xl shadow-xl overflow-hidden text-neutral-900 dark:text-neutral-100">
+      <div className="relative bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-lg w-full max-w-[760px] shadow-xl overflow-hidden text-neutral-900 dark:text-neutral-100 flex flex-col max-h-[85vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#EAE8E1] dark:border-[#2A2926] bg-[#FAF9F6] dark:bg-[#20201E]">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-md bg-[#C59B27]/10 text-[#C59B27] flex items-center justify-center font-bold text-sm shrink-0 border border-[#C59B27]/20">
-              {getInitials(getDisplayName(quickViewParent))}
-            </div>
-            <div>
-              <h3 className="font-semibold text-sm text-neutral-900 dark:text-neutral-100 leading-tight flex items-center gap-2">
-                <span>{getDisplayName(quickViewParent)}</span>
-                {quickViewParent.isKoinoniaWorker && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#C59B27]/15 text-[#C59B27] border border-[#C59B27]/30">
-                    Worker
-                  </span>
-                )}
+        <div className="px-6 py-4 border-b border-[#EAE8E1] dark:border-[#2A2926] flex items-start justify-between gap-4 bg-white dark:bg-[#1D1D1A] shrink-0">
+          <div className="flex items-center gap-3.5 min-w-0">
+            {quickViewParent.photoUrl ? (
+              <img
+                src={quickViewParent.photoUrl}
+                alt={getDisplayName(quickViewParent)}
+                referrerPolicy="no-referrer"
+                className="w-10 h-10 rounded-full object-cover border border-[#EAE8E1] dark:border-[#3A3835] shrink-0"
+              />
+            ) : (
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs uppercase shrink-0 border ${
+                quickViewParent.isKoinoniaWorker
+                  ? 'bg-[#C59B27]/10 text-[#C59B27] border-[#C59B27]/25'
+                  : 'bg-neutral-100 dark:bg-[#262520] text-neutral-600 dark:text-neutral-400 border-[#EAE8E1] dark:border-[#2A2926]'
+              }`}>
+                {getInitials(getDisplayName(quickViewParent))}
+              </div>
+            )}
+            <div className="min-w-0">
+              <h3 className="font-semibold text-base text-neutral-900 dark:text-neutral-100 leading-tight truncate">
+                {getDisplayName(quickViewParent)}
               </h3>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">{quickViewParent.email || 'No email registered'}</p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">
+                {quickViewParent.email || 'No email registered'}
+              </p>
+              {quickViewParent.isKoinoniaWorker ? (
+                <p className="text-xs text-neutral-600 dark:text-neutral-300 mt-1 flex items-center gap-1.5 font-normal">
+                  <Briefcase className="w-3.5 h-3.5 text-[#C59B27] shrink-0" />
+                  <span>Koinonia Worker{quickViewParent.department ? ` · ${quickViewParent.department}` : ''}</span>
+                </p>
+              ) : (
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 font-normal">
+                  Registered Parent
+                </p>
+              )}
             </div>
           </div>
           <button
+            type="button"
             onClick={() => setQuickViewParent(null)}
-            className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-[#20201E] transition-colors cursor-pointer"
+            className="p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors cursor-pointer shrink-0"
+            aria-label="Close"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Content Body */}
-        <div className="p-5 space-y-5 max-h-[75vh] overflow-y-auto text-xs">
-          {/* Quick Stat Strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-            <div className="p-3 rounded-md bg-neutral-50/70 dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926]">
-              <span className="text-[10px] font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block mb-1">Role / Status</span>
-              <p className="font-semibold text-neutral-900 dark:text-neutral-100">
+        <div className="px-6 py-5 space-y-6 overflow-y-auto flex-1 text-xs">
+          {/* Core Parent Metadata Row (Replacing the 3 cards) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 pb-5 border-b border-[#EAE8E1] dark:border-[#2A2926]">
+            <div>
+              <span className="text-xs text-neutral-500 dark:text-neutral-400 block mb-1">Role</span>
+              <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                 {quickViewParent.isKoinoniaWorker ? `Worker (${quickViewParent.department || 'General'})` : 'Regular Parent'}
               </p>
             </div>
 
-            <div className="p-3 rounded-md bg-neutral-50/70 dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926]">
-              <span className="text-[10px] font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block mb-1">Phone & WhatsApp</span>
-              <p className="font-semibold text-neutral-900 dark:text-neutral-100">
-                {quickViewParent.phone || 'None'}
-              </p>
+            <div>
+              <span className="text-xs text-neutral-500 dark:text-neutral-400 block mb-1">Phone</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                  {quickViewParent.phone || 'None'}
+                </span>
+                {quickViewParent.phone && (
+                  <a
+                    href={`tel:${quickViewParent.phone}`}
+                    className="p-0.5 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors"
+                    title={`Call ${quickViewParent.phone}`}
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                  </a>
+                )}
+                {(quickViewParent.whatsapp || quickViewParent.phone) && (
+                  <a
+                    href={`https://wa.me/${(quickViewParent.whatsapp || quickViewParent.phone).replace(/[^0-9]/g, '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-0.5 text-neutral-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+                    title="Open WhatsApp chat"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                  </a>
+                )}
+              </div>
             </div>
 
-            <div className="p-3 rounded-md bg-neutral-50/70 dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926] col-span-2 sm:col-span-1">
-              <span className="text-[10px] font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block mb-1">Children Registered</span>
-              <p className="font-semibold text-[#C59B27]">
-                {formatChildrenCount(quickViewParent.childrenCount || 0)}
+            <div>
+              <span className="text-xs text-neutral-500 dark:text-neutral-400 block mb-1">Children</span>
+              <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                {formatChildrenCount(quickViewParent.childrenCount || quickViewParent.children?.length || 0)}
               </p>
             </div>
           </div>
 
-          {/* Location Origin Section */}
-          <div className="p-3.5 rounded-md bg-[#FAF9F6] dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926] space-y-2">
-            <div className="flex items-center gap-1.5 font-semibold text-neutral-900 dark:text-neutral-100">
+          {/* Location Section */}
+          <div className="space-y-3 pb-5 border-b border-[#EAE8E1] dark:border-[#2A2926]">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-neutral-900 dark:text-neutral-100">
               <MapPin className="w-3.5 h-3.5 text-[#C59B27]" />
-              <span>Geographic Origin & Residence</span>
+              <span>Location</span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 border-t border-[#EAE8E1] dark:border-[#2A2926]">
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <span className="text-[10px] text-neutral-400 dark:text-neutral-500 block">City</span>
-                <span className="font-medium text-neutral-800 dark:text-neutral-200">{quickViewParent.city || 'Not specified'}</span>
+                <span className="text-xs text-neutral-500 dark:text-neutral-400 block">City</span>
+                <span className="text-xs font-medium text-neutral-900 dark:text-neutral-100 mt-0.5 block">
+                  {quickViewParent.city || 'Not specified'}
+                </span>
               </div>
               <div>
-                <span className="text-[10px] text-neutral-400 dark:text-neutral-500 block">State / Region</span>
-                <span className="font-medium text-neutral-800 dark:text-neutral-200">{quickViewParent.stateRegion || 'Not specified'}</span>
+                <span className="text-xs text-neutral-500 dark:text-neutral-400 block">State / Region</span>
+                <span className="text-xs font-medium text-neutral-900 dark:text-neutral-100 mt-0.5 block">
+                  {quickViewParent.stateRegion || 'Not specified'}
+                </span>
               </div>
               <div>
-                <span className="text-[10px] text-neutral-400 dark:text-neutral-500 block">Country</span>
-                <span className="font-medium text-neutral-800 dark:text-neutral-200">{quickViewParent.country || 'Nigeria'}</span>
+                <span className="text-xs text-neutral-500 dark:text-neutral-400 block">Country</span>
+                <span className="text-xs font-medium text-neutral-900 dark:text-neutral-100 mt-0.5 block">
+                  {quickViewParent.country || 'Nigeria'}
+                </span>
               </div>
             </div>
+
             {quickViewParent.homeAddress && (
-              <div className="pt-2 border-t border-[#EAE8E1] dark:border-[#2A2926]">
-                <span className="text-[10px] text-neutral-400 dark:text-neutral-500 block">Home Address</span>
-                <p className="text-neutral-700 dark:text-neutral-300 font-medium leading-relaxed">{quickViewParent.homeAddress}</p>
+              <div className="pt-1">
+                <span className="text-xs text-neutral-500 dark:text-neutral-400 block">Home address</span>
+                <p className="text-xs font-medium text-neutral-800 dark:text-neutral-200 mt-0.5 leading-relaxed">
+                  {quickViewParent.homeAddress}
+                </p>
               </div>
             )}
           </div>
@@ -1032,47 +1087,58 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
           {/* Connected Children Section */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
-              <h4 className="font-semibold text-neutral-900 dark:text-neutral-100 flex items-center gap-1.5 text-xs">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-neutral-900 dark:text-neutral-100">
                 <Users className="w-3.5 h-3.5 text-[#C59B27]" />
-                <span>Connected Children ({quickViewParent.children?.length || 0})</span>
-              </h4>
-              <span className="text-[10px] text-neutral-400 dark:text-neutral-500 font-medium">
+                <span>Connected children</span>
+                <span className="text-xs text-neutral-500 dark:text-neutral-400 font-normal">
+                  · {formatChildrenCount(quickViewParent.children?.length || 0)}
+                </span>
+              </div>
+              <span className="text-[11px] text-neutral-400 dark:text-neutral-500 font-medium">
                 {activeEvent?.title || activeEvent?.name || 'Current Event'}
               </span>
             </div>
 
             {(!quickViewParent.children || quickViewParent.children.length === 0) ? (
-              <div className="p-3.5 rounded-md bg-neutral-50 dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926] text-center text-neutral-400 dark:text-neutral-500 text-xs">
+              <div className="py-4 text-center text-neutral-400 dark:text-neutral-500 text-xs">
                 No children profiles linked to this parent yet.
               </div>
             ) : (
-              <div className="space-y-1.5">
+              <div className="divide-y divide-[#EAE8E1] dark:divide-[#2A2926]">
                 {quickViewParent.children.map((child: any) => {
                   const status = child.entryStatus || 'not_registered';
                   let statusLabel = 'Not selected';
-                  let statusClass = 'bg-zinc-100 dark:bg-[#262520] text-zinc-600 dark:text-[#7A7570] border-zinc-200 dark:border-[#3A3835]';
+                  let statusDotClass = 'bg-neutral-400';
+                  let statusTextClass = 'text-neutral-500 dark:text-neutral-400';
 
                   if (status === 'pass_ready') {
-                    statusLabel = 'Pass Ready';
-                    statusClass = 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/40';
+                    statusLabel = 'Pass ready';
+                    statusDotClass = 'bg-emerald-500';
+                    statusTextClass = 'text-emerald-700 dark:text-emerald-400';
                   } else if (status === 'selected') {
                     statusLabel = 'Selected';
-                    statusClass = 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/40';
+                    statusDotClass = 'bg-emerald-500';
+                    statusTextClass = 'text-emerald-700 dark:text-emerald-400';
                   } else if (status === 'under_review' || status === 'review_reopened') {
-                    statusLabel = 'Awaiting Review';
-                    statusClass = 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/40';
+                    statusLabel = 'Awaiting review';
+                    statusDotClass = 'bg-amber-500';
+                    statusTextClass = 'text-amber-700 dark:text-amber-400';
                   } else if (status === 'checked_in' || status === 'inside') {
-                    statusLabel = 'Checked In';
-                    statusClass = 'bg-sky-50 dark:bg-sky-950/30 text-sky-700 dark:text-sky-400 border-sky-200 dark:border-sky-800/40';
+                    statusLabel = 'Checked in';
+                    statusDotClass = 'bg-sky-500';
+                    statusTextClass = 'text-sky-700 dark:text-sky-400';
                   } else if (status === 'picked_up' || status === 'checked_out') {
-                    statusLabel = 'Picked Up';
-                    statusClass = 'bg-purple-50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800/40';
+                    statusLabel = 'Picked up';
+                    statusDotClass = 'bg-purple-500';
+                    statusTextClass = 'text-purple-700 dark:text-purple-400';
                   } else if (status === 'withdrawn') {
                     statusLabel = 'Withdrawn';
-                    statusClass = 'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800/40';
+                    statusDotClass = 'bg-rose-500';
+                    statusTextClass = 'text-rose-700 dark:text-rose-400';
                   } else if (status === 'waiting_list') {
-                    statusLabel = 'Waiting List';
-                    statusClass = 'bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800/40';
+                    statusLabel = 'Waiting list';
+                    statusDotClass = 'bg-amber-500';
+                    statusTextClass = 'text-amber-700 dark:text-amber-400';
                   }
 
                   const isSelecting = submittingModalChildActionId === `${child.id}-select`;
@@ -1083,70 +1149,64 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                   return (
                     <div
                       key={child.id}
-                      className="p-2.5 rounded-md bg-white dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926] flex items-center justify-between gap-3 text-left"
+                      className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left"
                     >
                       <div className="min-w-0">
                         <p className="font-semibold text-xs text-neutral-900 dark:text-neutral-100 truncate">{child.fullName}</p>
-                        <p className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-0.5">
-                          {child.gender || 'Unknown gender'} · {child.age ? `${child.age} yrs` : 'Age not calculated'} {child.ageGroup ? `(${child.ageGroup})` : ''}
+                        <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+                          {child.gender || 'Unknown gender'} · {child.age ? `${child.age} yrs` : 'Age not calculated'}{child.ageGroup ? ` · ${child.ageGroup}` : ''}
                         </p>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-medium border ${statusClass}`}>
-                          {statusLabel}
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-medium">
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusDotClass}`} />
+                          <span className={statusTextClass}>{statusLabel}</span>
                         </span>
 
-                        {canSelect && (
-                          <button
-                            type="button"
-                            disabled={isSelecting}
-                            onClick={() => handleSelectModalChild(child)}
-                            className="px-2.5 py-1 text-[11px] font-semibold text-white bg-[#C59B27] hover:bg-[#B08921] disabled:opacity-60 rounded transition-colors flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed focus:outline-none"
-                          >
-                            {isSelecting ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-                            <span>Select for event</span>
-                          </button>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {canSelect && (
+                            <button
+                              type="button"
+                              disabled={isSelecting}
+                              onClick={() => handleSelectModalChild(child)}
+                              className="px-2.5 py-1 text-xs font-semibold text-white bg-[#C59B27] hover:bg-[#B08921] disabled:opacity-60 rounded-[4px] transition-colors flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed focus:outline-none"
+                            >
+                              {isSelecting ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                              <span>Select for event</span>
+                            </button>
+                          )}
 
-                        {isAwaitingReview && (
-                          <div className="flex items-center gap-1.5">
+                          {isAwaitingReview && (
                             <button
                               type="button"
                               onClick={() => handleReviewModalChild(child)}
-                              className="px-2.5 py-1 text-[11px] font-medium text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 border border-amber-200 dark:border-amber-800/50 rounded transition-colors cursor-pointer focus:outline-none"
+                              className="px-2.5 py-1 text-xs font-semibold text-white bg-[#C59B27] hover:bg-[#B08921] rounded-[4px] transition-colors cursor-pointer focus:outline-none"
                             >
                               Review application
                             </button>
+                          )}
+
+                          {isWithdrawn && (
                             <button
                               type="button"
-                              onClick={() => handleViewModalChild(child)}
-                              className="px-2 py-1 text-[11px] font-medium text-neutral-600 dark:text-neutral-300 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded transition-colors cursor-pointer focus:outline-none"
+                              onClick={() => setModalChildToRestore(child)}
+                              className="px-2.5 py-1 text-xs font-medium text-neutral-700 dark:text-neutral-200 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 rounded-[4px] transition-colors cursor-pointer focus:outline-none"
                             >
-                              View child
+                              Restore
                             </button>
-                          </div>
-                        )}
+                          )}
 
-                        {isWithdrawn && (
-                          <button
-                            type="button"
-                            onClick={() => setModalChildToRestore(child)}
-                            className="px-2.5 py-1 text-[11px] font-medium text-neutral-700 dark:text-neutral-200 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded transition-colors cursor-pointer focus:outline-none"
-                          >
-                            Restore
-                          </button>
-                        )}
-
-                        {!canSelect && !isAwaitingReview && !isWithdrawn && (
                           <button
                             type="button"
                             onClick={() => handleViewModalChild(child)}
-                            className="px-2.5 py-1 text-[11px] font-medium text-neutral-700 dark:text-neutral-200 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded transition-colors cursor-pointer focus:outline-none"
+                            className="text-xs text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors flex items-center gap-1 cursor-pointer py-1 px-1.5"
+                            title="View child profile"
                           >
-                            View child
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>View</span>
                           </button>
-                        )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -1157,24 +1217,26 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
         </div>
 
         {/* Modal Footer */}
-        <div className="px-5 py-3.5 bg-[#FAF9F6] dark:bg-[#20201E] border-t border-[#EAE8E1] dark:border-[#2A2926] flex items-center justify-between">
+        <div className="px-6 py-3.5 bg-[#FAF9F6] dark:bg-[#1A1916] border-t border-[#EAE8E1] dark:border-[#2A2926] flex items-center justify-between shrink-0">
           <button
+            type="button"
             onClick={() => {
               const pid = quickViewParent.id;
               setQuickViewParent(null);
               onNavigate(`/admin/parents/${pid}` as AppRoute);
             }}
-            className="text-xs font-semibold text-[#C59B27] hover:text-[#B08921] transition-colors cursor-pointer"
+            className="text-xs font-medium text-[#C59B27] hover:text-[#B08921] transition-colors flex items-center gap-1.5 cursor-pointer"
           >
-            Open Full Profile & History →
+            <span>View full profile</span>
+            <ArrowRight className="w-3.5 h-3.5" />
           </button>
-          <Button
+          <button
+            type="button"
             onClick={() => setQuickViewParent(null)}
-            variant="secondary"
-            className="px-3.5 py-1.5 text-xs rounded-md"
+            className="px-3 py-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-[#262520] rounded-[4px] transition-colors cursor-pointer"
           >
             Close
-          </Button>
+          </button>
         </div>
       </div>
     </div>,
@@ -1187,7 +1249,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
         onClick={() => setModalChildToRestore(null)}
         className="fixed inset-0 bg-black/50 backdrop-blur-2xs"
       />
-      <div className="relative bg-[#FFFDF9] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-xl w-full max-w-md shadow-xl p-5 text-neutral-900 dark:text-neutral-100 text-left space-y-3">
+      <div className="relative bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-lg w-full max-w-md shadow-xl p-5 text-neutral-900 dark:text-neutral-100 text-left space-y-3">
         <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
           <AlertTriangle className="w-4 h-4 shrink-0" />
           <h3 className="font-semibold text-sm">Restore Child to Event</h3>
@@ -1196,28 +1258,29 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
           Restore <strong>{modalChildToRestore.fullName}</strong> to the event review list for <strong>{activeEvent?.title || activeEvent?.name || 'the current event'}</strong>?
         </p>
         <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#2A2926]">
-          <Button
-            variant="secondary"
+          <button
+            type="button"
             onClick={() => setModalChildToRestore(null)}
-            className="px-3 py-1.5 text-xs rounded-md"
+            className="px-3 py-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-[#262520] rounded-[4px] transition-colors cursor-pointer"
             disabled={restoringModalChild}
           >
             Cancel
-          </Button>
-          <Button
+          </button>
+          <button
+            type="button"
             onClick={handleRestoreModalChildConfirm}
-            className="px-3.5 py-1.5 text-xs rounded-md bg-[#C59B27] hover:bg-[#B08921] text-white font-semibold"
+            className="px-3.5 py-1.5 text-xs rounded-[4px] bg-[#C59B27] hover:bg-[#B08921] text-white font-semibold cursor-pointer disabled:opacity-60 transition-colors"
             disabled={restoringModalChild}
           >
             {restoringModalChild ? (
-              <>
+              <span className="flex items-center gap-1">
                 <Loader2 className="w-3 h-3 animate-spin mr-1" />
                 Restoring...
-              </>
+              </span>
             ) : (
               'Restore to Event'
             )}
-          </Button>
+          </button>
         </div>
       </div>
     </div>,
