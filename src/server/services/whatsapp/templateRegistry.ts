@@ -260,6 +260,24 @@ export const ZOHO_TEMPLATE_REGISTRY: Record<string, ZohoTemplateDefinition> = {
     description: 'Controlled test dispatch (alias)'
   },
 
+  // 16. Selected Parents Channel Invitation
+  selected_parent_channel: {
+    intent: 'selected_parent_channel',
+    defaultAlias: 'koinonia_selected_parent_channel',
+    envVarKeys: ['ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL', 'ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL'],
+    category: 'parent',
+    requiredMergeFields: ['parent_first_name', 'selected_child_names'],
+    description: 'WhatsApp Parents Channel invitation for parents of selected children'
+  },
+  selected_parents_channel: {
+    intent: 'selected_parent_channel',
+    defaultAlias: 'koinonia_selected_parent_channel',
+    envVarKeys: ['ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL', 'ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL'],
+    category: 'parent',
+    requiredMergeFields: ['parent_first_name', 'selected_child_names'],
+    description: 'WhatsApp Parents Channel invitation (alias)'
+  },
+
   // Direct template alias aliases for convenience
   koinonia_registration_ack: {
     intent: 'registration_ack',
@@ -391,6 +409,14 @@ export const ZOHO_TEMPLATE_REGISTRY: Record<string, ZohoTemplateDefinition> = {
     category: 'system',
     requiredMergeFields: ['first_name'],
     description: 'Direct alias for koinonia_test'
+  },
+  koinonia_selected_parent_channel: {
+    intent: 'selected_parent_channel',
+    defaultAlias: 'koinonia_selected_parent_channel',
+    envVarKeys: ['ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL', 'ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL'],
+    category: 'parent',
+    requiredMergeFields: ['parent_first_name', 'selected_child_names'],
+    description: 'Direct alias for koinonia_selected_parent_channel'
   }
 };
 
@@ -416,6 +442,9 @@ export function getRequiredMergeFieldsForIntent(intentOrName?: string): string[]
   if (!clean) return [];
   if (clean.includes('duty') || clean.includes('volunteer')) {
     return ['volunteer_first_name'];
+  }
+  if (clean.includes('selected_parent') || clean.includes('channel_invitation')) {
+    return ['parent_first_name', 'selected_child_names'];
   }
   if (
     clean.includes('pass') ||

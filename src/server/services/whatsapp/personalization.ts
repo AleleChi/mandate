@@ -69,11 +69,36 @@ export function extractFirstName(
     .join('-');
 }
 
+/**
+ * Formats a list of child first names into canonical English list format:
+ * - 1: "Daniel"
+ * - 2: "Daniel and Sarah"
+ * - 3: "Daniel, Sarah and Michael"
+ * - 4+: "Daniel, Sarah, Michael and Grace"
+ */
+export function formatSelectedChildNames(names: string[]): string {
+  if (!names || names.length === 0) return '';
+  const cleaned = names
+    .map(n => typeof n === 'string' ? extractFirstName(n) : '')
+    .filter(Boolean);
+
+  // Deduplicate while preserving order
+  const uniqueNames = Array.from(new Set(cleaned));
+  if (uniqueNames.length === 0) return '';
+  if (uniqueNames.length === 1) return uniqueNames[0];
+  if (uniqueNames.length === 2) return `${uniqueNames[0]} and ${uniqueNames[1]}`;
+
+  const allButLast = uniqueNames.slice(0, -1).join(', ');
+  const last = uniqueNames[uniqueNames.length - 1];
+  return `${allButLast} and ${last}`;
+}
+
 export interface PersonalizationOptions {
   parentFirstName?: string;
   parentFullName?: string;
   childFirstName?: string;
   childFullName?: string;
+  selectedChildNames?: string;
   volunteerFirstName?: string;
   volunteerFullName?: string;
   eventName?: string;
@@ -111,6 +136,11 @@ export function buildMergeInfo(options: PersonalizationOptions = {}): Record<str
   if (childFirst) {
     mergeInfo.child_first_name = childFirst;
     mergeInfo.child_name = childFirst;
+  }
+
+  if (options.selectedChildNames?.trim()) {
+    mergeInfo.selected_child_names = options.selectedChildNames.trim();
+    mergeInfo.child_names = options.selectedChildNames.trim();
   }
 
   if (volunteerFirst) {
@@ -201,6 +231,8 @@ export function validateMergeInfo(
       } else if (key === 'volunteer_first_name' && (mergeInfo.volunteer_name?.trim() || mergeInfo.first_name?.trim())) {
         aliasSatisfied = true;
       } else if (key === 'first_name' && (mergeInfo.parent_first_name?.trim() || mergeInfo.volunteer_first_name?.trim())) {
+        aliasSatisfied = true;
+      } else if (key === 'selected_child_names' && mergeInfo.child_names?.trim()) {
         aliasSatisfied = true;
       }
 

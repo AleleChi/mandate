@@ -31,6 +31,7 @@ import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { safeStorage } from '../../utils/storage';
 import { buildFrontendParentStatusUrl, buildFrontendParentPassUrl, resolveMessageTokens } from '../../utils/urlHelper';
+import { SelectedParentsChannelTab } from '../../components/admin/messages/SelectedParentsChannelTab';
 
 interface AdminMessagesViewProps {
   onBackToOverview: () => void;
@@ -456,8 +457,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
   const [events, setEvents] = useState<EventOption[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string>('event-ga-2026');
 
-  // Main navigation tabs: 'updates' = Inbox, 'broadcast' = Send Announcement
-  const [activeTab, setActiveTab] = useState<'updates' | 'broadcast'>('updates');
+  // Main navigation tabs: 'updates' = Inbox, 'broadcast' = Send Announcement, 'selected_parents' = Selected Parents
+  const [activeTab, setActiveTab] = useState<'updates' | 'broadcast' | 'selected_parents'>('updates');
 
   // Inbox state
   const [updates, setUpdates] = useState<any[]>([]);
@@ -1736,6 +1737,17 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
         >
           Send Announcement
         </button>
+        <button
+          id="tab-messages-selected-parents"
+          onClick={() => setActiveTab('selected_parents')}
+          className={`pb-3 text-xs font-semibold tracking-wide transition-all border-b-2 cursor-pointer focus:outline-none ${
+            activeTab === 'selected_parents'
+              ? 'border-[#C59B27] text-[#18181B] dark:text-[#F0EBE3]'
+              : 'border-transparent text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#B8B0A5]'
+          }`}
+        >
+          Selected Parents
+        </button>
       </div>
 
       {activeTab === 'updates' ? (
@@ -2314,6 +2326,11 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
 
           </div>
         </div>
+      ) : activeTab === 'selected_parents' ? (
+        <SelectedParentsChannelTab
+          selectedEventId={selectedEventId}
+          adminUser={adminUser}
+        />
       ) : (
         /* 5. SEND ANNOUNCEMENT COMPOSER TAB */
         <div className="space-y-6">

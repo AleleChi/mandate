@@ -1517,6 +1517,82 @@ export const api = {
         lastUpdated?: string;
       }>(`/api/admin/messages/campaign-status/${campaignId}`);
     },
+    async getSelectedParentsAudience(eventId: string, params?: { search?: string; status?: string; whatsappStatus?: string }) {
+      const q = new URLSearchParams();
+      q.append('eventId', eventId);
+      if (params?.search) q.append('search', params.search);
+      if (params?.status) q.append('status', params.status);
+      if (params?.whatsappStatus) q.append('whatsappStatus', params.whatsappStatus);
+      return api.request<{
+        success: boolean;
+        eventId: string;
+        eventTitle: string;
+        templateConfigured: boolean;
+        templateKeyOrAlias: string | null;
+        summary: {
+          totalEligibleParents: number;
+          invitationsNotSent: number;
+          invitationsSent: number;
+          invitationsFailed: number;
+          whatsappAvailable: number;
+          whatsappUnavailable: number;
+        };
+        parents: Array<{
+          parentId: string;
+          userId: string;
+          fullName: string;
+          firstName: string;
+          phoneNumber: string | null;
+          whatsappNumber: string | null;
+          email: string | null;
+          whatsappConsentStatus: 'opted_in' | 'opted_out' | 'unknown';
+          whatsappAvailability: 'available' | 'opted_out' | 'invalid_number';
+          normalizedWhatsAppNumber: string | null;
+          totalRegisteredChildren: number;
+          selectedChildrenCount: number;
+          selectedRatioText: string;
+          selectedChildNames: string;
+          children: Array<{
+            id: string;
+            fullName: string;
+            firstName: string;
+            status: string;
+            ageGroup: string | null;
+            isSelected: boolean;
+          }>;
+          invitationStatus: 'not_sent' | 'sent' | 'failed';
+          sentAt: string | null;
+          attemptedAt: string | null;
+          failureReason: string | null;
+          providerMessageId: string | null;
+        }>;
+      }>(`/api/admin/messages/selected-parents?${q.toString()}`);
+    },
+    async sendSelectedParentsChannelInvitations(payload: {
+      eventId: string;
+      parentIds: string[];
+      resend?: boolean;
+    }) {
+      return api.request<{
+        success: boolean;
+        templateConfigured: boolean;
+        totalRequested: number;
+        sentCount: number;
+        skippedCount: number;
+        failedCount: number;
+        details: Array<{
+          parentId: string;
+          parentName: string;
+          status: 'sent' | 'skipped' | 'failed';
+          reason?: string;
+          messageId?: string;
+        }>;
+        error?: string;
+      }>('/api/admin/messages/selected-parents/send', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
     async getMessagesSettings() {
       return api.request<{
         success: boolean;

@@ -59,6 +59,10 @@ import {
   getDobCutoffsForEvent,
   CANONICAL_PROGRAMME_AGE_GROUPS
 } from '../services/eligibilityService';
+import {
+  getSelectedParentsAudience,
+  sendSelectedParentsChannelInvitations
+} from '../services/selectedParentsChannelService';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -9933,6 +9937,64 @@ router.get('/messages/campaign-status/:campaignId', async (req: AuthenticatedReq
   } catch (err: any) {
     console.error('[Campaign Status Error]:', err);
     res.status(500).json({ success: false, error: 'Failed to retrieve campaign status' });
+  }
+});
+
+// GET /api/admin/messages/selected-parents - Get audience of parents with selected children for the event
+router.get('/messages/selected-parents', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const rawEventId = (req.query.eventId as string) || undefined;
+    const eventId = await resolveAdminEventId(rawEventId) || rawEventId || 'event-ga-2026';
+    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const whatsappStatus = typeof req.query.whatsappStatus === 'string' ? req.query.whatsappStatus : undefined;
+
+    const result = await getSelectedParentsAudience(eventId, {
+      search,
+      status,
+      whatsappStatus
+    });
+
+    return res.json({ success: true, ...result });
+  } catch (err: any) {
+    console.error('[Admin Selected Parents Audience Error]:', err);
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Failed to fetch selected parents audience'
+    });
+  }
+});
+
+// POST /api/admin/messages/selected-parents/send - Send channel invitation to selected parents
+router.post('/messages/selected-parents/send', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const { eventId: rawEventId, parentIds, resend } = req.body || {};
+    const eventId = await resolveAdminEventId(rawEventId) || rawEventId || 'event-ga-2026';
+
+    if (!Array.isArray(parentIds) || parentIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please select at least one parent to send invitations to.'
+      });
+    }
+
+    const adminUserId = req.user?.id || 'admin';
+    const result = await sendSelectedParentsChannelInvitations({
+      eventId,
+      parentIds,
+      adminUserId,
+      resend: Boolean(resend)
+    });
+
+    return res.json(result);
+  } catch (err: any) {
+    console.error('[Admin Send Selected Parents Channel Invitations Error]:', err);
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Failed to dispatch channel invitations'
+    });
   }
 });
 

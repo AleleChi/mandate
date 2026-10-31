@@ -615,6 +615,30 @@ function initSqliteSchema(db: Database.Database) {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS parent_channel_invitations (
+      id TEXT PRIMARY KEY,
+      parent_id TEXT NOT NULL REFERENCES parent_profiles(id) ON DELETE CASCADE,
+      event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      communication_purpose TEXT NOT NULL DEFAULT 'parents_channel_invitation',
+      channel TEXT NOT NULL DEFAULT 'whatsapp',
+      template_key TEXT,
+      template_alias TEXT,
+      provider TEXT,
+      provider_message_id TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      failure_reason TEXT,
+      initiating_admin_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      selected_child_names TEXT,
+      attempted_at TEXT,
+      sent_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(parent_id, event_id, communication_purpose)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pci_event_purpose_status ON parent_channel_invitations(event_id, communication_purpose, status);
+    CREATE INDEX IF NOT EXISTS idx_pci_parent_id ON parent_channel_invitations(parent_id);
+
     CREATE TABLE IF NOT EXISTS admin_message_settings (
       id TEXT PRIMARY KEY,
       sender_name TEXT,
@@ -2544,6 +2568,30 @@ async function initPostgresSchema(pool: any) {
         status VARCHAR(32) NOT NULL,
         created_at TIMESTAMP NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS parent_channel_invitations (
+        id VARCHAR(64) PRIMARY KEY,
+        parent_id VARCHAR(64) NOT NULL REFERENCES parent_profiles(id) ON DELETE CASCADE,
+        event_id VARCHAR(64) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        communication_purpose VARCHAR(64) NOT NULL DEFAULT 'parents_channel_invitation',
+        channel VARCHAR(32) NOT NULL DEFAULT 'whatsapp',
+        template_key VARCHAR(255),
+        template_alias VARCHAR(255),
+        provider VARCHAR(64),
+        provider_message_id VARCHAR(255),
+        status VARCHAR(32) NOT NULL DEFAULT 'pending',
+        failure_reason TEXT,
+        initiating_admin_user_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+        selected_child_names TEXT,
+        attempted_at TIMESTAMP,
+        sent_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL,
+        UNIQUE(parent_id, event_id, communication_purpose)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_pci_event_purpose_status ON parent_channel_invitations(event_id, communication_purpose, status);
+      CREATE INDEX IF NOT EXISTS idx_pci_parent_id ON parent_channel_invitations(parent_id);
 
       CREATE TABLE IF NOT EXISTS admin_message_settings (
         id VARCHAR(64) PRIMARY KEY,
