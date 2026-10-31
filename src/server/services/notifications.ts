@@ -51,7 +51,7 @@ export interface SendWhatsAppOptions {
   passUrl?: string;
   statusUrl?: string;
   channelUrl?: string;
-  headerMedia?: { type?: 'image' | 'video' | 'document'; url: string };
+  headerMedia?: { type: 'image' | 'video' | 'document'; url: string };
   idempotencyKey?: string;
 }
 
@@ -67,7 +67,7 @@ export async function sendWhatsApp(
 
   const opts: SendWhatsAppOptions = typeof intentOrOptions === 'object' && intentOrOptions !== null
     ? { ...intentOrOptions, ...extraOptions }
-    : { intent: intentOrOptions, ...extraOptions };
+    : { intent: typeof intentOrOptions === 'string' ? intentOrOptions : undefined, ...extraOptions };
 
   let intent = opts.intent;
 

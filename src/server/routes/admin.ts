@@ -3570,7 +3570,7 @@ router.post('/applications/:id/reopen-review', async (req: AuthenticatedRequest,
       await sendWhatsApp(app.parent_phone, `Hello ${pName}, ${message}`, {
         intent: 'broadcast',
         parentFirstName: pName,
-        childFirstName: cName
+        childFirstName: cFirstName
       }).catch(err => console.error('Failed to send revoke WhatsApp notification:', err));
     }
 
