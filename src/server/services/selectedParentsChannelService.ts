@@ -62,6 +62,8 @@ export interface SelectedParentRecord {
   attemptedAt: string | null;
   failureReason: string | null;
   providerMessageId: string | null;
+  emailChannelAccessSent?: boolean;
+  emailChannelSentAt?: string | null;
 }
 
 export interface SelectedParentsAudienceResult {
@@ -170,7 +172,9 @@ export async function getSelectedParentsAudience(
        pci.sent_at AS invitation_sent_at,
        pci.attempted_at AS invitation_attempted_at,
        pci.failure_reason AS invitation_failure_reason,
-       pci.provider_message_id AS invitation_provider_message_id
+       pci.provider_message_id AS invitation_provider_message_id,
+       pci_email.status AS email_channel_status,
+       pci_email.sent_at AS email_channel_sent_at
      FROM parent_profiles p
      JOIN users u ON u.id = p.user_id
      JOIN children c ON c.parent_profile_id = p.id
@@ -179,8 +183,14 @@ export async function getSelectedParentsAudience(
        ON pci.parent_id = p.id 
        AND pci.event_id = ? 
        AND pci.communication_purpose = 'parents_channel_invitation'
+       AND pci.channel = 'whatsapp'
+     LEFT JOIN parent_channel_invitations pci_email
+       ON pci_email.parent_id = p.id
+       AND pci_email.event_id = ?
+       AND pci_email.communication_purpose = 'parents_channel_invitation'
+       AND pci_email.channel = 'email'
      ORDER BY p.full_name ASC, c.date_of_birth ASC, c.created_at ASC, c.id ASC`,
-    [eventId, eventId]
+    [eventId, eventId, eventId]
   );
 
   // Group by parent_id
@@ -217,7 +227,9 @@ export async function getSelectedParentsAudience(
           sentAt: row.invitation_sent_at || null,
           attemptedAt: row.invitation_attempted_at || null,
           failureReason: row.invitation_failure_reason || null,
-          providerMessageId: row.invitation_provider_message_id || null
+          providerMessageId: row.invitation_provider_message_id || null,
+          emailChannelAccessSent: row.email_channel_status === 'sent',
+          emailChannelSentAt: row.email_channel_sent_at || null
         }
       });
     }
@@ -290,7 +302,9 @@ export async function getSelectedParentsAudience(
       sentAt: group.invitation.sentAt,
       attemptedAt: group.invitation.attemptedAt,
       failureReason: group.invitation.failureReason,
-      providerMessageId: group.invitation.providerMessageId
+      providerMessageId: group.invitation.providerMessageId,
+      emailChannelAccessSent: group.invitation.emailChannelAccessSent,
+      emailChannelSentAt: group.invitation.emailChannelSentAt
     });
   }
 
@@ -348,6 +362,7 @@ export async function getSelectedParentsAudience(
 export async function recordChannelInvitationSent(params: {
   parentId: string;
   eventId: string;
+  channel?: 'whatsapp' | 'email';
   templateKey?: string | null;
   templateAlias?: string | null;
   provider?: string | null;
@@ -356,7 +371,8 @@ export async function recordChannelInvitationSent(params: {
   selectedChildNames?: string | null;
 }): Promise<void> {
   const now = new Date().toISOString();
-  const id = `pci-${params.eventId}-${params.parentId}`;
+  const channel = params.channel || 'whatsapp';
+  const id = `pci-${channel}-${params.eventId}-${params.parentId}`;
 
   await execute(
     `INSERT INTO parent_channel_invitations (
@@ -364,8 +380,8 @@ export async function recordChannelInvitationSent(params: {
        template_key, template_alias, provider, provider_message_id,
        status, failure_reason, initiating_admin_user_id, selected_child_names,
        attempted_at, sent_at, created_at, updated_at
-     ) VALUES (?, ?, ?, 'parents_channel_invitation', 'whatsapp', ?, ?, ?, ?, 'sent', NULL, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(parent_id, event_id, communication_purpose) DO UPDATE SET
+     ) VALUES (?, ?, ?, 'parents_channel_invitation', ?, ?, ?, ?, ?, 'sent', NULL, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(parent_id, event_id, communication_purpose, channel) DO UPDATE SET
        status = 'sent',
        template_key = COALESCE(excluded.template_key, parent_channel_invitations.template_key),
        template_alias = COALESCE(excluded.template_alias, parent_channel_invitations.template_alias),
@@ -381,9 +397,10 @@ export async function recordChannelInvitationSent(params: {
       id,
       params.parentId,
       params.eventId,
+      channel,
       params.templateKey || null,
-      params.templateAlias || 'koinonia_selected_parent_channel',
-      params.provider || 'zoho',
+      params.templateAlias || (channel === 'whatsapp' ? 'koinonia_selected_parent_channel' : 'email_selection_pass_ready'),
+      params.provider || (channel === 'whatsapp' ? 'zoho' : 'smtp'),
       params.providerMessageId || null,
       params.initiatingAdminUserId || null,
       params.selectedChildNames || null,
@@ -654,7 +671,7 @@ export async function sendSelectedParentsChannelInvitations(params: {
         });
 
         // Record failure in parent_channel_invitations
-        const pciId = `pci-${eventId}-${parentId}`;
+        const pciId = `pci-whatsapp-${eventId}-${parentId}`;
         await execute(
           `INSERT INTO parent_channel_invitations (
              id, parent_id, event_id, communication_purpose, channel,
@@ -662,7 +679,7 @@ export async function sendSelectedParentsChannelInvitations(params: {
              status, failure_reason, initiating_admin_user_id, selected_child_names,
              attempted_at, sent_at, created_at, updated_at
            ) VALUES (?, ?, ?, 'parents_channel_invitation', 'whatsapp', ?, ?, ?, NULL, 'failed', ?, ?, ?, ?, NULL, ?, ?)
-           ON CONFLICT(parent_id, event_id, communication_purpose) DO UPDATE SET
+           ON CONFLICT(parent_id, event_id, communication_purpose, channel) DO UPDATE SET
              status = 'failed',
              template_key = COALESCE(excluded.template_key, parent_channel_invitations.template_key),
              template_alias = COALESCE(excluded.template_alias, parent_channel_invitations.template_alias),

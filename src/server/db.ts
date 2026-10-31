@@ -633,7 +633,7 @@ function initSqliteSchema(db: Database.Database) {
       sent_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
-      UNIQUE(parent_id, event_id, communication_purpose)
+      UNIQUE(parent_id, event_id, communication_purpose, channel)
     );
 
     CREATE INDEX IF NOT EXISTS idx_pci_event_purpose_status ON parent_channel_invitations(event_id, communication_purpose, status);
@@ -1399,6 +1399,43 @@ function initSqliteSchema(db: Database.Database) {
     db.exec(`DROP INDEX IF EXISTS idx_wa_delivery_provider_msg_id;`);
     db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_delivery_provider_msg ON whatsapp_delivery_logs(provider, provider_message_id) WHERE provider_message_id IS NOT NULL;`);
   } catch (e) {}
+
+  try {
+    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='parent_channel_invitations'").get() as any;
+    if (tableInfo && tableInfo.sql && !tableInfo.sql.includes('communication_purpose, channel')) {
+      db.pragma('foreign_keys = OFF');
+      db.exec(`
+        CREATE TABLE parent_channel_invitations_mig (
+          id TEXT PRIMARY KEY,
+          parent_id TEXT NOT NULL REFERENCES parent_profiles(id) ON DELETE CASCADE,
+          event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          communication_purpose TEXT NOT NULL DEFAULT 'parents_channel_invitation',
+          channel TEXT NOT NULL DEFAULT 'whatsapp',
+          template_key TEXT,
+          template_alias TEXT,
+          provider TEXT,
+          provider_message_id TEXT,
+          status TEXT NOT NULL DEFAULT 'pending',
+          failure_reason TEXT,
+          initiating_admin_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+          selected_child_names TEXT,
+          attempted_at TEXT,
+          sent_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(parent_id, event_id, communication_purpose, channel)
+        );
+        INSERT OR IGNORE INTO parent_channel_invitations_mig SELECT * FROM parent_channel_invitations;
+        DROP TABLE parent_channel_invitations;
+        ALTER TABLE parent_channel_invitations_mig RENAME TO parent_channel_invitations;
+        CREATE INDEX IF NOT EXISTS idx_pci_event_purpose_status ON parent_channel_invitations(event_id, communication_purpose, status);
+        CREATE INDEX IF NOT EXISTS idx_pci_parent_id ON parent_channel_invitations(parent_id);
+      `);
+      db.pragma('foreign_keys = ON');
+    }
+  } catch (e) {
+    console.warn('[DB Migration] parent_channel_invitations constraint update skipped:', e);
+  }
 
   try {
     db.exec(`ALTER TABLE event_safety_alerts ADD COLUMN idempotency_key TEXT;`);
@@ -2587,11 +2624,23 @@ async function initPostgresSchema(pool: any) {
         sent_at TIMESTAMP,
         created_at TIMESTAMP NOT NULL,
         updated_at TIMESTAMP NOT NULL,
-        UNIQUE(parent_id, event_id, communication_purpose)
+        UNIQUE(parent_id, event_id, communication_purpose, channel)
       );
 
       CREATE INDEX IF NOT EXISTS idx_pci_event_purpose_status ON parent_channel_invitations(event_id, communication_purpose, status);
       CREATE INDEX IF NOT EXISTS idx_pci_parent_id ON parent_channel_invitations(parent_id);
+
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'parent_channel_invitations_parent_id_event_id_communication__key'
+        ) THEN
+          ALTER TABLE parent_channel_invitations DROP CONSTRAINT parent_channel_invitations_parent_id_event_id_communication__key;
+          ALTER TABLE parent_channel_invitations ADD CONSTRAINT uq_pci_parent_event_purpose_channel UNIQUE(parent_id, event_id, communication_purpose, channel);
+        END IF;
+      EXCEPTION WHEN OTHERS THEN
+        NULL;
+      END $$;
 
       CREATE TABLE IF NOT EXISTS admin_message_settings (
         id VARCHAR(64) PRIMARY KEY,

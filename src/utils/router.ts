@@ -36,6 +36,8 @@ export const isValidRoute = (route: string): boolean => {
     '/parent/children/review-sent',
     '/parent/status',
     '/parent/passes',
+    '/parents/channel',
+    '/parent/channel',
     '/admin/sign-in',
     '/admin/forgot-password',
     '/admin/reset-password',

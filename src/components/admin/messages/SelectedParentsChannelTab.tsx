@@ -59,6 +59,8 @@ interface SelectedParentRecord {
   attemptedAt: string | null;
   failureReason: string | null;
   providerMessageId: string | null;
+  emailChannelAccessSent?: boolean;
+  emailChannelSentAt?: string | null;
 }
 
 interface AudienceSummary {
@@ -726,9 +728,16 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
                             <span>Failed</span>
                           </span>
                         ) : (
-                          <span className="text-neutral-400 dark:text-neutral-500 text-[11px]">
-                            Not sent
-                          </span>
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-neutral-400 dark:text-neutral-500 text-[11px]">
+                              Not sent
+                            </span>
+                            {p.emailChannelAccessSent && (
+                              <span className="text-[10px] text-blue-600 dark:text-blue-400 font-normal" title="Channel access link provided in selection email">
+                                Email sent
+                              </span>
+                            )}
+                          </div>
                         )}
                       </td>
 
@@ -965,6 +974,12 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
                   <div className="flex items-center justify-between text-neutral-400 text-[10.5px]">
                     <span>Message ID:</span>
                     <span className="font-mono">{detailParent.providerMessageId}</span>
+                  </div>
+                )}
+                {detailParent.emailChannelAccessSent && (
+                  <div className="flex items-center justify-between text-blue-600 dark:text-blue-400 pt-1 border-t border-neutral-200 dark:border-neutral-700">
+                    <span>Email Channel Access:</span>
+                    <span className="font-medium">Delivered via Email</span>
                   </div>
                 )}
               </div>

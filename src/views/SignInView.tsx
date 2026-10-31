@@ -14,7 +14,7 @@ export function sanitizeParentReturnRoute(route?: string | null): AppRoute {
   try {
     const decoded = decodeURIComponent(route).trim();
     if (
-      decoded.startsWith('/parent/') &&
+      (decoded.startsWith('/parent/') || decoded.startsWith('/parents/')) &&
       !decoded.startsWith('/volunteer') &&
       !decoded.startsWith('/admin') &&
       !decoded.includes('://') &&

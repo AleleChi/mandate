@@ -56,6 +56,7 @@ import { PrivacyPolicyView } from './views/PrivacyPolicyView';
 import { TermsOfServiceView } from './views/TermsOfServiceView';
 import { ChildSafetyView } from './views/ChildSafetyView';
 import { ContactView } from './views/ContactView';
+import { ParentChannelView } from './views/ParentChannelView';
 
 // Training & Simulation Mode Views
 const PersistentTrainingBanner = React.lazy(() => import('./views/training/PersistentTrainingBanner').then(m => ({ default: m.PersistentTrainingBanner })));
@@ -158,7 +159,13 @@ const getSeoPropsForRoute = (route: string) => {
       ...defaults,
     };
   }
-  if (cleanRoute.startsWith('/parent')) {
+  if (cleanRoute === '/parents/channel' || cleanRoute === '/parent/channel') {
+    return {
+      title: "Children's Session Parents Channel | Koinonia Children and Teens",
+      ...defaults,
+    };
+  }
+  if (cleanRoute.startsWith('/parent') || cleanRoute.startsWith('/parents')) {
     return {
       title: 'Parent Access | Koinonia Children and Teens',
       ...defaults,
@@ -1363,6 +1370,16 @@ export default function App() {
         return <ForgotPasswordView onNavigate={navigate} />;
       case '/parent/new-password':
         return <NewPasswordView onNavigate={navigate} />;
+      case '/parents/channel':
+      case '/parent/channel':
+        return (
+          <ProtectedRoute requiresCompletedProfile={false}>
+            <ParentChannelView
+              onNavigate={navigate}
+              onSignOut={handleSignOut}
+            />
+          </ProtectedRoute>
+        );
       case '/parent/profile-setup':
         return (
           <ProtectedRoute requiresCompletedProfile={false}>

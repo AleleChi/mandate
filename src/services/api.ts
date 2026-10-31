@@ -319,6 +319,18 @@ export const api = {
         body: JSON.stringify(payload)
       });
     },
+    async getChannelAccess() {
+      return api.request<{
+        success: boolean;
+        eligible: boolean;
+        eventTitle?: string;
+        selectedChildren: Array<{ id: string; fullName: string; firstName: string }>;
+        selectedChildNames: string;
+        channelUrl?: string;
+        notice?: string;
+        message?: string;
+      }>('/api/parent/channel-access');
+    },
     async getHome() {
       const headers: Record<string, string> = {};
       if (typeof window !== 'undefined' && localStorage.getItem('koinonia_pass_biometric_unlock') === 'true') {
