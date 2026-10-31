@@ -279,11 +279,19 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     let waitlist = 0;
     let notSelected = 0;
     let returnDraft = 0;
+    let restore = 0;
 
     allConnectedChildren.forEach(child => {
       const status = child.entryStatus || 'not_registered';
       const isAttending = ['checked_in', 'inside', 'picked_up'].includes(status) || Boolean(child.checkedInAt && !child.pickedUpAt);
-      if (isAttending || status === 'withdrawn') return;
+      if (isAttending) return;
+
+      // restore
+      if (child.applicationId && (status === 'withdrawn' || status === 'not_selected')) {
+        restore++;
+      }
+
+      if (status === 'withdrawn') return;
 
       // select_for_event
       if (!child.entryStatus || status === 'not_registered' || status === 'not_selected' || status === 'incomplete' || status === 'draft' || status === 'waiting_list') {
@@ -324,7 +332,8 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       approve,
       waitlist,
       notSelected,
-      returnDraft
+      returnDraft,
+      restore
     };
   }, [allConnectedChildren]);
 
@@ -572,17 +581,19 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     ));
   };
 
-  const handleStartReviewSequence = () => {
-    const eligible = allConnectedChildren.filter(c => 
-      c.entryStatus === 'under_review' || c.entryStatus === 'review_reopened'
-    );
-    if (eligible.length === 0) {
-      showError('No Applications to Review', 'None of the connected children are currently awaiting review.');
+  const handleStartReviewSequence = (chosenChildren?: ConnectedChildRecord[]) => {
+    const list = chosenChildren && chosenChildren.length > 0
+      ? chosenChildren
+      : allConnectedChildren.filter(c => 
+          c.entryStatus === 'under_review' || c.entryStatus === 'review_reopened'
+        );
+    if (list.length === 0) {
+      showError('No Applications to Review', 'None of the selected children are currently awaiting review.');
       return;
     }
-    setReviewSequenceList(eligible);
+    setReviewSequenceList(list);
     setReviewSequenceIndex(0);
-    setReviewingChild(eligible[0]);
+    setReviewingChild(list[0]);
   };
 
   const handleBulkChildActionSuccess = (updatedChildIds: string[], newStatus: string) => {
@@ -1550,6 +1561,9 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
           selectedParents={selectedParentsList}
           allChildren={allConnectedChildren}
           onSuccess={handleBulkChildActionSuccess}
+          onStartReviewSequence={(chosen) => {
+            handleStartReviewSequence(chosen);
+          }}
         />
       )}
       {modalChildRestoreModal}
@@ -1955,7 +1969,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                       disabled={applicableCounts.reviewSelected === 0}
                       onClick={() => {
                         setEventActionsDropdownOpen(false);
-                        handleStartReviewSequence();
+                        setBulkChildActionType('review_sequence');
                       }}
                       className="w-full px-3 py-2 flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-[#262522] text-neutral-800 dark:text-neutral-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-left transition-colors"
                     >
@@ -1976,7 +1990,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                       }}
                       className="w-full px-3 py-2 flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-[#262522] text-neutral-800 dark:text-neutral-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-left transition-colors"
                     >
-                      <span>Approve / Selected</span>
+                      <span>Approve</span>
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/40">
                         {applicableCounts.approve}
                       </span>
@@ -2024,6 +2038,21 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                       <span>Return to Parent</span>
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border border-rose-200/60 dark:border-rose-800/40">
                         {applicableCounts.returnDraft}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={applicableCounts.restore === 0}
+                      onClick={() => {
+                        setEventActionsDropdownOpen(false);
+                        setBulkChildActionType('restore');
+                      }}
+                      className="w-full px-3 py-2 flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-[#262522] text-neutral-800 dark:text-neutral-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-left transition-colors"
+                    >
+                      <span>Restore</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/40">
+                        {applicableCounts.restore}
                       </span>
                     </button>
                   </div>

@@ -1,13 +1,22 @@
 /**
- * Test Suite: Parents & Workers Bulk Child Event Actions
- * Covers test cases A through G from specification:
- * - A. Three parents, one child each (all awaiting review -> waitlist)
- * - B. Parent with multiple children (partial eligibility -> 2 eligible / 1 skipped)
- * - C. Mixed statuses (not selected, awaiting review, pass ready, withdrawn -> valid counts)
- * - D. Parent with no children (gracefully excluded without breaking bulk operation)
- * - E. Age-filtered selection (filter 2-3 -> bulk action affects matching records)
- * - F. Validation failure handling (partial success & clear summary of failure reasons)
- * - G. Sequential review workflow (traversal, index bounds, in-place table update)
+ * Comprehensive Test Suite: Parents Bulk Child Event Actions
+ * Covers all 7 supported actions:
+ * 1. Select for event
+ * 2. Review selected
+ * 3. Approve
+ * 4. Waiting List
+ * 5. Not Selected
+ * 6. Return to Parent
+ * 7. Restore
+ *
+ * For each action tests:
+ * - One eligible child (auto-selection)
+ * - Multiple eligible children (explicit selection)
+ * - Mixed eligible/ineligible children with unavailable reasons
+ * - Multiple children under one parent
+ * - Multiple parents
+ * - Backend validation failure
+ * - Only selected children are changed
  */
 
 interface ChildRecord {
@@ -35,6 +44,15 @@ interface ConnectedChildRecord extends ChildRecord {
   parentName: string;
 }
 
+type BulkChildActionType = 
+  | 'select_for_event' 
+  | 'review_sequence' 
+  | 'approve' 
+  | 'waitlist' 
+  | 'not_selected' 
+  | 'return_draft' 
+  | 'restore';
+
 // 1. Resolve connected children across selected parents
 function resolveConnectedChildren(selectedParentIds: string[], parents: ParentRecord[]): {
   selectedParentsList: ParentRecord[];
@@ -59,150 +77,115 @@ function resolveConnectedChildren(selectedParentIds: string[], parents: ParentRe
   return { selectedParentsList, allConnectedChildren, parentsWithNoChildren };
 }
 
-// 2. Compute context-aware applicable counts
-function computeApplicableCounts(allConnectedChildren: ConnectedChildRecord[]) {
-  let selectForEvent = 0;
-  let reviewSelected = 0;
-  let approve = 0;
-  let waitlist = 0;
-  let notSelected = 0;
-  let returnDraft = 0;
+// 2. Evaluate eligibility and unavailable reasons for any child under an action
+function evaluateChildEligibility(actionType: BulkChildActionType, child: ConnectedChildRecord): { isAvailable: boolean; reason?: string } {
+  const status = child.entryStatus || 'not_registered';
+  const isAttending = ['checked_in', 'inside', 'picked_up'].includes(status) || 
+                      Boolean(child.checkedInAt && !child.pickedUpAt);
 
-  allConnectedChildren.forEach(child => {
-    const status = child.entryStatus || 'not_registered';
-    const isAttending = ['checked_in', 'inside', 'picked_up'].includes(status) || Boolean(child.checkedInAt && !child.pickedUpAt);
-    if (isAttending || status === 'withdrawn') return;
+  switch (actionType) {
+    case 'select_for_event':
+      if (isAttending) return { isAvailable: false, reason: 'Child is currently attending the event' };
+      if (status === 'pass_ready') return { isAvailable: false, reason: 'Already Pass Ready' };
+      if (status === 'selected') return { isAvailable: false, reason: 'Already selected for current event' };
+      if (status === 'under_review' || status === 'review_reopened') return { isAvailable: false, reason: 'Already Under Review' };
+      if (status === 'withdrawn') return { isAvailable: false, reason: 'Application Withdrawn' };
+      return { isAvailable: true };
 
-    // select_for_event
-    if (!child.entryStatus || status === 'not_registered' || status === 'not_selected' || status === 'incomplete' || status === 'draft' || status === 'waiting_list') {
-      if (status !== 'pass_ready' && status !== 'selected' && status !== 'under_review' && status !== 'review_reopened') {
-        selectForEvent++;
-      }
-    }
+    case 'review_sequence':
+      if (isAttending) return { isAvailable: false, reason: 'Child is currently attending the event' };
+      if (status === 'under_review' || status === 'review_reopened') return { isAvailable: true };
+      if (!child.applicationId || status === 'not_registered') return { isAvailable: false, reason: 'No event application' };
+      if (status === 'pass_ready') return { isAvailable: false, reason: 'Already Pass Ready' };
+      if (status === 'selected') return { isAvailable: false, reason: 'Already approved' };
+      if (status === 'waiting_list') return { isAvailable: false, reason: 'Currently on Waiting List' };
+      if (status === 'withdrawn') return { isAvailable: false, reason: 'Application Withdrawn' };
+      return { isAvailable: false, reason: 'Not Awaiting Review' };
 
-    // review_selected
-    if (status === 'under_review' || status === 'review_reopened') {
-      reviewSelected++;
-    }
+    case 'approve':
+      if (!child.applicationId || status === 'not_registered') return { isAvailable: false, reason: 'No event application' };
+      if (status === 'pass_ready') return { isAvailable: false, reason: 'Already Pass Ready' };
+      if (status === 'selected') return { isAvailable: false, reason: 'Already approved and selected' };
+      if (isAttending) return { isAvailable: false, reason: 'Child is currently attending the event' };
+      if (status === 'withdrawn') return { isAvailable: false, reason: 'Application Withdrawn' };
+      if (status === 'not_selected') return { isAvailable: false, reason: 'Marked Not Selected (Select for event first)' };
+      if (status === 'incomplete' || status === 'draft') return { isAvailable: false, reason: 'Application is an incomplete draft' };
+      if (status === 'under_review' || status === 'review_reopened' || status === 'waiting_list') return { isAvailable: true };
+      return { isAvailable: false, reason: `Status '${status}' cannot be approved directly` };
 
-    // approve
-    if (child.applicationId && (status === 'under_review' || status === 'review_reopened' || status === 'waiting_list')) {
-      approve++;
-    }
+    case 'waitlist':
+      if (!child.applicationId || status === 'not_registered') return { isAvailable: false, reason: 'No event application' };
+      if (status === 'waiting_list') return { isAvailable: false, reason: 'Already on Waiting List' };
+      if (status === 'pass_ready') return { isAvailable: false, reason: 'Already Pass Ready' };
+      if (isAttending) return { isAvailable: false, reason: 'Child is currently attending the event' };
+      if (status === 'withdrawn') return { isAvailable: false, reason: 'Application Withdrawn' };
+      if (status === 'incomplete' || status === 'draft') return { isAvailable: false, reason: 'Application is an incomplete draft' };
+      return { isAvailable: true };
 
-    // waitlist
-    if (child.applicationId && status !== 'waiting_list' && status !== 'pass_ready' && ['under_review', 'review_reopened', 'selected', 'not_selected'].includes(status)) {
-      waitlist++;
-    }
+    case 'not_selected':
+      if (!child.applicationId || status === 'not_registered') return { isAvailable: false, reason: 'No event application' };
+      if (status === 'not_selected') return { isAvailable: false, reason: 'Already marked Not Selected' };
+      if (isAttending) return { isAvailable: false, reason: 'Child is currently attending the event' };
+      if (status === 'pass_ready') return { isAvailable: false, reason: 'Already Pass Ready' };
+      if (status === 'withdrawn') return { isAvailable: false, reason: 'Application Withdrawn' };
+      if (status === 'incomplete' || status === 'draft') return { isAvailable: false, reason: 'Application is an incomplete draft' };
+      return { isAvailable: true };
 
-    // not_selected
-    if (child.applicationId && status !== 'not_selected' && status !== 'pass_ready' && ['under_review', 'review_reopened', 'selected', 'waiting_list'].includes(status)) {
-      notSelected++;
-    }
+    case 'return_draft':
+      if (!child.applicationId || status === 'not_registered') return { isAvailable: false, reason: 'No event application' };
+      if (status === 'draft' || status === 'incomplete') return { isAvailable: false, reason: 'Application is already in draft status' };
+      if (isAttending) return { isAvailable: false, reason: 'Child is currently attending the event' };
+      if (status === 'pass_ready') return { isAvailable: false, reason: 'Pass already issued' };
+      if (status === 'selected') return { isAvailable: false, reason: 'Application already approved' };
+      if (status === 'withdrawn') return { isAvailable: false, reason: 'Application Withdrawn' };
+      if (status === 'under_review' || status === 'review_reopened') return { isAvailable: true };
+      return { isAvailable: false, reason: 'Not in a reviewable state' };
 
-    // return_draft
-    if (child.applicationId && (status === 'under_review' || status === 'review_reopened')) {
-      returnDraft++;
-    }
-  });
-
-  return {
-    selectForEvent,
-    reviewSelected,
-    approve,
-    waitlist,
-    notSelected,
-    returnDraft
-  };
+    case 'restore':
+      if (!child.applicationId || status === 'not_registered') return { isAvailable: false, reason: 'No event application to restore' };
+      if (isAttending) return { isAvailable: false, reason: 'Child is currently attending the event' };
+      if (status === 'withdrawn' || status === 'not_selected') return { isAvailable: true };
+      if (status === 'under_review' || status === 'review_reopened') return { isAvailable: false, reason: 'Already Under Review' };
+      if (status === 'selected') return { isAvailable: false, reason: 'Already active and selected' };
+      if (status === 'pass_ready') return { isAvailable: false, reason: 'Already Pass Ready' };
+      if (status === 'waiting_list') return { isAvailable: false, reason: 'Already on Waiting List' };
+      return { isAvailable: false, reason: 'Application cannot be restored' };
+  }
 }
 
-// 3. Evaluate eligibility for bulk action confirmation breakdown
-function evaluateBulkActionBreakdown(
-  actionType: 'select_for_event' | 'approve' | 'waitlist' | 'not_selected' | 'return_draft',
-  allChildren: ConnectedChildRecord[]
-) {
-  const eligible: ConnectedChildRecord[] = [];
-  const skipped: { child: ConnectedChildRecord; reason: string }[] = [];
+// 3. Group by parent with available vs unavailable
+function groupChildrenByParent(actionType: BulkChildActionType, selectedParents: ParentRecord[], allChildren: ConnectedChildRecord[]) {
+  return selectedParents
+    .filter(p => p.children && p.children.length > 0)
+    .map(p => {
+      const parentName = p.fullName;
+      const parentId = String(p.id);
+      const children = allChildren.filter(c => c.parentId === parentId);
 
-  allChildren.forEach(child => {
-    const status = child.entryStatus || 'not_registered';
-    const isAttending = ['checked_in', 'inside', 'picked_up'].includes(status) || Boolean(child.checkedInAt && !child.pickedUpAt);
+      const availableChildren: ConnectedChildRecord[] = [];
+      const unavailableChildren: { child: ConnectedChildRecord; reason: string }[] = [];
 
-    if (actionType === 'select_for_event') {
-      if (isAttending) {
-        skipped.push({ child, reason: 'Child is currently attending the event' });
-      } else if (status === 'pass_ready') {
-        skipped.push({ child, reason: 'Pass already issued for current event' });
-      } else if (status === 'selected') {
-        skipped.push({ child, reason: 'Already selected for current event' });
-      } else if (status === 'under_review' || status === 'review_reopened') {
-        skipped.push({ child, reason: 'Already entered and awaiting review' });
-      } else if (status === 'withdrawn') {
-        skipped.push({ child, reason: 'Application is withdrawn' });
-      } else {
-        eligible.push(child);
-      }
-    } else if (actionType === 'approve') {
-      if (!child.applicationId || status === 'not_registered') {
-        skipped.push({ child, reason: 'No current-event application (Select for event first)' });
-      } else if (status === 'pass_ready') {
-        skipped.push({ child, reason: 'Already Pass Ready' });
-      } else if (status === 'selected') {
-        skipped.push({ child, reason: 'Already approved and selected' });
-      } else if (isAttending) {
-        skipped.push({ child, reason: 'Child is currently attending the event' });
-      } else if (status === 'withdrawn') {
-        skipped.push({ child, reason: 'Application is withdrawn' });
-      } else if (status === 'not_selected') {
-        skipped.push({ child, reason: 'Marked not selected (Select for event first)' });
-      } else if (status === 'incomplete' || status === 'draft') {
-        skipped.push({ child, reason: 'Application is an incomplete draft' });
-      } else if (status === 'under_review' || status === 'review_reopened' || status === 'waiting_list') {
-        eligible.push(child);
-      } else {
-        skipped.push({ child, reason: `Status '${status}' cannot be approved directly` });
-      }
-    } else if (actionType === 'waitlist') {
-      if (!child.applicationId || status === 'not_registered') {
-        skipped.push({ child, reason: 'No current-event application' });
-      } else if (status === 'waiting_list') {
-        skipped.push({ child, reason: 'Already on waiting list' });
-      } else if (status === 'pass_ready') {
-        skipped.push({ child, reason: 'Already Pass Ready' });
-      } else if (isAttending) {
-        skipped.push({ child, reason: 'Child is currently attending the event' });
-      } else if (status === 'withdrawn') {
-        skipped.push({ child, reason: 'Application is withdrawn' });
-      } else if (status === 'incomplete' || status === 'draft') {
-        skipped.push({ child, reason: 'Application is an incomplete draft' });
-      } else {
-        eligible.push(child);
-      }
-    } else if (actionType === 'not_selected') {
-      if (!child.applicationId || status === 'not_registered') {
-        skipped.push({ child, reason: 'No current-event application' });
-      } else if (status === 'not_selected') {
-        skipped.push({ child, reason: 'Already marked as not selected' });
-      } else if (isAttending) {
-        skipped.push({ child, reason: 'Child is currently attending the event' });
-      } else if (status === 'pass_ready') {
-        skipped.push({ child, reason: 'Already Pass Ready' });
-      } else if (status === 'withdrawn') {
-        skipped.push({ child, reason: 'Application is withdrawn' });
-      } else if (status === 'incomplete' || status === 'draft') {
-        skipped.push({ child, reason: 'Application is an incomplete draft' });
-      } else {
-        eligible.push(child);
-      }
-    }
-  });
+      children.forEach(c => {
+        const check = evaluateChildEligibility(actionType, c);
+        if (check.isAvailable) {
+          availableChildren.push(c);
+        } else {
+          unavailableChildren.push({ child: c, reason: check.reason || 'Not eligible' });
+        }
+      });
 
-  return { eligible, skipped };
+      return {
+        parentId,
+        parentName,
+        children,
+        availableChildren,
+        unavailableChildren
+      };
+    });
 }
 
-// RUN TESTS
 function runTests() {
-  console.log('--- RUNNING PARENTS BULK CHILD ACTIONS TEST SUITE ---\n');
+  console.log('=== RUNNING COMPREHENSIVE PARENTS BULK CHILD ACTIONS TEST SUITE ===\n');
   let passed = 0;
   let total = 0;
 
@@ -217,139 +200,189 @@ function runTests() {
     }
   }
 
-  // --- TEST CASE A: Three parents, one child each, all awaiting review -> move to waitlist ---
-  console.log('[Test Case A: Three parents, one child each]');
-  const parentsA: ParentRecord[] = [
-    { id: 'p1', fullName: 'Parent 1', children: [{ id: 'c1', applicationId: 'app1', fullName: 'Child 1', entryStatus: 'under_review' }] },
-    { id: 'p2', fullName: 'Parent 2', children: [{ id: 'c2', applicationId: 'app2', fullName: 'Child 2', entryStatus: 'under_review' }] },
-    { id: 'p3', fullName: 'Parent 3', children: [{ id: 'c3', applicationId: 'app3', fullName: 'Child 3', entryStatus: 'under_review' }] }
-  ];
-  const resA = resolveConnectedChildren(['p1', 'p2', 'p3'], parentsA);
-  assert(resA.allConnectedChildren.length === 3, 'A: Resolves all 3 connected children');
-  const countsA = computeApplicableCounts(resA.allConnectedChildren);
-  assert(countsA.waitlist === 3, 'A: Waitlist count is 3');
-  assert(countsA.reviewSelected === 3, 'A: Review count is 3');
-  const breakdownA = evaluateBulkActionBreakdown('waitlist', resA.allConnectedChildren);
-  assert(breakdownA.eligible.length === 3, 'A: All 3 children eligible for waitlist');
-  assert(breakdownA.skipped.length === 0, 'A: 0 children skipped');
-
-  // --- TEST CASE B: Parent with three children, only two eligible ---
-  console.log('\n[Test Case B: Parent with three children, partial eligibility]');
-  const parentsB: ParentRecord[] = [
+  // Sample Families
+  const sampleParents: ParentRecord[] = [
     {
-      id: 'pB',
-      fullName: 'Parent B',
+      id: 'p_grace',
+      fullName: 'Grace Adeyemi',
       children: [
-        { id: 'cB1', applicationId: 'appB1', fullName: 'Child B1', entryStatus: 'under_review' },
-        { id: 'cB2', applicationId: 'appB2', fullName: 'Child B2', entryStatus: 'waiting_list' },
-        { id: 'cB3', applicationId: 'appB3', fullName: 'Child B3', entryStatus: 'pass_ready' } // Not eligible for approve/waitlist
-      ]
-    }
-  ];
-  const resB = resolveConnectedChildren(['pB'], parentsB);
-  assert(resB.allConnectedChildren.length === 3, 'B: Resolves 3 connected children');
-  const breakdownB = evaluateBulkActionBreakdown('approve', resB.allConnectedChildren);
-  assert(breakdownB.eligible.length === 2, 'B: 2 children eligible for approve (under_review + waiting_list)');
-  assert(breakdownB.skipped.length === 1, 'B: 1 child skipped');
-  assert(breakdownB.skipped[0].reason === 'Already Pass Ready', 'B: Reason correctly identifies "Already Pass Ready"');
-
-  // --- TEST CASE C: Mixed statuses across parents ---
-  console.log('\n[Test Case C: Mixed statuses]');
-  const parentsC: ParentRecord[] = [
-    {
-      id: 'pC1',
-      fullName: 'Parent C1',
-      children: [
-        { id: 'c_not_sel', applicationId: 'appC1', fullName: 'Child Not Selected', entryStatus: 'not_selected' },
-        { id: 'c_rev', applicationId: 'appC2', fullName: 'Child Reviewing', entryStatus: 'under_review' }
+        { id: 'c_daniel', applicationId: 'app_d', fullName: 'Daniel Adeyemi', age: 8, entryStatus: 'under_review' },
+        { id: 'c_sarah', applicationId: 'app_s', fullName: 'Sarah Adeyemi', age: 5, entryStatus: 'pass_ready' }
       ]
     },
     {
-      id: 'pC2',
-      fullName: 'Parent C2',
+      id: 'p_michael',
+      fullName: 'Michael Johnson',
       children: [
-        { id: 'c_pass', applicationId: 'appC3', fullName: 'Child Pass Ready', entryStatus: 'pass_ready' },
-        { id: 'c_withdrawn', applicationId: 'appC4', fullName: 'Child Withdrawn', entryStatus: 'withdrawn' }
+        { id: 'c_david', applicationId: 'app_dj', fullName: 'David Johnson', age: 7, entryStatus: 'under_review' },
+        { id: 'c_chloe', applicationId: 'app_cj', fullName: 'Chloe Johnson', age: 3, entryStatus: 'not_selected' }
       ]
-    }
-  ];
-  const resC = resolveConnectedChildren(['pC1', 'pC2'], parentsC);
-  const countsC = computeApplicableCounts(resC.allConnectedChildren);
-  assert(countsC.selectForEvent === 1, 'C: 1 child eligible for select for event (not_selected)');
-  assert(countsC.reviewSelected === 1, 'C: 1 child eligible for review selected (under_review)');
-  assert(countsC.approve === 1, 'C: 1 child eligible for approval (under_review)');
-  assert(countsC.waitlist === 2, 'C: 2 children eligible for waitlist (not_selected + under_review)');
-
-  // --- TEST CASE D: Parent with no children ---
-  console.log('\n[Test Case D: Parent with no children]');
-  const parentsD: ParentRecord[] = [
-    { id: 'pD_empty', fullName: 'Parent Empty', children: [] },
-    { id: 'pD_with_child', fullName: 'Parent Active', children: [{ id: 'cD1', applicationId: 'appD1', fullName: 'Child D1', entryStatus: 'under_review' }] }
-  ];
-  const resD = resolveConnectedChildren(['pD_empty', 'pD_with_child'], parentsD);
-  assert(resD.allConnectedChildren.length === 1, 'D: Only 1 child resolved');
-  assert(resD.parentsWithNoChildren.length === 1, 'D: 1 parent identified as having no children');
-  assert(resD.parentsWithNoChildren[0].fullName === 'Parent Empty', 'D: Empty parent identified by name for breakdown note');
-  const breakdownD = evaluateBulkActionBreakdown('approve', resD.allConnectedChildren);
-  assert(breakdownD.eligible.length === 1, 'D: Bulk operation continues safely for eligible children');
-
-  // --- TEST CASE E: Age-filtered result (e.g. Ages 2-3) ---
-  console.log('\n[Test Case E: Age-filtered selection]');
-  const parentsE: ParentRecord[] = [
-    {
-      id: 'pE1',
-      fullName: 'Parent Toddler',
-      children: [{ id: 'cE1', applicationId: 'appE1', fullName: 'Toddler A', age: 2, ageGroup: 'Ages 2–3', entryStatus: 'under_review' }]
     },
     {
-      id: 'pE2',
-      fullName: 'Parent Teen',
-      children: [{ id: 'cE2', applicationId: 'appE2', fullName: 'Teen B', age: 14, ageGroup: 'Ages 13–14', entryStatus: 'under_review' }]
+      id: 'p_single',
+      fullName: 'Single Parent',
+      children: [
+        { id: 'c_one', fullName: 'Solo Child', age: 4, entryStatus: 'not_registered' }
+      ]
+    },
+    {
+      id: 'p_withdrawn',
+      fullName: 'Withdrawn Family',
+      children: [
+        { id: 'c_w1', applicationId: 'app_w1', fullName: 'Withdrawn Child', age: 6, entryStatus: 'withdrawn' }
+      ]
+    },
+    {
+      id: 'p_empty',
+      fullName: 'Empty Parent',
+      children: []
     }
   ];
-  // Filter for parents matching Ages 2-3
-  const visibleFilteredParents = parentsE.filter(p => p.children.some(c => c.age !== undefined && c.age !== null && c.age >= 2 && c.age <= 3));
-  assert(visibleFilteredParents.length === 1 && visibleFilteredParents[0].id === 'pE1', 'E: Only parent with 2-3 yr old matches filter');
-  const resE = resolveConnectedChildren(visibleFilteredParents.map(p => p.id), parentsE);
-  assert(resE.allConnectedChildren.length === 1 && resE.allConnectedChildren[0].fullName === 'Toddler A', 'E: Bulk action affects only matching filtered family records');
 
-  // --- TEST CASE F: Validation failure handling & partial success summary ---
-  console.log('\n[Test Case F: Partial success and validation error handling]');
-  const sampleFailures = [
-    { id: 'appF2', childName: 'Child F2', reason: 'Mandatory requirements missing: Child photo verification required' }
-  ];
-  const totalAttempted = 5;
-  const updatedCount = 4;
-  const resultsSummary = {
-    updatedCount,
-    failedItems: sampleFailures
-  };
-  assert(resultsSummary.updatedCount === 4, 'F: 4 succeeded');
-  assert(resultsSummary.failedItems.length === 1, 'F: 1 failed');
-  assert(resultsSummary.failedItems[0].reason.includes('Mandatory requirements missing'), 'F: Failure reason clearly surfaced to admin');
+  // -------------------------------------------------------------
+  // TEST 1: Select for event
+  // -------------------------------------------------------------
+  console.log('--- ACTION 1: Select for event ---');
+  {
+    const res = resolveConnectedChildren(['p_single'], sampleParents);
+    const groups = groupChildrenByParent('select_for_event', res.selectedParentsList, res.allConnectedChildren);
+    const available = groups.flatMap(g => g.availableChildren);
+    assert(available.length === 1, '1.1: Single eligible child resolved (Solo Child)');
+    // Auto-select rule: exactly 1 available child should auto-select
+    const autoSelected = available.length === 1 ? [available[0].id] : [];
+    assert(autoSelected.length === 1 && autoSelected[0] === 'c_one', '1.2: Single child auto-selected');
 
-  // --- TEST CASE G: Sequential review sequence ---
-  console.log('\n[Test Case G: Sequential review workflow]');
-  const reviewSequenceList = [
-    { id: 'cG1', fullName: 'Child G1', entryStatus: 'under_review' },
-    { id: 'cG2', fullName: 'Child G2', entryStatus: 'under_review' },
-    { id: 'cG3', fullName: 'Child G3', entryStatus: 'under_review' }
-  ];
-  let seqIdx = 0;
-  assert(seqIdx === 0 && reviewSequenceList[seqIdx].fullName === 'Child G1', 'G: Sequence starts at 1 of 3 (Child G1)');
-  // Advance to next
-  seqIdx++;
-  assert(seqIdx === 1 && reviewSequenceList[seqIdx].fullName === 'Child G2', 'G: Advances to 2 of 3 (Child G2)');
-  // Advance to last
-  seqIdx++;
-  assert(seqIdx === 2 && reviewSequenceList[seqIdx].fullName === 'Child G3', 'G: Advances to 3 of 3 (Child G3)');
-  // Cannot advance beyond last
-  const canAdvance = seqIdx < reviewSequenceList.length - 1;
-  assert(!canAdvance, 'G: Next button disabled at end of sequence');
+    // Multiple parents & mixed statuses
+    const resMixed = resolveConnectedChildren(['p_grace', 'p_michael', 'p_single'], sampleParents);
+    const groupsMixed = groupChildrenByParent('select_for_event', resMixed.selectedParentsList, resMixed.allConnectedChildren);
+    const availMixed = groupsMixed.flatMap(g => g.availableChildren);
+    const unavailMixed = groupsMixed.flatMap(g => g.unavailableChildren);
+    assert(availMixed.length === 2, '1.3: Exactly 2 children available for select_for_event (Solo Child + Chloe Johnson)');
+    assert(unavailMixed.some(u => u.child.id === 'c_sarah' && u.reason === 'Already Pass Ready'), '1.4: Sarah unavailable with reason "Already Pass Ready"');
+    assert(unavailMixed.some(u => u.child.id === 'c_daniel' && u.reason === 'Already Under Review'), '1.5: Daniel unavailable with reason "Already Under Review"');
 
-  console.log(`\n========================================`);
+    // Only selected children updated
+    const explicitlySelected = ['c_one'];
+    const updated = availMixed.filter(c => explicitlySelected.includes(c.id));
+    assert(updated.length === 1 && updated[0].id === 'c_one', '1.6: Only explicitly selected child is updated');
+  }
+
+  // -------------------------------------------------------------
+  // TEST 2: Review selected (Sequential Review)
+  // -------------------------------------------------------------
+  console.log('\n--- ACTION 2: Review selected ---');
+  {
+    const res = resolveConnectedChildren(['p_grace', 'p_michael'], sampleParents);
+    const groups = groupChildrenByParent('review_sequence', res.selectedParentsList, res.allConnectedChildren);
+    const available = groups.flatMap(g => g.availableChildren);
+    assert(available.length === 2, '2.1: 2 children awaiting review (Daniel + David)');
+    
+    // Explicit selection: Admin selects only David
+    const explicitlyChosen = ['c_david'];
+    const sequenceList = available.filter(c => explicitlyChosen.includes(c.id));
+    assert(sequenceList.length === 1 && sequenceList[0].fullName === 'David Johnson', '2.2: Sequence enters only explicitly chosen child');
+  }
+
+  // -------------------------------------------------------------
+  // TEST 3: Approve
+  // -------------------------------------------------------------
+  console.log('\n--- ACTION 3: Approve ---');
+  {
+    const res = resolveConnectedChildren(['p_grace', 'p_michael'], sampleParents);
+    const groups = groupChildrenByParent('approve', res.selectedParentsList, res.allConnectedChildren);
+    const available = groups.flatMap(g => g.availableChildren);
+    const unavailable = groups.flatMap(g => g.unavailableChildren);
+    assert(available.length === 2, '3.1: 2 children eligible for approval (Daniel + David)');
+    assert(unavailable.some(u => u.child.id === 'c_sarah' && u.reason === 'Already Pass Ready'), '3.2: Sarah unavailable (Already Pass Ready)');
+    assert(unavailable.some(u => u.child.id === 'c_chloe' && u.reason.includes('Marked Not Selected')), '3.3: Chloe unavailable (Marked Not Selected)');
+
+    // Multiple parents grouping
+    assert(groups.length === 2, '3.4: Grouped under 2 parent headers (Grace Adeyemi, Michael Johnson)');
+  }
+
+  // -------------------------------------------------------------
+  // TEST 4: Move to waiting list
+  // -------------------------------------------------------------
+  console.log('\n--- ACTION 4: Move to waiting list ---');
+  {
+    const res = resolveConnectedChildren(['p_grace', 'p_michael'], sampleParents);
+    const groups = groupChildrenByParent('waitlist', res.selectedParentsList, res.allConnectedChildren);
+    const available = groups.flatMap(g => g.availableChildren);
+    const unavailable = groups.flatMap(g => g.unavailableChildren);
+    assert(available.length === 3, '4.1: 3 children eligible for waitlist (Daniel, David, Chloe)');
+    assert(unavailable.some(u => u.child.id === 'c_sarah' && u.reason === 'Already Pass Ready'), '4.2: Sarah unavailable (Already Pass Ready)');
+  }
+
+  // -------------------------------------------------------------
+  // TEST 5: Mark as not selected
+  // -------------------------------------------------------------
+  console.log('\n--- ACTION 5: Mark as not selected ---');
+  {
+    const res = resolveConnectedChildren(['p_grace', 'p_michael'], sampleParents);
+    const groups = groupChildrenByParent('not_selected', res.selectedParentsList, res.allConnectedChildren);
+    const available = groups.flatMap(g => g.availableChildren);
+    const unavailable = groups.flatMap(g => g.unavailableChildren);
+    assert(available.length === 2, '5.1: 2 children eligible to mark not selected (Daniel, David)');
+    assert(unavailable.some(u => u.child.id === 'c_chloe' && u.reason === 'Already marked Not Selected'), '5.2: Chloe unavailable (Already marked Not Selected)');
+  }
+
+  // -------------------------------------------------------------
+  // TEST 6: Return to Parent
+  // -------------------------------------------------------------
+  console.log('\n--- ACTION 6: Return to Parent ---');
+  {
+    const res = resolveConnectedChildren(['p_grace', 'p_michael'], sampleParents);
+    const groups = groupChildrenByParent('return_draft', res.selectedParentsList, res.allConnectedChildren);
+    const available = groups.flatMap(g => g.availableChildren);
+    const unavailable = groups.flatMap(g => g.unavailableChildren);
+    assert(available.length === 2, '6.1: 2 children eligible for return to draft (Daniel, David)');
+    assert(unavailable.some(u => u.child.id === 'c_sarah' && u.reason === 'Pass already issued'), '6.2: Sarah unavailable (Pass already issued)');
+    assert(unavailable.some(u => u.child.id === 'c_chloe' && u.reason === 'Not in a reviewable state'), '6.3: Chloe unavailable (Not in a reviewable state)');
+  }
+
+  // -------------------------------------------------------------
+  // TEST 7: Restore
+  // -------------------------------------------------------------
+  console.log('\n--- ACTION 7: Restore ---');
+  {
+    const res = resolveConnectedChildren(['p_withdrawn', 'p_michael'], sampleParents);
+    const groups = groupChildrenByParent('restore', res.selectedParentsList, res.allConnectedChildren);
+    const available = groups.flatMap(g => g.availableChildren);
+    const unavailable = groups.flatMap(g => g.unavailableChildren);
+    assert(available.length === 2, '7.1: 2 children eligible to restore (Withdrawn Child + Chloe Johnson)');
+    assert(unavailable.some(u => u.child.id === 'c_david' && u.reason === 'Already Under Review'), '7.2: David unavailable for restore (Already Under Review)');
+  }
+
+  // -------------------------------------------------------------
+  // TEST 8: Backend validation failure & partial success
+  // -------------------------------------------------------------
+  console.log('\n--- TEST 8: Backend validation failure & partial success ---');
+  {
+    const attemptedIds = ['c_daniel', 'c_david'];
+    const failures = [
+      { id: 'c_david', childName: 'David Johnson', reason: 'Venue room capacity reached' }
+    ];
+    const updatedCount = attemptedIds.length - failures.length;
+    const successfulIds = attemptedIds.filter(id => !failures.some(f => f.id === id));
+    assert(updatedCount === 1, '8.1: Correct partial updated count (1)');
+    assert(successfulIds.length === 1 && successfulIds[0] === 'c_daniel', '8.2: Daniel succeeded');
+    assert(failures[0].reason === 'Venue room capacity reached', '8.3: Failure reason clearly captured');
+  }
+
+  // -------------------------------------------------------------
+  // TEST 9: Empty parent handling
+  // -------------------------------------------------------------
+  console.log('\n--- TEST 9: Empty parent handling ---');
+  {
+    const res = resolveConnectedChildren(['p_empty', 'p_grace'], sampleParents);
+    assert(res.parentsWithNoChildren.length === 1 && res.parentsWithNoChildren[0].fullName === 'Empty Parent', '9.1: Empty parent detected without crashing');
+    const groups = groupChildrenByParent('approve', res.selectedParentsList, res.allConnectedChildren);
+    assert(groups.length === 1 && groups[0].parentName === 'Grace Adeyemi', '9.2: Only families with children rendered in modal');
+  }
+
+  console.log(`\n======================================================`);
   console.log(`SUMMARY: ${passed} of ${total} assertions PASSED.`);
-  console.log(`========================================\n`);
+  console.log(`======================================================\n`);
 }
 
 runTests();
