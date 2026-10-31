@@ -233,6 +233,43 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
   const [bulkMoreDropdownOpen, setBulkMoreDropdownOpen] = useState(false);
   const bulkMoreDropdownRef = useRef<HTMLDivElement>(null);
 
+  // Controlled Bulk Selection Scope & Pagination
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [headerScopeMenuOpen, setHeaderScopeMenuOpen] = useState(false);
+  const [toolbarScopeMenuOpen, setToolbarScopeMenuOpen] = useState(false);
+  const headerScopeMenuRef = useRef<HTMLDivElement>(null);
+  const toolbarScopeMenuRef = useRef<HTMLDivElement>(null);
+
+  // Custom Amount Modal State
+  const [showCustomAmountModal, setShowCustomAmountModal] = useState(false);
+  const [customAmountValue, setCustomAmountValue] = useState('50');
+  const [customAmountError, setCustomAmountError] = useState('');
+
+  // Confirmation for large "Select all filtered"
+  const [showConfirmSelectAllModal, setShowConfirmSelectAllModal] = useState(false);
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (
+        headerScopeMenuOpen &&
+        headerScopeMenuRef.current &&
+        !headerScopeMenuRef.current.contains(e.target as Node)
+      ) {
+        setHeaderScopeMenuOpen(false);
+      }
+      if (
+        toolbarScopeMenuOpen &&
+        toolbarScopeMenuRef.current &&
+        !toolbarScopeMenuRef.current.contains(e.target as Node)
+      ) {
+        setToolbarScopeMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [headerScopeMenuOpen, toolbarScopeMenuOpen]);
+
   // Bulk Child Event Actions & Sequence Review
   const [eventActionsDropdownOpen, setEventActionsDropdownOpen] = useState(false);
   const eventActionsRef = useRef<HTMLDivElement>(null);
@@ -681,33 +718,179 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     return parents.filter(p => doesParentMatchAgeGroup(p, selectedAgeGroup));
   }, [parents, selectedAgeGroup, availableAgeGroups, activeEvent]);
 
-  // Clear bulk selection on tab switch or search change
+  // Reset pagination & selection when switching tabs
   useEffect(() => {
     setSelectedParentIds([]);
-  }, [
-    searchQuery,
-    activeTab,
-    workerFilter,
-    selectedDepartment,
-    selectedCountry,
-    selectedState,
-    selectedCity,
-    hasChildrenFilter,
-    hasLocationFilter,
-    selectedAgeGroup
-  ]);
+    setCurrentPage(1);
+  }, [activeTab]);
 
-  const isAllVisibleSelected = displayParents.length > 0 && displayParents.every(p => selectedParentIds.includes(String(p.id)));
-  const isSomeVisibleSelected = displayParents.some(p => selectedParentIds.includes(String(p.id)));
+  // Reconcile selection when displayParents change:
+  // Retain only selected parents that still match the active filtered dataset
+  useEffect(() => {
+    setCurrentPage(1);
+    setSelectedParentIds(prev => {
+      if (prev.length === 0) return prev;
+      const validIdSet = new Set(displayParents.map(p => String(p.id)));
+      const filtered = prev.filter(id => validIdSet.has(id));
+      if (filtered.length === prev.length) return prev;
+      return filtered;
+    });
+  }, [displayParents]);
+
+  // Pagination & Visible Records calculation
+  const totalPages = Math.max(1, Math.ceil(displayParents.length / pageSize));
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const visibleParents = useMemo(() => {
+    return displayParents.slice(startIndex, endIndex);
+  }, [displayParents, startIndex, endIndex]);
+
+  const visibleParentIds = useMemo(() => {
+    return visibleParents.map(p => String(p.id));
+  }, [visibleParents]);
+
+  const isAllVisibleSelected = visibleParents.length > 0 && visibleParents.every(p => selectedParentIds.includes(String(p.id)));
+  const isSomeVisibleSelected = visibleParents.some(p => selectedParentIds.includes(String(p.id)));
   const isIndeterminate = isSomeVisibleSelected && !isAllVisibleSelected;
 
-  const handleToggleSelectAll = () => {
+  const handleToggleSelectVisible = () => {
     if (isAllVisibleSelected) {
-      setSelectedParentIds([]);
+      // Deselect only currently visible rows
+      setSelectedParentIds(prev => prev.filter(id => !visibleParentIds.includes(id)));
+    } else {
+      // Select currently visible rows (preserving any selections from other pages)
+      setSelectedParentIds(prev => Array.from(new Set([...prev, ...visibleParentIds])));
+    }
+  };
+
+  const handleSelectFirstN = (n: number) => {
+    const toSelect = displayParents.slice(0, n).map(p => String(p.id));
+    setSelectedParentIds(toSelect);
+  };
+
+  const handleSelectAllFiltered = () => {
+    if (displayParents.length > 50) {
+      setShowConfirmSelectAllModal(true);
     } else {
       setSelectedParentIds(displayParents.map(p => String(p.id)));
     }
   };
+
+  const handleConfirmSelectAll = () => {
+    setSelectedParentIds(displayParents.map(p => String(p.id)));
+    setShowConfirmSelectAllModal(false);
+  };
+
+  const handleCustomAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    setCustomAmountValue(raw);
+    if (!raw.trim()) {
+      setCustomAmountError('Please enter a number greater than 0.');
+      return;
+    }
+    const parsed = parseInt(raw, 10);
+    if (isNaN(parsed) || parsed <= 0) {
+      setCustomAmountError('Please enter a number greater than 0.');
+    } else if (parsed > displayParents.length) {
+      setCustomAmountError(`Only ${displayParents.length} parents match the current filters.`);
+    } else {
+      setCustomAmountError('');
+    }
+  };
+
+  const handleCustomAmountSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = parseInt(customAmountValue.trim(), 10);
+    if (isNaN(parsed) || parsed <= 0) {
+      setCustomAmountError('Please enter a number greater than 0.');
+      return;
+    }
+    if (parsed > displayParents.length) {
+      setCustomAmountError(`Only ${displayParents.length} parents match the current filters.`);
+      return;
+    }
+    handleSelectFirstN(parsed);
+    setShowCustomAmountModal(false);
+    setCustomAmountError('');
+  };
+
+  const parsedCustomAmount = parseInt(customAmountValue.trim(), 10);
+  const isCustomAmountValid = !isNaN(parsedCustomAmount) && parsedCustomAmount > 0 && parsedCustomAmount <= displayParents.length;
+
+  const renderSelectionScopeDropdown = (
+    onClose: () => void,
+    positionClass: string = "left-0 top-full mt-1.5"
+  ) => (
+    <div
+      className={`absolute ${positionClass} w-56 bg-white dark:bg-[#1E1E1C] border border-[#EAE8E1] dark:border-[#2E2C28] rounded-lg shadow-xl z-50 py-1 text-xs text-left animate-scale-in`}
+    >
+      <div className="px-3 py-1.5 border-b border-[#EAE8E1] dark:border-[#2E2C28] text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+        Selection Scope
+      </div>
+
+      <button
+        type="button"
+        onClick={() => {
+          onClose();
+          setSelectedParentIds(visibleParentIds);
+        }}
+        className="w-full px-3 py-2 text-left text-neutral-700 dark:text-neutral-300 hover:bg-[#FAF9F6] dark:hover:bg-[#262522] hover:text-neutral-900 dark:hover:text-white flex items-center justify-between transition-colors cursor-pointer"
+      >
+        <span>Select visible</span>
+        <span className="text-[10px] text-neutral-400 font-medium">{visibleParents.length}</span>
+      </button>
+
+      {[10, 25, 50, 100].map(count => {
+        const isAvailable = displayParents.length >= count;
+        return (
+          <button
+            key={count}
+            type="button"
+            disabled={!isAvailable}
+            onClick={() => {
+              onClose();
+              handleSelectFirstN(count);
+            }}
+            className="w-full px-3 py-2 text-left text-neutral-700 dark:text-neutral-300 hover:bg-[#FAF9F6] dark:hover:bg-[#262522] hover:text-neutral-900 dark:hover:text-white disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-between transition-colors cursor-pointer"
+          >
+            <span>Select first {count}</span>
+            {!isAvailable && (
+              <span className="text-[10px] text-neutral-400 font-normal">({displayParents.length} available)</span>
+            )}
+          </button>
+        );
+      })}
+
+      <button
+        type="button"
+        onClick={() => {
+          onClose();
+          setCustomAmountValue(String(Math.min(50, displayParents.length || 1)));
+          setCustomAmountError('');
+          setShowCustomAmountModal(true);
+        }}
+        className="w-full px-3 py-2 text-left text-neutral-700 dark:text-neutral-300 hover:bg-[#FAF9F6] dark:hover:bg-[#262522] hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer"
+      >
+        Select custom amount…
+      </button>
+
+      <div className="my-1 border-t border-[#EAE8E1] dark:border-[#2E2C28]" />
+
+      <button
+        type="button"
+        onClick={() => {
+          onClose();
+          handleSelectAllFiltered();
+        }}
+        className="w-full px-3 py-2 text-left text-neutral-800 dark:text-neutral-200 hover:bg-[#FAF9F6] dark:hover:bg-[#262522] hover:text-neutral-950 dark:hover:text-white flex items-center justify-between transition-colors cursor-pointer font-medium"
+      >
+        <span>Select all filtered</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 font-semibold">
+          {displayParents.length}
+        </span>
+      </button>
+    </div>
+  );
 
   const handleToggleSelectParent = (id: string) => {
     setSelectedParentIds(prev =>
@@ -1562,6 +1745,101 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     document.body
   ) : null;
 
+  const customAmountModal = showCustomAmountModal ? createPortal(
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-lg shadow-xl max-w-sm w-full p-5 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+            Select number of parents
+          </h3>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+            Enter how many parent records to select from the {displayParents.length} filtered results.
+          </p>
+        </div>
+
+        <form onSubmit={handleCustomAmountSubmit} className="space-y-3">
+          <div>
+            <input
+              type="number"
+              min="1"
+              max={displayParents.length}
+              value={customAmountValue}
+              onChange={handleCustomAmountChange}
+              autoFocus
+              className={`w-full px-3 py-2 text-sm rounded border focus:outline-none transition-colors dark:bg-[#20201E] text-neutral-900 dark:text-neutral-100 ${
+                customAmountError
+                  ? 'border-red-500 focus:border-red-500'
+                  : 'border-[#EAE8E1] dark:border-[#2A2926] focus:border-[#C59B27]'
+              }`}
+              placeholder={`1 - ${displayParents.length}`}
+            />
+            {customAmountError && (
+              <p className="text-xs text-red-600 dark:text-red-400 mt-1.5 font-medium">
+                {customAmountError}
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#2A2926]">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setShowCustomAmountModal(false);
+                setCustomAmountError('');
+              }}
+              className="text-xs px-3 py-1.5 rounded"
+            >
+              Cancel
+            </Button>
+            <button
+              type="submit"
+              disabled={!isCustomAmountValid}
+              className="px-3.5 py-1.5 text-xs font-semibold text-white bg-[#C59B27] hover:bg-[#B08921] disabled:opacity-40 disabled:cursor-not-allowed rounded transition-colors shadow-xs cursor-pointer"
+            >
+              {isCustomAmountValid ? `Select ${parsedCustomAmount}` : 'Select'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  const confirmSelectAllModal = showConfirmSelectAllModal ? createPortal(
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-lg shadow-xl max-w-sm w-full p-5 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+            Select all {displayParents.length} parents?
+          </h3>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1.5">
+            This will select all records matching the current filters.
+          </p>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#2A2926]">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => setShowConfirmSelectAllModal(false)}
+            className="text-xs px-3 py-1.5 rounded"
+          >
+            Cancel
+          </Button>
+          <button
+            type="button"
+            onClick={handleConfirmSelectAll}
+            className="px-3.5 py-1.5 text-xs font-semibold text-white bg-[#C59B27] hover:bg-[#B08921] rounded transition-colors shadow-xs cursor-pointer"
+          >
+            Select all {displayParents.length}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
   return (
     <div
       className="space-y-6"
@@ -1575,6 +1853,8 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       {bulkRemoveModal}
       {bulkRestoreModal}
       {bulkPurgeModal}
+      {customAmountModal}
+      {confirmSelectAllModal}
       {quickViewModal}
       {reviewingChild && (
         <ChildReviewModal
@@ -1974,10 +2254,9 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       </div>
 
       {/* Contextual Action Bar when rows are selected */}
-      {/* Contextual Action Bar when rows are selected */}
       {selectedParentIds.length > 0 && (
         <div className="bg-[#FAF8F2] dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926] rounded-md px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-2xs animate-fade-in">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="w-2 h-2 rounded-full bg-[#C59B27]" />
             <span className="text-xs font-semibold text-neutral-900 dark:text-neutral-100">
               {selectedParentIds.length} {selectedParentIds.length === 1 ? 'parent selected' : 'parents selected'}
@@ -1986,9 +2265,26 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                 {allConnectedChildren.length} {allConnectedChildren.length === 1 ? 'child' : 'children'}
               </span>
             </span>
+            <span className="text-[11px] text-neutral-400 dark:text-neutral-500 hidden sm:inline">
+              ({selectedParentIds.length} of {displayParents.length} filtered {displayParents.length === 1 ? 'parent' : 'parents'})
+            </span>
           </div>
 
-          <div className="flex items-center gap-2 relative">
+          <div className="flex items-center gap-2 relative flex-wrap">
+            {/* Change selection scope control */}
+            <div className="relative" ref={toolbarScopeMenuRef}>
+              <button
+                type="button"
+                id="parents-toolbar-change-selection-btn"
+                onClick={() => setToolbarScopeMenuOpen(!toolbarScopeMenuOpen)}
+                className="px-2.5 py-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white bg-white dark:bg-[#282724] border border-[#EAE8E1] dark:border-[#383632] rounded hover:border-neutral-300 transition-colors flex items-center gap-1 cursor-pointer focus:outline-none"
+              >
+                <span>Change selection</span>
+                <ChevronDown className={`w-3 h-3 transition-transform duration-150 ${toolbarScopeMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {toolbarScopeMenuOpen && renderSelectionScopeDropdown(() => setToolbarScopeMenuOpen(false), "left-0 sm:right-0 sm:left-auto top-full mt-1.5")}
+            </div>
+
             {/* Restrained Event actions dropdown */}
             {activeTab === 'active' && (
               <div className="relative" ref={eventActionsRef}>
@@ -2199,13 +2495,29 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
             <table className="w-full border-collapse text-left text-xs">
               <thead>
                 <tr className="bg-[#FAF9F6] dark:bg-[#20201E] border-b border-[#EAE8E1] dark:border-[#2A2926] text-neutral-500 dark:text-neutral-400">
-                  <th className="py-3 px-3 pl-4 w-10 text-center">
-                    <AdminSelectionCheckbox
-                      checked={isAllVisibleSelected}
-                      indeterminate={isIndeterminate}
-                      onChange={handleToggleSelectAll}
-                      ariaLabel="Select all visible parents"
-                    />
+                  <th className="py-3 px-3 pl-4 w-12 text-center">
+                    <div className="flex items-center justify-center gap-0.5">
+                      <AdminSelectionCheckbox
+                        checked={isAllVisibleSelected}
+                        indeterminate={isIndeterminate}
+                        onChange={handleToggleSelectVisible}
+                        ariaLabel="Select visible parents"
+                      />
+                      <div className="relative" ref={headerScopeMenuRef}>
+                        <button
+                          type="button"
+                          id="parents-header-scope-menu-btn"
+                          onClick={() => setHeaderScopeMenuOpen(!headerScopeMenuOpen)}
+                          className="p-0.5 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 rounded transition-colors focus:outline-none cursor-pointer"
+                          title="Selection options"
+                          aria-label="Selection options"
+                          aria-expanded={headerScopeMenuOpen}
+                        >
+                          <ChevronDown className={`w-3 h-3 transition-transform duration-150 ${headerScopeMenuOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                        {headerScopeMenuOpen && renderSelectionScopeDropdown(() => setHeaderScopeMenuOpen(false), "left-0 top-full mt-1.5")}
+                      </div>
+                    </div>
                   </th>
                   <th className="py-3 px-4 text-[11px] font-semibold tracking-wider uppercase">Parent Profile</th>
                   <th className="py-3 px-4 text-[11px] font-semibold tracking-wider uppercase">Worker Status</th>
@@ -2216,7 +2528,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#EAE8E1] dark:divide-[#2A2926]">
-                {displayParents.map((p) => {
+                {visibleParents.map((p) => {
                   const displayName = getDisplayName(p);
                   const isRemoved = p.isDeleted || activeTab === 'removed';
                   const isSelected = selectedParentIds.includes(String(p.id));
@@ -2462,6 +2774,58 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Pagination Bar */}
+        {displayParents.length > 0 && (
+          <div className="px-4 py-3 border-t border-[#EAE8E1] dark:border-[#2A2926] bg-[#FAF9F6] dark:bg-[#20201E] flex flex-wrap items-center justify-between gap-3 text-xs text-neutral-600 dark:text-neutral-400">
+            <div className="flex items-center gap-2">
+              <span>
+                Showing <span className="font-semibold text-neutral-900 dark:text-neutral-100">{startIndex + 1}</span> to <span className="font-semibold text-neutral-900 dark:text-neutral-100">{Math.min(endIndex, displayParents.length)}</span> of <span className="font-semibold text-neutral-900 dark:text-neutral-100">{displayParents.length}</span> parents
+              </span>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-neutral-500">Rows per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded px-2 py-1 text-xs text-neutral-800 dark:text-neutral-200 focus:outline-none focus:border-[#C59B27] cursor-pointer"
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={250}>250</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={currentPage <= 1}
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  className="px-2.5 py-1 rounded border border-[#EAE8E1] dark:border-[#2A2926] bg-white dark:bg-[#1D1D1A] text-neutral-700 dark:text-neutral-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-neutral-50 dark:hover:bg-[#262522] transition-colors cursor-pointer"
+                >
+                  Previous
+                </button>
+                <span className="px-2 py-1 text-neutral-500 text-[11px]">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  className="px-2.5 py-1 rounded border border-[#EAE8E1] dark:border-[#2A2926] bg-white dark:bg-[#1D1D1A] text-neutral-700 dark:text-neutral-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-neutral-50 dark:hover:bg-[#262522] transition-colors cursor-pointer"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
