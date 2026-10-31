@@ -104,6 +104,9 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
   const [isWaitlistModalOpen, setIsWaitlistModalOpen] = useState(false);
   const [isNotSelectedModalOpen, setIsNotSelectedModalOpen] = useState(false);
   const [notSelectedReason, setNotSelectedReason] = useState('');
+  const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
+  const [returnReason, setReturnReason] = useState('');
+  const [returning, setReturning] = useState(false);
   const [isGeneratePassModalOpen, setIsGeneratePassModalOpen] = useState(false);
 
   // Super Admin: Reset Event Progress
@@ -125,6 +128,11 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
 
   // Dropdown More menu in Decision panel
   const [isDecisionMoreOpen, setIsDecisionMoreOpen] = useState(false);
+
+  const getCanonicalTargetId = () => {
+    if (app?.id && app.id !== app.childId) return app.id;
+    return app?.id || applicationId;
+  };
 
   const fetchDetails = async () => {
     setLoading(true);
@@ -190,41 +198,78 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
   }, [applicationId]);
 
   // Decision Confirmations
-  const handleConfirmSelect = async () => {
+
+  // 1. Enter child into event queue (moves unentered child to under_review)
+  const handleSelectForEvent = async () => {
     setSaving(true);
     try {
-      const res = await api.admin.reviewApplication(applicationId, {
-        status: 'selected',
-        noteToTeam: noteToTeam || 'Selected for event.',
-        sendNotification
+      const targetId = app?.childId || applicationId;
+      const res = await api.admin.reviewApplication(targetId, {
+        status: 'under_review',
+        noteToTeam: noteToTeam || 'Entered into event review queue.',
+        sendNotification: false,
+        eventId: app?.eventId
       });
       if (res.success) {
-        showSuccess('Child Selected', `${app?.child?.fullName || 'Child'} has been selected for the event.`);
-        setIsSelectModalOpen(false);
+        showSuccess('Entered for Event', `${app?.child?.fullName || 'Child'} has been entered for event review.`);
         await fetchDetails();
         onSave();
+      } else {
+        showError('Selection Failed', res.error || 'Could not enter child for event.');
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
-      showError('Selection Failed', parsed.message || 'Could not select child.');
+      showError('Selection Failed', parsed.message || 'Could not enter child for event.');
     } finally {
       setSaving(false);
     }
   };
 
+  // 2. Approve child application (moves under_review to selected / pass_ready)
+  const handleConfirmSelect = async () => {
+    setSaving(true);
+    try {
+      const targetId = getCanonicalTargetId();
+      const res = await api.admin.reviewApplication(targetId, {
+        status: 'selected',
+        noteToTeam: noteToTeam || 'Approved for event.',
+        sendNotification,
+        eventId: app?.eventId
+      });
+      if (res.success) {
+        showSuccess('Child Approved', `${app?.child?.fullName || 'Child'} has been approved for the event.`);
+        setIsSelectModalOpen(false);
+        await fetchDetails();
+        onSave();
+      } else {
+        showError('Approval Failed', res.error || 'Could not approve child.');
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Approval Failed', parsed.message || 'Could not approve child.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 3. Move to waiting list
   const handleConfirmWaitlist = async () => {
     setSaving(true);
     try {
-      const res = await api.admin.reviewApplication(applicationId, {
+      const targetId = getCanonicalTargetId();
+      const res = await api.admin.reviewApplication(targetId, {
         status: 'waiting_list',
         noteToTeam: noteToTeam || 'Moved to waiting list.',
-        sendNotification
+        sendNotification,
+        eventId: app?.eventId
       });
       if (res.success) {
         showSuccess('Added to Waiting List', `${app?.child?.fullName || 'Child'} was moved to the waiting list.`);
         setIsWaitlistModalOpen(false);
         await fetchDetails();
         onSave();
+      } else {
+        showError('Waitlist Failed', res.error || 'Could not waitlist child.');
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
@@ -234,13 +279,20 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
     }
   };
 
+  // 4. Mark as not selected
   const handleConfirmNotSelected = async () => {
+    if (!notSelectedReason.trim()) {
+      showError('Reason Required', 'Please provide a reason for marking this application as not selected.');
+      return;
+    }
     setSaving(true);
     try {
-      const res = await api.admin.reviewApplication(applicationId, {
+      const targetId = getCanonicalTargetId();
+      const res = await api.admin.reviewApplication(targetId, {
         status: 'not_selected',
-        noteToTeam: notSelectedReason || noteToTeam || 'Marked not selected.',
-        sendNotification
+        noteToTeam: notSelectedReason.trim() || noteToTeam || 'Marked not selected.',
+        sendNotification,
+        eventId: app?.eventId
       });
       if (res.success) {
         showSuccess('Marked Not Selected', `${app?.child?.fullName || 'Child'} was marked as not selected.`);
@@ -248,12 +300,61 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
         setNotSelectedReason('');
         await fetchDetails();
         onSave();
+      } else {
+        showError('Action Failed', res.error || 'Could not update status.');
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
-      showError('Operation Failed', parsed.message || 'Could not update status.');
+      showError('Action Failed', parsed.message || 'Could not update status.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  // 5. Return to parent for correction
+  const handleConfirmReturn = async () => {
+    if (!returnReason.trim()) {
+      showError('Reason Required', 'Please provide a clear correction reason for the parent.');
+      return;
+    }
+    setReturning(true);
+    try {
+      const targetId = getCanonicalTargetId();
+      let returnSucceeded = false;
+      try {
+        const res = await api.admin.returnApplicationToDraft(targetId, {
+          reason: returnReason.trim(),
+          customMessage: noteToTeam || undefined,
+          notifyEmail: sendNotification,
+          notifyWhatsApp: sendNotification
+        });
+        if (res.success) {
+          returnSucceeded = true;
+        }
+      } catch (draftErr: any) {
+        // Fallback to reopen
+      }
+
+      if (!returnSucceeded) {
+        const reopenRes = await api.admin.reopenApplicationReview(targetId, returnReason.trim());
+        if (reopenRes.success) {
+          returnSucceeded = true;
+        } else {
+          showError('Return Failed', reopenRes.error || 'Could not return application.');
+          return;
+        }
+      }
+
+      showSuccess('Application Returned', `${app?.child?.fullName || 'Child'}'s application has been returned to the parent for corrections.`);
+      setIsReturnModalOpen(false);
+      setReturnReason('');
+      await fetchDetails();
+      onSave();
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Return Failed', parsed.message || 'Could not return application to parent.');
+    } finally {
+      setReturning(false);
     }
   };
 
@@ -539,6 +640,7 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
   // Status Presentation Strings
   const getReviewStatusLabel = () => {
     if (isRemoved) return 'Removed';
+    if (!app.hasEntry || app.status === 'not_registered') return 'Not entered';
     if (app.status === 'incomplete' || app.status === 'draft') return 'Incomplete (Draft)';
     if (app.status === 'under_review' || app.status === 'review_reopened') return 'Under review';
     if (app.status === 'selected' || app.status === 'pass_ready' || ['checked_in', 'inside', 'picked_up'].includes(app.status)) return 'Selected';
@@ -1132,8 +1234,29 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
               </div>
             )}
 
+            {/* 2.8 NOT ENTERED FOR EVENT */}
+            {!isRemoved && !isAttendingChild && (!app.hasEntry || app.status === 'not_registered') && (
+              <div className="space-y-4">
+                <div className="bg-zinc-50 dark:bg-[#21211E] border border-zinc-200 dark:border-[#302E29] rounded-xl p-3.5 text-xs text-zinc-700 dark:text-[#B8B0A5] leading-relaxed space-y-1">
+                  <p className="font-semibold text-xs text-[#18181B] dark:text-[#F0EBE3]">Not entered for event</p>
+                  <p>This child is registered in the system but has not yet been entered into the review queue for this event.</p>
+                </div>
+
+                <Button
+                  type="button"
+                  onClick={handleSelectForEvent}
+                  disabled={saving}
+                  variant="primary"
+                  className="w-full p-3 text-left rounded-xl flex items-center justify-between font-semibold text-xs cursor-pointer"
+                >
+                  <span>Select for event</span>
+                  <CheckCircle2 className="w-4 h-4 text-white" />
+                </Button>
+              </div>
+            )}
+
             {/* 3. UNDER REVIEW / REOPENED REVIEW */}
-            {!isRemoved && !isAttendingChild && ['under_review', 'review_reopened'].includes(app.status) && (
+            {!isRemoved && !isAttendingChild && (app.hasEntry !== false && app.status !== 'not_registered') && ['under_review', 'review_reopened'].includes(app.status) && (
               <div className="space-y-4">
                 <div className="bg-[#FAF8F3] dark:bg-[#21211E] border border-[#E5D5AE]/40 dark:border-[#302E29] rounded-xl p-3.5 text-xs text-[#715D3A] dark:text-[#B8B0A5] leading-relaxed space-y-1">
                   <p className="font-semibold text-xs text-[#8C6D23] dark:text-[#C59B27]">Awaiting decision</p>
@@ -1172,10 +1295,9 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                       setDecision('selected');
                       setIsSelectModalOpen(true);
                     }}
-                    variant="primary"
-                    className="w-full p-3 text-left rounded-xl flex items-center justify-between font-semibold text-xs cursor-pointer"
+                    className="w-full p-3 text-left rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-between font-semibold text-xs cursor-pointer shadow-xs transition-colors"
                   >
-                    <span>Select for event</span>
+                    <span>Approve</span>
                     <CheckCircle2 className="w-4 h-4 text-white" />
                   </Button>
 
@@ -1190,6 +1312,18 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                     <span>Move to waiting list</span>
                     <Hourglass className="w-4 h-4 text-zinc-500 dark:text-[#7A7570]" />
                   </Button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDecision('under_review');
+                      setIsReturnModalOpen(true);
+                    }}
+                    className="w-full p-3 text-left rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] hover:border-amber-300 dark:hover:border-amber-800/60 bg-white dark:bg-[#262520] text-amber-700 dark:text-amber-400 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 flex items-center justify-between font-medium text-xs cursor-pointer transition-colors"
+                  >
+                    <span>Return to Parent for correction</span>
+                    <RotateCcw className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                  </button>
 
                   <button
                     type="button"
@@ -1339,17 +1473,30 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
               <div className="space-y-4">
                 <div className="bg-zinc-50 dark:bg-[#21211E] border border-zinc-200 dark:border-[#302E29] rounded-xl p-3.5 text-xs text-zinc-700 dark:text-[#B8B0A5] leading-relaxed space-y-1">
                   <p className="font-semibold text-xs text-[#18181B] dark:text-[#F0EBE3]">Not selected</p>
-                  <p>This registration is marked as not selected. You can reopen review to reconsider.</p>
+                  <p>This registration is marked as not selected. You can re-enter them into the review queue or reopen review to reconsider.</p>
                 </div>
 
-                <Button
-                  type="button"
-                  onClick={() => setIsReopenModalOpen(true)}
-                  className="w-full p-3 text-left rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] hover:border-zinc-300 dark:hover:border-[#C59B27]/50 bg-white dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] flex items-center justify-between font-medium text-xs cursor-pointer"
-                >
-                  <span>Reopen review for reconsideration</span>
-                  <Clock className="w-4 h-4 text-zinc-500 dark:text-[#7A7570]" />
-                </Button>
+                <div className="space-y-2.5">
+                  <Button
+                    type="button"
+                    onClick={handleSelectForEvent}
+                    disabled={saving}
+                    variant="primary"
+                    className="w-full p-3 text-left rounded-xl flex items-center justify-between font-semibold text-xs cursor-pointer"
+                  >
+                    <span>Select for event</span>
+                    <CheckCircle2 className="w-4 h-4 text-white" />
+                  </Button>
+
+                  <Button
+                    type="button"
+                    onClick={() => setIsReopenModalOpen(true)}
+                    className="w-full p-3 text-left rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] hover:border-zinc-300 dark:hover:border-[#C59B27]/50 bg-white dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] flex items-center justify-between font-medium text-xs cursor-pointer"
+                  >
+                    <span>Reopen review for reconsideration</span>
+                    <Clock className="w-4 h-4 text-zinc-500 dark:text-[#7A7570]" />
+                  </Button>
+                </div>
               </div>
             )}
 
@@ -1595,16 +1742,16 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
         </div>
       )}
 
-      {/* SELECT CONFIRMATION MODAL */}
+      {/* APPROVE APPLICATION MODAL */}
       {isSelectModalOpen && (
         <div className="fixed inset-0 bg-black/40 dark:bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-5 animate-scale-in text-[#18181B] dark:text-[#F0EBE3]">
-            <div className="flex items-start gap-3 text-[#C59B27]">
-              <CheckCircle2 className="w-6 h-6 shrink-0 text-[#C59B27]" />
+            <div className="flex items-start gap-3 text-emerald-700 dark:text-emerald-400">
+              <CheckCircle2 className="w-6 h-6 shrink-0 text-emerald-600 dark:text-emerald-400" />
               <div className="space-y-1 text-left">
-                <h3 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3]">Select child for event?</h3>
+                <h3 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3]">Approve child application?</h3>
                 <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
-                  Are you sure you want to select <strong>{app.child.fullName}</strong> for <strong>{app.child.ageGroup || 'Section'}</strong>?
+                  Are you sure you want to approve <strong>{app.child.fullName}</strong> for <strong>{app.child.ageGroup || 'Section'}</strong>?
                 </p>
               </div>
             </div>
@@ -1612,8 +1759,8 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
             <div className="bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 rounded-xl p-3.5 text-xs text-emerald-800 dark:text-emerald-300 leading-relaxed space-y-1.5 text-left">
               <p className="font-semibold text-xs">Consequences:</p>
               <ul className="list-disc pl-4 space-y-1 text-xs">
-                <li>Child's status will update to <strong>Selected</strong> instantly.</li>
-                <li>You can subsequently generate their digital QR Event Pass.</li>
+                <li>Child's status will update to <strong>Selected / Pass Ready</strong> instantly.</li>
+                <li>Digital QR Event Pass will be ready for check-in.</li>
                 <li>The parent will be notified to view their selection status online.</li>
               </ul>
             </div>
@@ -1628,10 +1775,12 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
               </button>
               <button
                 type="button"
+                disabled={saving}
                 onClick={handleConfirmSelect}
-                className="px-4 py-2 bg-[#C59B27] hover:bg-[#B08921] text-white rounded-xl text-xs font-semibold transition-all shadow-none cursor-pointer"
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition-all shadow-none flex items-center gap-1.5 cursor-pointer"
               >
-                Confirm selection
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                <span>Approve application</span>
               </button>
             </div>
           </div>
@@ -1735,6 +1884,67 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 dark:bg-red-600/90 dark:hover:bg-red-600 text-white border border-red-600 dark:border-red-500/50 rounded-xl text-xs font-semibold transition-all shadow-none cursor-pointer"
               >
                 Confirm not selected
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RETURN APPLICATION TO PARENT MODAL */}
+      {isReturnModalOpen && (
+        <div className="fixed inset-0 bg-black/40 dark:bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-5 animate-scale-in text-[#18181B] dark:text-[#F0EBE3]">
+            <div className="flex items-start gap-3 text-amber-700 dark:text-amber-400">
+              <RotateCcw className="w-6 h-6 shrink-0 text-amber-600 dark:text-amber-400" />
+              <div className="space-y-1 text-left">
+                <h3 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3]">Return application to parent?</h3>
+                <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+                  Send the registration for <strong>{app.child.fullName}</strong> back to the parent for corrections or missing information.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-amber-50/50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/40 rounded-xl p-3.5 text-xs text-amber-800 dark:text-amber-300 leading-relaxed space-y-1.5 text-left">
+              <p className="font-semibold text-xs">Consequences:</p>
+              <ul className="list-disc pl-4 space-y-1 text-xs">
+                <li>Child's status transitions back to <strong>Draft / Incomplete</strong> for the parent.</li>
+                <li>The parent will be requested to review and resubmit the application.</li>
+              </ul>
+            </div>
+
+            <div className="space-y-2 text-left">
+              <label htmlFor="returnReason" className="text-xs font-semibold text-zinc-700 dark:text-[#B8B0A5] block">
+                Correction reason / instructions for parent <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                id="returnReason"
+                rows={3}
+                placeholder="e.g. Please upload a clearer child portrait photo, clarify emergency contact details..."
+                value={returnReason}
+                onChange={(e) => setReturnReason(e.target.value)}
+                className="w-full p-3 text-xs rounded-xl border border-zinc-200 dark:border-[#3A3835] focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-all bg-zinc-50 dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] font-medium placeholder:text-zinc-400 dark:placeholder:text-[#7A7570]"
+              />
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsReturnModalOpen(false);
+                  setReturnReason('');
+                }}
+                className="px-4 py-2 bg-white dark:bg-[#262520] border border-zinc-200 dark:border-[#3A3835] rounded-xl hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-xs font-medium text-zinc-700 dark:text-[#F0EBE3] transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={returning || !returnReason.trim()}
+                onClick={handleConfirmReturn}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 dark:bg-amber-600/90 dark:hover:bg-amber-600 text-white rounded-xl text-xs font-semibold transition-all shadow-none disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+              >
+                {returning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                <span>Return to parent</span>
               </button>
             </div>
           </div>

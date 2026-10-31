@@ -2670,10 +2670,13 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
 router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const targetEventId = await resolveAdminEventId((req.query.eventId || req.headers['x-event-id']) as string);
+
     let app = await queryOne(`
       SELECT 
         e.id as entry_id,
         e.child_id,
+        e.event_id,
         e.status,
         e.is_deleted,
         e.deleted_at,
@@ -2714,17 +2717,18 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
         COALESCE(pm.optimized_url, pm.secure_url, pm.file_url) as parent_photo_url
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
-      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
       LEFT JOIN media_files m ON m.id = c.photo_file_id
       LEFT JOIN media_files pm ON pm.id = p.photo_file_id
       WHERE e.id = ?
     `, [id]);
 
-    if (!app) {
+    if (!app && targetEventId) {
       app = await queryOne(`
         SELECT 
           e.id as entry_id,
           e.child_id,
+          e.event_id,
           e.status,
           e.is_deleted,
           e.deleted_at,
@@ -2765,7 +2769,61 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
           COALESCE(pm.optimized_url, pm.secure_url, pm.file_url) as parent_photo_url
         FROM child_event_entries e
         JOIN children c ON c.id = e.child_id
-        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
+        LEFT JOIN media_files m ON m.id = c.photo_file_id
+        LEFT JOIN media_files pm ON pm.id = p.photo_file_id
+        WHERE e.child_id = ? AND e.event_id = ?
+        ORDER BY e.created_at DESC LIMIT 1
+      `, [id, targetEventId]);
+    }
+
+    if (!app) {
+      app = await queryOne(`
+        SELECT 
+          e.id as entry_id,
+          e.child_id,
+          e.event_id,
+          e.status,
+          e.is_deleted,
+          e.deleted_at,
+          e.deleted_by,
+          e.delete_reason,
+          e.school_class,
+          e.school_name,
+          e.previous_children_programme,
+          e.note_to_team,
+          e.has_medical_notes,
+          e.medical_notes,
+          e.needs_extra_support,
+          e.support_notes,
+          e.submitted_at,
+          e.reviewed_at,
+          e.checked_in_at,
+          e.picked_up_at,
+          e.updated_at,
+          c.full_name as child_name,
+          c.gender,
+          c.date_of_birth,
+          c.calculated_age,
+          c.age_group,
+          c.relationship_to_child,
+          c.needs_age_review,
+          c.photo_file_id as child_photo_file_id,
+          c.photo_file_id,
+          COALESCE(m.optimized_url, m.secure_url, m.file_url) as child_photo_url,
+          p.id as parent_id,
+          p.full_name as parent_name,
+          p.phone_number,
+          p.whatsapp_number,
+          p.email as parent_email,
+          p.is_koinonia_worker,
+          p.department as parent_department,
+          p.home_address as parent_address,
+          p.photo_file_id as parent_photo_file_id,
+          COALESCE(pm.optimized_url, pm.secure_url, pm.file_url) as parent_photo_url
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
         LEFT JOIN media_files m ON m.id = c.photo_file_id
         LEFT JOIN media_files pm ON pm.id = p.photo_file_id
         WHERE e.child_id = ?
@@ -2798,7 +2856,7 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
           p.photo_file_id as parent_photo_file_id,
           COALESCE(pm.optimized_url, pm.secure_url, pm.file_url) as parent_photo_url
         FROM children c
-        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
         LEFT JOIN media_files m ON m.id = c.photo_file_id
         LEFT JOIN media_files pm ON pm.id = p.photo_file_id
         WHERE c.id = ?
@@ -2806,9 +2864,11 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
 
       if (ch) {
         app = {
-          entry_id: ch.child_id,
+          entry_id: null,
           child_id: ch.child_id,
-          status: 'not_selected',
+          event_id: targetEventId,
+          status: 'not_registered',
+          has_entry: false,
           is_deleted: 0,
           deleted_at: null,
           deleted_by: null,
@@ -2981,7 +3041,9 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
     const applicationDetails = {
       id: app.entry_id,
       childId: app.child_id,
-      status: app.status,
+      eventId: app.event_id || targetEventId,
+      hasEntry: Boolean(app.entry_id && app.entry_id !== app.child_id),
+      status: app.status || 'not_registered',
       isIncomplete: isAuthoritativeIncomplete(app),
       needsAttention: attnResult.needsAttention,
       needsAttentionReasons: attnResult.reasons,
@@ -3086,7 +3148,7 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
         pm.secure_url as parent_photo_url
       FROM child_event_entries e
       JOIN children c ON c.id = e.child_id
-      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
       LEFT JOIN media_files cm ON cm.id = c.photo_file_id
       LEFT JOIN media_files pm ON pm.id = p.photo_file_id
       WHERE e.id = ?
@@ -3148,25 +3210,19 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
       `, [id]);
     }
 
-    // If still no entry exists for this event, create an entry for this child in targetEventId
+    // If still no entry exists for this event, create or reuse an entry for this child in targetEventId
+    const effectiveChildId = app ? app.child_id : id;
     if (!app || (targetEventId && app.event_id !== targetEventId)) {
       const child = await queryOne(`
         SELECT c.*, p.full_name as parent_name, p.email as parent_email, p.phone_number as parent_phone, p.id as parent_profile_id
         FROM children c
         LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
         WHERE c.id = ?
-      `, [id]);
+      `, [effectiveChildId]);
 
       if (child && targetEventId) {
-        const newEntryId = `entry-${crypto.randomUUID()}`;
-        const nowStr = new Date().toISOString();
-        await execute(`
-          INSERT INTO child_event_entries (
-            id, child_id, event_id, status, submitted_at, created_at, updated_at
-          ) VALUES (?, ?, ?, 'under_review', ?, ?, ?)
-        `, [newEntryId, child.id, targetEventId, nowStr, nowStr, nowStr]);
-
-        app = await queryOne(`
+        // Check if an entry ALREADY exists for this child in targetEventId before inserting
+        let existingTargetEntry = await queryOne(`
           SELECT e.*, 
             c.full_name as child_name, 
             c.date_of_birth,
@@ -3188,8 +3244,46 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
           LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
           LEFT JOIN media_files cm ON cm.id = c.photo_file_id
           LEFT JOIN media_files pm ON pm.id = p.photo_file_id
-          WHERE e.id = ?
-        `, [newEntryId]);
+          WHERE e.child_id = ? AND e.event_id = ?
+          ORDER BY e.created_at DESC LIMIT 1
+        `, [child.id, targetEventId]);
+
+        if (existingTargetEntry) {
+          app = existingTargetEntry;
+        } else {
+          const newEntryId = `entry-${crypto.randomUUID()}`;
+          const nowStr = new Date().toISOString();
+          await execute(`
+            INSERT INTO child_event_entries (
+              id, child_id, event_id, status, submitted_at, created_at, updated_at
+            ) VALUES (?, ?, ?, 'under_review', ?, ?, ?)
+          `, [newEntryId, child.id, targetEventId, nowStr, nowStr, nowStr]);
+
+          app = await queryOne(`
+            SELECT e.*, 
+              c.full_name as child_name, 
+              c.date_of_birth,
+              c.date_of_birth as dob,
+              c.photo_file_id as child_photo_file_id,
+              c.photo_file_id,
+              cm.secure_url as child_photo_url,
+              c.gender,
+              c.age_group,
+              p.full_name as parent_name, 
+              p.email as parent_email, 
+              p.phone_number as parent_phone, 
+              p.phone_number,
+              p.id as parent_profile_id,
+              p.photo_file_id as parent_photo_file_id,
+              pm.secure_url as parent_photo_url
+            FROM child_event_entries e
+            JOIN children c ON c.id = e.child_id
+            LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
+            LEFT JOIN media_files cm ON cm.id = c.photo_file_id
+            LEFT JOIN media_files pm ON pm.id = p.photo_file_id
+            WHERE e.id = ?
+          `, [newEntryId]);
+        }
       }
     }
 
@@ -3208,8 +3302,8 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
 
     if (['selected', 'pass_ready', 'waiting_list'].includes(status)) {
       const rawPickups = await query<any>(
-        'SELECT p.*, m.secure_url as photo_url FROM pickup_people p LEFT JOIN media_files m ON m.id = p.photo_file_id WHERE p.child_event_entry_id = ? OR (p.child_id = ? AND p.event_id = ?)',
-        [id, app.child_id, app.event_id]
+        'SELECT p.*, m.secure_url as photo_url FROM pickup_people p LEFT JOIN media_files m ON m.id = p.photo_file_id WHERE p.child_event_entry_id = ? OR p.child_event_entry_id IN (SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?)',
+        [app.id, app.child_id, app.event_id]
       );
       const formattedReviewPickups = rawPickups.map((p: any) => ({
         ...p,
@@ -3353,18 +3447,20 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
         inAppMessage = `${childFirstName} has been selected. The event pass will be available shortly.`;
       }
 
-      const notifId = `notif-${crypto.randomUUID()}`;
-      await execute(`
-        INSERT INTO notifications (
-          id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
-        ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
-      `, [notifId, inAppTitle, inAppMessage, app.event_id, app.child_id, app.parent_profile_id, now]);
+      if (app.parent_profile_id) {
+        const notifId = `notif-${crypto.randomUUID()}`;
+        await execute(`
+          INSERT INTO notifications (
+            id, title, message, type, audience_role, audience_scope, event_id, child_id, parent_id, created_at, priority, channel
+          ) VALUES (?, ?, ?, 'info', 'parent', 'individual', ?, ?, ?, ?, 'normal', 'in-app')
+        `, [notifId, inAppTitle, inAppMessage, app.event_id, app.child_id, app.parent_profile_id, now]);
 
-      const pNotifId = `pnotif-${crypto.randomUUID()}`;
-      await execute(`
-        INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `, [pNotifId, app.parent_profile_id, app.event_id, app.child_id, inAppTitle, inAppMessage, now]);
+        const pNotifId = `pnotif-${crypto.randomUUID()}`;
+        await execute(`
+          INSERT INTO parent_notifications (id, parent_id, event_id, child_id, title, message, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [pNotifId, app.parent_profile_id, app.event_id, app.child_id, inAppTitle, inAppMessage, now]);
+      }
     }
 
     return res.json({ 
@@ -3377,8 +3473,12 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
       application: app
     });
   } catch (err: any) {
-    console.error('Error submitting application review:', err);
-    return res.status(500).json({ success: false, error: 'Failed to submit application review.' });
+    const targetEventId = (req.body?.eventId || req.query?.eventId || 'unspecified');
+    console.error(`[AdminReview] Error submitting review for id=${req.params?.id}, eventId=${targetEventId}, status=${req.body?.status}:`, err?.message || err);
+    const msg = err?.message || '';
+    const isInternalDbError = msg.includes('SQL') || msg.includes('syntax') || msg.includes('column') || msg.includes('relation');
+    const safeError = isInternalDbError ? 'An unexpected database error occurred during review. Please try again.' : (msg || 'Failed to submit application review.');
+    return res.status(500).json({ success: false, error: safeError });
   }
 });
 
@@ -3779,8 +3879,8 @@ router.post('/applications/bulk-review', authMiddleware, async (req: Authenticat
 
       if (['selected', 'waiting_list'].includes(decision)) {
         const rawPickups = await query<any>(
-          'SELECT p.*, m.secure_url as photo_url FROM pickup_people p LEFT JOIN media_files m ON m.id = p.photo_file_id WHERE p.child_event_entry_id = ? OR (p.child_id = ? AND p.event_id = ?)',
-          [id, app.child_id, app.event_id]
+          'SELECT p.*, m.secure_url as photo_url FROM pickup_people p LEFT JOIN media_files m ON m.id = p.photo_file_id WHERE p.child_event_entry_id = ? OR p.child_event_entry_id IN (SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?)',
+          [app.id, app.child_id, app.event_id]
         );
         const formattedReviewPickups = rawPickups.map((p: any) => ({
           ...p,
