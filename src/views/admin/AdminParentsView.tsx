@@ -51,6 +51,25 @@ type WorkerFilterType = 'all' | 'worker' | 'non_worker';
 type ChildrenFilterType = 'all' | 'has_children' | 'no_children';
 type LocationFilterType = 'all' | 'has_location' | 'missing_location';
 
+const getInitials = (name: any): string => {
+  if (!name || typeof name !== 'string') return 'P';
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'P';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
+
+const getDisplayName = (p: any): string => {
+  const raw = typeof p?.fullName === 'string' ? p.fullName.trim() : '';
+  if (!raw || raw.toLowerCase() === 'invited user') return 'Invited parent';
+  return raw;
+};
+
+const formatChildrenCount = (count: number): string => {
+  if (count === 1) return '1 child';
+  return `${count} children`;
+};
+
 export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, adminUser, currentEvent }) => {
   const isSuperAdmin = adminUser?.role === 'super_admin';
   const { showError, showSuccess } = useNotification();
@@ -906,25 +925,6 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
     showSuccess('Export Complete', `Exported ${displayParents.length} parent records to CSV.`);
-  };
-
-  const getInitials = (name: any): string => {
-    if (!name || typeof name !== 'string') return 'P';
-    const parts = name.trim().split(/\s+/).filter(Boolean);
-    if (parts.length === 0) return 'P';
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  };
-
-  const getDisplayName = (p: any): string => {
-    const raw = typeof p?.fullName === 'string' ? p.fullName.trim() : '';
-    if (!raw || raw.toLowerCase() === 'invited user') return 'Invited parent';
-    return raw;
-  };
-
-  const formatChildrenCount = (count: number): string => {
-    if (count === 1) return '1 child';
-    return `${count} children`;
   };
 
   const isDomReady = typeof document !== 'undefined' && Boolean(document.body);
