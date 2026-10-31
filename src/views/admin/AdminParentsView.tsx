@@ -31,6 +31,11 @@ import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { AddParentModal } from '../../components/admin/modals/AddParentModal';
 import { ChildReviewModal } from '../../components/admin/modals/ChildReviewModal';
+import { 
+  BulkChildEventActionModal, 
+  BulkChildActionType, 
+  ConnectedChildRecord 
+} from '../../components/admin/modals/BulkChildEventActionModal';
 import { AdminSelectionCheckbox } from '../../components/common/AdminSelectionCheckbox';
 import { AppRoute } from '../../types';
 
@@ -206,6 +211,103 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
   const [submittingBulkRestore, setSubmittingBulkRestore] = useState(false);
   const [bulkMoreDropdownOpen, setBulkMoreDropdownOpen] = useState(false);
   const bulkMoreDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Bulk Child Event Actions & Sequence Review
+  const [eventActionsDropdownOpen, setEventActionsDropdownOpen] = useState(false);
+  const eventActionsRef = useRef<HTMLDivElement>(null);
+  const [bulkChildActionType, setBulkChildActionType] = useState<BulkChildActionType | null>(null);
+  const [reviewSequenceList, setReviewSequenceList] = useState<ConnectedChildRecord[]>([]);
+  const [reviewSequenceIndex, setReviewSequenceIndex] = useState(0);
+
+  // Selected parents records
+  const selectedParentsList = useMemo(() => {
+    if (selectedParentIds.length === 0) return [];
+    const idSet = new Set(selectedParentIds.map(String));
+    return parents.filter(p => idSet.has(String(p.id)));
+  }, [parents, selectedParentIds]);
+
+  // All connected children across selected parents
+  const allConnectedChildren = useMemo<ConnectedChildRecord[]>(() => {
+    const list: ConnectedChildRecord[] = [];
+    selectedParentsList.forEach(p => {
+      const parentName = getDisplayName(p);
+      (p.children || []).forEach((c: any) => {
+        list.push({
+          id: String(c.id),
+          applicationId: c.applicationId ? String(c.applicationId) : null,
+          fullName: c.fullName || 'Unnamed Child',
+          age: c.age,
+          ageGroup: c.ageGroup,
+          gender: c.gender,
+          entryStatus: c.entryStatus || 'not_registered',
+          checkedInAt: c.checkedInAt,
+          pickedUpAt: c.pickedUpAt,
+          parentId: String(p.id),
+          parentName,
+          parentEmail: p.email,
+          parentPhone: p.phoneNumber || p.phone_number
+        });
+      });
+    });
+    return list;
+  }, [selectedParentsList]);
+
+  // Context-aware applicable counts for the Event Actions dropdown
+  const applicableCounts = useMemo(() => {
+    let selectForEvent = 0;
+    let reviewSelected = 0;
+    let approve = 0;
+    let waitlist = 0;
+    let notSelected = 0;
+    let returnDraft = 0;
+
+    allConnectedChildren.forEach(child => {
+      const status = child.entryStatus || 'not_registered';
+      const isAttending = ['checked_in', 'inside', 'picked_up'].includes(status) || Boolean(child.checkedInAt && !child.pickedUpAt);
+      if (isAttending || status === 'withdrawn') return;
+
+      // select_for_event
+      if (!child.entryStatus || status === 'not_registered' || status === 'not_selected' || status === 'incomplete' || status === 'draft' || status === 'waiting_list') {
+        if (status !== 'pass_ready' && status !== 'selected' && status !== 'under_review' && status !== 'review_reopened') {
+          selectForEvent++;
+        }
+      }
+
+      // review_selected
+      if (status === 'under_review' || status === 'review_reopened') {
+        reviewSelected++;
+      }
+
+      // approve
+      if (child.applicationId && (status === 'under_review' || status === 'review_reopened' || status === 'waiting_list')) {
+        approve++;
+      }
+
+      // waitlist
+      if (child.applicationId && status !== 'waiting_list' && status !== 'pass_ready' && ['under_review', 'review_reopened', 'selected', 'not_selected'].includes(status)) {
+        waitlist++;
+      }
+
+      // not_selected
+      if (child.applicationId && status !== 'not_selected' && status !== 'pass_ready' && ['under_review', 'review_reopened', 'selected', 'waiting_list'].includes(status)) {
+        notSelected++;
+      }
+
+      // return_draft
+      if (child.applicationId && (status === 'under_review' || status === 'review_reopened')) {
+        returnDraft++;
+      }
+    });
+
+    return {
+      selectForEvent,
+      reviewSelected,
+      approve,
+      waitlist,
+      notSelected,
+      returnDraft
+    };
+  }, [allConnectedChildren]);
 
   // Bulk Permanent Delete
   const [showBulkPurgeModal, setShowBulkPurgeModal] = useState(false);
@@ -444,6 +546,54 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
         )
       };
     }));
+
+    // Immediately update reviewSequenceList
+    setReviewSequenceList(prev => prev.map(c => 
+      c.id === targetChildId ? { ...c, entryStatus: newStatus, applicationId: newApplicationId || c.applicationId } : c
+    ));
+  };
+
+  const handleStartReviewSequence = () => {
+    const eligible = allConnectedChildren.filter(c => 
+      c.entryStatus === 'under_review' || c.entryStatus === 'review_reopened'
+    );
+    if (eligible.length === 0) {
+      showError('No Applications to Review', 'None of the connected children are currently awaiting review.');
+      return;
+    }
+    setReviewSequenceList(eligible);
+    setReviewSequenceIndex(0);
+    setReviewingChild(eligible[0]);
+  };
+
+  const handleBulkChildActionSuccess = (updatedChildIds: string[], newStatus: string) => {
+    if (updatedChildIds.length === 0) return;
+
+    // Immediately update parents state in-place
+    setParents(prev => prev.map((p: any) => {
+      const hasAny = (p.children || []).some((c: any) => updatedChildIds.includes(String(c.id)));
+      if (!hasAny) return p;
+      return {
+        ...p,
+        children: (p.children || []).map((c: any) => 
+          updatedChildIds.includes(String(c.id)) ? { ...c, entryStatus: newStatus } : c
+        )
+      };
+    }));
+
+    // Immediately update quickViewParent if open
+    setQuickViewParent((prev: any) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        children: (prev.children || []).map((c: any) => 
+          updatedChildIds.includes(String(c.id)) ? { ...c, entryStatus: newStatus } : c
+        )
+      };
+    });
+
+    // Clear selection so the admin can move to the next batch
+    setSelectedParentIds([]);
   };
 
   const handleViewModalChild = (child: any) => {
@@ -614,6 +764,9 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       if (bulkMoreDropdownRef.current && !bulkMoreDropdownRef.current.contains(e.target as Node)) {
         setBulkMoreDropdownOpen(false);
       }
+      if (eventActionsRef.current && !eventActionsRef.current.contains(e.target as Node)) {
+        setEventActionsDropdownOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -623,6 +776,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     setActiveTab(tab);
     setOpenActionMenuId(null);
     setBulkMoreDropdownOpen(false);
+    setEventActionsDropdownOpen(false);
     setSelectedParentIds([]);
   };
 
@@ -1355,14 +1509,47 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
           childId={reviewingChild.id}
           childName={reviewingChild.fullName}
           activeEvent={activeEvent}
-          onClose={() => setReviewingChild(null)}
+          onClose={() => {
+            setReviewingChild(null);
+            setReviewSequenceList([]);
+            setReviewSequenceIndex(0);
+          }}
           onStatusUpdated={handleStatusUpdatedFromReviewModal}
           onNavigateToChild={(cid) => {
             setQuickViewParent(null);
+            setReviewingChild(null);
+            setReviewSequenceList([]);
             onNavigate(`/admin/children/${cid}` as AppRoute);
           }}
           adminUser={adminUser}
           isSuperAdmin={isSuperAdmin}
+          sequenceIndex={reviewSequenceList.length > 1 ? reviewSequenceIndex : undefined}
+          totalSequence={reviewSequenceList.length > 1 ? reviewSequenceList.length : undefined}
+          onNext={() => {
+            if (reviewSequenceIndex < reviewSequenceList.length - 1) {
+              const nextIdx = reviewSequenceIndex + 1;
+              setReviewSequenceIndex(nextIdx);
+              setReviewingChild(reviewSequenceList[nextIdx]);
+            }
+          }}
+          onPrevious={() => {
+            if (reviewSequenceIndex > 0) {
+              const prevIdx = reviewSequenceIndex - 1;
+              setReviewSequenceIndex(prevIdx);
+              setReviewingChild(reviewSequenceList[prevIdx]);
+            }
+          }}
+        />
+      )}
+      {bulkChildActionType && (
+        <BulkChildEventActionModal
+          isOpen={Boolean(bulkChildActionType)}
+          onClose={() => setBulkChildActionType(null)}
+          actionType={bulkChildActionType}
+          activeEvent={activeEvent}
+          selectedParents={selectedParentsList}
+          allChildren={allConnectedChildren}
+          onSuccess={handleBulkChildActionSuccess}
         />
       )}
       {modalChildRestoreModal}
@@ -1710,27 +1897,152 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       </div>
 
       {/* Contextual Action Bar when rows are selected */}
+      {/* Contextual Action Bar when rows are selected */}
       {selectedParentIds.length > 0 && (
-        <div className="bg-[#FAF8F2] dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926] rounded-md px-4 py-2.5 flex items-center justify-between shadow-2xs animate-fade-in">
+        <div className="bg-[#FAF8F2] dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926] rounded-md px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-2xs animate-fade-in">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-[#C59B27]" />
             <span className="text-xs font-semibold text-neutral-900 dark:text-neutral-100">
               {selectedParentIds.length} {selectedParentIds.length === 1 ? 'parent selected' : 'parents selected'}
+              <span className="text-neutral-400 dark:text-neutral-500 font-normal"> · </span>
+              <span className="text-neutral-600 dark:text-neutral-300 font-medium">
+                {allConnectedChildren.length} {allConnectedChildren.length === 1 ? 'child' : 'children'}
+              </span>
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 relative">
+            {/* Restrained Event actions dropdown */}
+            {activeTab === 'active' && (
+              <div className="relative" ref={eventActionsRef}>
+                <button
+                  type="button"
+                  id="parents-bulk-event-actions-btn"
+                  onClick={() => setEventActionsDropdownOpen(!eventActionsDropdownOpen)}
+                  className="px-3 py-1.5 text-xs font-semibold text-white bg-[#C59B27] hover:bg-[#B08921] rounded transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs focus:outline-none"
+                >
+                  <span>Event actions</span>
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${eventActionsDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {eventActionsDropdownOpen && (
+                  <div 
+                    id="parents-bulk-event-actions-menu"
+                    className="absolute right-0 top-full mt-1.5 w-64 bg-white dark:bg-[#1E1E1C] border border-[#EAE8E1] dark:border-[#2E2C28] rounded-xl shadow-xl z-50 py-1.5 text-xs animate-scale-in"
+                  >
+                    <div className="px-3 py-1.5 border-b border-[#EAE8E1] dark:border-[#2E2C28] text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 flex items-center justify-between">
+                      <span>Connected Children</span>
+                      <span className="font-bold text-neutral-700 dark:text-neutral-300">{allConnectedChildren.length}</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={applicableCounts.selectForEvent === 0}
+                      onClick={() => {
+                        setEventActionsDropdownOpen(false);
+                        setBulkChildActionType('select_for_event');
+                      }}
+                      className="w-full px-3 py-2 flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-[#262522] text-neutral-800 dark:text-neutral-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-left transition-colors"
+                    >
+                      <span>Select for event</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/40">
+                        {applicableCounts.selectForEvent}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={applicableCounts.reviewSelected === 0}
+                      onClick={() => {
+                        setEventActionsDropdownOpen(false);
+                        handleStartReviewSequence();
+                      }}
+                      className="w-full px-3 py-2 flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-[#262522] text-neutral-800 dark:text-neutral-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-left transition-colors"
+                    >
+                      <span>Review selected</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/40">
+                        {applicableCounts.reviewSelected}
+                      </span>
+                    </button>
+
+                    <div className="my-1 border-t border-[#EAE8E1] dark:border-[#2E2C28]" />
+
+                    <button
+                      type="button"
+                      disabled={applicableCounts.approve === 0}
+                      onClick={() => {
+                        setEventActionsDropdownOpen(false);
+                        setBulkChildActionType('approve');
+                      }}
+                      className="w-full px-3 py-2 flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-[#262522] text-neutral-800 dark:text-neutral-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-left transition-colors"
+                    >
+                      <span>Approve / Selected</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/40">
+                        {applicableCounts.approve}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={applicableCounts.waitlist === 0}
+                      onClick={() => {
+                        setEventActionsDropdownOpen(false);
+                        setBulkChildActionType('waitlist');
+                      }}
+                      className="w-full px-3 py-2 flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-[#262522] text-neutral-800 dark:text-neutral-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-left transition-colors"
+                    >
+                      <span>Move to waiting list</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/40">
+                        {applicableCounts.waitlist}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={applicableCounts.notSelected === 0}
+                      onClick={() => {
+                        setEventActionsDropdownOpen(false);
+                        setBulkChildActionType('not_selected');
+                      }}
+                      className="w-full px-3 py-2 flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-[#262522] text-neutral-800 dark:text-neutral-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-left transition-colors"
+                    >
+                      <span>Mark as not selected</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
+                        {applicableCounts.notSelected}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={applicableCounts.returnDraft === 0}
+                      onClick={() => {
+                        setEventActionsDropdownOpen(false);
+                        setBulkChildActionType('return_draft');
+                      }}
+                      className="w-full px-3 py-2 flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-[#262522] text-neutral-800 dark:text-neutral-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-left transition-colors"
+                    >
+                      <span>Return to Parent</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border border-rose-200/60 dark:border-rose-800/40">
+                        {applicableCounts.returnDraft}
+                      </span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Parent account management remains separate */}
             {activeTab === 'active' ? (
               <button
                 onClick={() => setShowBulkRemoveModal(true)}
-                className="px-3 py-1 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 rounded transition-colors cursor-pointer"
+                className="px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 rounded transition-colors cursor-pointer"
               >
                 Remove selected
               </button>
             ) : (
               <button
                 onClick={() => setShowBulkRestoreModal(true)}
-                className="px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-950/50 rounded transition-colors cursor-pointer"
+                className="px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-950/50 rounded transition-colors cursor-pointer"
               >
                 Restore selected
               </button>
@@ -1742,7 +2054,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                   setBulkPurgeConfirmText('');
                   setShowBulkPurgeModal(true);
                 }}
-                className="px-3 py-1 text-xs font-medium text-red-700 dark:text-red-400 bg-red-100/70 dark:bg-red-950/60 hover:bg-red-200 dark:hover:bg-red-900/60 rounded transition-colors cursor-pointer"
+                className="px-3 py-1.5 text-xs font-medium text-red-700 dark:text-red-400 bg-red-100/70 dark:bg-red-950/60 hover:bg-red-200 dark:hover:bg-red-900/60 rounded transition-colors cursor-pointer"
               >
                 Permanently delete
               </button>
@@ -1750,7 +2062,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
 
             <button
               onClick={() => setSelectedParentIds([])}
-              className="text-xs text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 px-2 py-1 transition-colors cursor-pointer"
+              className="text-xs text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 px-2 py-1.5 transition-colors cursor-pointer"
             >
               Clear selection
             </button>

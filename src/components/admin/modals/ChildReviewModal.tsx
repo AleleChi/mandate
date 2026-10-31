@@ -16,7 +16,8 @@ import {
   ExternalLink,
   RotateCcw,
   Clock,
-  ChevronRight
+  ChevronRight,
+  ChevronLeft
 } from 'lucide-react';
 import { api, extractApiError } from '../../../services/api';
 import { useNotification } from '../../../context/NotificationContext';
@@ -34,6 +35,10 @@ export interface ChildReviewModalProps {
   onNavigateToChild?: (childId: string) => void;
   adminUser?: any;
   isSuperAdmin?: boolean;
+  sequenceIndex?: number;
+  totalSequence?: number;
+  onNext?: () => void;
+  onPrevious?: () => void;
 }
 
 export const ChildReviewModal: React.FC<ChildReviewModalProps> = ({
@@ -46,7 +51,11 @@ export const ChildReviewModal: React.FC<ChildReviewModalProps> = ({
   onStatusUpdated,
   onNavigateToChild,
   adminUser,
-  isSuperAdmin = false
+  isSuperAdmin = false,
+  sequenceIndex,
+  totalSequence,
+  onNext,
+  onPrevious
 }) => {
   const { showError, showSuccess } = useNotification();
   const [isDomReady, setIsDomReady] = useState(false);
@@ -343,6 +352,34 @@ export const ChildReviewModal: React.FC<ChildReviewModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {totalSequence != null && totalSequence > 1 && (
+              <div className="flex items-center gap-1 bg-[#F8F7F4] dark:bg-[#1A1916] border border-[#EAE8E1] dark:border-[#302E29] rounded-lg p-1 text-xs mr-1">
+                <button
+                  type="button"
+                  onClick={onPrevious}
+                  disabled={sequenceIndex === 0 || saving}
+                  className="p-1 rounded hover:bg-white dark:hover:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                  title="Previous application"
+                  aria-label="Previous application"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <span className="px-1.5 font-medium text-zinc-700 dark:text-[#E2DBCF]">
+                  {(sequenceIndex ?? 0) + 1} of {totalSequence}
+                </span>
+                <button
+                  type="button"
+                  onClick={onNext}
+                  disabled={(sequenceIndex ?? 0) >= totalSequence - 1 || saving}
+                  className="p-1 rounded hover:bg-white dark:hover:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                  title="Next application"
+                  aria-label="Next application"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
             {childRecord?.id && onNavigateToChild && (
               <button
                 type="button"
