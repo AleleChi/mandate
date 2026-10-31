@@ -18,7 +18,15 @@ import {
   RefreshCw,
   ExternalLink
 } from 'lucide-react';
-import { api, extractApiError } from '../../../services/api';
+import {
+  api,
+  extractApiError,
+  SelectedParentAudienceChild,
+  SelectedParentAudienceRow,
+  SelectedParentsAudienceSummary,
+  SelectedParentsSendDetail,
+  SelectedParentsSendResponse
+} from '../../../services/api';
 import { useNotification } from '../../../context/NotificationContext';
 import { AdminSelectionCheckbox } from '../../common/AdminSelectionCheckbox';
 import { Button } from '../../common/Button';
@@ -29,67 +37,11 @@ interface SelectedParentsChannelTabProps {
   adminUser?: any;
 }
 
-interface AudienceChildDetail {
-  id: string;
-  fullName: string;
-  firstName: string;
-  status: string;
-  ageGroup: string | null;
-  isSelected: boolean;
-}
-
-interface SelectedParentRecord {
-  parentId: string;
-  userId: string;
-  fullName: string;
-  firstName: string;
-  phoneNumber: string | null;
-  whatsappNumber: string | null;
-  email: string | null;
-  whatsappConsentStatus: 'opted_in' | 'opted_out' | 'unknown';
-  whatsappAvailability: 'available' | 'opted_out' | 'invalid_number';
-  normalizedWhatsAppNumber: string | null;
-  totalRegisteredChildren: number;
-  selectedChildrenCount: number;
-  selectedRatioText: string;
-  selectedChildNames: string;
-  children: AudienceChildDetail[];
-  invitationStatus: 'not_sent' | 'sent' | 'failed';
-  sentAt: string | null;
-  attemptedAt: string | null;
-  failureReason: string | null;
-  providerMessageId: string | null;
-  emailChannelAccessSent?: boolean;
-  emailChannelSentAt?: string | null;
-}
-
-interface AudienceSummary {
-  totalEligibleParents: number;
-  invitationsNotSent: number;
-  invitationsSent: number;
-  invitationsFailed: number;
-  whatsappAvailable: number;
-  whatsappUnavailable: number;
-}
-
-interface SendResultDetail {
-  parentId: string;
-  parentName: string;
-  status: 'sent' | 'skipped' | 'failed';
-  reason?: string;
-  messageId?: string;
-}
-
-interface BulkSendSummaryData {
-  success: boolean;
-  templateConfigured: boolean;
-  totalRequested: number;
-  sentCount: number;
-  skippedCount: number;
-  failedCount: number;
-  details: SendResultDetail[];
-  error?: string;
-}
+type AudienceChildDetail = SelectedParentAudienceChild;
+type SelectedParentRecord = SelectedParentAudienceRow;
+type AudienceSummary = SelectedParentsAudienceSummary;
+type SendResultDetail = SelectedParentsSendDetail;
+type BulkSendSummaryData = SelectedParentsSendResponse;
 
 export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps> = ({
   selectedEventId,

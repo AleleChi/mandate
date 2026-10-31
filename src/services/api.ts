@@ -55,6 +55,79 @@ export function extractApiError(err: any): { message: string; description: strin
   return { message: raw, description: 'Please try again.', code: err?.code };
 }
 
+export interface SelectedParentAudienceChild {
+  id: string;
+  fullName: string;
+  firstName: string;
+  status: string;
+  ageGroup: string | null;
+  isSelected: boolean;
+}
+
+export interface SelectedParentAudienceRow {
+  parentId: string;
+  userId: string;
+  fullName: string;
+  firstName: string;
+  phoneNumber: string | null;
+  whatsappNumber: string | null;
+  email: string | null;
+  whatsappConsentStatus: 'opted_in' | 'opted_out' | 'unknown';
+  whatsappAvailability: 'available' | 'opted_out' | 'invalid_number';
+  normalizedWhatsAppNumber: string | null;
+  totalRegisteredChildren: number;
+  selectedChildrenCount: number;
+  selectedRatioText: string;
+  selectedChildNames: string;
+  children: SelectedParentAudienceChild[];
+  invitationStatus: 'not_sent' | 'sent' | 'failed';
+  sentAt: string | null;
+  attemptedAt: string | null;
+  failureReason: string | null;
+  providerMessageId: string | null;
+  emailChannelAccessSent?: boolean;
+  emailChannelSentAt?: string | null;
+}
+
+export interface SelectedParentsAudienceSummary {
+  totalEligibleParents: number;
+  invitationsNotSent: number;
+  invitationsSent: number;
+  invitationsFailed: number;
+  whatsappAvailable: number;
+  whatsappUnavailable: number;
+}
+
+export interface SelectedParentsAudienceResponse {
+  success: boolean;
+  eventId: string;
+  eventTitle: string;
+  templateConfigured: boolean;
+  templateKeyOrAlias: string | null;
+  summary: SelectedParentsAudienceSummary;
+  parents: SelectedParentAudienceRow[];
+  error?: string;
+}
+
+export interface SelectedParentsSendDetail {
+  parentId: string;
+  parentName: string;
+  status: 'sent' | 'skipped' | 'failed';
+  reason?: string;
+  messageId?: string;
+}
+
+export interface SelectedParentsSendResponse {
+  success: boolean;
+  templateConfigured: boolean;
+  totalRequested: number;
+  sentCount: number;
+  skippedCount: number;
+  failedCount: number;
+  details: SelectedParentsSendDetail[];
+  error?: string;
+}
+
 export const api = {
   getToken: () => safeStorage.getItem(TOKEN_KEY),
   setToken: (token: string) => safeStorage.setItem(TOKEN_KEY, token),
@@ -851,6 +924,26 @@ export const api = {
     }
   },
 
+  async getSelectedParentsAudience(eventId: string, params?: { search?: string; status?: string; whatsappStatus?: string }): Promise<SelectedParentsAudienceResponse> {
+    const q = new URLSearchParams();
+    q.append('eventId', eventId);
+    if (params?.search) q.append('search', params.search);
+    if (params?.status) q.append('status', params.status);
+    if (params?.whatsappStatus) q.append('whatsappStatus', params.whatsappStatus);
+    return api.request<SelectedParentsAudienceResponse>(`/api/admin/messages/selected-parents?${q.toString()}`);
+  },
+
+  async sendSelectedParentsChannelInvitations(payload: {
+    eventId: string;
+    parentIds: string[];
+    resend?: boolean;
+  }): Promise<SelectedParentsSendResponse> {
+    return api.request<SelectedParentsSendResponse>('/api/admin/messages/selected-parents/send', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
   admin: {
     async signIn(payload: any) {
       const res = await api.request<any>('/api/admin/sign-in', {
@@ -1530,80 +1623,14 @@ export const api = {
       }>(`/api/admin/messages/campaign-status/${campaignId}`);
     },
     async getSelectedParentsAudience(eventId: string, params?: { search?: string; status?: string; whatsappStatus?: string }) {
-      const q = new URLSearchParams();
-      q.append('eventId', eventId);
-      if (params?.search) q.append('search', params.search);
-      if (params?.status) q.append('status', params.status);
-      if (params?.whatsappStatus) q.append('whatsappStatus', params.whatsappStatus);
-      return api.request<{
-        success: boolean;
-        eventId: string;
-        eventTitle: string;
-        templateConfigured: boolean;
-        templateKeyOrAlias: string | null;
-        summary: {
-          totalEligibleParents: number;
-          invitationsNotSent: number;
-          invitationsSent: number;
-          invitationsFailed: number;
-          whatsappAvailable: number;
-          whatsappUnavailable: number;
-        };
-        parents: Array<{
-          parentId: string;
-          userId: string;
-          fullName: string;
-          firstName: string;
-          phoneNumber: string | null;
-          whatsappNumber: string | null;
-          email: string | null;
-          whatsappConsentStatus: 'opted_in' | 'opted_out' | 'unknown';
-          whatsappAvailability: 'available' | 'opted_out' | 'invalid_number';
-          normalizedWhatsAppNumber: string | null;
-          totalRegisteredChildren: number;
-          selectedChildrenCount: number;
-          selectedRatioText: string;
-          selectedChildNames: string;
-          children: Array<{
-            id: string;
-            fullName: string;
-            firstName: string;
-            status: string;
-            ageGroup: string | null;
-            isSelected: boolean;
-          }>;
-          invitationStatus: 'not_sent' | 'sent' | 'failed';
-          sentAt: string | null;
-          attemptedAt: string | null;
-          failureReason: string | null;
-          providerMessageId: string | null;
-        }>;
-      }>(`/api/admin/messages/selected-parents?${q.toString()}`);
+      return api.getSelectedParentsAudience(eventId, params);
     },
     async sendSelectedParentsChannelInvitations(payload: {
       eventId: string;
       parentIds: string[];
       resend?: boolean;
     }) {
-      return api.request<{
-        success: boolean;
-        templateConfigured: boolean;
-        totalRequested: number;
-        sentCount: number;
-        skippedCount: number;
-        failedCount: number;
-        details: Array<{
-          parentId: string;
-          parentName: string;
-          status: 'sent' | 'skipped' | 'failed';
-          reason?: string;
-          messageId?: string;
-        }>;
-        error?: string;
-      }>('/api/admin/messages/selected-parents/send', {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
+      return api.sendSelectedParentsChannelInvitations(payload);
     },
     async getMessagesSettings() {
       return api.request<{
