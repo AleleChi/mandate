@@ -6,7 +6,9 @@ import { query, queryOne, execute, transaction } from '../db';
 import { authMiddleware, AuthenticatedRequest, verifyPassword, hashPassword, generateToken } from '../auth';
 import { syncJobsForEvent, executeTestNotification, sendWhatsApp } from '../services/notifications';
 import { sendWebPush } from '../services/push';
-import { sendEmail, sendVolunteerApprovedEmail, sendInvitationEmail, formatInvitationExpiry, isEmailConfigured, resolveEmailProvider, sendChildReturnToDraftEmail } from '../services/email';
+import { sendEmail, sendVolunteerApprovedEmail, sendInvitationEmail, formatInvitationExpiry, isEmailConfigured, resolveEmailProvider, sendChildReturnToDraftEmail, buildParentsChannelEmailSection } from '../services/email';
+import { recordChannelInvitationSent } from '../services/selectedParentsChannelService';
+import { extractFirstName, formatSelectedChildNames } from '../services/whatsapp/personalization';
 import { issuePassForChild, revokePassForChild } from '../services/passService';
 import { uploadMedia, buildCloudinaryOptimizedVideoUrl, buildCloudinaryVideoPosterUrl } from '../services/media/cloudinary';
 import { processImage } from '../services/media/imageProcessor';
@@ -3389,39 +3391,96 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
       const pName = app.parent_name?.split(' ')[0] || 'Parent';
       const cName = app.child_name || 'your child';
 
+      let selectedChildrenNames: string[] = [];
+      if (finalStatus === 'pass_ready' || finalStatus === 'selected') {
+        try {
+          const selectedRows = await query<any>(`
+            SELECT c.full_name
+            FROM child_event_entries cee
+            JOIN children c ON c.id = cee.child_id
+            WHERE cee.event_id = ?
+              AND c.parent_profile_id = ?
+              AND cee.status IN ('selected', 'pass_ready')
+            ORDER BY cee.created_at ASC
+          `, [app.event_id, app.parent_profile_id]);
+          selectedChildrenNames = (selectedRows || []).map(r => extractFirstName(r.full_name)).filter(Boolean);
+        } catch (qErr) {
+          console.error('Error fetching selected sibling names for review email:', qErr);
+        }
+        if (selectedChildrenNames.length === 0) {
+          selectedChildrenNames = [extractFirstName(cName) || cName];
+        }
+      }
+
+      const formattedChildNames = (finalStatus === 'pass_ready' || finalStatus === 'selected')
+        ? (formatSelectedChildNames(selectedChildrenNames) || extractFirstName(cName) || cName)
+        : (extractFirstName(cName) || cName);
+      const isPlural = selectedChildrenNames.length > 1;
+      const verb = isPlural ? 'have' : 'has';
+      const passNoun = isPlural ? 'Your secure event passes are' : 'Your secure event pass is';
+      const passNounFuture = isPlural ? 'Your secure event passes will be generated shortly and will be available in your portal.' : 'Your secure event pass will be generated shortly and will be available in your portal.';
+
+      let channelSectionHtml = '';
+      let channelSectionText = '';
+
       if (finalStatus === 'pass_ready') {
-        subject = 'Koinonia Event Pass Ready!';
-        message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nYour secure event pass is now ready in your portal. Please log in to download it and keep it handy during check-in.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        subject = isPlural ? `Koinonia Event Passes Ready for ${formattedChildNames}!` : 'Koinonia Event Pass Ready!';
+        message = `Hello ${pName},\n\nWe are delighted to inform you that ${formattedChildNames} ${verb} been selected to attend the upcoming Koinonia Children and Teens Event!\n\n${passNoun} now ready in your portal. Please log in to download and keep handy during check-in.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        const channelSection = buildParentsChannelEmailSection('https://koinonia12.netlify.app/parents/channel');
+        channelSectionHtml = channelSection.html;
+        channelSectionText = `\n\n${channelSection.text}`;
       } else if (finalStatus === 'selected') {
-        subject = 'Koinonia Application Selected!';
-        message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nOur team is finalizing your event details. Your secure event pass will be generated shortly and will be available in your portal.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        subject = isPlural ? `Koinonia Applications Selected for ${formattedChildNames}!` : 'Koinonia Application Selected!';
+        message = `Hello ${pName},\n\nWe are delighted to inform you that ${formattedChildNames} ${verb} been selected to attend the upcoming Koinonia Children and Teens Event!\n\nOur team is finalizing your event details. ${passNounFuture}\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        const channelSection = buildParentsChannelEmailSection('https://koinonia12.netlify.app/parents/channel');
+        channelSectionHtml = channelSection.html;
+        channelSectionText = `\n\n${channelSection.text}`;
       } else if (finalStatus === 'waiting_list') {
         subject = 'Koinonia Application Waitlist Update';
-        message = `Hello ${pName},\n\nThank you for registering ${cName} for the upcoming Koinonia Children and Teens Event.\n\nDue to venue capacity and safety limits, ${cName} has been placed on our waiting list. We will review seating limits regularly and will notify you immediately if a pass becomes available.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        message = `Hello ${pName},\n\nThank you for registering ${formattedChildNames} for the upcoming Koinonia Children and Teens Event.\n\nDue to venue capacity and safety limits, ${formattedChildNames} has been placed on our waiting list. We will review seating limits regularly and will notify you immediately if a pass becomes available.\n\nWarm regards,\nKoinonia Children and Teens Team`;
       } else if (status === 'not_selected') {
         subject = 'Koinonia Application Status';
-        message = `Hello ${pName},\n\nThank you for registering ${cName} for Koinonia Children and Teens.\n\nDue to high registration volumes and room capacity limits, we are unable to accommodate ${cName} for this upcoming session. We look forward to welcoming your family to future events.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        message = `Hello ${pName},\n\nThank you for registering ${formattedChildNames} for Koinonia Children and Teens.\n\nDue to high registration volumes and room capacity limits, we are unable to accommodate ${formattedChildNames} for this upcoming session. We look forward to welcoming your family to future events.\n\nWarm regards,\nKoinonia Children and Teens Team`;
       } else {
         subject = 'Koinonia Application Update Needed';
-        message = `Hello ${pName},\n\nOur administrative team has reviewed ${cName}'s application. We kindly ask you to log in to your portal and update the details as requested so we can complete our review.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+        message = `Hello ${pName},\n\nOur administrative team has reviewed ${formattedChildNames}'s application. We kindly ask you to log in to your portal and update the details as requested so we can complete our review.\n\nWarm regards,\nKoinonia Children and Teens Team`;
       }
 
       // 1. Send transactional email
       if (app.parent_email) {
-        await sendEmail({
-          to: app.parent_email,
-          subject,
-          text: message,
-          html: `<div style="font-family: sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 24px; border-radius: 12px; background-color: #FAF9F6;">
-            <div style="text-align: center; margin-bottom: 24px;">
-              <span style="font-family: serif; font-size: 20px; font-weight: bold; color: #18181B; letter-spacing: 2px;">KOINONIA</span>
-              <div style="width: 40px; height: 2px; background-color: #C59B27; margin: 8px auto 0;"></div>
-            </div>
-            <p>${message.replace(/\n/g, '<br>')}</p>
-            <hr style="border: 0; border-top: 1px solid #EAE8E1; margin: 24px 0;">
-            <p style="font-size: 11px; color: #71717A; text-align: center;">This is an official administrative update regarding your Koinonia Children and Teens event registration.</p>
-          </div>`
-        }).catch(err => console.error('Failed to send review email notification:', err));
+        try {
+          const emailRes = await sendEmail({
+            to: app.parent_email,
+            subject,
+            text: `${message}${channelSectionText}`,
+            html: `<div style="font-family: sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 24px; border-radius: 12px; background-color: #FAF9F6;">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <span style="font-family: serif; font-size: 20px; font-weight: bold; color: #18181B; letter-spacing: 2px;">KOINONIA</span>
+                <div style="width: 40px; height: 2px; background-color: #C59B27; margin: 8px auto 0;"></div>
+              </div>
+              <p>${message.replace(/\n/g, '<br>')}</p>
+              ${channelSectionHtml}
+              <hr style="border: 0; border-top: 1px solid #EAE8E1; margin: 24px 0;">
+              <p style="font-size: 11px; color: #71717A; text-align: center;">This is an official administrative update regarding your Koinonia Children and Teens event registration.</p>
+            </div>`
+          });
+
+          if (emailRes.success && (finalStatus === 'pass_ready' || finalStatus === 'selected') && app.parent_profile_id && app.event_id) {
+            try {
+              await recordChannelInvitationSent({
+                parentId: app.parent_profile_id,
+                eventId: app.event_id,
+                channel: 'email',
+                selectedChildNames: selectedChildrenNames,
+                status: 'sent'
+              });
+            } catch (trackErr) {
+              console.error('Failed to record email channel invitation tracking:', trackErr);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to send review email notification:', err);
+        }
       }
 
       // 2. Dispatch WhatsApp if phone is available
@@ -3967,35 +4026,92 @@ router.post('/applications/bulk-review', authMiddleware, async (req: Authenticat
         const pName = app.parent_name?.split(' ')[0] || 'Parent';
         const cName = app.child_name || 'your child';
 
+        let selectedChildrenNames: string[] = [];
+        if (finalDecision === 'pass_ready' || finalDecision === 'selected') {
+          try {
+            const selectedRows = await query<any>(`
+              SELECT c.full_name
+              FROM child_event_entries cee
+              JOIN children c ON c.id = cee.child_id
+              WHERE cee.event_id = ?
+                AND c.parent_profile_id = ?
+                AND cee.status IN ('selected', 'pass_ready')
+              ORDER BY cee.created_at ASC
+            `, [app.event_id, app.parent_profile_id]);
+            selectedChildrenNames = (selectedRows || []).map(r => extractFirstName(r.full_name)).filter(Boolean);
+          } catch (qErr) {
+            console.error('Error fetching selected sibling names for bulk review email:', qErr);
+          }
+          if (selectedChildrenNames.length === 0) {
+            selectedChildrenNames = [extractFirstName(cName) || cName];
+          }
+        }
+
+        const formattedChildNames = (finalDecision === 'pass_ready' || finalDecision === 'selected')
+          ? (formatSelectedChildNames(selectedChildrenNames) || extractFirstName(cName) || cName)
+          : (extractFirstName(cName) || cName);
+        const isPlural = selectedChildrenNames.length > 1;
+        const verb = isPlural ? 'have' : 'has';
+        const passNoun = isPlural ? 'Your secure event passes are' : 'Your secure event pass is';
+        const passNounFuture = isPlural ? 'Your secure event passes will be generated shortly and will be available in your portal.' : 'Your secure event pass will be generated shortly and will be available in your portal.';
+
+        let channelSectionHtml = '';
+        let channelSectionText = '';
+
         if (finalDecision === 'pass_ready') {
-          subject = 'Koinonia Event Pass Ready!';
-          message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nYour secure event pass is now ready in your portal. Please log in to download it and keep it handy during check-in.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+          subject = isPlural ? `Koinonia Event Passes Ready for ${formattedChildNames}!` : 'Koinonia Event Pass Ready!';
+          message = `Hello ${pName},\n\nWe are delighted to inform you that ${formattedChildNames} ${verb} been selected to attend the upcoming Koinonia Children and Teens Event!\n\n${passNoun} now ready in your portal. Please log in to download and keep handy during check-in.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+          const channelSection = buildParentsChannelEmailSection('https://koinonia12.netlify.app/parents/channel');
+          channelSectionHtml = channelSection.html;
+          channelSectionText = `\n\n${channelSection.text}`;
         } else if (finalDecision === 'selected') {
-          subject = 'Koinonia Application Selected!';
-          message = `Hello ${pName},\n\nWe are delighted to inform you that ${cName} has been selected to attend the upcoming Koinonia Children and Teens Event!\n\nOur team is finalizing your event details. Your secure event pass will be generated shortly and will be available in your portal.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+          subject = isPlural ? `Koinonia Applications Selected for ${formattedChildNames}!` : 'Koinonia Application Selected!';
+          message = `Hello ${pName},\n\nWe are delighted to inform you that ${formattedChildNames} ${verb} been selected to attend the upcoming Koinonia Children and Teens Event!\n\nOur team is finalizing your event details. ${passNounFuture}\n\nWarm regards,\nKoinonia Children and Teens Team`;
+          const channelSection = buildParentsChannelEmailSection('https://koinonia12.netlify.app/parents/channel');
+          channelSectionHtml = channelSection.html;
+          channelSectionText = `\n\n${channelSection.text}`;
         } else if (finalDecision === 'waiting_list') {
           subject = 'Koinonia Application Waitlist Update';
-          message = `Hello ${pName},\n\nThank you for registering ${cName} for the upcoming Koinonia Children and Teens Event.\n\nDue to venue capacity and safety limits, ${cName} has been placed on our waiting list. We will review seating limits regularly and will notify you immediately if a pass becomes available.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+          message = `Hello ${pName},\n\nThank you for registering ${formattedChildNames} for the upcoming Koinonia Children and Teens Event.\n\nDue to venue capacity and safety limits, ${formattedChildNames} has been placed on our waiting list. We will review seating limits regularly and will notify you immediately if a pass becomes available.\n\nWarm regards,\nKoinonia Children and Teens Team`;
         } else if (decision === 'not_selected') {
           subject = 'Koinonia Application Status';
-          message = `Hello ${pName},\n\nThank you for registering ${cName} for Koinonia Children and Teens.\n\nDue to high registration volumes and room capacity limits, we are unable to accommodate ${cName} for this upcoming session. We look forward to welcoming your family to future events.\n\nWarm regards,\nKoinonia Children and Teens Team`;
+          message = `Hello ${pName},\n\nThank you for registering ${formattedChildNames} for Koinonia Children and Teens.\n\nDue to high registration volumes and room capacity limits, we are unable to accommodate ${formattedChildNames} for this upcoming session. We look forward to welcoming your family to future events.\n\nWarm regards,\nKoinonia Children and Teens Team`;
         }
 
         if (app.parent_email) {
-          await sendEmail({
-            to: app.parent_email,
-            subject,
-            text: message,
-            html: `<div style="font-family: sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 24px; border-radius: 12px; background-color: #FAF9F6;">
-              <div style="text-align: center; margin-bottom: 24px;">
-                <span style="font-family: serif; font-size: 20px; font-weight: bold; color: #18181B; letter-spacing: 2px;">KOINONIA</span>
-                <div style="width: 40px; height: 2px; background-color: #C59B27; margin: 8px auto 0;"></div>
-              </div>
-              <p>${message.replace(/\n/g, '<br>')}</p>
-              <hr style="border: 0; border-top: 1px solid #EAE8E1; margin: 24px 0;">
-              <p style="font-size: 11px; color: #71717A; text-align: center;">This is an official administrative update regarding your Koinonia Children and Teens event registration.</p>
-            </div>`
-          }).catch(err => console.error('Failed to send bulk review email notification:', err));
+          try {
+            const emailRes = await sendEmail({
+              to: app.parent_email,
+              subject,
+              text: `${message}${channelSectionText}`,
+              html: `<div style="font-family: sans-serif; line-height: 1.6; color: #18181B; max-width: 600px; margin: 0 auto; border: 1px solid #EAE8E1; padding: 24px; border-radius: 12px; background-color: #FAF9F6;">
+                <div style="text-align: center; margin-bottom: 24px;">
+                  <span style="font-family: serif; font-size: 20px; font-weight: bold; color: #18181B; letter-spacing: 2px;">KOINONIA</span>
+                  <div style="width: 40px; height: 2px; background-color: #C59B27; margin: 8px auto 0;"></div>
+                </div>
+                <p>${message.replace(/\n/g, '<br>')}</p>
+                ${channelSectionHtml}
+                <hr style="border: 0; border-top: 1px solid #EAE8E1; margin: 24px 0;">
+                <p style="font-size: 11px; color: #71717A; text-align: center;">This is an official administrative update regarding your Koinonia Children and Teens event registration.</p>
+              </div>`
+            });
+
+            if (emailRes.success && (finalDecision === 'pass_ready' || finalDecision === 'selected') && app.parent_profile_id && app.event_id) {
+              try {
+                await recordChannelInvitationSent({
+                  parentId: app.parent_profile_id,
+                  eventId: app.event_id,
+                  channel: 'email',
+                  selectedChildNames: selectedChildrenNames,
+                  status: 'sent'
+                });
+              } catch (trackErr) {
+                console.error('Failed to record email channel invitation tracking in bulk review:', trackErr);
+              }
+            }
+          } catch (err) {
+            console.error('Failed to send bulk review email notification:', err);
+          }
         }
 
         if (app.parent_phone) {

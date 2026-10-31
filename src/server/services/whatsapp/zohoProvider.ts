@@ -177,6 +177,24 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
   }
 
   /**
+   * Meta policy strictly rejects direct WhatsApp links in template CTA buttons:
+   * "Buttons cannot contain direct links to WhatsApp."
+   * Any template CTA button targeting channel access must link to the first-party Koinonia route: /parents/channel.
+   * The canonical real WhatsApp Channel URL is held strictly server-side and only revealed to authenticated, eligible parents.
+   */
+  public static sanitizeChannelUrl(channelUrl?: string): string {
+    const protectedChannelRoute = (
+      process.env.PUBLIC_APP_URL
+        ? `${process.env.PUBLIC_APP_URL.replace(/\/+$/, '')}/parents/channel`
+        : 'https://koinonia12.netlify.app/parents/channel'
+    );
+    if (!channelUrl || channelUrl.includes('whatsapp.com')) {
+      return protectedChannelRoute;
+    }
+    return channelUrl;
+  }
+
+  /**
    * Internal dispatcher for Zoho CPaaS WhatsApp POST API.
    * Enforces:
    * - E.164 normalization on both from and to numbers.
@@ -332,18 +350,13 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
       }
     }
 
-    // Attach channel_url to merge_info if channelUrl or WHATSAPP_CHANNEL_URL is configured
-    const effectiveChannelUrl = (
-      params.channelUrl ||
-      process.env.WHATSAPP_CHANNEL_URL ||
-      process.env.PUBLIC_WHATSAPP_CHANNEL_URL ||
-      'https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U'
-    ).trim();
-    if (effectiveChannelUrl) {
-      payload.merge_info = payload.merge_info || {};
-      if (!payload.merge_info.channel_url) {
-        payload.merge_info.channel_url = effectiveChannelUrl;
-      }
+    // Meta policy strictly rejects direct WhatsApp links in template CTA buttons:
+    // "Buttons cannot contain direct links to WhatsApp."
+    // Any template CTA button targeting channel access must link to the first-party Koinonia route: /parents/channel.
+    // The canonical real WhatsApp Channel URL is held strictly server-side and only revealed to authenticated, eligible parents.
+    payload.merge_info = payload.merge_info || {};
+    if (!payload.merge_info.channel_url || payload.merge_info.channel_url.includes('whatsapp.com')) {
+      payload.merge_info.channel_url = ZohoWhatsAppProvider.sanitizeChannelUrl(payload.merge_info.channel_url);
     }
 
     // Attach header media if provided
