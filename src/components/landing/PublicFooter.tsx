@@ -9,6 +9,7 @@ export interface PublicFooterProps {
   landingSettings: Record<string, string>;
   currentEvent?: any;
   scrollToSection: (id: string) => void;
+  canRegisterChild?: boolean;
 }
 
 function formatEventDates(startsAt?: string | null, endsAt?: string | null): string | null {
@@ -51,6 +52,7 @@ export const PublicFooter: React.FC<PublicFooterProps> = ({
   landingSettings,
   currentEvent,
   scrollToSection,
+  canRegisterChild = false,
 }) => {
   const footerYear = landingSettings.footerYear || String(new Date().getFullYear());
   const footerCopyrightName = landingSettings.footerCopyrightName || 'The Koinonia General Assembly';
@@ -97,15 +99,17 @@ export const PublicFooter: React.FC<PublicFooterProps> = ({
               Participation
             </h4>
             <ul className="space-y-2.5 text-xs text-stone-600 dark:text-[#C8C2B6]">
-              <li>
-                <button
-                  type="button"
-                  onClick={onParentRegisterClick}
-                  className="hover:text-stone-950 dark:hover:text-[#F7F4ED] transition-colors cursor-pointer text-left font-medium text-[#9A7326] dark:text-[#D4AF37]"
-                >
-                  Register your child
-                </button>
-              </li>
+              {canRegisterChild && (
+                <li>
+                  <button
+                    type="button"
+                    onClick={onParentRegisterClick}
+                    className="hover:text-stone-950 dark:hover:text-[#F7F4ED] transition-colors cursor-pointer text-left font-medium text-[#9A7326] dark:text-[#D4AF37]"
+                  >
+                    Register your child
+                  </button>
+                </li>
+              )}
               <li>
                 <button
                   type="button"

@@ -9,12 +9,18 @@ export interface PublicHeaderProps {
   onNavigate: (route: AppRoute) => void;
   onParentRegisterClick: () => void;
   scrollToSection: (id: string) => void;
+  canRegisterChild?: boolean;
+  canParentLogin?: boolean;
+  canVolunteerLogin?: boolean;
 }
 
 export const PublicHeader: React.FC<PublicHeaderProps> = ({
   onNavigate,
   onParentRegisterClick,
   scrollToSection,
+  canRegisterChild = false,
+  canParentLogin = true,
+  canVolunteerLogin = true,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [signInOpen, setSignInOpen] = useState(false);
@@ -152,38 +158,44 @@ export const PublicHeader: React.FC<PublicHeaderProps> = ({
 
             {signInOpen && (
               <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#3D3B36] rounded-2xl shadow-lg p-1.5 z-50 animate-in fade-in zoom-in-95">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSignInOpen(false);
-                    onNavigate('/parent/sign-in');
-                  }}
-                  className="w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-semibold text-[#18181B] dark:text-[#F7F4ED] hover:bg-[#FAF6EB] dark:hover:bg-[#262522] transition-colors cursor-pointer block"
-                >
-                  Parent sign in
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSignInOpen(false);
-                    onNavigate('/volunteer/sign-in');
-                  }}
-                  className="w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-semibold text-[#6B7280] dark:text-[#C8C2B6] hover:text-[#18181B] dark:hover:text-[#F7F4ED] hover:bg-[#FAF6EB] dark:hover:bg-[#262522] transition-colors cursor-pointer block"
-                >
-                  Volunteer sign in
-                </button>
+                {canParentLogin !== false && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSignInOpen(false);
+                      onNavigate('/parent/sign-in');
+                    }}
+                    className="w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-semibold text-[#18181B] dark:text-[#F7F4ED] hover:bg-[#FAF6EB] dark:hover:bg-[#262522] transition-colors cursor-pointer block"
+                  >
+                    Parent sign in
+                  </button>
+                )}
+                {canVolunteerLogin !== false && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSignInOpen(false);
+                      onNavigate('/volunteer/sign-in');
+                    }}
+                    className="w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-semibold text-[#6B7280] dark:text-[#C8C2B6] hover:text-[#18181B] dark:hover:text-[#F7F4ED] hover:bg-[#FAF6EB] dark:hover:bg-[#262522] transition-colors cursor-pointer block"
+                  >
+                    Volunteer sign in
+                  </button>
+                )}
               </div>
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={onParentRegisterClick}
-            className="bg-[#C59B27] hover:bg-[#B89047] active:bg-[#AA8220] text-white text-xs font-semibold px-4.5 py-2.5 rounded-xl shadow-xs hover:shadow-sm transition-colors cursor-pointer inline-flex items-center space-x-1.5"
-          >
-            <span>Register child</span>
-            <ArrowRight className="w-3.5 h-3.5 text-white/90" />
-          </button>
+          {canRegisterChild && (
+            <button
+              type="button"
+              onClick={onParentRegisterClick}
+              className="bg-[#C59B27] hover:bg-[#B89047] active:bg-[#AA8220] text-white text-xs font-semibold px-4.5 py-2.5 rounded-xl shadow-xs hover:shadow-sm transition-colors cursor-pointer inline-flex items-center space-x-1.5"
+            >
+              <span>Register child</span>
+              <ArrowRight className="w-3.5 h-3.5 text-white/90" />
+            </button>
+          )}
         </div>
 
         {/* Mobile Header Controls */}
@@ -282,17 +294,19 @@ export const PublicHeader: React.FC<PublicHeaderProps> = ({
 
               {/* Action Buttons */}
               <div className="flex flex-col space-y-3 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    onParentRegisterClick();
-                  }}
-                  className="w-full flex items-center justify-between bg-[#C59B27] hover:bg-[#B89047] active:bg-[#AA8220] text-white text-sm font-semibold py-3 px-4 rounded-xl shadow-xs transition-colors cursor-pointer group"
-                >
-                  <span>Register child</span>
-                  <ArrowRight className="w-4 h-4 text-white/90 group-hover:translate-x-0.5 transition-transform shrink-0" />
-                </button>
+                {canRegisterChild && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      onParentRegisterClick();
+                    }}
+                    className="w-full flex items-center justify-between bg-[#C59B27] hover:bg-[#B89047] active:bg-[#AA8220] text-white text-sm font-semibold py-3 px-4 rounded-xl shadow-xs transition-colors cursor-pointer group"
+                  >
+                    <span>Register child</span>
+                    <ArrowRight className="w-4 h-4 text-white/90 group-hover:translate-x-0.5 transition-transform shrink-0" />
+                  </button>
+                )}
 
                 {/* Simplified Sign in control on mobile */}
                 <div className="pt-2 border-t border-[#EAE8E1] dark:border-[#2A2926] space-y-1.5">
@@ -300,28 +314,32 @@ export const PublicHeader: React.FC<PublicHeaderProps> = ({
                     Sign in
                   </span>
                   <div className="grid grid-cols-2 gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMobileMenuOpen(false);
-                        onNavigate('/parent/sign-in');
-                      }}
-                      className="flex items-center justify-between bg-white dark:bg-[#21201D] hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] text-[#18181B] dark:text-[#F7F4ED] border border-[#D9D6CE] dark:border-[#383733] text-xs font-semibold py-2.5 px-3 rounded-xl transition-colors cursor-pointer group"
-                    >
-                      <span>Parent</span>
-                      <ArrowRight className="w-3.5 h-3.5 text-[#71717A] dark:text-[#A19D95] group-hover:translate-x-0.5 transition-transform shrink-0" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMobileMenuOpen(false);
-                        onNavigate('/volunteer/sign-in');
-                      }}
-                      className="flex items-center justify-between bg-white dark:bg-[#21201D] hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] text-[#18181B] dark:text-[#F7F4ED] border border-[#D9D6CE] dark:border-[#383733] text-xs font-semibold py-2.5 px-3 rounded-xl transition-colors cursor-pointer group"
-                    >
-                      <span>Volunteer</span>
-                      <ArrowRight className="w-3.5 h-3.5 text-[#71717A] dark:text-[#A19D95] group-hover:translate-x-0.5 transition-transform shrink-0" />
-                    </button>
+                    {canParentLogin !== false && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMobileMenuOpen(false);
+                          onNavigate('/parent/sign-in');
+                        }}
+                        className="flex items-center justify-between bg-white dark:bg-[#21201D] hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] text-[#18181B] dark:text-[#F7F4ED] border border-[#D9D6CE] dark:border-[#383733] text-xs font-semibold py-2.5 px-3 rounded-xl transition-colors cursor-pointer group"
+                      >
+                        <span>Parent</span>
+                        <ArrowRight className="w-3.5 h-3.5 text-[#71717A] dark:text-[#A19D95] group-hover:translate-x-0.5 transition-transform shrink-0" />
+                      </button>
+                    )}
+                    {canVolunteerLogin !== false && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMobileMenuOpen(false);
+                          onNavigate('/volunteer/sign-in');
+                        }}
+                        className="flex items-center justify-between bg-white dark:bg-[#21201D] hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] text-[#18181B] dark:text-[#F7F4ED] border border-[#D9D6CE] dark:border-[#383733] text-xs font-semibold py-2.5 px-3 rounded-xl transition-colors cursor-pointer group"
+                      >
+                        <span>Volunteer</span>
+                        <ArrowRight className="w-3.5 h-3.5 text-[#71717A] dark:text-[#A19D95] group-hover:translate-x-0.5 transition-transform shrink-0" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

@@ -56,10 +56,23 @@ export const VolunteerSignInView: React.FC<VolunteerSignInViewProps> = ({
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
-  const [suggestion, setSuggestion] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [canCreateAccount, setCanCreateAccount] = useState<boolean>(true);
+
+  React.useEffect(() => {
+    api.auth.getRegistrationStatus()
+      .then((res) => {
+        if (res && res.success) {
+          const isVolunteerOpen = res.volunteer?.isOpen ?? res.volunteerRegistrationEnabled ?? true;
+          setCanCreateAccount(Boolean(isVolunteerOpen));
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load volunteer registration status', err);
+      });
+  }, []);
 
   // Passkey Authentication States
   const [passkeyLoading, setPasskeyLoading] = useState(false);
@@ -388,15 +401,17 @@ export const VolunteerSignInView: React.FC<VolunteerSignInViewProps> = ({
       </form>
 
       <div className="text-center space-y-3 pt-4 border-t border-[#EAE8E1] dark:border-[#302E29]">
-        <p className="text-xs text-gray-500 dark:text-[#B8B0A5]">
-          Want to join the team?{' '}
-          <button
-            onClick={() => onNavigate('/volunteer/create-account')}
-            className="text-[#C59B27] dark:text-[#D4AF37] font-semibold hover:underline cursor-pointer focus:outline-none"
-          >
-            Create a volunteer account
-          </button>
-        </p>
+        {canCreateAccount && (
+          <p className="text-xs text-gray-500 dark:text-[#B8B0A5]">
+            Want to join the team?{' '}
+            <button
+              onClick={() => onNavigate('/volunteer/create-account')}
+              className="text-[#C59B27] dark:text-[#D4AF37] font-semibold hover:underline cursor-pointer focus:outline-none"
+            >
+              Create a volunteer account
+            </button>
+          </p>
+        )}
         <p className="text-xs text-gray-400 dark:text-[#7A7570]">
           Are you a parent?{' '}
           <button

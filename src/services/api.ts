@@ -6,22 +6,21 @@ import { ParentMessageThread, ParentMessage, AdminMessageThread, AdminMessagePar
 
 const TOKEN_KEY = 'koinonia_token';
 
-const FORBIDDEN_WORDS = [
-  'validation',
-  'database',
-  'server',
-  'api',
-  'token',
-  'workflow',
-  'portal',
-  'system',
-  'authentication',
-  'registration',
-  'sql',
-  'postgres',
+const INTERNAL_LEAK_PATTERNS = [
+  'syntax error',
   'sqlite',
-  'stack',
-  'exception'
+  'postgres',
+  'pg_',
+  'select *',
+  'insert into',
+  'update set',
+  'delete from',
+  'stack trace',
+  'node_modules',
+  'cannot read properties of undefined',
+  'cannot read property',
+  'table has no column',
+  'null constraint failed'
 ];
 
 export class ParentApiError extends Error {
@@ -251,8 +250,8 @@ export const api = {
       const lower = rawError.toLowerCase();
       const isAdminRoute = url.includes('/api/admin/');
       const isInternalStack = lower.includes('at ') || lower.includes('node_modules') || lower.includes('syntax error');
-      const containsForbidden = !isAdminRoute && FORBIDDEN_WORDS.some(w => lower.includes(w));
-      if (isInternalStack || (!isAdminRoute && (containsForbidden || res.status >= 500))) {
+      const containsTechnicalLeak = !isAdminRoute && INTERNAL_LEAK_PATTERNS.some(w => lower.includes(w));
+      if (isInternalStack || (!isAdminRoute && (containsTechnicalLeak || res.status >= 500))) {
         throw new ParentApiError('Something went wrong', 'Please try again.', errorCode, data, res.status);
       }
       throw new ParentApiError(rawError, data?.description || 'Please try again.', errorCode, data, res.status);

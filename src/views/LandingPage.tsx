@@ -220,6 +220,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   };
 
   const isRegistrationClosed = Boolean(regStatus && !regStatus.parent?.isOpen);
+  const canRegisterChild = Boolean(regStatus ? regStatus.parent?.isOpen : false);
+  const canParentLogin = Boolean(regStatus ? (regStatus.parentLoginEnabled ?? regStatus.parent?.canLogin ?? true) : true);
+  const canVolunteerLogin = Boolean(regStatus ? (regStatus.volunteerLoginEnabled ?? regStatus.volunteer?.canLogin ?? true) : true);
 
   // SEO Configurations
   const siteUrl =
@@ -274,6 +277,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         onNavigate={onNavigate}
         onParentRegisterClick={handleParentRegisterClick}
         scrollToSection={scrollToSection}
+        canRegisterChild={canRegisterChild}
+        canParentLogin={canParentLogin}
+        canVolunteerLogin={canVolunteerLogin}
       />
 
       {/* Target Rhythm: Event-First, Natural Copy, Real Motion, No Fabricated Content */}
@@ -286,6 +292,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           currentEvent={currentEvent}
           regStatus={regStatus}
           landingSettings={landingSettings}
+          canRegisterChild={canRegisterChild}
+          canParentLogin={canParentLogin}
+          canVolunteerLogin={canVolunteerLogin}
           onParentRegisterClick={handleParentRegisterClick}
           onVolunteerRegisterClick={handleVolunteerRegisterClick}
           onNavigate={onNavigate}
@@ -335,6 +344,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           onVolunteerRegisterClick={handleVolunteerRegisterClick}
           onNavigate={onNavigate}
           isRegistrationClosed={isRegistrationClosed}
+          canParentLogin={canParentLogin}
         />
       </main>
 
@@ -345,6 +355,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         landingSettings={landingSettings}
         currentEvent={currentEvent}
         scrollToSection={scrollToSection}
+        canRegisterChild={canRegisterChild}
       />
 
 

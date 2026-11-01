@@ -64,6 +64,9 @@ export interface LandingHeroProps {
   regStatus: any;
   currentEvent?: any;
   landingSettings?: Record<string, string>;
+  canRegisterChild?: boolean;
+  canParentLogin?: boolean;
+  canVolunteerLogin?: boolean;
   onParentRegisterClick: () => void;
   onVolunteerRegisterClick: () => void;
   onNavigate: (route: AppRoute) => void;
@@ -263,6 +266,9 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
   regStatus,
   currentEvent,
   landingSettings,
+  canRegisterChild = false,
+  canParentLogin = true,
+  canVolunteerLogin = true,
   onParentRegisterClick,
   onVolunteerRegisterClick,
   onNavigate,
@@ -307,7 +313,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
       ? Boolean(regStatus.volunteer.enabled)
       : true;
 
-  const showCtaRow = isParentEnabled || isVolunteerEnabled;
+  const showCtaRow = canParentLogin !== false || canVolunteerLogin !== false || canRegisterChild;
   const deadlineShortLabel = formatRegistrationDeadline(deadlineIso);
   const deadlineFullLabel = formatRegistrationDeadline(deadlineIso, true);
 
@@ -405,17 +411,19 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
     const hasHighlightContent = highlightPhotos.length > 0;
     if (!showCtaRow && !hasHighlightContent) return null;
 
-    const parentBtn = isParentEnabled && (
-      isRegistrationClosed ? (
+    const parentBtn = isRegistrationClosed ? (
+      canParentLogin !== false ? (
         <button
           type="button"
           onClick={() => onNavigate('/parent/sign-in')}
           className="w-full sm:w-auto sm:min-w-[190px] h-[46px] px-6 bg-[#C59B27] hover:bg-[#B89047] active:bg-[#AA8220] text-white font-semibold rounded-xl text-sm shadow-xs transition-colors inline-flex items-center justify-center space-x-2 cursor-pointer shrink-0"
         >
-          <span>Sign in to your account</span>
+          <span>Parent sign in</span>
           <ArrowRight className="w-4 h-4" />
         </button>
-      ) : (
+      ) : null
+    ) : (
+      canRegisterChild ? (
         <button
           type="button"
           onClick={onParentRegisterClick}
@@ -424,18 +432,29 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
           <span>Register your child</span>
           <ArrowRight className="w-4 h-4" />
         </button>
+      ) : (
+        canParentLogin !== false ? (
+          <button
+            type="button"
+            onClick={() => onNavigate('/parent/sign-in')}
+            className="w-full sm:w-auto sm:min-w-[190px] h-[46px] px-6 bg-[#C59B27] hover:bg-[#B89047] active:bg-[#AA8220] text-white font-semibold rounded-xl text-sm shadow-xs transition-colors inline-flex items-center justify-center space-x-2 cursor-pointer shrink-0"
+          >
+            <span>Parent sign in</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        ) : null
       )
     );
 
-    const volunteerBtn = isVolunteerEnabled && (
+    const volunteerBtn = canVolunteerLogin !== false ? (
       <button
         type="button"
-        onClick={onVolunteerRegisterClick}
+        onClick={() => onNavigate('/volunteer/sign-in')}
         className="w-full sm:w-auto sm:min-w-[170px] h-[46px] px-6 bg-white dark:bg-[#201F1C] hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] text-[#262626] dark:text-[#F7F4ED] border border-[#D9D6CE] dark:border-[#383733] font-semibold rounded-xl text-sm transition-colors inline-flex items-center justify-center cursor-pointer shrink-0"
       >
         <span>Volunteer sign in</span>
       </button>
-    );
+    ) : null;
 
     const handleHighlightsClick = () => {
       const momentsEl = document.getElementById('moments');
