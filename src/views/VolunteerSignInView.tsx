@@ -56,22 +56,34 @@ export const VolunteerSignInView: React.FC<VolunteerSignInViewProps> = ({
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [suggestion, setSuggestion] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [canCreateAccount, setCanCreateAccount] = useState<boolean>(true);
 
   React.useEffect(() => {
-    api.auth.getRegistrationStatus()
-      .then((res) => {
-        if (res && res.success) {
-          const isVolunteerOpen = res.volunteer?.isOpen ?? res.volunteerRegistrationEnabled ?? true;
-          setCanCreateAccount(Boolean(isVolunteerOpen));
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to load volunteer registration status', err);
-      });
+    let isMounted = true;
+    try {
+      const fetchStatus = api?.auth?.getRegistrationStatus || api?.volunteer?.getRegistrationStatus || api?.getRegistrationStatus;
+      if (typeof fetchStatus === 'function') {
+        fetchStatus()
+          .then((res: any) => {
+            if (isMounted && res && res.success) {
+              const isVolunteerOpen = res.volunteer?.isOpen ?? res.volunteerRegistrationEnabled ?? true;
+              setCanCreateAccount(Boolean(isVolunteerOpen));
+            }
+          })
+          .catch((err: any) => {
+            console.error('Failed to load volunteer registration status', err);
+          });
+      }
+    } catch (err) {
+      console.error('Error invoking registration status', err);
+    }
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Passkey Authentication States

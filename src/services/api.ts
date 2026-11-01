@@ -239,6 +239,10 @@ export const api = {
     return data as T;
   },
 
+  async getRegistrationStatus(eventId?: string) {
+    return api.auth.getRegistrationStatus(eventId);
+  },
+
   async getPublicAppMedia() {
     return api.request<{
       success: boolean;
@@ -525,6 +529,9 @@ export const api = {
   },
 
   volunteer: {
+    async getRegistrationStatus(eventId?: string) {
+      return api.auth.getRegistrationStatus(eventId);
+    },
     async createAccount(payload: any) {
       const res = await api.request<any>('/api/volunteer/create-account', {
         method: 'POST',
