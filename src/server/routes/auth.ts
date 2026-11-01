@@ -579,6 +579,26 @@ router.post(['/sign-in', '/login'], async (req: AuthenticatedRequest, res: Respo
       });
     }
 
+    // Verify parent login is enabled in admin settings
+    if (user.role === 'parent') {
+      let genSettings: any = null;
+      try {
+        genSettings = await queryOne<any>(`
+          SELECT parent_login_enabled
+          FROM admin_general_settings
+          WHERE id = 'primary_general_settings'
+        `);
+      } catch (e) {}
+      const parentLoginToggle = genSettings ? (genSettings.parent_login_enabled === 1 || genSettings.parent_login_enabled === true || genSettings.parent_login_enabled === undefined) : true;
+      if (!parentLoginToggle) {
+        return res.status(403).json({
+          success: false,
+          code: 'PARENT_LOGIN_DISABLED',
+          message: 'Parent sign-in is currently unavailable.'
+        });
+      }
+    }
+
     const passwordMatches = user.password_hash ? verifyPassword(password, user.password_hash) : false;
     console.log(`[SIGN_IN] checking password { has_hash: ${!!user.password_hash}, matches: ${passwordMatches} }`);
     if (!user.password_hash || !passwordMatches) {
@@ -1209,33 +1229,6 @@ router.get('/registration-status', async (req: AuthenticatedRequest, res: Respon
       }
     }
 
-    if (!targetEvent) {
-      return res.json({
-        success: true,
-        hasEvent: false,
-        eventName: 'The General Assembly',
-        eventId: null,
-        parent: {
-          isOpen: false,
-          state: 'closed',
-          opensAt: null,
-          closesAt: null,
-          opensAtFormatted: null,
-          closesAtFormatted: null
-        },
-        volunteer: {
-          isOpen: false,
-          state: 'closed',
-          opensAt: null,
-          closesAt: null,
-          opensAtFormatted: null,
-          closesAtFormatted: null
-        }
-      });
-    }
-
-    const nowIso = new Date().toISOString();
-
     let genSettings: any = null;
     try {
       genSettings = await queryOne<any>(`
@@ -1249,6 +1242,40 @@ router.get('/registration-status', async (req: AuthenticatedRequest, res: Respon
     const volunteerToggleEnabled = genSettings && genSettings.volunteer_registration_enabled !== undefined && genSettings.volunteer_registration_enabled !== null
       ? (genSettings.volunteer_registration_enabled === 1 || genSettings.volunteer_registration_enabled === true || genSettings.volunteer_registration_enabled === 'true')
       : true;
+    const parentLoginToggleEnabled = genSettings ? (genSettings.parent_login_enabled === 1 || genSettings.parent_login_enabled === true || genSettings.parent_login_enabled === undefined) : true;
+
+    if (!targetEvent) {
+      return res.json({
+        success: true,
+        hasEvent: false,
+        eventName: 'The General Assembly',
+        eventId: null,
+        parentRegistrationEnabled: parentToggleEnabled,
+        volunteerRegistrationEnabled: volunteerToggleEnabled,
+        parentLoginEnabled: parentLoginToggleEnabled,
+        parent: {
+          isOpen: false,
+          state: 'closed',
+          enabled: parentToggleEnabled,
+          canLogin: parentLoginToggleEnabled,
+          opensAt: null,
+          closesAt: null,
+          opensAtFormatted: null,
+          closesAtFormatted: null
+        },
+        volunteer: {
+          isOpen: volunteerToggleEnabled,
+          state: volunteerToggleEnabled ? 'open' : 'disabled',
+          enabled: volunteerToggleEnabled,
+          opensAt: null,
+          closesAt: null,
+          opensAtFormatted: null,
+          closesAtFormatted: null
+        }
+      });
+    }
+
+    const nowIso = new Date().toISOString();
 
     // Parent status
     let parentState: 'open' | 'not_open_yet' | 'closed' | 'disabled' = 'open';
@@ -1262,7 +1289,7 @@ router.get('/registration-status', async (req: AuthenticatedRequest, res: Respon
       parentState = 'closed';
     }
 
-    // Volunteer status
+    // Volunteer status - Governed by volunteerRegistrationEnabled and volunteer-specific window
     let volunteerState: 'open' | 'not_open_yet' | 'closed' | 'disabled' = 'open';
     if (!volunteerToggleEnabled) {
       volunteerState = 'disabled';
@@ -1279,10 +1306,12 @@ router.get('/registration-status', async (req: AuthenticatedRequest, res: Respon
       eventId: targetEvent.id,
       parentRegistrationEnabled: parentToggleEnabled,
       volunteerRegistrationEnabled: volunteerToggleEnabled,
+      parentLoginEnabled: parentLoginToggleEnabled,
       parent: {
         isOpen: parentState === 'open',
         state: parentState,
         enabled: parentToggleEnabled,
+        canLogin: parentLoginToggleEnabled,
         opensAt: targetEvent.parent_access_opens_at || null,
         closesAt: targetEvent.parent_access_closes_at || null,
         opensAtFormatted: formatFriendlyDateTime(targetEvent.parent_access_opens_at),
