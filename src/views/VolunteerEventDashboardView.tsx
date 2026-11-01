@@ -472,7 +472,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   // Scan screen states
   const [scanMode, setScanMode] = useState<'check_in' | 'check_out'>('check_in');
-  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraActive, setCameraActive] = useState<boolean>(() => cleanRoute === '/volunteer/scan' || cleanRoute === '/volunteer/pickup');
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const [manualCode, setManualCode] = useState('');
@@ -1467,10 +1467,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   useEffect(() => {
     fetchCurrentDutyLocation();
     if (cleanRoute === '/volunteer/pickup') {
+      setCameraActive(true);
       fetchPickupData();
     } else if (cleanRoute === '/volunteer/reports') {
       fetchReportsData();
     } else {
+      if (cleanRoute === '/volunteer/scan') {
+        setCameraActive(true);
+      }
       fetchDashboardData();
       fetchHistory();
     }
@@ -1893,9 +1897,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
         let passCode = trimmedText;
         if (trimmedText.includes('/pass/')) {
-          passCode = trimmedText.split('/pass/')[1]?.split('?')[0] || trimmedText;
+          passCode = trimmedText.split('/pass/')[1]?.split('?')[0]?.replace(/\/$/, '') || trimmedText;
         } else if (trimmedText.includes('code=')) {
           passCode = trimmedText.split('code=')[1]?.split('&')[0] || trimmedText;
+        } else if (trimmedText.includes('pass=')) {
+          passCode = trimmedText.split('pass=')[1]?.split('&')[0] || trimmedText;
+        } else if (trimmedText.includes('ref=')) {
+          passCode = trimmedText.split('ref=')[1]?.split('&')[0] || trimmedText;
+        } else if (trimmedText.includes('token=')) {
+          passCode = trimmedText.split('token=')[1]?.split('&')[0] || trimmedText;
         } else if (trimmedText.startsWith('KCT:')) {
           passCode = trimmedText.substring(4);
         }
@@ -1925,9 +1935,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         // Unified Volunteer Check-In Identification Flow (Phase 3C)
         let cleanIdentifier = trimmedText;
         if (trimmedText.includes('/pass/')) {
-          cleanIdentifier = trimmedText.split('/pass/')[1]?.split('?')[0] || trimmedText;
+          cleanIdentifier = trimmedText.split('/pass/')[1]?.split('?')[0]?.replace(/\/$/, '') || trimmedText;
         } else if (trimmedText.includes('code=')) {
           cleanIdentifier = trimmedText.split('code=')[1]?.split('&')[0] || trimmedText;
+        } else if (trimmedText.includes('pass=')) {
+          cleanIdentifier = trimmedText.split('pass=')[1]?.split('&')[0] || trimmedText;
+        } else if (trimmedText.includes('ref=')) {
+          cleanIdentifier = trimmedText.split('ref=')[1]?.split('&')[0] || trimmedText;
+        } else if (trimmedText.includes('token=')) {
+          cleanIdentifier = trimmedText.split('token=')[1]?.split('&')[0] || trimmedText;
         } else if (trimmedText.startsWith('KCT:')) {
           cleanIdentifier = trimmedText.substring(4);
         }
@@ -1976,62 +1992,84 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           return;
         }
 
-        // Online resolution: use Phase 3B unified child identifier resolver
-        const targetEventId = eventDetails?.id;
-        const resolveRes = await api.volunteer.resolveIdentifier({
-          identifier: cleanIdentifier,
-          eventId: targetEventId
-        });
+        // Online resolution:
+        // 1. Direct pass lookup via canonical lookupPass endpoint
+        let childData: any = null;
 
-        if (resolveRes && resolveRes.success && resolveRes.childEventEntryId) {
-          // Resolve succeeded -> load full child data using existing lookupPass endpoint
-          const lookupRes = await api.volunteer.lookupPass({
-            childEventEntryId: resolveRes.childEventEntryId
+        try {
+          const passLookupRes = await api.volunteer.lookupPass({
+            passReference: cleanIdentifier
           });
-
-          if (lookupRes && lookupRes.success && lookupRes.child) {
-            const childData = {
-              ...lookupRes.child,
-              identificationSource: resolveRes.identifierType === 'pass' ? 'Pass' : 'Wristband',
-              resolvedIdentifierType: resolveRes.identifierType,
-              resolvedWristbandCode: resolveRes.wristbandCode
+          if (passLookupRes && passLookupRes.success && passLookupRes.child) {
+            childData = {
+              ...passLookupRes.child,
+              identificationSource: 'Pass',
+              resolvedIdentifierType: 'pass'
             };
-            hasSuccessfulScanRef.current = true;
+          }
+        } catch (passErr: any) {
+          console.debug('[scan] direct pass lookup error, attempting fallback identifier resolution:', passErr);
+        }
 
-            // Haptic feedback if available
-            if (navigator.vibrate) {
-              navigator.vibrate([100]);
+        // 2. Fallback / Wristband attempt: If direct pass lookup did not return child, use resolveIdentifier
+        if (!childData) {
+          try {
+            const targetEventId = eventDetails?.id;
+            const resolveRes = await api.volunteer.resolveIdentifier({
+              identifier: cleanIdentifier,
+              eventId: targetEventId
+            });
+
+            if (resolveRes && resolveRes.success && resolveRes.childEventEntryId) {
+              const lookupRes = await api.volunteer.lookupPass({
+                childEventEntryId: resolveRes.childEventEntryId
+              });
+
+              if (lookupRes && lookupRes.success && lookupRes.child) {
+                childData = {
+                  ...lookupRes.child,
+                  identificationSource: resolveRes.identifierType === 'pass' ? 'Pass' : 'Wristband',
+                  resolvedIdentifierType: resolveRes.identifierType,
+                  resolvedWristbandCode: resolveRes.wristbandCode
+                };
+              }
             }
+          } catch (resolveErr: any) {
+            const errCode = resolveErr?.code || resolveErr?.data?.code || '';
+            if (errCode.startsWith('WRISTBAND_')) {
+              throw resolveErr;
+            }
+          }
+        }
 
-            // Reset manual code input
-            setManualCode('');
+        if (childData) {
+          hasSuccessfulScanRef.current = true;
 
-            const isCheckedIn = childData.entryStatus === 'checked_in' || childData.entryStatus === 'inside' || childData.status === 'checked_in' || childData.status === 'inside';
-            const isPickedUp = childData.entryStatus === 'picked_up' || childData.entryStatus === 'checked_out' || childData.status === 'picked_up' || childData.status === 'checked_out';
+          // Haptic feedback if available
+          if (navigator.vibrate) {
+            navigator.vibrate([100]);
+          }
 
-            if (cleanRoute === '/volunteer/pickup' || scanMode === 'check_out') {
-              if (isPickedUp) {
-                showWarning('Already Released', `${childData.fullName} has already been picked up.`);
-                handlePreparePickup(childData.id || childData.childId || childData.entryId);
-              } else if (isCheckedIn) {
-                handlePreparePickup(childData.id || childData.childId || childData.entryId);
-              } else {
-                showError('Not Checked In', `${childData.fullName} has not checked in yet. Please check in the child before release.`);
-              }
+          // Reset manual code input
+          setManualCode('');
+
+          const isCheckedIn = childData.entryStatus === 'checked_in' || childData.entryStatus === 'inside' || childData.status === 'checked_in' || childData.status === 'inside';
+          const isPickedUp = childData.entryStatus === 'picked_up' || childData.entryStatus === 'checked_out' || childData.status === 'picked_up' || childData.status === 'checked_out';
+
+          if (cleanRoute === '/volunteer/pickup' || scanMode === 'check_out') {
+            if (isPickedUp) {
+              showWarning('Already Released', `${childData.fullName} has already been picked up.`);
+              handlePreparePickup(childData.id || childData.childId || childData.entryId);
+            } else if (isCheckedIn) {
+              handlePreparePickup(childData.id || childData.childId || childData.entryId);
             } else {
-              setLookedUpChild(childData);
-              if (cleanRoute !== '/volunteer/scan') {
-                onNavigate('/volunteer/scan');
-              }
+              showError('Not Checked In', `${childData.fullName} has not checked in yet. Please check in the child before release.`);
             }
           } else {
-            showError('Not Found', 'No child was found for this pass or wristband.');
-            isLookupInFlightRef.current = false;
-            lastScannedCodeRef.current = null;
-            isLookupInFlight.current = false;
-            lastScannedCode.current = '';
-            setCameraActive(true);
-            setTimeout(() => scannerInputRef.current?.focus(), 50);
+            setLookedUpChild(childData);
+            if (cleanRoute !== '/volunteer/scan') {
+              onNavigate('/volunteer/scan');
+            }
           }
         } else {
           showError('Not Found', 'No child was found for this pass or wristband.');
