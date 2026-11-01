@@ -34,6 +34,7 @@ interface AdminReviewChildViewProps {
   backLabel?: string;
   adminUser?: any;
   isSuperAdmin?: boolean;
+  initialApplication?: any;
 }
 
 export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
@@ -42,14 +43,30 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
   onSave,
   backLabel,
   adminUser,
-  isSuperAdmin = false
+  isSuperAdmin = false,
+  initialApplication
 }) => {
   const { showError, showSuccess } = useNotification();
-  const effectiveSuperAdmin = Boolean(isSuperAdmin || adminUser?.role === 'super_admin');
+  const [currentUser, setCurrentUser] = useState<any>(adminUser || null);
 
-  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (adminUser) {
+      setCurrentUser(adminUser);
+      return;
+    }
+    // Self-healing fallback: query current auth if adminUser prop wasn't passed
+    api.admin.getMe().then((res) => {
+      if (res?.user) setCurrentUser(res.user);
+    }).catch(() => {});
+  }, [adminUser]);
+
+  const activeAdmin = currentUser || adminUser;
+  const effectiveSuperAdmin = Boolean(isSuperAdmin || activeAdmin?.role === 'super_admin');
+  const isAuthorizedAdmin = Boolean(effectiveSuperAdmin || activeAdmin?.role === 'admin');
+
+  const [loading, setLoading] = useState(!initialApplication);
   const [saving, setSaving] = useState(false);
-  const [app, setApp] = useState<any>(null);
+  const [app, setApp] = useState<any>(initialApplication || null);
 
   // Form states for review
   const [decision, setDecision] = useState<'selected' | 'waiting_list' | 'under_review' | 'not_selected'>('selected');
@@ -199,8 +216,10 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
   };
 
   useEffect(() => {
-    fetchDetails();
-  }, [applicationId]);
+    if (!initialApplication) {
+      fetchDetails();
+    }
+  }, [applicationId, initialApplication]);
 
   // Decision Confirmations
 
@@ -1527,61 +1546,71 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
               </div>
             )}
 
-            {/* MORE ▾ ACTIONS MENU (FOR ALL NON-REMOVED STATES) */}
-            {!isRemoved && (
-              <div className="pt-3.5 border-t border-[#EAE8E1]/80 dark:border-[#302E29] flex items-center justify-between relative">
-                <span className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium">Additional actions</span>
-                
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setIsDecisionMoreOpen(!isDecisionMoreOpen)}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-700 dark:text-[#F0EBE3] hover:text-zinc-950 dark:hover:text-white px-2.5 py-1 rounded-lg border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] transition-colors cursor-pointer"
-                  >
-                    <span>More</span>
-                    <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570] transition-transform duration-150 ${isDecisionMoreOpen ? 'rotate-180' : ''}`} />
-                  </button>
+            {/* MORE ▾ ACTIONS MENU (FOR ALL NON-REMOVED STATES WITH AT LEAST ONE AVAILABLE ACTION) */}
+            {(() => {
+              const canRevokePass = (app.status === 'pass_ready' || app.hasPass) && !isAttendingChild;
+              const canReopenReview = !['under_review', 'review_reopened'].includes(app.status) && !isAttendingChild;
+              const canResetEventState = Boolean(isAuthorizedAdmin);
+              const canResetProgress = Boolean(effectiveSuperAdmin);
+              const canResetAndRemove = Boolean(effectiveSuperAdmin);
+              const canRemove = !isAttendingChild;
+              const hasAnyMoreAction = canRevokePass || canReopenReview || canResetEventState || canResetProgress || canResetAndRemove || canRemove;
 
-                  {isDecisionMoreOpen && (
-                    <>
-                      {/* Backdrop dismiss */}
-                      <div
-                        className="fixed inset-0 z-10"
-                        onClick={() => setIsDecisionMoreOpen(false)}
-                      />
+              if (isRemoved || !hasAnyMoreAction) return null;
 
-                      <div className="absolute right-0 mt-1.5 w-52 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl shadow-lg p-1.5 z-20 space-y-0.5 animate-scale-in text-left">
-                        {/* Revoke pass if active */}
-                        {(app.status === 'pass_ready' || app.hasPass) && !isAttendingChild && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsDecisionMoreOpen(false);
-                              setIsRevokeModalOpen(true);
-                            }}
-                            className="w-full text-left px-3 py-2 text-xs font-medium text-zinc-700 dark:text-[#F0EBE3] hover:bg-zinc-50 dark:hover:bg-[#262520] rounded-lg cursor-pointer transition-colors"
-                          >
-                            Revoke event pass
-                          </button>
-                        )}
+              return (
+                <div className="pt-3.5 border-t border-[#EAE8E1]/80 dark:border-[#302E29] flex items-center justify-between relative">
+                  <span className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium">Additional actions</span>
+                  
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsDecisionMoreOpen(!isDecisionMoreOpen)}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-700 dark:text-[#F0EBE3] hover:text-zinc-950 dark:hover:text-white px-2.5 py-1 rounded-lg border border-[#EAE8E1] dark:border-[#3A3835] bg-white dark:bg-[#262520] hover:bg-zinc-50 dark:hover:bg-[#2A2926] transition-colors cursor-pointer"
+                    >
+                      <span>More</span>
+                      <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570] transition-transform duration-150 ${isDecisionMoreOpen ? 'rotate-180' : ''}`} />
+                    </button>
 
-                        {/* Reopen review if already decided */}
-                        {!['under_review', 'review_reopened'].includes(app.status) && !isAttendingChild && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsDecisionMoreOpen(false);
-                              setIsReopenModalOpen(true);
-                            }}
-                            className="w-full text-left px-3 py-2 text-xs font-medium text-zinc-700 dark:text-[#F0EBE3] hover:bg-zinc-50 dark:hover:bg-[#262520] rounded-lg cursor-pointer transition-colors"
-                          >
-                            Reopen review
-                          </button>
-                        )}
+                    {isDecisionMoreOpen && (
+                      <>
+                        {/* Backdrop dismiss */}
+                        <div
+                          className="fixed inset-0 z-10"
+                          onClick={() => setIsDecisionMoreOpen(false)}
+                        />
 
-                        {/* Super Admin Reset */}
-                        {effectiveSuperAdmin && (
-                          <>
+                        <div className="absolute right-0 mt-1.5 w-52 bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl shadow-lg p-1.5 z-20 space-y-0.5 animate-scale-in text-left">
+                          {/* Revoke pass if active */}
+                          {canRevokePass && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsDecisionMoreOpen(false);
+                                setIsRevokeModalOpen(true);
+                              }}
+                              className="w-full text-left px-3 py-2 text-xs font-medium text-zinc-700 dark:text-[#F0EBE3] hover:bg-zinc-50 dark:hover:bg-[#262520] rounded-lg cursor-pointer transition-colors"
+                            >
+                              Revoke event pass
+                            </button>
+                          )}
+
+                          {/* Reopen review if already decided */}
+                          {canReopenReview && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsDecisionMoreOpen(false);
+                                setIsReopenModalOpen(true);
+                              }}
+                              className="w-full text-left px-3 py-2 text-xs font-medium text-zinc-700 dark:text-[#F0EBE3] hover:bg-zinc-50 dark:hover:bg-[#262520] rounded-lg cursor-pointer transition-colors"
+                            >
+                              Reopen review
+                            </button>
+                          )}
+
+                          {/* Reset event state (Authorized Admin QA action) */}
+                          {canResetEventState && (
                             <button
                               type="button"
                               onClick={() => {
@@ -1593,6 +1622,10 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                               <span>Reset event state</span>
                               <RotateCcw className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                             </button>
+                          )}
+
+                          {/* Super Admin Reset options */}
+                          {canResetProgress && (
                             <button
                               type="button"
                               onClick={() => {
@@ -1603,6 +1636,9 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                             >
                               Reset event progress
                             </button>
+                          )}
+
+                          {canResetAndRemove && (
                             <button
                               type="button"
                               onClick={() => {
@@ -1613,30 +1649,33 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                             >
                               Reset & remove
                             </button>
-                          </>
-                        )}
+                          )}
 
-                        <div className="border-t border-[#EAE8E1] dark:border-[#302E29] my-1" />
+                          {/* Divider only if remove is available alongside other actions */}
+                          {canRemove && (canRevokePass || canReopenReview || canResetEventState || canResetProgress || canResetAndRemove) && (
+                            <div className="border-t border-[#EAE8E1] dark:border-[#302E29] my-1" />
+                          )}
 
-                        {/* Remove application */}
-                        {!isAttendingChild && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsDecisionMoreOpen(false);
-                              setIsRemoveModalOpen(true);
-                            }}
-                            className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50/60 dark:hover:bg-red-950/40 rounded-lg cursor-pointer transition-colors"
-                          >
-                            Remove from this event
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  )}
+                          {/* Remove application */}
+                          {canRemove && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsDecisionMoreOpen(false);
+                                setIsRemoveModalOpen(true);
+                              }}
+                              className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50/60 dark:hover:bg-red-950/40 rounded-lg cursor-pointer transition-colors"
+                            >
+                              Remove from this event
+                            </button>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
           </div>
 

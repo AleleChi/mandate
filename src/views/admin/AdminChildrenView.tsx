@@ -529,6 +529,8 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
     return (
       <AdminReviewChildView
         applicationId={selectedApplicationId}
+        adminUser={adminUser}
+        isSuperAdmin={isSuperAdmin}
         onBack={() => {
           setSelectedApplicationId(null);
           if (onNavigate) onNavigate('/admin/children' as any);
