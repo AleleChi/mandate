@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   LogOut, QrCode, Search, BarChart3, User, RefreshCw, AlertTriangle, 
   ShieldCheck, Check, Home, Camera, CameraOff, X, Phone, MessageCircle, 
   ArrowRight, Sparkles, UserCheck, UserX, Clock, ChevronLeft, Calendar, Heart, Info, Keyboard,
   Settings, ChevronRight, Users, LogIn, History, MapPin, Bell, ShieldAlert, Smartphone, ChevronDown, Shield, CheckCircle2,
-  HelpCircle, Tag, Plus, MessageSquare
+  HelpCircle, Tag, Plus
 } from 'lucide-react';
 import { WristbandAssignmentDesk } from '../components/wristbands/WristbandAssignmentDesk';
 import { AppRoute } from '../types';
@@ -14,8 +14,6 @@ import { useNotification } from '../context/NotificationContext';
 import { Button } from '../components/common/Button';
 import { BrowserQRCodeReader } from '@zxing/browser';
 import { VolunteerProfileView } from './volunteer/VolunteerProfileView';
-import { VolunteerMessagesView } from './volunteer/VolunteerMessagesView';
-import { useRealtimeSubscription, useRealtimeResync } from '../services/realtime';
 import { DeviceReadinessView } from '../components/volunteer/DeviceReadinessView';
 import { SafeImage } from '../components/common/SafeImage';
 import { resolveMediaUrl } from '../utils/mediaUrl';
@@ -288,7 +286,6 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   // Real-time volunteer notification states
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
-  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [showNotifPanel, setShowNotifPanel] = useState(false);
   const [showReadinessModal, setShowReadinessModal] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(() => {
@@ -1469,16 +1466,6 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   // Run on mount or route transition
   useEffect(() => {
     fetchCurrentDutyLocation();
-    // Fetch combined unread count (threads + announcements)
-    Promise.all([
-      api.volunteer.messages.getUnreadCount(),
-      api.volunteer.announcements.getUnreadCount()
-    ]).then(([msgRes, ancRes]) => {
-      const msgCount = (msgRes && msgRes.success) ? (msgRes.unreadCount ?? msgRes.unreadThreadCount ?? 0) : 0;
-      const ancCount = (ancRes && ancRes.success) ? (ancRes.unreadCount ?? 0) : 0;
-      setUnreadMessagesCount(msgCount + ancCount);
-    }).catch(() => {});
-
     if (cleanRoute === '/volunteer/pickup') {
       fetchPickupData();
     } else if (cleanRoute === '/volunteer/reports') {
@@ -1488,25 +1475,6 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       fetchHistory();
     }
   }, [cleanRoute]);
-
-  const fetchVolunteerUnread = useCallback(() => {
-    Promise.all([
-      api.volunteer.messages.getUnreadCount(),
-      api.volunteer.announcements.getUnreadCount()
-    ]).then(([msgRes, ancRes]) => {
-      const msgCount = (msgRes && msgRes.success) ? (msgRes.unreadCount ?? msgRes.unreadThreadCount ?? 0) : 0;
-      const ancCount = (ancRes && ancRes.success) ? (ancRes.unreadCount ?? 0) : 0;
-      setUnreadMessagesCount(msgCount + ancCount);
-    }).catch(() => {});
-  }, []);
-
-  useRealtimeSubscription(['message.created', 'announcement.published', 'notification.created'], () => {
-    fetchVolunteerUnread();
-  });
-
-  useRealtimeResync(() => {
-    fetchVolunteerUnread();
-  });
 
   // Outbox initialization, multi-tab coordination, and automatic sync processing
   useEffect(() => {
@@ -1989,12 +1957,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               isOfflineResult: true,
               identificationSource: 'Pass'
             };
-            setLookedUpChild(mockChild);
             hasSuccessfulScanRef.current = true;
             if (navigator.vibrate) {
               navigator.vibrate([100]);
             }
             setManualCode('');
+            setLookedUpChild(mockChild);
           } else {
             showError('Not Found (Offline)', 'This pass reference was not found in the preloaded offline roster. Please reconnect to verify.');
             isLookupInFlightRef.current = false;
@@ -2028,7 +1996,6 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               resolvedIdentifierType: resolveRes.identifierType,
               resolvedWristbandCode: resolveRes.wristbandCode
             };
-            setLookedUpChild(childData);
             hasSuccessfulScanRef.current = true;
 
             // Haptic feedback if available
@@ -2038,6 +2005,25 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
             // Reset manual code input
             setManualCode('');
+
+            const isCheckedIn = childData.entryStatus === 'checked_in' || childData.entryStatus === 'inside' || childData.status === 'checked_in' || childData.status === 'inside';
+            const isPickedUp = childData.entryStatus === 'picked_up' || childData.entryStatus === 'checked_out' || childData.status === 'picked_up' || childData.status === 'checked_out';
+
+            if (cleanRoute === '/volunteer/pickup' || scanMode === 'check_out') {
+              if (isPickedUp) {
+                showWarning('Already Released', `${childData.fullName} has already been picked up.`);
+                handlePreparePickup(childData.id || childData.childId || childData.entryId);
+              } else if (isCheckedIn) {
+                handlePreparePickup(childData.id || childData.childId || childData.entryId);
+              } else {
+                showError('Not Checked In', `${childData.fullName} has not checked in yet. Please check in the child before release.`);
+              }
+            } else {
+              setLookedUpChild(childData);
+              if (cleanRoute !== '/volunteer/scan') {
+                onNavigate('/volunteer/scan');
+              }
+            }
           } else {
             showError('Not Found', 'No child was found for this pass or wristband.');
             isLookupInFlightRef.current = false;
@@ -2237,10 +2223,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     try {
       const res = await api.volunteer.lookupPass({ childId: child.childId });
       if (res.success && res.child) {
-        setLookedUpChild(res.child);
-        setScanMode('check_out');
-        onNavigate('/volunteer/scan');
-        showSuccess('Child Found', `Retrieved details for ${res.child.fullName}. Please match photo card.`);
+        handlePreparePickup(child.childId);
       }
     } catch (err: any) {
       const apiErr = extractApiError(err);
@@ -2250,7 +2233,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     }
   };
 
-  // Navigate to child-detail record from scanned lookup without checking in
+  // Navigate to canonical child-detail operational record from scanned lookup
   const handleViewScannedChildRecord = (child: any) => {
     if (!child) return;
     const cid = child.id || child.childId || child.entryId || child.childEventEntryId;
@@ -2258,11 +2241,21 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     setSelectedChildId(cid);
     setChildDetailOrigin('scan');
     if (child.fullName || child.childName) {
+      const activeWb = child.activeWristband || (child.resolvedWristbandCode ? { wristbandCode: child.resolvedWristbandCode, status: 'active' } : null);
+      const isCheckedIn = child.entryStatus === 'checked_in' || child.entryStatus === 'inside' || child.status === 'checked_in' || child.status === 'inside';
+      const isPickedUp = child.entryStatus === 'picked_up' || child.entryStatus === 'checked_out' || child.status === 'picked_up' || child.status === 'checked_out';
+      const statusValue = isCheckedIn ? 'inside' : (isPickedUp ? 'picked_up' : (child.needsAgeReview || child.status === 'under_review' ? 'needs_attention' : 'not_arrived'));
+
+      const pickupList = Array.isArray(child.authorizedPickup) && child.authorizedPickup.length > 0
+        ? child.authorizedPickup
+        : (child.pickup ? [child.pickup] : (child.pickupPeople || []));
+
       setChildProfileData({
         success: true,
         child: {
           id: child.id || cid,
-          entryId: child.entryId || cid,
+          entryId: child.entryId || child.childEventEntryId || cid,
+          passReference: child.passReference || null,
           fullName: child.fullName || child.childName,
           firstName: (child.fullName || child.childName || '').split(' ')[0],
           age: child.calculatedAge || child.age || 0,
@@ -2272,14 +2265,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           classGroup: child.classGroup || child.ageGroup,
           dutyLocation: child.dutyLocation || child.schoolClass || null,
           photoUrl: child.photoUrl,
-          status: child.entryStatus === 'checked_in' || child.entryStatus === 'inside' ? 'inside' : 'not_arrived',
+          status: statusValue,
           checkedInAt: child.checkedInAt || child.checked_in_at || null,
           checkedInBy: child.checkedInBy || null,
           pickedUpAt: child.pickedUpAt || null,
           pickedUpBy: null,
           medicalNote: child.medicalNotes || child.medicalNote || null,
           allergies: child.allergies || null,
-          extraSupport: child.supportNotes || child.extraSupport || null
+          extraSupport: child.supportNotes || child.extraSupport || null,
+          activeWristband: activeWb
         },
         parent: child.parent || {
           id: child.parentId || '',
@@ -2289,7 +2283,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           whatsapp: child.parentWhatsapp || '',
           photoUrl: child.parentPhotoUrl || ''
         },
-        pickupPeople: child.pickup ? [child.pickup] : [],
+        pickupPeople: pickupList,
         event: {
           name: eventDetails?.title || 'The General Assembly'
         }
@@ -2298,6 +2292,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     }
     onNavigate('/volunteer/children');
   };
+
+
 
   // Helper to translate wristband lookup & binding error codes to controlled human messages
   const translateWristbandAssignmentError = (err: any): string => {
@@ -2478,6 +2474,24 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           point: 'Main entrance (Offline Queue)'
         });
 
+        if (selectedChildId) {
+          const nowIso = new Date().toISOString();
+          setChildProfileData((prev: any) => prev ? {
+            ...prev,
+            child: {
+              ...prev.child,
+              status: 'inside',
+              checkedInAt: nowIso,
+              checkedInBy: { fullName: volunteerProfile?.full_name || 'Volunteer' }
+            },
+            todayActivity: {
+              ...prev.todayActivity,
+              checkedInAt: nowIso,
+              checkedInBy: { fullName: volunteerProfile?.full_name || 'Volunteer' }
+            }
+          } : prev);
+        }
+
         setLookedUpChild(null);
 
         if (navigator.vibrate) {
@@ -2502,23 +2516,46 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       if (res.success) {
         showSuccess('Check-In Successful', `${child.fullName || (res.child && res.child.fullName)} is now checked in.`);
         
-        setCheckedInSuccessChild(res.child || {
+        const successChildObj = {
           id: child.id,
-          fullName: child.fullName || child.childName,
-          firstName: (child.fullName || child.childName || '').split(' ')[0],
-          classGroup: child.ageGroup || 'General',
+          fullName: child.fullName || child.childName || res.child?.fullName,
+          firstName: (child.fullName || child.childName || res.child?.fullName || '').split(' ')[0],
+          age: child.calculatedAge ?? child.age ?? res.child?.age,
+          classGroup: child.ageGroup || child.classGroup || res.child?.classGroup || 'General',
           entryStatus: 'checked_in',
-          medicalNote: child.medicalNotes || '',
-          allergies: child.hasMedicalNotes ? 'Yes' : 'No',
-          extraSupport: child.needsExtraSupport ? 'Yes' : 'No',
-          authorizedPickup: child.pickup ? [child.pickup] : []
-        });
+          medicalNote: child.medicalNotes || child.medicalNote || res.child?.medicalNotes || '',
+          allergies: child.allergies || (child.hasMedicalNotes ? 'Yes' : 'No') || res.child?.allergies || 'No',
+          extraSupport: child.supportNotes || child.extraSupport || (child.needsExtraSupport ? 'Yes' : 'No') || res.child?.extraSupport || 'No',
+          authorizedPickup: child.pickup ? [child.pickup] : (child.authorizedPickup || res.child?.authorizedPickup || []),
+          photoUrl: child.photoUrl || res.child?.photoUrl,
+          ...(res.child || {})
+        };
+        setCheckedInSuccessChild(successChildObj);
 
         setCheckedInSuccessEntry(res.entry || {
           checkedInAt: res.child?.checkedInAt || new Date().toISOString(),
           checkedInBy: res.entry?.checkedInBy || { fullName: volunteerProfile?.full_name || 'Volunteer' },
           point: 'Entrance A'
         });
+
+        const checkinTimeIso = res.child?.checkedInAt || res.entry?.checkedInAt || new Date().toISOString();
+        const checkinStaff = res.entry?.checkedInBy || { fullName: volunteerProfile?.full_name || 'Volunteer' };
+        if (selectedChildId) {
+          setChildProfileData((prev: any) => prev ? {
+            ...prev,
+            child: {
+              ...prev.child,
+              status: 'inside',
+              checkedInAt: checkinTimeIso,
+              checkedInBy: checkinStaff
+            },
+            todayActivity: {
+              ...prev.todayActivity,
+              checkedInAt: checkinTimeIso,
+              checkedInBy: checkinStaff
+            }
+          } : prev);
+        }
 
         if (res.stats) {
           setStats({
@@ -2530,6 +2567,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         }
 
         setLookedUpChild(null);
+        if (cleanRoute !== '/volunteer/scan') {
+          onNavigate('/volunteer/scan');
+        }
         
         // Haptic feedback if available
         if (navigator.vibrate) {
@@ -2786,8 +2826,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     cleanRoute === '/volunteer/pickup' ||
     cleanRoute === '/volunteer/profile' ||
     cleanRoute === '/volunteer/wristbands' ||
-    cleanRoute === '/volunteer/readiness' ||
-    cleanRoute.startsWith('/volunteer/messages/');
+    cleanRoute === '/volunteer/readiness';
 
   return (
     <div className="min-h-screen bg-[#FAF9F6] dark:bg-[#19191A] font-sans flex flex-col" data-view-version="volunteer-dashboard-v9-handover-mobile-app">
@@ -2832,8 +2871,6 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       } else {
                         onNavigate('/volunteer/event');
                       }
-                    } else if (cleanRoute.startsWith('/volunteer/messages/')) {
-                      onNavigate('/volunteer/messages');
                     } else {
                       onNavigate('/volunteer/event');
                     }
@@ -3691,7 +3728,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       className="w-full border border-gray-300 dark:border-[#302E29] hover:border-gray-400 dark:hover:border-[#3A3835] text-gray-850 dark:text-[#F0EBE3] font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] flex items-center justify-center space-x-2"
                     >
                       <User className="h-4 w-4 text-gray-600 dark:text-[#B8B0A5] stroke-[2]" />
-                      <span>VIEW CHILD PROFILE</span>
+                      <span>VIEW CHILD</span>
                     </button>
 
                     <div className="text-center pt-2">
@@ -3711,8 +3748,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               );
             })()
           ) : lookedUpChild ? (() => {
-            const isAlreadyCheckedIn = lookedUpChild.entryStatus === 'checked_in' || lookedUpChild.entryStatus === 'inside';
-            const medicalNoteText = lookedUpChild.medicalNotes || '';
+            const isAlreadyCheckedIn = lookedUpChild.entryStatus === 'checked_in' || lookedUpChild.entryStatus === 'inside' || lookedUpChild.status === 'checked_in' || lookedUpChild.status === 'inside';
+            const isAlreadyPickedUp = lookedUpChild.entryStatus === 'picked_up' || lookedUpChild.entryStatus === 'checked_out' || lookedUpChild.status === 'picked_up' || lookedUpChild.status === 'checked_out';
+            const medicalNoteText = lookedUpChild.medicalNotes || lookedUpChild.medicalNote || '';
             const allergiesText = lookedUpChild.allergies || '';
             const extraSupportText = lookedUpChild.supportNotes || lookedUpChild.extraSupport || '';
 
@@ -3739,16 +3777,18 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           {lookedUpChild.fullName}
                         </h3>
                         <span className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-md tracking-wider shrink-0 leading-none ${
-                          isAlreadyCheckedIn
+                          isAlreadyPickedUp
+                            ? 'bg-zinc-100 dark:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] border border-zinc-200 dark:border-[#3A3835]'
+                            : isAlreadyCheckedIn
                             ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40'
                             : 'bg-stone-50 dark:bg-[#262520] text-stone-700 dark:text-[#B8B0A5] border border-stone-200 dark:border-[#3A3835]'
                         }`}>
-                          {isAlreadyCheckedIn ? 'Checked in' : 'Ready for check-in'}
+                          {isAlreadyPickedUp ? 'Picked up' : (isAlreadyCheckedIn ? 'Checked in' : 'Ready for check-in')}
                         </span>
                       </div>
                       <p className="text-xs text-gray-600 dark:text-[#B8B0A5] font-medium mt-0.5 font-sans" data-component-version="volunteer-child-age-display-v2-under-one">
                         {calculateAge(lookedUpChild.dateOfBirth) || lookedUpChild.age ? `${calculateAge(lookedUpChild.dateOfBirth) || lookedUpChild.age} · ` : ''}
-                        {lookedUpChild.ageGroup || lookedUpChild.className || 'General Room'}
+                        {lookedUpChild.ageGroup || lookedUpChild.className || lookedUpChild.classGroup || 'General Room'}
                       </p>
                       {lookedUpChild.passReference && (
                         <p className="text-[11px] font-mono text-gray-400 dark:text-[#7A7570] mt-0.5">
@@ -3786,7 +3826,19 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     <div className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase">
                       Entry Status
                     </div>
-                    {isAlreadyCheckedIn ? (
+                    {isAlreadyPickedUp ? (
+                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-[#F0EBE3]">
+                        <span className="w-5 h-5 rounded-full bg-zinc-100 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] flex items-center justify-center shrink-0">
+                          <Check className="h-3.5 w-3.5 stroke-[3]" />
+                        </span>
+                        <span>Already picked up</span>
+                        {lookedUpChild.pickedUpAt && (
+                          <span className="text-xs font-normal text-gray-500 dark:text-[#7A7570] ml-1">
+                            · Picked up at {formatTime(lookedUpChild.pickedUpAt)}
+                          </span>
+                        )}
+                      </div>
+                    ) : isAlreadyCheckedIn ? (
                       <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-[#F0EBE3]">
                         <span className="w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
                           <Check className="h-3.5 w-3.5 stroke-[3]" />
@@ -3808,21 +3860,44 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                   {/* Action buttons */}
                   <div className="space-y-2.5 pt-1">
-                    {isAlreadyCheckedIn ? (
+                    {isAlreadyPickedUp ? (
                       <>
-                        {/* PRIMARY: View child record */}
+                        {/* PRIMARY: Scan another pass */}
+                        <button
+                          type="button"
+                          onClick={handleResetScannerState}
+                          data-component-version="volunteer-scan-another-action-v4"
+                          className="w-full min-h-[46px] bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#18181B] font-sans font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center space-x-2"
+                        >
+                          <QrCode className="h-4 w-4" />
+                          <span>SCAN ANOTHER PASS</span>
+                        </button>
+
+                        {/* SECONDARY: View child record */}
                         <button
                           type="button"
                           onClick={() => handleViewScannedChildRecord(lookedUpChild)}
-                          disabled={scanLoading || isCheckingIn}
-                          data-component-version="volunteer-child-view-record-action-v7"
-                          className="w-full min-h-[46px] bg-[#18181B] hover:bg-[#27272A] dark:bg-[#C59B27] dark:hover:bg-[#B58E33] text-white dark:text-[#18181B] font-sans font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center space-x-2"
+                          data-component-version="volunteer-child-view-record-secondary-action-v7"
+                          className="w-full min-h-[44px] border border-gray-200 dark:border-[#302E29] hover:border-gray-300 dark:hover:border-[#3A3835] text-gray-800 dark:text-[#F0EBE3] font-sans font-semibold text-xs uppercase tracking-wider rounded-xl transition-all bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] cursor-pointer flex items-center justify-center space-x-2"
                         >
-                          <User className="h-4 w-4" />
+                          <User className="h-4 w-4 text-gray-500 dark:text-[#B8B0A5]" />
                           <span>View child record →</span>
                         </button>
+                      </>
+                    ) : isAlreadyCheckedIn ? (
+                      <>
+                        {/* PRIMARY: Proceed to Pickup / Release */}
+                        <button
+                          type="button"
+                          onClick={() => handlePreparePickup(lookedUpChild.id)}
+                          data-component-version="volunteer-child-proceed-pickup-action"
+                          className="w-full min-h-[46px] bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#18181B] font-sans font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center space-x-2"
+                        >
+                          <LogOut className="h-4 w-4" />
+                          <span>Proceed to Pickup / Release</span>
+                        </button>
 
-                        {/* SECONDARY: Next child */}
+                        {/* SECONDARY: Scan another pass */}
                         <button
                           type="button"
                           onClick={handleResetScannerState}
@@ -3830,7 +3905,18 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           className="w-full min-h-[44px] border border-gray-200 dark:border-[#302E29] hover:border-gray-300 dark:hover:border-[#3A3835] text-gray-800 dark:text-[#F0EBE3] font-sans font-semibold text-xs uppercase tracking-wider rounded-xl transition-all bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] cursor-pointer flex items-center justify-center space-x-2"
                         >
                           <QrCode className="h-4 w-4 text-gray-500 dark:text-[#B8B0A5]" />
-                          <span>Next child</span>
+                          <span>SCAN ANOTHER PASS</span>
+                        </button>
+
+                        {/* TERTIARY: View child record */}
+                        <button
+                          type="button"
+                          onClick={() => handleViewScannedChildRecord(lookedUpChild)}
+                          disabled={scanLoading || isCheckingIn}
+                          className="w-full py-1 text-gray-500 hover:text-gray-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] text-xs font-sans font-medium transition-colors flex items-center justify-center space-x-1 cursor-pointer"
+                        >
+                          <User className="h-3.5 w-3.5 text-gray-400 dark:text-[#7A7570]" />
+                          <span>View full child record</span>
                         </button>
                       </>
                     ) : (
@@ -3851,32 +3937,32 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           ) : (
                             <>
                               <UserCheck className="h-4 w-4 stroke-[2.5]" />
-                              <span>{justAssignedWristbandCode ? 'Continue check-in' : 'Mark checked in'}</span>
+                              <span>{justAssignedWristbandCode ? 'CONTINUE CHECK-IN' : 'MARK CHECKED IN'}</span>
                             </>
                           )}
                         </button>
 
-                        {/* SECONDARY: View child record */}
+                        {/* SECONDARY: Scan another pass */}
+                        <button
+                          type="button"
+                          onClick={handleResetScannerState}
+                          data-component-version="volunteer-scan-another-action-v4"
+                          className="w-full min-h-[44px] border border-gray-200 dark:border-[#302E29] hover:border-gray-300 dark:hover:border-[#3A3835] text-gray-800 dark:text-[#F0EBE3] font-sans font-semibold text-xs uppercase tracking-wider rounded-xl transition-all bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] cursor-pointer flex items-center justify-center space-x-2"
+                        >
+                          <QrCode className="h-4 w-4 text-gray-500 dark:text-[#B8B0A5]" />
+                          <span>SCAN ANOTHER PASS</span>
+                        </button>
+
+                        {/* TERTIARY: View child record */}
                         <button
                           type="button"
                           onClick={() => handleViewScannedChildRecord(lookedUpChild)}
                           disabled={scanLoading || isCheckingIn}
                           data-component-version="volunteer-child-view-record-secondary-action-v7"
-                          className="w-full min-h-[44px] border border-gray-200 dark:border-[#302E29] hover:border-gray-300 dark:hover:border-[#3A3835] text-gray-800 dark:text-[#F0EBE3] font-sans font-semibold text-xs uppercase tracking-wider rounded-xl transition-all bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] cursor-pointer flex items-center justify-center space-x-2"
+                          className="w-full py-1 text-gray-500 hover:text-gray-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] text-xs font-sans font-medium transition-colors flex items-center justify-center space-x-1 cursor-pointer"
                         >
-                          <User className="h-4 w-4 text-gray-500 dark:text-[#B8B0A5]" />
-                          <span>View child record →</span>
-                        </button>
-
-                        {/* SECONDARY: Next child */}
-                        <button
-                          type="button"
-                          onClick={handleResetScannerState}
-                          data-component-version="volunteer-scan-another-action-v4"
-                          className="w-full min-h-[44px] border border-gray-200 dark:border-[#302E29] hover:border-gray-300 dark:hover:border-[#3A3835] text-gray-700 dark:text-[#B8B0A5] font-sans font-semibold text-xs uppercase tracking-wider rounded-xl transition-all bg-transparent hover:bg-gray-50 dark:hover:bg-[#262520] cursor-pointer flex items-center justify-center space-x-2"
-                        >
-                          <QrCode className="h-4 w-4 text-gray-400 dark:text-[#7A7570]" />
-                          <span>Next child</span>
+                          <User className="h-3.5 w-3.5 text-gray-400 dark:text-[#7A7570]" />
+                          <span>View full child record</span>
                         </button>
                       </>
                     )}
@@ -4430,9 +4516,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             dutyAssignment={currentDutyLocation}
             initialChild={wristbandInitialChild}
             onContinueToCheckIn={(child) => {
-              setLookedUpChild(child);
-              setScanMode('check_in');
-              onNavigate('/volunteer/scan');
+              handleViewScannedChildRecord(child);
             }}
             onNavigate={onNavigate}
           />
@@ -5264,59 +5348,104 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       {formatChildAge(childProfileData.child.age)} · {cleanAgeGroup(childProfileData.child.ageGroup || childProfileData.child.classGroup)}
                     </p>
 
+                    {childProfileData.child.passReference && (
+                      <p className="text-[11px] font-mono text-zinc-500 dark:text-[#7A7570] font-semibold mt-1">
+                        Pass: {childProfileData.child.passReference}
+                      </p>
+                    )}
+
                     {(childProfileData.child.needsAgeReview || /review/i.test(childProfileData.child.ageGroup || '')) && (
                       <p className="text-[11px] font-sans text-amber-700 dark:text-[#C59B27] font-medium mt-1">
                         Age needs confirmation
                       </p>
                     )}
 
-                    <div className="mt-2">
-                      {childProfileData.child.status === 'inside' && (
-                        <span className="text-xs font-sans font-semibold text-emerald-700 dark:text-[#B8B0A5]">
-                          Inside
-                        </span>
-                      )}
-                      {childProfileData.child.status === 'not_arrived' && (
-                        <span className="text-xs font-sans font-medium text-zinc-500 dark:text-[#7A7570]">
-                          Not arrived
-                        </span>
-                      )}
-                      {childProfileData.child.status === 'picked_up' && (
-                        <span className="text-xs font-sans font-medium text-zinc-600 dark:text-[#B8B0A5]">
-                          Picked up
-                        </span>
-                      )}
-                      {childProfileData.child.status === 'needs_attention' && (
-                        <span className="text-xs font-sans font-semibold text-amber-700 dark:text-[#C59B27]">
-                          Needs attention
-                        </span>
-                      )}
-                    </div>
+                    {/* Critical Medical & Support Alerts - Prominently Displayed */}
+                    {(childProfileData.child.medicalNote || childProfileData.child.allergies || childProfileData.child.extraSupport) && (
+                      <div className="w-full mt-3 p-3 bg-amber-50 dark:bg-[#C59B27]/10 border-2 border-amber-300 dark:border-[#C59B27]/40 rounded-xl text-left space-y-1">
+                        <div className="flex items-center space-x-1.5 text-amber-900 dark:text-[#C59B27] font-bold text-xs">
+                          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-[#C59B27]" />
+                          <span>CARE & MEDICAL ALERT</span>
+                        </div>
+                        {childProfileData.child.medicalNote && (
+                          <p className="text-xs font-medium text-amber-950 dark:text-[#F0EBE3] leading-relaxed">
+                            <strong className="font-semibold text-amber-900 dark:text-[#C59B27]">Medical:</strong> {childProfileData.child.medicalNote}
+                          </p>
+                        )}
+                        {childProfileData.child.allergies && (
+                          <p className="text-xs font-medium text-amber-950 dark:text-[#F0EBE3] leading-relaxed">
+                            <strong className="font-semibold text-amber-900 dark:text-[#C59B27]">Allergies:</strong> {childProfileData.child.allergies}
+                          </p>
+                        )}
+                        {childProfileData.child.extraSupport && (
+                          <p className="text-xs font-medium text-amber-950 dark:text-[#F0EBE3] leading-relaxed">
+                            <strong className="font-semibold text-amber-900 dark:text-[#C59B27]">Support:</strong> {childProfileData.child.extraSupport}
+                          </p>
+                        )}
+                      </div>
+                    )}
 
-                    {/* Primary Action Button */}
-                    <div className="w-full mt-4 pt-1">
+                    {/* State-Driven Operational Actions */}
+                    <div className="w-full mt-4 pt-1 space-y-2">
                       {childProfileData.child.status === 'inside' ? (
-                        <button
-                          onClick={() => handlePreparePickup(childProfileData.child.id)}
-                          disabled={pickupLoading}
-                          className="w-full py-2.5 bg-[#A47E1F] hover:bg-[#8e6c17] dark:bg-[#C59B27] dark:hover:bg-[#B58E33] text-white dark:text-[#1D1D1A] text-xs font-sans font-medium rounded-xl transition-all shadow-xs flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
-                        >
-                          <LogOut className="h-4 w-4" />
-                          <span>{pickupLoading ? 'Processing...' : 'Open pickup'}</span>
-                        </button>
-                      ) : childProfileData.child.status === 'not_arrived' ? (
-                        <button
-                          onClick={() => onNavigate('/volunteer/scan')}
-                          className="w-full py-2.5 bg-[#A47E1F] hover:bg-[#8e6c17] dark:bg-[#C59B27] dark:hover:bg-[#B58E33] text-white dark:text-[#1D1D1A] text-xs font-sans font-medium rounded-xl transition-all shadow-xs flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
-                        >
-                          <QrCode className="h-4 w-4" />
-                          <span>Check in</span>
-                        </button>
+                        <div className="space-y-2">
+                          <div className="w-full p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/40 rounded-xl text-center">
+                            <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                              Checked In {childProfileData.child.checkedInAt ? `at ${new Date(childProfileData.child.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handlePreparePickup(childProfileData.child.id)}
+                            disabled={pickupLoading}
+                            className="w-full py-3 bg-[#A47E1F] hover:bg-[#8e6c17] dark:bg-[#C59B27] dark:hover:bg-[#B58E33] disabled:opacity-50 text-white dark:text-[#1D1D1A] text-xs font-bold uppercase tracking-wider rounded-xl transition-all shadow-sm flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
+                          >
+                            <LogOut className="h-4 w-4" />
+                            <span>{pickupLoading ? 'Preparing pickup...' : 'Confirm Pickup / Checkout'}</span>
+                          </button>
+                        </div>
+                      ) : (childProfileData.child.status === 'not_arrived' || childProfileData.child.status === 'ready_for_check_in') ? (
+                        <div className="space-y-2">
+                          <div className="w-full p-2 bg-amber-50/80 dark:bg-[#262520] border border-amber-200/80 dark:border-[#3A3835] rounded-xl text-center">
+                            <span className="text-xs font-semibold text-amber-800 dark:text-[#C59B27]">
+                              Ready for check-in
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleConfirmCheckIn(childProfileData.child)}
+                            disabled={isCheckingIn || scanLoading}
+                            className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
+                          >
+                            <Check className="h-4 w-4 stroke-[3]" />
+                            <span>{isCheckingIn ? 'Processing check-in...' : 'Mark Checked In'}</span>
+                          </button>
+                        </div>
+                      ) : childProfileData.child.status === 'picked_up' ? (
+                        <div className="w-full p-2.5 bg-zinc-100 dark:bg-[#262520] border border-zinc-200 dark:border-[#3A3835] rounded-xl text-center">
+                          <span className="text-xs font-bold text-zinc-700 dark:text-[#F0EBE3]">
+                            Picked Up / Checked Out {childProfileData.child.pickedUpAt ? `at ${new Date(childProfileData.child.pickedUpAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+                          </span>
+                        </div>
                       ) : (
-                        <div className="text-center py-1 text-xs font-sans text-zinc-500 dark:text-[#B8B0A5]">
-                          Child is picked up
+                        <div className="w-full p-2.5 bg-amber-50 dark:bg-[#262520] border border-amber-200 dark:border-[#3A3835] rounded-xl text-center text-xs font-semibold text-amber-800 dark:text-[#C59B27]">
+                          Check-in unavailable: Profile requires review.
                         </div>
                       )}
+
+                      {/* Next Child / Scan Next Child */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedChildId(null);
+                          setChildDetailOrigin(null);
+                          onNavigate('/volunteer/scan');
+                        }}
+                        className="w-full py-2.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-[#262520] dark:hover:bg-[#2F2E29] border border-zinc-200/80 dark:border-[#3A3835] text-zinc-800 dark:text-[#F0EBE3] text-xs font-semibold rounded-xl transition-colors flex items-center justify-center space-x-2 cursor-pointer"
+                      >
+                        <QrCode className="h-4 w-4 text-zinc-500 dark:text-[#B8B0A5]" />
+                        <span>Scan Next Child</span>
+                      </button>
 
                       <button
                         type="button"
@@ -5327,7 +5456,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           status: childProfileData.child.status,
                           photoUrl: childProfileData.child.photoUrl
                         })}
-                        className="w-full mt-2 py-1.5 text-zinc-500 hover:text-zinc-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] text-xs font-sans font-medium transition-colors flex items-center justify-center space-x-1.5 cursor-pointer"
+                        className="w-full py-1.5 text-zinc-500 hover:text-zinc-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] text-xs font-sans font-medium transition-colors flex items-center justify-center space-x-1.5 cursor-pointer"
                       >
                         <Bell className="h-3.5 w-3.5 text-zinc-400 dark:text-[#7A7570]" />
                         <span>Ask for help</span>
@@ -5343,10 +5472,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         <span className="text-zinc-500 dark:text-[#7A7570]">Attendance</span>
                         <span className="font-medium text-zinc-900 dark:text-[#F0EBE3]">
                           {childProfileData.child.status === 'inside'
-                            ? 'Inside'
+                            ? 'Inside / Checked in'
                             : childProfileData.child.status === 'picked_up'
                             ? 'Picked up'
-                            : 'Not arrived'}
+                            : 'Ready for check-in'}
                         </span>
                       </div>
                       {childProfileData.child.checkedInAt && (
@@ -5368,6 +5497,54 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         </div>
                       )}
                     </div>
+                  </div>
+
+                  {/* Wristband Section */}
+                  <div className="p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3]">Wristband</h3>
+                      {childProfileData.child.activeWristband ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWristbandInitialChild(childProfileData.child);
+                            onNavigate('/volunteer/wristbands');
+                          }}
+                          className="text-xs text-[#C59B27] hover:underline font-semibold cursor-pointer"
+                        >
+                          Replace wristband →
+                        </button>
+                      ) : (
+                        canAssignWristbands && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setWristbandInitialChild(childProfileData.child);
+                              onNavigate('/volunteer/wristbands');
+                            }}
+                            className="text-xs text-[#C59B27] hover:underline font-semibold cursor-pointer"
+                          >
+                            Assign wristband →
+                          </button>
+                        )
+                      )}
+                    </div>
+                    {childProfileData.child.activeWristband ? (
+                      <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-[#262520] border border-zinc-200/80 dark:border-[#3A3835] rounded-xl">
+                        <div className="space-y-0.5">
+                          <span className="font-mono font-bold text-sm text-zinc-900 dark:text-[#F0EBE3] block">
+                            {childProfileData.child.activeWristband.wristbandCode || childProfileData.child.activeWristband.code}
+                          </span>
+                          <span className="text-[11px] font-sans text-emerald-700 dark:text-[#C59B27] font-semibold">
+                            Active Wristband
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-xs font-sans text-zinc-500 dark:text-[#7A7570] py-1">
+                        No wristband assigned yet.
+                      </p>
+                    )}
                   </div>
 
                   {/* 2. Parent / guardian section */}
@@ -5421,49 +5598,62 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   </div>
 
                   {/* 3. Approved pickup section */}
-                  <div className="p-4 space-y-2.5">
+                  <div className="p-4 space-y-3">
                     <h3 className="text-xs font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3]">Approved pickup</h3>
-                    {childProfileData.pickupPeople?.[0] ? (
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3 min-w-0">
-                          <div className="w-10 h-10 rounded-lg overflow-hidden bg-zinc-100 dark:bg-[#262520] border border-zinc-200/80 dark:border-[#3A3835] shrink-0 flex items-center justify-center">
-                            <SafeImage
-                              src={childProfileData.pickupPeople[0].photoUrl}
-                              alt={childProfileData.pickupPeople[0].fullName}
-                              className="w-full h-full object-cover"
-                              fallbackComponent={
-                                <span className="font-sans font-medium text-xs text-zinc-500 dark:text-[#B8B0A5]">
-                                  {(childProfileData.pickupPeople[0].fullName || 'P').charAt(0).toUpperCase()}
-                                </span>
-                              }
-                            />
-                          </div>
-                          <div className="min-w-0">
-                            <h4 className="text-xs font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3] truncate">
-                              {childProfileData.pickupPeople[0].fullName}
-                            </h4>
-                            <p className="text-[11px] font-sans text-emerald-700 dark:text-[#C59B27] font-medium">
-                              ID confirmed · {childProfileData.pickupPeople[0].relationship || 'Authorized'}
-                            </p>
-                            {childProfileData.pickupPeople[0].phone && (
-                              <p className="text-xs font-sans text-zinc-500 dark:text-[#7A7570] font-mono">
-                                {childProfileData.pickupPeople[0].phone}
-                              </p>
+                    {Array.isArray(childProfileData.pickupPeople) && childProfileData.pickupPeople.length > 0 ? (
+                      <div className="space-y-3">
+                        {childProfileData.pickupPeople.map((person: any, idx: number) => (
+                          <div key={person.id || idx} className="flex items-center justify-between p-2.5 bg-zinc-50/70 dark:bg-[#262520] border border-zinc-200/60 dark:border-[#3A3835] rounded-xl">
+                            <div className="flex items-center space-x-3 min-w-0">
+                              <div className="w-10 h-10 rounded-lg overflow-hidden bg-zinc-100 dark:bg-[#2F2E29] border border-zinc-200/80 dark:border-[#3A3835] shrink-0 flex items-center justify-center">
+                                <SafeImage
+                                  src={person.photoUrl}
+                                  alt={person.fullName}
+                                  className="w-full h-full object-cover"
+                                  fallbackComponent={
+                                    <span className="font-sans font-medium text-xs text-zinc-500 dark:text-[#B8B0A5]">
+                                      {(person.fullName || 'P').charAt(0).toUpperCase()}
+                                    </span>
+                                  }
+                                />
+                              </div>
+                              <div className="min-w-0">
+                                <h4 className="text-xs font-sans font-semibold text-zinc-900 dark:text-[#F0EBE3] truncate">
+                                  {person.fullName}
+                                </h4>
+                                <p className="text-[11px] font-sans text-emerald-700 dark:text-[#C59B27] font-medium">
+                                  ID confirmed · {person.relationship || 'Authorized'}
+                                </p>
+                                {person.phone && (
+                                  <p className="text-xs font-sans text-zinc-500 dark:text-[#7A7570] font-mono">
+                                    {person.phone}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            {person.phone && (
+                              <div className="flex items-center space-x-1.5 shrink-0 pl-2">
+                                <a
+                                  href={`tel:${person.phone}`}
+                                  className="p-2 bg-white hover:bg-zinc-100 dark:bg-[#21211E] dark:hover:bg-[#262520] border border-zinc-200 dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] rounded-lg transition-colors"
+                                  title="Call pickup person"
+                                >
+                                  <Phone className="h-3.5 w-3.5" />
+                                </a>
+                                <a
+                                  href={`https://wa.me/${person.phone.replace(/[^0-9]/g, '')}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="p-2 bg-emerald-50 hover:bg-emerald-100 dark:bg-[#21211E] dark:hover:bg-[#262520] border border-emerald-200 dark:border-[#3A3835] text-emerald-700 dark:text-[#C59B27] rounded-lg transition-colors"
+                                  title="WhatsApp pickup person"
+                                >
+                                  <MessageCircle className="h-3.5 w-3.5" />
+                                </a>
+                              </div>
                             )}
                           </div>
-                        </div>
-
-                        {childProfileData.pickupPeople[0].phone && (
-                          <div className="flex items-center space-x-1.5 shrink-0 pl-2">
-                            <a
-                              href={`tel:${childProfileData.pickupPeople[0].phone}`}
-                              className="p-2 bg-zinc-50 hover:bg-zinc-100 dark:bg-[#262520] dark:hover:bg-[#2A2926] border border-zinc-200 dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] rounded-lg transition-colors"
-                              title="Call pickup person"
-                            >
-                              <Phone className="h-3.5 w-3.5" />
-                            </a>
-                          </div>
-                        )}
+                        ))}
                       </div>
                     ) : (
                       <p className="text-xs font-sans text-zinc-500 dark:text-[#B8B0A5] py-1">
@@ -7668,18 +7858,6 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         </div>
       )}
 
-      {(cleanRoute === '/volunteer/messages' || cleanRoute.startsWith('/volunteer/messages/')) && (
-        /* ==================== 5B. VOLUNTEER MESSAGES VIEW ==================== */
-        <div className="w-full px-4 sm:px-5">
-          <VolunteerMessagesView
-            currentRoute={currentRoute}
-            onNavigate={onNavigate}
-            volunteerProfile={volunteerProfile}
-            onUnreadCountChange={(count) => setUnreadMessagesCount(count)}
-          />
-        </div>
-      )}
-
       {cleanRoute === '/volunteer/team-alerts' && (
         /* ==================== 6. VOLUNTEER TEAM SAFETY ALERTS VIEW ==================== */
         <div className="w-full px-4 sm:px-5 text-zinc-900 dark:text-[#F0EBE3] pt-6 sm:pt-8 pb-24 flex-1" data-component-version="volunteer-team-alerts-v2-calm">
@@ -8141,22 +8319,6 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               isActive: cleanRoute === '/volunteer/team-alerts' || cleanRoute === '/volunteer/safety',
               onClick: () => onNavigate('/volunteer/team-alerts'),
               id: 'tab-volunteer-safety'
-            },
-            {
-              label: 'Messages',
-              icon: (
-                <div className="relative flex items-center justify-center">
-                  <MessageSquare className="w-5 h-5 stroke-[1.75]" />
-                  {unreadMessagesCount > 0 && (
-                    <span className="absolute -top-1 -right-1.5 min-w-[14px] h-[14px] px-0.5 text-[9px] font-sans font-bold leading-none text-white bg-[#C59B27] rounded-full flex items-center justify-center">
-                      {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
-                    </span>
-                  )}
-                </div>
-              ),
-              isActive: cleanRoute === '/volunteer/messages' || cleanRoute.startsWith('/volunteer/messages/'),
-              onClick: () => onNavigate('/volunteer/messages'),
-              id: 'tab-volunteer-messages'
             },
           ].map((item) => {
             return (
