@@ -48,7 +48,9 @@ import {
   verifyWristband,
   assertCanProvisionWristband,
   generateCodeOnlyWristbandBatch,
-  markCodeOnlyWristbandsReady
+  markCodeOnlyWristbandsReady,
+  getActiveAssignmentForEntry,
+  deactivateAssignment
 } from '../services/wristbandService';
 import { isAuthoritativeIncomplete } from '../services/applicationReminderService';
 import { evaluateApplicationNeedsAttention, REASON_LABELS } from '../services/applicationNeedsAttentionService';
@@ -12654,6 +12656,145 @@ router.post('/applications/:id/reset-progress', authMiddleware, async (req: Auth
   } catch (err: any) {
     console.error('Error resetting event progress:', err);
     return res.status(400).json({ success: false, error: "We couldn't reset this child's event progress. Nothing was changed." });
+  }
+});
+
+// POST /api/admin/applications/:id/reset-event-state - Controlled Admin action to reset child event state for manual QA/testing
+router.post('/applications/:id/reset-event-state', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'super_admin' && req.user.role !== 'admin')) {
+      return res.status(403).json({ success: false, error: "Authorized Admin permission is required to reset event state." });
+    }
+    const { id } = req.params;
+    const { targetState, reason } = req.body; // 'pass_ready' | 'under_review'
+
+    if (targetState !== 'pass_ready' && targetState !== 'under_review') {
+      return res.status(400).json({ success: false, error: 'Valid target state is required (pass_ready or under_review).' });
+    }
+
+    const entry = await queryOne<any>(`
+      SELECT e.id, e.child_id, e.event_id, e.status, e.is_deleted, c.full_name
+      FROM child_event_entries e
+      JOIN children c ON c.id = e.child_id
+      WHERE e.id = ? OR e.child_id = ?
+    `, [id, id]);
+
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Registration record not found.' });
+    }
+
+    const previousStatus = entry.status;
+    const now = new Date().toISOString();
+    const adminId = req.user.id;
+
+    await transaction(async () => {
+      if (targetState === 'under_review') {
+        // 1. Revoke active pass so scanner no longer permits check-in
+        await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ?, updated_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, now, entry.id]);
+        
+        // 2. Deactivate any active wristband assignment
+        try {
+          const activeAssignment = await getActiveAssignmentForEntry(entry.id);
+          if (activeAssignment) {
+            await deactivateAssignment({
+              assignmentId: activeAssignment.id,
+              deactivatedBy: adminId,
+              deactivationReason: 'manual_test_reset'
+            });
+          }
+        } catch (wbErr) {
+          console.warn('[reset-event-state] Wristband deactivation note:', wbErr);
+        }
+
+        // 3. Reconcile entry state: clear active attendance and checkout operational fields, preserve entry
+        await execute(`
+          UPDATE child_event_entries 
+          SET status = 'under_review', 
+              checked_in_at = NULL, 
+              checked_in_by = NULL, 
+              picked_up_at = NULL, 
+              picked_up_by = NULL, 
+              pickup_person_id = NULL,
+              reviewed_at = NULL, 
+              decision_at = NULL, 
+              updated_at = ?
+          WHERE id = ?
+        `, [now, entry.id]);
+
+      } else {
+        // targetState === 'pass_ready'
+        // 1. Reconcile entry state: clear active attendance and checkout operational fields
+        await execute(`
+          UPDATE child_event_entries 
+          SET status = 'pass_ready', 
+              checked_in_at = NULL, 
+              checked_in_by = NULL, 
+              picked_up_at = NULL, 
+              picked_up_by = NULL, 
+              pickup_person_id = NULL,
+              updated_at = ?
+          WHERE id = ?
+        `, [now, entry.id]);
+
+        // 2. Ensure active pass exists using canonical pass logic
+        const activePass = await queryOne(`SELECT id FROM event_passes WHERE child_event_entry_id = ? AND status = 'active'`, [entry.id]);
+        if (!activePass) {
+          const existingPass = await queryOne<any>(`SELECT id FROM event_passes WHERE child_event_entry_id = ? ORDER BY created_at DESC LIMIT 1`, [entry.id]);
+          if (existingPass) {
+            await execute(`UPDATE event_passes SET status = 'active', revoked_at = NULL, updated_at = ? WHERE id = ?`, [now, existingPass.id]);
+          } else {
+            try {
+              await issuePassForChild({
+                childId: entry.child_id,
+                eventId: entry.event_id,
+                issuedBy: adminId
+              });
+            } catch (pErr) {
+              console.warn('[reset-event-state] Pass issue note:', pErr);
+            }
+          }
+        }
+      }
+
+      // Audit log (Requirement 9)
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(),
+          adminId,
+          req.user.role,
+          'manual_test_reset',
+          'child_event_entry',
+          entry.id,
+          JSON.stringify({
+            action: 'manual_test_reset',
+            childId: entry.child_id,
+            eventId: entry.event_id,
+            previousStatus,
+            newStatus: targetState,
+            reason: reason || 'manual_test_reset',
+            notificationsSent: false
+          }),
+          now
+        ]);
+      } catch (aErr) {
+        console.warn('[reset-event-state] Audit log insert note:', aErr);
+      }
+    });
+
+    const summary = await getChildSummaryStats();
+    return res.json({
+      success: true,
+      previousStatus,
+      newStatus: targetState,
+      summary,
+      message: `${entry.full_name || 'Child'}'s event state was reset to ${targetState === 'pass_ready' ? 'Pass Ready' : 'Under Review'}.`
+    });
+  } catch (err: any) {
+    console.error('Error resetting event state:', err);
+    return res.status(400).json({ success: false, error: "We couldn't reset this child's event state. Nothing was changed." });
   }
 });
 

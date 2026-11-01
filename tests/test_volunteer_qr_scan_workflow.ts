@@ -4,6 +4,7 @@ import express from 'express';
 import { getDb, execute, query, queryOne } from '../src/server/db';
 import { generateToken } from '../src/server/auth';
 import volunteerRoutes from '../src/server/routes/volunteer';
+import adminRoutes from '../src/server/routes/admin';
 import {
   dispatchCheckInWhatsAppNotification,
   dispatchPickupWhatsAppNotification
@@ -23,6 +24,7 @@ async function runVolunteerQrScanWorkflowTests() {
   const app = express();
   app.use(express.json());
   app.use('/api/volunteer', volunteerRoutes);
+  app.use('/api/admin', adminRoutes);
 
   const server = await new Promise<http.Server>((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
@@ -54,6 +56,14 @@ async function runVolunteerQrScanWorkflowTests() {
       `INSERT INTO users (id, email, password_hash, role, status, email_verified, created_at, updated_at)
        VALUES (?, ?, 'hash', 'volunteer', 'active', 1, ?, ?)`,
       [workerUserId, `worker.${testRunId}@example.com`, nowIso, nowIso]
+    );
+
+    // Insert admin user for state reset testing
+    const adminUserId = `usr-admin-${testRunId}`;
+    await execute(
+      `INSERT INTO users (id, email, password_hash, role, status, email_verified, created_at, updated_at)
+       VALUES (?, ?, 'hash', 'super_admin', 'active', 1, ?, ?)`,
+      [adminUserId, `admin.${testRunId}@example.com`, nowIso, nowIso]
     );
 
     await execute(
@@ -102,12 +112,18 @@ async function runVolunteerQrScanWorkflowTests() {
       [`pk-2-${testRunId}`, entryId, nowIso, nowIso]
     );
 
-    // Generate token
+    // Generate tokens
     const token = generateToken(workerUserId);
+    const adminToken = generateToken(adminUserId);
 
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`
+    };
+
+    const adminHeaders = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`
     };
 
     console.log('[TEST 1] Verifying Template Registry for Check-in & Pickup...');
@@ -295,8 +311,110 @@ async function runVolunteerQrScanWorkflowTests() {
     assert.strictEqual(entry2Db.status, 'checked_in', 'Child must be checked in regardless of messaging result');
     console.log('✓ Attendance check-in succeeds unconditionally even when WhatsApp notification is not eligible or fails.\n');
 
+    console.log('[TEST 8] Admin Controlled Reset Event State to "pass_ready"...');
+    // Count WhatsApp delivery logs before reset
+    const waCountBeforeReset = await queryOne<any>(
+      `SELECT COUNT(*) as count FROM whatsapp_delivery_logs WHERE child_event_entry_id = ?`,
+      [entryId]
+    );
+
+    const resetPassReadyRes = await fetch(`${baseUrl}/api/admin/applications/${entryId}/reset-event-state`, {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({
+        targetState: 'pass_ready',
+        reason: 'manual_test_reset'
+      })
+    });
+    const resetPassReadyData = await resetPassReadyRes.json();
+    assert.strictEqual(resetPassReadyData.success, true, 'Admin reset to pass_ready must succeed');
+    assert.strictEqual(resetPassReadyData.newStatus, 'pass_ready');
+
+    // Verify DB state: check-in and pickup operational timestamps are cleared safely
+    const entryAfterReset = await queryOne<any>(
+      `SELECT status, checked_in_at, checked_in_by, picked_up_at, picked_up_by FROM child_event_entries WHERE id = ?`,
+      [entryId]
+    );
+    assert.strictEqual(entryAfterReset.status, 'pass_ready');
+    assert.strictEqual(entryAfterReset.checked_in_at, null);
+    assert.strictEqual(entryAfterReset.checked_in_by, null);
+    assert.strictEqual(entryAfterReset.picked_up_at, null);
+    assert.strictEqual(entryAfterReset.picked_up_by, null);
+
+    // Verify active pass is preserved/reactivated
+    const activePass = await queryOne<any>(
+      `SELECT status FROM event_passes WHERE child_event_entry_id = ? AND status = 'active'`,
+      [entryId]
+    );
+    assert(activePass, 'Active pass must exist for pass_ready child');
+
+    // Verify audit log recorded
+    const auditLogPassReady = await queryOne<any>(
+      `SELECT * FROM audit_logs WHERE target_id = ? AND action = 'manual_test_reset' ORDER BY timestamp DESC LIMIT 1`,
+      [entryId]
+    );
+    assert(auditLogPassReady, 'Audit log must be created for manual_test_reset');
+    assert(auditLogPassReady.details.includes('pass_ready'));
+
+    // Verify NO WhatsApp notifications dispatched on reset
+    const waCountAfterReset = await queryOne<any>(
+      `SELECT COUNT(*) as count FROM whatsapp_delivery_logs WHERE child_event_entry_id = ?`,
+      [entryId]
+    );
+    assert.strictEqual(waCountAfterReset.count, waCountBeforeReset.count, 'No WhatsApp message must be sent during reset');
+
+    // Verify volunteer scanner lookup retrieves child again in pass_ready state
+    const lookupAgainRes = await fetch(`${baseUrl}/api/volunteer/pass/lookup`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ childEventEntryId: entryId })
+    });
+    const lookupAgainData = await lookupAgainRes.json();
+    assert.strictEqual(lookupAgainData.success, true, 'Scanner lookup must succeed for pass_ready child');
+    assert.strictEqual(lookupAgainData.child.entryStatus, 'pass_ready');
+    console.log('✓ Admin reset to pass_ready succeeded: cleared check-in/pickup operational state, restored active pass, recorded audit log, suppressed WhatsApp.\n');
+
+    console.log('[TEST 9] Admin Controlled Reset Event State to "under_review"...');
+    const resetUnderReviewRes = await fetch(`${baseUrl}/api/admin/applications/${entryId}/reset-event-state`, {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({
+        targetState: 'under_review',
+        reason: 'manual_test_reset'
+      })
+    });
+    const resetUnderReviewData = await resetUnderReviewRes.json();
+    assert.strictEqual(resetUnderReviewData.success, true, 'Admin reset to under_review must succeed');
+    assert.strictEqual(resetUnderReviewData.newStatus, 'under_review');
+
+    // Verify DB state
+    const entryUnderReview = await queryOne<any>(
+      `SELECT status, checked_in_at FROM child_event_entries WHERE id = ?`,
+      [entryId]
+    );
+    assert.strictEqual(entryUnderReview.status, 'under_review');
+    assert.strictEqual(entryUnderReview.checked_in_at, null);
+
+    // Verify active pass was revoked
+    const revokedPass = await queryOne<any>(
+      `SELECT status FROM event_passes WHERE child_event_entry_id = ? AND status = 'revoked'`,
+      [entryId]
+    );
+    assert(revokedPass, 'Pass must be revoked when reset to under_review');
+
+    // Verify volunteer check-in is blocked
+    const blockedCheckInRes = await fetch(`${baseUrl}/api/volunteer/check-in`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ childEventEntryId: entryId })
+    });
+    const blockedCheckInData = await blockedCheckInRes.json();
+    assert.strictEqual(blockedCheckInRes.status, 400, 'Check-in must be rejected for under_review child');
+    assert(blockedCheckInData.error.includes('under_review') || blockedCheckInData.error.includes('pass_ready'));
+    console.log('✓ Admin reset to under_review succeeded: revoked pass, blocked volunteer check-in, and recorded audit log.\n');
+
     console.log('================================================================');
-    console.log('ALL 7 WORKFLOW TESTS PASSED SUCCESSFULLY!');
+    console.log('ALL 9 WORKFLOW TESTS PASSED SUCCESSFULLY!');
     console.log('================================================================');
   } finally {
     server.close();
