@@ -86,6 +86,10 @@ export function resolveZohoTemplateConfig(intentOrName?: string): ResolvedZohoTe
     selected_parent_channel: process.env.ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL || process.env.ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL,
     selected_parents_channel: process.env.ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL || process.env.ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL,
     koinonia_selected_parent_channel: process.env.ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL || process.env.ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL,
+    child_checked_in: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_CHECKED_IN || process.env.ZOHO_WA_TEMPLATE_CHILD_CHECKED_IN,
+    koinonia_child_checked_in: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_CHECKED_IN || process.env.ZOHO_WA_TEMPLATE_CHILD_CHECKED_IN,
+    child_picked_up: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_PICKED_UP || process.env.ZOHO_WA_TEMPLATE_CHILD_PICKED_UP,
+    koinonia_child_picked_up: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_PICKED_UP || process.env.ZOHO_WA_TEMPLATE_CHILD_PICKED_UP,
     super_admin_test: process.env.ZOHO_WA_TEMPLATE_TEST || process.env.ZOHO_WA_DEFAULT_TEMPLATE,
     test: process.env.ZOHO_WA_TEMPLATE_TEST || process.env.ZOHO_WA_DEFAULT_TEMPLATE
   };
