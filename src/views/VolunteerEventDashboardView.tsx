@@ -3764,223 +3764,246 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             const allergiesText = lookedUpChild.allergies || '';
             const extraSupportText = lookedUpChild.supportNotes || lookedUpChild.extraSupport || '';
 
-            return (
-              <div className="space-y-3.5 max-w-md mx-auto w-full pb-16 px-4" data-view-version="volunteer-child-found-v8-workstation">
-                {/* 1. CHILD IDENTITY AREA */}
-                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-xs" data-component-version="volunteer-child-found-card-v4">
-                  <div className="flex items-start gap-3.5">
-                    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden bg-gray-100 dark:bg-[#262520] border border-gray-200/80 dark:border-[#3A3835] shrink-0 flex items-center justify-center">
-                      {lookedUpChild.photoUrl ? (
-                        <img
-                          src={lookedUpChild.photoUrl}
-                          alt={lookedUpChild.fullName}
-                          className="w-full h-full object-cover"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <User className="h-7 w-7 text-gray-400 dark:text-[#7A7570]" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <h3 className="text-base sm:text-lg font-sans font-bold text-gray-900 dark:text-[#F0EBE3] leading-snug truncate">
-                          {lookedUpChild.fullName}
-                        </h3>
-                        <span className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-md tracking-wider shrink-0 leading-none ${
-                          isAlreadyPickedUp
-                            ? 'bg-zinc-100 dark:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] border border-zinc-200 dark:border-[#3A3835]'
-                            : isAlreadyCheckedIn
-                            ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40'
-                            : isIneligible
-                            ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40'
-                            : 'bg-stone-50 dark:bg-[#262520] text-stone-700 dark:text-[#B8B0A5] border border-stone-200 dark:border-[#3A3835]'
-                        }`}>
-                          {isAlreadyPickedUp ? 'Picked up' : (isAlreadyCheckedIn ? 'Checked in' : (isIneligible ? rawStatus.replace(/_/g, ' ') : 'Ready for check-in'))}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-600 dark:text-[#B8B0A5] font-medium mt-0.5 font-sans" data-component-version="volunteer-child-age-display-v2-under-one">
-                        {calculateAge(lookedUpChild.dateOfBirth) || lookedUpChild.age ? `${calculateAge(lookedUpChild.dateOfBirth) || lookedUpChild.age} · ` : ''}
-                        {lookedUpChild.ageGroup || lookedUpChild.className || lookedUpChild.classGroup || 'General Room'}
-                      </p>
-                      {lookedUpChild.passReference && (
-                        <p className="text-[11px] font-mono text-gray-400 dark:text-[#7A7570] mt-0.5">
-                          Pass: {lookedUpChild.passReference}
-                        </p>
-                      )}
-                    </div>
-                  </div>
+            const calculatedAgeText = calculateAge(lookedUpChild.dateOfBirth) || (lookedUpChild.age !== undefined && lookedUpChild.age !== null ? (lookedUpChild.age === 0 ? 'Under 1 year old' : `${lookedUpChild.age} ${lookedUpChild.age === 1 ? 'year' : 'years'} old`) : 'Age verified');
 
-                  {/* Care Notes if present */}
-                  {(medicalNoteText || (allergiesText && allergiesText.toLowerCase() !== 'no') || (extraSupportText && extraSupportText.toLowerCase() !== 'no')) && (
-                    <div className="mt-3 pt-3 border-t border-gray-100 dark:border-[#302E29] flex flex-wrap gap-1.5 text-xs font-sans">
-                      {medicalNoteText && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-red-950/20 text-rose-700 dark:text-rose-300 border border-rose-200/50 dark:border-red-900/30 font-medium">
-                          <span className="text-[10px]">⚠️</span> Medical: {medicalNoteText}
-                        </span>
-                      )}
-                      {allergiesText && allergiesText.toLowerCase() !== 'no' && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300 border border-amber-200/50 dark:border-amber-900/30 font-medium">
-                          <span className="text-[10px]">⚠️</span> Allergy: {allergiesText}
-                        </span>
-                      )}
-                      {extraSupportText && extraSupportText.toLowerCase() !== 'no' && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 border border-blue-200/50 dark:border-blue-900/30 font-medium">
-                          Support: {extraSupportText}
-                        </span>
-                      )}
-                    </div>
-                  )}
+            return (
+              <div className="space-y-6 max-w-md mx-auto w-full pb-16 px-4 animate-fade-in" data-view-version="volunteer-child-found-v1-stitch">
+                {/* Scan successful & Child found title */}
+                <div className="text-center pt-2 pb-1 space-y-1.5" data-component-version="volunteer-child-found-title-v1-stitch">
+                  <div className="inline-flex items-center space-x-1.5 text-[10px] font-bold text-[#C59B27] uppercase tracking-wider font-mono">
+                    <span className="p-1 bg-[#C59B27]/10 text-[#C59B27] rounded-full flex items-center justify-center">
+                      <Check className="h-3 w-3 stroke-[3]" />
+                    </span>
+                    <span>Scan successful</span>
+                  </div>
+                  <h2 className="text-3xl font-serif font-bold text-gray-950 dark:text-[#F0EBE3] leading-tight">Child found</h2>
                 </div>
 
-                {/* 2. ENTRY STATUS SECTION */}
-                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-xs space-y-3" data-component-version="volunteer-child-found-entry-status-v3">
-                  <div className="space-y-1">
-                    <div className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase">
-                      Entry Status
-                    </div>
-                    {isAlreadyPickedUp ? (
-                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-[#F0EBE3]">
-                        <span className="w-5 h-5 rounded-full bg-zinc-100 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] flex items-center justify-center shrink-0">
-                          <Check className="h-3.5 w-3.5 stroke-[3]" />
-                        </span>
-                        <span>Already picked up</span>
-                        {lookedUpChild.pickedUpAt && (
-                          <span className="text-xs font-normal text-gray-500 dark:text-[#7A7570] ml-1">
-                            · Picked up at {formatTime(lookedUpChild.pickedUpAt)}
-                          </span>
-                        )}
-                      </div>
-                    ) : isAlreadyCheckedIn ? (
-                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-[#F0EBE3]">
-                        <span className="w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                          <Check className="h-3.5 w-3.5 stroke-[3]" />
-                        </span>
-                        <span>Already checked in</span>
-                        <span className="text-xs font-normal text-gray-500 dark:text-[#7A7570] ml-1">
-                          · Checked in at {formatTime(lookedUpChild.checkedInAt || lookedUpChild.checked_in_at || new Date().toISOString())}
-                        </span>
-                      </div>
-                    ) : isIneligible ? (
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-400">
-                          <span className="w-5 h-5 rounded-full bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400 flex items-center justify-center shrink-0">
-                            <AlertTriangle className="h-3.5 w-3.5 stroke-[2.5]" />
-                          </span>
-                          <span>Not eligible for check-in</span>
-                        </div>
-                        <p className="text-xs text-amber-700/80 dark:text-amber-300/70 pl-7 leading-relaxed">
-                          Current status is <span className="font-semibold uppercase tracking-wide">{rawStatus.replace(/_/g, ' ')}</span>. Check-in is not permitted.
-                        </p>
-                      </div>
+                {/* Child Identity Card */}
+                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-identity-card-v1-stitch">
+                  {/* Photo area */}
+                  <div className="w-full aspect-[4/3] rounded-2xl overflow-hidden bg-gray-50 dark:bg-[#262520] border border-gray-150 dark:border-[#302E29] relative">
+                    {lookedUpChild.photoUrl ? (
+                      <img
+                        src={lookedUpChild.photoUrl}
+                        alt={lookedUpChild.fullName}
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
                     ) : (
-                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-[#F0EBE3]">
-                        <span className="w-5 h-5 rounded-full bg-amber-100 dark:bg-amber-950/40 text-[#C59B27] flex items-center justify-center shrink-0">
-                          <Clock className="h-3.5 w-3.5 stroke-[2.5]" />
-                        </span>
-                        <span>Ready for check-in</span>
+                      <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 dark:text-[#7A7570]">
+                        <User className="h-14 w-14 stroke-[1]" />
+                        <span className="text-xs font-semibold text-gray-400 dark:text-[#7A7570] mt-2">No photo available</span>
                       </div>
                     )}
                   </div>
 
-                  {/* Action buttons */}
-                  <div className="space-y-2.5 pt-1">
-                    {isAlreadyPickedUp ? (
-                      <>
-                        {/* PRIMARY: Scan another pass */}
-                        <button
-                          type="button"
-                          onClick={handleResetScannerState}
-                          data-component-version="volunteer-scan-another-action-v4"
-                          className="w-full min-h-[46px] bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#18181B] font-sans font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center space-x-2"
-                        >
-                          <QrCode className="h-4 w-4" />
-                          <span>SCAN ANOTHER PASS</span>
-                        </button>
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="text-xl font-serif font-bold text-gray-900 dark:text-[#F0EBE3] leading-tight truncate">
+                        {lookedUpChild.fullName}
+                      </h3>
+                      <span className={`px-2.5 py-0.5 text-[10px] font-bold uppercase rounded-md tracking-wider shrink-0 leading-none ${
+                        isAlreadyPickedUp
+                          ? 'bg-zinc-100 dark:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] border border-zinc-200 dark:border-[#3A3835]'
+                          : isAlreadyCheckedIn
+                          ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40'
+                          : isIneligible
+                          ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40'
+                          : 'bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#302E29] text-[#C59B27]'
+                      }`}>
+                        {isAlreadyPickedUp ? 'Picked Up' : (isAlreadyCheckedIn ? 'Checked In' : (isIneligible ? rawStatus.replace(/_/g, ' ') : 'Pass Ready'))}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-[#B8B0A5] font-medium mt-1">
+                      {calculatedAgeText}
+                    </p>
+                    {lookedUpChild.passReference && (
+                      <p className="text-[11px] font-mono text-gray-400 dark:text-[#7A7570] mt-0.5">
+                        Pass: {lookedUpChild.passReference}
+                      </p>
+                    )}
+                  </div>
 
-                        {/* SECONDARY: View child record */}
-                        <button
-                          type="button"
-                          onClick={() => handleViewScannedChildRecord(lookedUpChild)}
-                          data-component-version="volunteer-child-view-record-secondary-action-v7"
-                          className="w-full min-h-[44px] border border-gray-200 dark:border-[#302E29] hover:border-gray-300 dark:hover:border-[#3A3835] text-gray-800 dark:text-[#F0EBE3] font-sans font-semibold text-xs uppercase tracking-wider rounded-xl transition-all bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] cursor-pointer flex items-center justify-center space-x-2"
-                        >
-                          <User className="h-4 w-4 text-gray-500 dark:text-[#B8B0A5]" />
-                          <span>View child record →</span>
-                        </button>
-                      </>
+                  {/* Two column grid */}
+                  <div className="grid grid-cols-2 gap-4 border-t border-gray-100 dark:border-[#302E29] pt-3.5 text-xs">
+                    <div>
+                      <span className="text-[10px] text-gray-400 dark:text-[#7A7570] font-mono uppercase tracking-wider block">Class</span>
+                      <span className="font-semibold text-gray-800 dark:text-[#F0EBE3] block mt-0.5 truncate">
+                        {lookedUpChild.ageGroup || lookedUpChild.className || lookedUpChild.classGroup || 'General Room'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-gray-400 dark:text-[#7A7570] font-mono uppercase tracking-wider block">Gender</span>
+                      <span className="font-semibold text-gray-800 dark:text-[#F0EBE3] block mt-0.5 capitalize">
+                        {lookedUpChild.gender || 'Not specified'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Care Notes Card */}
+                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-care-notes-v1-stitch">
+                  <div className="flex items-center space-x-2 text-gray-900 dark:text-[#F0EBE3] pb-1 border-b border-gray-50 dark:border-[#302E29]">
+                    <ShieldCheck className="h-4.5 w-4.5 text-gray-500 dark:text-[#C59B27]" />
+                    <h4 className="text-sm font-serif font-bold">Care Notes</h4>
+                  </div>
+                  
+                  <div className="space-y-3 text-xs">
+                    {/* Medical Note Row */}
+                    {medicalNoteText ? (
+                      <div className="bg-[#FFF8F2] dark:bg-amber-950/20 border border-[#FFEADA] dark:border-amber-900/40 rounded-2xl p-3 flex items-start space-x-2.5">
+                        <span className="text-[#E07A5F] font-bold text-[10px] mt-0.5">⚠️</span>
+                        <div>
+                          <span className="text-[9px] font-bold text-[#E07A5F] uppercase tracking-wider block font-mono">Medical Note</span>
+                          <p className="text-gray-800 dark:text-[#F0EBE3] font-medium mt-0.5 leading-relaxed">{medicalNoteText}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#302E29] rounded-2xl p-3 flex items-start space-x-2.5">
+                        <span className="text-gray-400 dark:text-[#7A7570] font-bold text-[10px] mt-0.5">✓</span>
+                        <div>
+                          <span className="text-[9px] font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block font-mono">Medical Note</span>
+                          <p className="text-gray-500 dark:text-[#B8B0A5] mt-0.5 font-medium">No medical note added.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Allergies Row */}
+                    {allergiesText && allergiesText.toLowerCase() !== 'no' ? (
+                      <div className="bg-[#FFF8F2] dark:bg-amber-950/20 border border-[#FFEADA] dark:border-amber-900/40 rounded-2xl p-3 flex items-start space-x-2.5">
+                        <span className="text-[#E07A5F] font-bold text-[10px] mt-0.5">⚠️</span>
+                        <div>
+                          <span className="text-[9px] font-bold text-[#E07A5F] uppercase tracking-wider block font-mono">Allergies</span>
+                          <p className="text-gray-800 dark:text-[#F0EBE3] font-medium mt-0.5 leading-relaxed">{allergiesText}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#302E29] rounded-2xl p-3 flex items-start space-x-2.5">
+                        <span className="text-gray-400 dark:text-[#7A7570] font-bold text-[10px] mt-0.5">✓</span>
+                        <div>
+                          <span className="text-[9px] font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block font-mono">Allergies</span>
+                          <p className="text-gray-500 dark:text-[#B8B0A5] mt-0.5 font-medium">No allergy added.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Extra Support Row */}
+                    {extraSupportText && extraSupportText.toLowerCase() !== 'no' ? (
+                      <div className="bg-[#FFF8F2] dark:bg-amber-950/20 border border-[#FFEADA] dark:border-amber-900/40 rounded-2xl p-3 flex items-start space-x-2.5">
+                        <span className="text-[#E07A5F] font-bold text-[10px] mt-0.5">⚠️</span>
+                        <div>
+                          <span className="text-[9px] font-bold text-[#E07A5F] uppercase tracking-wider block font-mono">Extra Support</span>
+                          <p className="text-gray-800 dark:text-[#F0EBE3] font-medium mt-0.5 leading-relaxed">{extraSupportText}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#302E29] rounded-2xl p-3 flex items-start space-x-2.5">
+                        <span className="text-gray-400 dark:text-[#7A7570] font-bold text-[10px] mt-0.5">✓</span>
+                        <div>
+                          <span className="text-[9px] font-bold text-gray-400 dark:text-[#7A7570] uppercase tracking-wider block font-mono">Extra Support</span>
+                          <p className="text-gray-500 dark:text-[#B8B0A5] mt-0.5 font-medium">None required.</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Entry Status Card */}
+                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-4" data-component-version="volunteer-child-entry-status-v1-stitch">
+                  <h4 className="text-lg font-serif font-bold text-gray-950 dark:text-[#F0EBE3]">Entry Status</h4>
+                  
+                  {/* Status Info Box */}
+                  <div className="flex items-start space-x-3.5 bg-gray-50/50 dark:bg-[#262520] border border-gray-100 dark:border-[#302E29] rounded-2xl p-4">
+                    <div className={`p-2 rounded-xl shrink-0 ${
+                      isAlreadyPickedUp
+                        ? 'bg-zinc-100 dark:bg-[#302E29] text-zinc-600 dark:text-[#B8B0A5]'
+                        : isAlreadyCheckedIn
+                        ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'
+                        : isIneligible
+                        ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400'
+                        : 'bg-amber-50 dark:bg-amber-950/40 text-[#C59B27]'
+                    }`}>
+                      {isAlreadyPickedUp || isAlreadyCheckedIn ? (
+                        <Check className="h-5 w-5 stroke-[2.5]" />
+                      ) : isIneligible ? (
+                        <AlertTriangle className="h-5 w-5 stroke-[2.5]" />
+                      ) : (
+                        <Clock className="h-5 w-5 stroke-[2]" />
+                      )}
+                    </div>
+                    <div>
+                      <h5 className="text-sm font-bold text-gray-900 dark:text-[#F0EBE3] leading-tight">
+                        {isAlreadyPickedUp ? 'Already picked up' : (isAlreadyCheckedIn ? 'Already checked in' : (isIneligible ? 'Not eligible for check-in' : 'Not checked in yet'))}
+                      </h5>
+                      <p className="text-xs text-gray-500 dark:text-[#B8B0A5] mt-0.5">
+                        {isAlreadyPickedUp
+                          ? (lookedUpChild.pickedUpAt ? `Picked up at ${formatTime(lookedUpChild.pickedUpAt)}` : 'Child has been released to guardian')
+                          : isAlreadyCheckedIn 
+                          ? `Checked in at ${formatTime(lookedUpChild.checkedInAt || lookedUpChild.checked_in_at || new Date().toISOString())}` 
+                          : isIneligible
+                          ? `Current status is ${rawStatus.replace(/_/g, ' ').toUpperCase()}. Check-in is not permitted.`
+                          : 'Ready for processing'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="space-y-3 pt-1">
+                    {isAlreadyPickedUp ? (
+                      <button
+                        type="button"
+                        onClick={handleResetScannerState}
+                        data-component-version="volunteer-scan-another-action-v4"
+                        className="w-full bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#18181B] font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2"
+                      >
+                        <QrCode className="h-4 w-4" />
+                        <span>SCAN ANOTHER PASS</span>
+                      </button>
                     ) : isAlreadyCheckedIn ? (
                       <>
-                        {/* PRIMARY: Proceed to Pickup / Release */}
                         <button
                           type="button"
-                          onClick={() => handlePreparePickup(lookedUpChild.id)}
+                          onClick={() => handlePreparePickup(lookedUpChild.id || lookedUpChild.childId || lookedUpChild.entryId)}
                           data-component-version="volunteer-child-proceed-pickup-action"
-                          className="w-full min-h-[46px] bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#18181B] font-sans font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center space-x-2"
+                          className="w-full bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#18181B] font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2"
                         >
                           <LogOut className="h-4 w-4" />
-                          <span>Proceed to Pickup / Release</span>
+                          <span>PROCEED TO PICKUP / RELEASE</span>
                         </button>
-
-                        {/* SECONDARY: Scan another pass */}
                         <button
                           type="button"
                           onClick={handleResetScannerState}
                           data-component-version="volunteer-scan-another-action-v4"
-                          className="w-full min-h-[44px] border border-gray-200 dark:border-[#302E29] hover:border-gray-300 dark:hover:border-[#3A3835] text-gray-800 dark:text-[#F0EBE3] font-sans font-semibold text-xs uppercase tracking-wider rounded-xl transition-all bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] cursor-pointer flex items-center justify-center space-x-2"
+                          className="w-full border border-gray-300 dark:border-[#302E29] hover:border-gray-400 dark:hover:border-[#3A3835] text-gray-800 dark:text-[#F0EBE3] font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] flex items-center justify-center space-x-2"
                         >
-                          <QrCode className="h-4 w-4 text-gray-500 dark:text-[#B8B0A5]" />
+                          <QrCode className="h-4 w-4 text-gray-600 dark:text-[#B8B0A5] stroke-[2]" />
                           <span>SCAN ANOTHER PASS</span>
-                        </button>
-
-                        {/* TERTIARY: View child record */}
-                        <button
-                          type="button"
-                          onClick={() => handleViewScannedChildRecord(lookedUpChild)}
-                          disabled={scanLoading || isCheckingIn}
-                          className="w-full py-1 text-gray-500 hover:text-gray-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] text-xs font-sans font-medium transition-colors flex items-center justify-center space-x-1 cursor-pointer"
-                        >
-                          <User className="h-3.5 w-3.5 text-gray-400 dark:text-[#7A7570]" />
-                          <span>View full child record</span>
                         </button>
                       </>
                     ) : isIneligible ? (
-                      <>
-                        {/* PRIMARY: Scan another pass */}
-                        <button
-                          type="button"
-                          onClick={handleResetScannerState}
-                          data-component-version="volunteer-scan-another-action-v4"
-                          className="w-full min-h-[46px] bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#18181B] font-sans font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center space-x-2"
-                        >
-                          <QrCode className="h-4 w-4" />
-                          <span>SCAN ANOTHER PASS</span>
-                        </button>
-
-                        {/* SECONDARY: View child record */}
-                        <button
-                          type="button"
-                          onClick={() => handleViewScannedChildRecord(lookedUpChild)}
-                          data-component-version="volunteer-child-view-record-secondary-action-v7"
-                          className="w-full min-h-[44px] border border-gray-200 dark:border-[#302E29] hover:border-gray-300 dark:hover:border-[#3A3835] text-gray-800 dark:text-[#F0EBE3] font-sans font-semibold text-xs uppercase tracking-wider rounded-xl transition-all bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] cursor-pointer flex items-center justify-center space-x-2"
-                        >
-                          <User className="h-4 w-4 text-gray-500 dark:text-[#B8B0A5]" />
-                          <span>View child record →</span>
-                        </button>
-                      </>
+                      <button
+                        type="button"
+                        onClick={handleResetScannerState}
+                        data-component-version="volunteer-scan-another-action-v4"
+                        className="w-full bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#18181B] font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2"
+                      >
+                        <QrCode className="h-4 w-4" />
+                        <span>SCAN ANOTHER PASS</span>
+                      </button>
                     ) : (
                       <>
-                        {/* PRIMARY: Mark checked in */}
                         <button
                           type="button"
                           onClick={() => handleConfirmCheckIn(lookedUpChild)}
                           disabled={scanLoading || isCheckingIn}
                           data-component-version="volunteer-child-checkin-action-v6"
-                          className="w-full min-h-[46px] bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#18181B] font-sans font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center space-x-2"
+                          className="w-full bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all shadow-md uppercase cursor-pointer flex items-center justify-center space-x-2"
                         >
                           {isCheckingIn ? (
                             <>
                               <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                              <span>Checking in...</span>
+                              <span>Processing check-in...</span>
                             </>
                           ) : (
                             <>
@@ -3989,28 +4012,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                             </>
                           )}
                         </button>
-
-                        {/* SECONDARY: Scan another pass */}
                         <button
                           type="button"
                           onClick={handleResetScannerState}
                           data-component-version="volunteer-scan-another-action-v4"
-                          className="w-full min-h-[44px] border border-gray-200 dark:border-[#302E29] hover:border-gray-300 dark:hover:border-[#3A3835] text-gray-800 dark:text-[#F0EBE3] font-sans font-semibold text-xs uppercase tracking-wider rounded-xl transition-all bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] cursor-pointer flex items-center justify-center space-x-2"
+                          className="w-full border border-gray-300 dark:border-[#302E29] hover:border-gray-400 dark:hover:border-[#3A3835] text-gray-800 dark:text-[#F0EBE3] font-bold tracking-widest py-3.5 rounded-2xl text-xs transition-all uppercase text-center cursor-pointer block bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] flex items-center justify-center space-x-2"
                         >
-                          <QrCode className="h-4 w-4 text-gray-500 dark:text-[#B8B0A5]" />
+                          <QrCode className="h-4 w-4 text-gray-600 dark:text-[#B8B0A5] stroke-[2]" />
                           <span>SCAN ANOTHER PASS</span>
-                        </button>
-
-                        {/* TERTIARY: View child record */}
-                        <button
-                          type="button"
-                          onClick={() => handleViewScannedChildRecord(lookedUpChild)}
-                          disabled={scanLoading || isCheckingIn}
-                          data-component-version="volunteer-child-view-record-secondary-action-v7"
-                          className="w-full py-1 text-gray-500 hover:text-gray-800 dark:text-[#B8B0A5] dark:hover:text-[#F0EBE3] text-xs font-sans font-medium transition-colors flex items-center justify-center space-x-1 cursor-pointer"
-                        >
-                          <User className="h-3.5 w-3.5 text-gray-400 dark:text-[#7A7570]" />
-                          <span>View full child record</span>
                         </button>
                       </>
                     )}
@@ -4036,8 +4045,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   </div>
                 </div>
 
-                {/* 3. WRISTBAND SECTION */}
-                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-xs space-y-3" data-component-version="volunteer-child-found-wristband-v1">
+                {/* Wristband Section */}
+                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-3" data-component-version="volunteer-child-found-wristband-v1">
                   <div className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase">
                     Wristband
                   </div>
@@ -4184,14 +4193,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   )}
                 </div>
 
-                {/* 4. AUTHORIZED PICKUP */}
-                <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-xs space-y-3" data-component-version="volunteer-child-authorized-pickup-v3">
-                  <div className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase">
-                    Authorized Pickup
-                  </div>
-                  {lookedUpChild.pickup ? (
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-100 dark:bg-[#262520] border border-gray-200/80 dark:border-[#302E29] shrink-0 flex items-center justify-center">
+                {/* Authorized Pickup Card */}
+                {lookedUpChild.pickup ? (
+                  <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-3" data-component-version="volunteer-child-authorized-pickup-v1-stitch">
+                    <h4 className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase">
+                      Authorized Pickup
+                    </h4>
+                    <div className="flex items-center gap-3.5">
+                      <div className="w-14 h-14 rounded-2xl overflow-hidden bg-gray-50 dark:bg-[#262520] border border-gray-150 dark:border-[#302E29] shrink-0 flex items-center justify-center">
                         {lookedUpChild.pickup.photoUrl ? (
                           <img
                             src={lookedUpChild.pickup.photoUrl}
@@ -4204,42 +4213,74 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         )}
                       </div>
                       <div className="min-w-0">
-                        <h5 className="text-sm font-sans font-bold text-gray-900 dark:text-[#F0EBE3] truncate">
+                        <h5 className="text-sm font-bold text-gray-900 dark:text-[#F0EBE3] leading-tight">
                           {lookedUpChild.pickup.fullName}
                         </h5>
-                        <p className="text-xs text-gray-500 dark:text-[#B8B0A5] font-medium">
+                        <p className="text-[10px] text-[#C59B27] font-bold font-mono uppercase tracking-wider mt-0.5">
                           {lookedUpChild.pickup.relationship || 'Authorized Person'}
-                          {lookedUpChild.pickup.phone ? ` · ${lookedUpChild.pickup.phone}` : ''}
                         </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-gray-500 dark:text-[#7A7570]">
-                      No pickup person has been added.
-                    </p>
-                  )}
-                </div>
-
-                {/* 5. PARENT / GUARDIAN (where supported) */}
-                {(lookedUpChild.parentName || lookedUpChild.parentPhone) && (
-                  <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-xs space-y-2" data-component-version="volunteer-child-parent-info-v1">
-                    <div className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase">
-                      Parent / Guardian
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl overflow-hidden bg-gray-100 dark:bg-[#262520] border border-gray-200/80 dark:border-[#302E29] shrink-0 flex items-center justify-center">
-                        <User className="h-5 w-5 text-gray-400 dark:text-[#7A7570]" />
-                      </div>
-                      <div className="min-w-0">
-                        <h5 className="text-sm font-sans font-bold text-gray-900 dark:text-[#F0EBE3] truncate">
-                          {lookedUpChild.parentName || 'Parent / Guardian'}
-                        </h5>
-                        {lookedUpChild.parentPhone && (
-                          <p className="text-xs text-gray-500 dark:text-[#B8B0A5] font-medium font-mono">
-                            {lookedUpChild.parentPhone}
+                        {lookedUpChild.pickup.phone && (
+                          <p className="text-xs text-gray-500 dark:text-[#B8B0A5] mt-0.5">
+                            {lookedUpChild.pickup.phone}
                           </p>
                         )}
                       </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-3" data-component-version="volunteer-child-authorized-pickup-v1-stitch">
+                    <h4 className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase">
+                      Authorized Pickup
+                    </h4>
+                    <p className="text-xs text-gray-500 dark:text-[#7A7570] leading-relaxed bg-gray-50 dark:bg-[#262520] border border-gray-100 dark:border-[#302E29] rounded-2xl p-4 text-center">
+                      No pickup person has been added.
+                    </p>
+                  </div>
+                )}
+
+                {/* Parent / Guardian section (where supported) */}
+                {(lookedUpChild.parentName || lookedUpChild.parentPhone || lookedUpChild.parent?.fullName) && (
+                  <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-5 shadow-xs space-y-3" data-component-version="volunteer-child-parent-info-v1">
+                    <div className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase">
+                      Parent / Guardian
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3 min-w-0">
+                        <div className="w-10 h-10 rounded-xl overflow-hidden bg-gray-100 dark:bg-[#262520] border border-gray-200/80 dark:border-[#302E29] shrink-0 flex items-center justify-center">
+                          <User className="h-5 w-5 text-gray-400 dark:text-[#7A7570]" />
+                        </div>
+                        <div className="min-w-0">
+                          <h5 className="text-xs font-semibold text-gray-900 dark:text-[#F0EBE3] truncate">
+                            {lookedUpChild.parent?.fullName || lookedUpChild.parentName || 'Parent / Guardian'}
+                          </h5>
+                          {(lookedUpChild.parent?.phone || lookedUpChild.parentPhone) && (
+                            <p className="text-xs text-gray-500 dark:text-[#7A7570] font-mono">
+                              {lookedUpChild.parent?.phone || lookedUpChild.parentPhone}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {(lookedUpChild.parent?.phone || lookedUpChild.parentPhone) && (
+                        <div className="flex items-center space-x-1.5 shrink-0 pl-2">
+                          <a
+                            href={`tel:${lookedUpChild.parent?.phone || lookedUpChild.parentPhone}`}
+                            className="p-2 bg-gray-50 hover:bg-gray-100 dark:bg-[#262520] dark:hover:bg-[#2A2926] border border-gray-200 dark:border-[#3A3835] text-gray-700 dark:text-[#F0EBE3] rounded-lg transition-colors"
+                            title="Call parent"
+                          >
+                            <Phone className="h-3.5 w-3.5" />
+                          </a>
+                          <a
+                            href={`https://wa.me/${(lookedUpChild.parent?.phone || lookedUpChild.parentPhone).replace(/[^0-9]/g, '')}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-2 bg-emerald-50 hover:bg-emerald-100 dark:bg-[#262520] dark:hover:bg-[#2A2926] border border-emerald-200 dark:border-[#3A3835] text-emerald-700 dark:text-[#C59B27] rounded-lg transition-colors"
+                            title="WhatsApp parent"
+                          >
+                            <MessageCircle className="h-3.5 w-3.5" />
+                          </a>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
