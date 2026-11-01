@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
 import { buildApiUrl } from '../../utils/urlHelper';
 import { updateDocumentFavicon } from '../../utils/faviconHelper';
-import koinoniaLogoPng from '../../assets/images/koinonia-logo.png';
+const koinoniaLogoPng = new URL('../../assets/images/koinonia-logo.png', import.meta.url).href;
 
 interface BrandLogoProps {
   context?: 'landing' | 'admin' | 'parent' | 'volunteer' | 'auth' | 'compact';
