@@ -9,6 +9,7 @@ export interface LandingFinalCTAProps {
   onVolunteerRegisterClick: () => void;
   onNavigate: (route: AppRoute) => void;
   isRegistrationClosed: boolean;
+  canParentLogin?: boolean;
 }
 
 export const LandingFinalCTA: React.FC<LandingFinalCTAProps> = ({
@@ -18,6 +19,7 @@ export const LandingFinalCTA: React.FC<LandingFinalCTAProps> = ({
   onVolunteerRegisterClick,
   onNavigate,
   isRegistrationClosed,
+  canParentLogin = true,
 }) => {
   const eventTitle = currentEvent?.title?.trim() || regStatus?.eventName?.trim() || 'The General Assembly';
 
@@ -51,13 +53,15 @@ export const LandingFinalCTA: React.FC<LandingFinalCTAProps> = ({
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5 pt-2">
             {isRegistrationClosed ? (
               <>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('/parent/sign-in')}
-                  className="w-full sm:w-auto px-8 h-[48px] bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center cursor-pointer"
-                >
-                  <span>Sign in to account</span>
-                </button>
+                {canParentLogin && (
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('/parent/sign-in')}
+                    className="w-full sm:w-auto px-8 h-[48px] bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center cursor-pointer"
+                  >
+                    <span>Parent sign in</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => onNavigate('/volunteer/sign-in')}
@@ -76,13 +80,15 @@ export const LandingFinalCTA: React.FC<LandingFinalCTAProps> = ({
                   <span>Register your child</span>
                   <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-1" />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('/parent/sign-in')}
-                  className="w-full sm:w-auto px-7 h-[50px] bg-white/10 hover:bg-white/15 active:bg-white/20 text-white border border-white/20 font-semibold rounded-xl text-xs uppercase tracking-wider transition-all inline-flex items-center justify-center cursor-pointer"
-                >
-                  <span>Parent sign in</span>
-                </button>
+                {canParentLogin && (
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('/parent/sign-in')}
+                    className="w-full sm:w-auto px-7 h-[50px] bg-white/10 hover:bg-white/15 active:bg-white/20 text-white border border-white/20 font-semibold rounded-xl text-xs uppercase tracking-wider transition-all inline-flex items-center justify-center cursor-pointer"
+                  >
+                    <span>Parent sign in</span>
+                  </button>
+                )}
               </>
             )}
           </div>

@@ -5,22 +5,25 @@ import { buildApiUrl, getApiBaseUrl } from '../utils/urlHelper';
 
 const TOKEN_KEY = 'koinonia_token';
 
-const FORBIDDEN_WORDS = [
-  'validation',
-  'database',
-  'server',
-  'api',
-  'token',
-  'workflow',
-  'portal',
-  'system',
-  'authentication',
-  'registration',
-  'sql',
-  'postgres',
+const INTERNAL_LEAK_PATTERNS = [
+  'syntax error',
   'sqlite',
-  'stack',
-  'exception'
+  'postgres',
+  'pg_',
+  'select *',
+  'insert into',
+  'update set',
+  'delete from',
+  'stack trace',
+  'node_modules',
+  'cannot read properties of undefined',
+  'cannot read property',
+  'referenceerror',
+  'typeerror',
+  'prisma',
+  'foreign key constraint',
+  'unique constraint',
+  'password_hash'
 ];
 
 export class ParentApiError extends Error {
@@ -43,16 +46,16 @@ export function extractApiError(err: any): { message: string; description: strin
   if (err instanceof ParentApiError) {
     return { message: err.message, description: err.description, code: err.code, status: err.status };
   }
-  const raw = (typeof err === 'string' ? err : err?.message || '').trim();
+  const raw = (typeof err === 'string' ? err : err?.message || err?.error || '').trim();
   if (!raw || raw.includes('Failed to fetch') || raw.includes('NetworkError') || raw.includes('Load failed') || raw.includes('Connection problem')) {
     return { message: 'Connection problem', description: 'Please check your internet and try again.' };
   }
   const lower = raw.toLowerCase();
-  const isInternalStack = lower.includes('at ') || lower.includes('node_modules') || lower.includes('syntax error');
+  const isInternalStack = lower.includes('at ') || lower.includes('node_modules') || INTERNAL_LEAK_PATTERNS.some(p => lower.includes(p));
   if (isInternalStack || raw.includes('Request failed (5')) {
-    return { message: 'Something went wrong', description: 'Please try again.', code: err?.code };
+    return { message: 'Something went wrong', description: 'Please try again.', code: err?.code, status: err?.status };
   }
-  return { message: raw, description: 'Please try again.', code: err?.code };
+  return { message: raw, description: err?.description || 'Please try again.', code: err?.code, status: err?.status };
 }
 
 export interface SelectedParentAudienceChild {
@@ -225,11 +228,10 @@ export const api = {
       }
       const errorCode = data.code;
       console.error('[api.request Error Details]:', { url, status: res.status, rawError, errorCode, data });
-      const lower = rawError.toLowerCase();
       const isAdminRoute = url.includes('/api/admin/');
       const isInternalStack = lower.includes('at ') || lower.includes('node_modules') || lower.includes('syntax error');
-      const containsForbidden = !isAdminRoute && FORBIDDEN_WORDS.some(w => lower.includes(w));
-      if (isInternalStack || (!isAdminRoute && (containsForbidden || res.status >= 500))) {
+      const containsInternalLeak = !isAdminRoute && INTERNAL_LEAK_PATTERNS.some(w => lower.includes(w));
+      if (isInternalStack || (!isAdminRoute && (containsInternalLeak || res.status >= 500))) {
         throw new ParentApiError('Something went wrong', 'Please try again.', errorCode, data, res.status);
       }
       throw new ParentApiError(rawError, data?.description || 'Please try again.', errorCode, data, res.status);

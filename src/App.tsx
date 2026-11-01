@@ -1558,6 +1558,7 @@ export default function App() {
             <VolunteerRequestView
               onNavigate={navigate}
               parentProfile={parentProfile}
+              volunteerProfile={volunteerProfile}
               onRefreshAccess={checkAuth}
             />
           </ProtectedRoute>

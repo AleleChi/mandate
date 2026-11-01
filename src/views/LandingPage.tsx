@@ -156,29 +156,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     onNavigate(parentCtaRoute as AppRoute);
   };
 
-  // Handler: Volunteer registration click with live closed/open state check
+  // Handler: Volunteer registration click (always routes to volunteer sign-in / application)
   const handleVolunteerRegisterClick = () => {
-    if (regStatus && !regStatus.volunteer?.isOpen) {
-      const isNotOpen = regStatus.volunteer?.state === 'not_open_yet';
-      const eventName = regStatus.eventName || currentEvent?.title || 'The General Assembly';
-
-      setInfoModal({
-        isOpen: true,
-        type: 'volunteer',
-        title: isNotOpen ? 'Volunteer registration not open yet' : 'Volunteer registration closed',
-        message: isNotOpen
-          ? `Volunteer applications for ${eventName} have not started yet.${
-              regStatus.volunteer?.opensAtFormatted
-                ? ` Applications open ${regStatus.volunteer.opensAtFormatted}.`
-                : ''
-            }`
-          : `Volunteer registration for ${eventName} is currently closed.`,
-        note: 'Already registered as a volunteer?\nYou can sign in to access your dashboard.',
-        signInRoute: '/volunteer/sign-in',
-        signInLabel: 'Volunteer sign in',
-      });
-      return;
-    }
     onNavigate(volunteerCtaRoute as AppRoute);
   };
 
@@ -189,7 +168,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     }
   };
 
-  const isRegistrationClosed = Boolean(regStatus && !regStatus.parent?.isOpen);
+  const isStatusLoaded = regStatus !== null;
+  const canRegisterChild = Boolean(regStatus && regStatus.parent?.isOpen);
+  const canParentLogin = regStatus ? (regStatus.parentLoginEnabled ?? regStatus.parent?.canLogin ?? true) : true;
+  const canVolunteerLogin = true;
+  const isRegistrationClosed = isStatusLoaded ? !canRegisterChild : true;
 
   // SEO Configurations
   const siteUrl =
@@ -244,6 +227,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         onNavigate={onNavigate}
         onParentRegisterClick={handleParentRegisterClick}
         scrollToSection={scrollToSection}
+        canRegisterChild={canRegisterChild}
+        canParentLogin={canParentLogin}
+        canVolunteerLogin={canVolunteerLogin}
       />
 
       {/* Target Rhythm: Event-First, Natural Copy, Real Motion, No Fabricated Content */}
@@ -255,6 +241,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           assets={assets}
           currentEvent={currentEvent}
           regStatus={regStatus}
+          canRegisterChild={canRegisterChild}
+          canParentLogin={canParentLogin}
+          canVolunteerLogin={canVolunteerLogin}
           onParentRegisterClick={handleParentRegisterClick}
           onVolunteerRegisterClick={handleVolunteerRegisterClick}
           onNavigate={onNavigate}
@@ -306,6 +295,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           onVolunteerRegisterClick={handleVolunteerRegisterClick}
           onNavigate={onNavigate}
           isRegistrationClosed={isRegistrationClosed}
+          canParentLogin={canParentLogin}
         />
       </main>
 
@@ -316,6 +306,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         landingSettings={landingSettings}
         currentEvent={currentEvent}
         scrollToSection={scrollToSection}
+        canRegisterChild={canRegisterChild}
       />
 
       {/* Mobile Sticky Quick Action Bar */}
@@ -323,14 +314,31 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#FAF9F6]/95 backdrop-blur-md border-t border-[#EAE8E1] p-3 px-4 flex items-center space-x-3 shadow-2xl"
         data-component-version="landing-mobile-bottom-bar-v4"
       >
-        <button
-          type="button"
-          onClick={handleParentRegisterClick}
-          className="flex-1 bg-[#C59B27] hover:bg-[#B89047] active:bg-[#AA8220] text-white font-semibold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center space-x-1.5 shadow-xs cursor-pointer"
-        >
-          <span>{isRegistrationClosed ? 'Sign in to account' : 'Register child'}</span>
-          <ArrowRight className="w-3.5 h-3.5" />
-        </button>
+        {canParentLogin ? (
+          <button
+            type="button"
+            onClick={() => {
+              if (isRegistrationClosed) {
+                onNavigate('/parent/sign-in');
+              } else {
+                handleParentRegisterClick();
+              }
+            }}
+            className="flex-1 bg-[#C59B27] hover:bg-[#B89047] active:bg-[#AA8220] text-white font-semibold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center space-x-1.5 shadow-xs cursor-pointer"
+          >
+            <span>{isRegistrationClosed ? 'Parent sign in' : 'Register child'}</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onNavigate('/volunteer/sign-in')}
+            className="flex-1 bg-[#C59B27] hover:bg-[#B89047] active:bg-[#AA8220] text-white font-semibold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center space-x-1.5 shadow-xs cursor-pointer"
+          >
+            <span>Volunteer sign in</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        )}
         <button
           type="button"
           onClick={() => scrollToSection('footer')}

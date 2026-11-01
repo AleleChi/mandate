@@ -46,6 +46,20 @@ export const SignInView: React.FC<SignInViewProps> = ({
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [canCreateAccount, setCanCreateAccount] = useState<boolean>(false);
+
+  React.useEffect(() => {
+    api.auth.getRegistrationStatus()
+      .then((res) => {
+        if (res && res.success) {
+          const isParentRegOpen = res.parent?.isOpen ?? res.parentRegistrationEnabled ?? false;
+          setCanCreateAccount(Boolean(isParentRegOpen));
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load registration status', err);
+      });
+  }, []);
 
   // Passkey Authentication States
   const [passkeyLoading, setPasskeyLoading] = useState(false);
@@ -430,16 +444,18 @@ export const SignInView: React.FC<SignInViewProps> = ({
       </form>
 
       {/* Create Account Link */}
-      <div className="text-center pt-2">
-        <span className="text-xs text-[#52525B] dark:text-[#B8B0A5]">New here? </span>
-        <button
-          type="button"
-          onClick={() => onNavigate('/parent/create-account')}
-          className="text-xs font-bold text-[#B89047] dark:text-[#D4AF37] hover:underline focus:outline-none"
-        >
-          Create parent account
-        </button>
-      </div>
+      {canCreateAccount && (
+        <div className="text-center pt-2">
+          <span className="text-xs text-[#52525B] dark:text-[#B8B0A5]">New here? </span>
+          <button
+            type="button"
+            onClick={() => onNavigate('/parent/create-account')}
+            className="text-xs font-bold text-[#B89047] dark:text-[#D4AF37] hover:underline focus:outline-none"
+          >
+            Create parent account
+          </button>
+        </div>
+      )}
     </AuthScreenShell>
   );
 };

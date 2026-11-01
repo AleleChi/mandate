@@ -375,7 +375,11 @@ export const VolunteerCreateAccountView: React.FC<VolunteerCreateAccountViewProp
     }
   };
 
-  if (regStatus && !regStatus.volunteer?.isOpen) {
+  const isVolunteerOpen = regStatus
+    ? (regStatus.volunteer?.isOpen ?? regStatus.volunteerRegistrationEnabled ?? true)
+    : true;
+
+  if (regStatus && !isVolunteerOpen) {
     const isNotOpen = regStatus.volunteer?.state === 'not_open_yet';
     const eventName = regStatus.eventName || 'The General Assembly';
 

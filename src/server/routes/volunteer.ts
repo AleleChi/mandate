@@ -275,6 +275,28 @@ router.post('/create-account', upload.single('photo'), async (req: Authenticated
       }
     }
 
+    // Check canonical volunteer registration toggle from admin settings
+    let genSettings: any = null;
+    try {
+      genSettings = await queryOne<any>(`
+        SELECT volunteer_registration_enabled
+        FROM admin_general_settings
+        WHERE id = 'primary_general_settings'
+      `);
+    } catch (e) {}
+    const volunteerToggleEnabled = genSettings && genSettings.volunteer_registration_enabled !== undefined && genSettings.volunteer_registration_enabled !== null
+      ? (genSettings.volunteer_registration_enabled === 1 || genSettings.volunteer_registration_enabled === true || genSettings.volunteer_registration_enabled === 'true')
+      : true;
+
+    if (!volunteerToggleEnabled) {
+      return res.status(403).json({
+        success: false,
+        code: 'VOLUNTEER_REGISTRATION_DISABLED',
+        message: 'Volunteer registration is currently unavailable.',
+        error: 'Volunteer registration is currently unavailable.'
+      });
+    }
+
     if (targetEvent) {
       const nowIso = new Date().toISOString();
       if (targetEvent.volunteer_registration_opens_at && nowIso < targetEvent.volunteer_registration_opens_at) {
@@ -1564,16 +1586,66 @@ router.post('/request', authMiddleware, async (req: AuthenticatedRequest, res: R
       photoFileId
     } = req.body;
 
-    // Validate inputs
-    if (!fullName || !phone || !preferredTeam) {
-      return res.status(400).json({
+    // Check canonical volunteer registration toggle from admin settings
+    let genSettings: any = null;
+    try {
+      genSettings = await queryOne<any>(`
+        SELECT volunteer_registration_enabled
+        FROM admin_general_settings
+        WHERE id = 'primary_general_settings'
+      `);
+    } catch (e) {}
+    const volunteerToggleEnabled = genSettings && genSettings.volunteer_registration_enabled !== undefined && genSettings.volunteer_registration_enabled !== null
+      ? (genSettings.volunteer_registration_enabled === 1 || genSettings.volunteer_registration_enabled === true || genSettings.volunteer_registration_enabled === 'true')
+      : true;
+
+    if (!volunteerToggleEnabled) {
+      return res.status(403).json({
         success: false,
-        code: 'REQUIRED_FIELDS_MISSING',
-        message: 'Name, phone, and preferred team are required.'
+        code: 'VOLUNTEER_REGISTRATION_DISABLED',
+        message: 'Volunteer registration is currently unavailable.',
+        error: 'Volunteer registration is currently unavailable.'
       });
     }
 
-    const nameVal = validateName(fullName, 'fullName');
+    // Validate inputs
+    if (!fullName || !fullName.trim()) {
+      return res.status(400).json({
+        success: false,
+        code: 'FULL_NAME_REQUIRED',
+        field: 'fullName',
+        message: 'Enter your full name.'
+      });
+    }
+
+    if (!phone || !phone.trim()) {
+      return res.status(400).json({
+        success: false,
+        code: 'PHONE_REQUIRED',
+        field: 'phone',
+        message: 'Enter your phone number.'
+      });
+    }
+
+    if (!preferredTeam || !preferredTeam.trim()) {
+      return res.status(400).json({
+        success: false,
+        code: 'PREFERRED_TEAM_REQUIRED',
+        field: 'preferredTeam',
+        message: 'Please select a preferred service team.'
+      });
+    }
+
+    if (isKoinoniaWorker && (!department || !department.trim())) {
+      return res.status(400).json({
+        success: false,
+        code: 'DEPARTMENT_REQUIRED',
+        field: 'department',
+        message: 'Please specify your Koinonia department.'
+      });
+    }
+
+    const nameVal = validateName(fullName.trim(), 'fullName');
     if (!nameVal.valid) {
       return res.status(400).json({
         success: false,
@@ -1583,29 +1655,32 @@ router.post('/request', authMiddleware, async (req: AuthenticatedRequest, res: R
       });
     }
 
-    const phoneVal = validatePhoneNumber(phone, 'NG');
+    const targetIso = req.body?.whatsappCountryIso || req.body?.countryIso || 'NG';
+    const phoneVal = validatePhoneNumber(phone.trim(), targetIso);
     if (!phoneVal.valid) {
       return res.status(400).json({
         success: false,
-        code: phoneVal.code,
+        code: phoneVal.code || 'INVALID_PHONE',
         field: 'phone',
-        message: phoneVal.message
+        message: phoneVal.message || 'Please enter a valid phone number.'
       });
     }
 
     let cleanWhatsapp = phoneVal.normalizedPhone!;
-    if (whatsapp) {
-      const whatsappVal = validatePhoneNumber(whatsapp, 'NG');
+    if (whatsapp && whatsapp.trim()) {
+      const whatsappVal = validatePhoneNumber(whatsapp.trim(), targetIso);
       if (!whatsappVal.valid) {
         return res.status(400).json({
           success: false,
-          code: whatsappVal.code,
+          code: whatsappVal.code || 'INVALID_WHATSAPP',
           field: 'whatsapp',
-          message: whatsappVal.message
+          message: whatsappVal.message || 'Please enter a valid WhatsApp number.'
         });
       }
       cleanWhatsapp = whatsappVal.normalizedPhone!;
     }
+
+    const whatsappConsent = Boolean(req.body?.whatsappConsent);
 
     let resolvedPhotoId = photoFileId || null;
     if (photoFileId && photoFileId.includes('/api/media/files/')) {
@@ -1617,15 +1692,32 @@ router.post('/request', authMiddleware, async (req: AuthenticatedRequest, res: R
 
     const now = new Date().toISOString();
     let profile = req.volunteerProfile;
+    if (!profile) {
+      profile = await queryOne<any>('SELECT * FROM volunteer_profiles WHERE user_id = ?', [req.user.id]);
+    }
+
+    // Do not demote an already approved or active volunteer
+    if (profile && (profile.status === 'active' || profile.status === 'approved')) {
+      return res.json({
+        success: true,
+        alreadyApproved: true,
+        message: 'You already have active volunteer access.',
+        profile
+      });
+    }
 
     if (profile) {
-      // Update existing profile
+      // Update existing profile with new details
       await execute(`
         UPDATE volunteer_profiles
-        SET photo_file_id = ?,
+        SET photo_file_id = COALESCE(?, photo_file_id),
             full_name = ?,
             phone = ?,
             whatsapp = ?,
+            country_iso = COALESCE(?, country_iso),
+            whatsapp_consent_status = ?,
+            whatsapp_consent_at = ?,
+            whatsapp_consent_source = 'parent_volunteer_request',
             is_koinonia_worker = ?,
             department = ?,
             preferred_team = ?,
@@ -1639,11 +1731,14 @@ router.post('/request', authMiddleware, async (req: AuthenticatedRequest, res: R
         fullName.trim(),
         phoneVal.normalizedPhone!,
         cleanWhatsapp,
+        targetIso,
+        whatsappConsent ? 'opted_in' : (profile.whatsapp_consent_status || 'unknown'),
+        whatsappConsent ? now : profile.whatsapp_consent_at,
         isKoinoniaWorker ? 1 : 0,
-        department || null,
-        preferredTeam,
+        isKoinoniaWorker ? department.trim() : null,
+        preferredTeam.trim(),
         servingExperience ? 1 : 0,
-        note || null,
+        note ? note.trim() : null,
         now,
         req.user.id
       ]);
@@ -1653,9 +1748,10 @@ router.post('/request', authMiddleware, async (req: AuthenticatedRequest, res: R
       await execute(`
         INSERT INTO volunteer_profiles (
           id, user_id, photo_file_id, full_name, phone, whatsapp,
+          country_iso, whatsapp_consent_status, whatsapp_consent_at, whatsapp_consent_source,
           is_koinonia_worker, department, preferred_team, serving_experience,
           note, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'parent_volunteer_request', ?, ?, ?, ?, ?, 'pending_review', ?, ?)
       `, [
         volunteerProfileId,
         req.user.id,
@@ -1663,11 +1759,14 @@ router.post('/request', authMiddleware, async (req: AuthenticatedRequest, res: R
         fullName.trim(),
         phoneVal.normalizedPhone!,
         cleanWhatsapp,
+        targetIso,
+        whatsappConsent ? 'opted_in' : 'unknown',
+        whatsappConsent ? now : null,
         isKoinoniaWorker ? 1 : 0,
-        department || null,
-        preferredTeam,
+        isKoinoniaWorker ? department.trim() : null,
+        preferredTeam.trim(),
         servingExperience ? 1 : 0,
-        note || null,
+        note ? note.trim() : null,
         now,
         now
       ]);

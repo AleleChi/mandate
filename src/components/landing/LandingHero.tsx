@@ -12,6 +12,9 @@ export interface LandingHeroProps {
   assets: any;
   regStatus: any;
   currentEvent?: any;
+  canRegisterChild?: boolean;
+  canParentLogin?: boolean;
+  canVolunteerLogin?: boolean;
   onParentRegisterClick: () => void;
   onVolunteerRegisterClick: () => void;
   onNavigate: (route: AppRoute) => void;
@@ -271,10 +274,17 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
   assets,
   regStatus,
   currentEvent,
+  canRegisterChild,
+  canParentLogin,
+  canVolunteerLogin,
   onParentRegisterClick,
   onVolunteerRegisterClick,
   onNavigate,
 }) => {
+  const isStatusLoaded = regStatus !== null;
+  const canRegister = canRegisterChild ?? Boolean(regStatus?.parent?.isOpen);
+  const canLoginParent = canParentLogin ?? (regStatus ? (regStatus.parentLoginEnabled ?? regStatus.parent?.canLogin ?? true) : true);
+  const canLoginVolunteer = canVolunteerLogin ?? true;
   return (
     <section
       id="about"
@@ -325,43 +335,47 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
           </p>
 
           {/* Buttons or Registration Status */}
-          {regStatus && !regStatus.parent?.isOpen ? (
+          {isStatusLoaded && !canRegister ? (
             <div className="bg-white/95 dark:bg-[#201F1C]/95 border border-[#E7E3D8] dark:border-[#2E2D29] rounded-2xl p-6 space-y-4 text-left max-w-xl shadow-xs backdrop-blur-xs mb-4">
               <div className="space-y-1.5">
                 <div className="text-[11px] font-semibold text-[#9A7326] dark:text-[#D4AF37] uppercase tracking-wider">
-                  {regStatus.parent?.state === 'not_open_yet' ? 'Registration opening soon' : 'Registration closed'}
+                  {regStatus?.parent?.state === 'not_open_yet' ? 'Registration opening soon' : 'Registration closed'}
                 </div>
-                  <h3 className="text-xl sm:text-2xl font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] leading-snug">
-                    {regStatus.parent?.state === 'not_open_yet'
-                      ? `Registration for ${regStatus.eventName || currentEvent?.title || 'The General Assembly'} has not started yet.`
-                      : `Registration for ${regStatus.eventName || currentEvent?.title || 'The General Assembly'} is now closed.`}
-                  </h3>
+                <h3 className="text-xl sm:text-2xl font-sans font-bold text-[#18181B] dark:text-[#F7F4ED] leading-snug">
+                  {regStatus?.parent?.state === 'not_open_yet'
+                    ? `Registration for ${regStatus?.eventName || currentEvent?.title || 'The General Assembly'} has not started yet.`
+                    : `Registration for ${regStatus?.eventName || currentEvent?.title || 'The General Assembly'} is now closed.`}
+                </h3>
                 <p className="text-sm text-[#52525B] dark:text-[#C8C2B6] leading-relaxed">
-                  {regStatus.parent?.state === 'not_open_yet'
-                    ? regStatus.parent?.opensAtFormatted
-                    ? `Registration opens ${regStatus.parent.opensAtFormatted}. If you already have an account, you can still sign in anytime to view your child’s information and updates.`
-                    : 'If you already have an account, you can still sign in anytime to view your child’s information and updates.'
+                  {regStatus?.parent?.state === 'not_open_yet'
+                    ? regStatus?.parent?.opensAtFormatted
+                      ? `Registration opens ${regStatus.parent.opensAtFormatted}. If you already have an account, you can still sign in anytime to view your child’s information and updates.`
+                      : 'If you already have an account, you can still sign in anytime to view your child’s information and updates.'
                     : 'Existing families can sign in below anytime to view child details and keep event passes ready.'}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={() => onNavigate('/parent/sign-in')}
-                  className="w-full sm:w-56 h-[48px] bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-xs uppercase tracking-wider shadow-sm transition-colors flex items-center justify-center cursor-pointer"
-                >
-                  <span>Sign in</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('/volunteer/sign-in')}
-                  className="w-full sm:w-56 h-[48px] bg-white dark:bg-[#201F1C] hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] text-[#262626] dark:text-[#F7F4ED] border border-[#D9D6CE] dark:border-[#383733] font-semibold rounded-xl text-xs uppercase tracking-wider transition-colors flex items-center justify-center cursor-pointer"
-                >
-                  <span>Volunteer sign in</span>
-                </button>
+                {canLoginParent && (
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('/parent/sign-in')}
+                    className="w-full sm:w-56 h-[48px] bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-xs uppercase tracking-wider shadow-sm transition-colors flex items-center justify-center cursor-pointer"
+                  >
+                    <span>Parent sign in</span>
+                  </button>
+                )}
+                {canLoginVolunteer && (
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('/volunteer/sign-in')}
+                    className="w-full sm:w-56 h-[48px] bg-white dark:bg-[#201F1C] hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] text-[#262626] dark:text-[#F7F4ED] border border-[#D9D6CE] dark:border-[#383733] font-semibold rounded-xl text-xs uppercase tracking-wider transition-colors flex items-center justify-center cursor-pointer"
+                  >
+                    <span>Volunteer sign in</span>
+                  </button>
+                )}
               </div>
             </div>
-          ) : (
+          ) : isStatusLoaded && canRegister ? (
             <div className="flex flex-wrap items-center gap-3.5 sm:gap-4 mb-4 sm:mb-5" data-component-version="landing-hero-cta-v2-clean">
               <button
                 type="button"
@@ -371,13 +385,37 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
                 <span>Register your child</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
-              <button
-                type="button"
-                onClick={onVolunteerRegisterClick}
-                className="w-full sm:w-60 h-[50px] bg-white dark:bg-[#201F1C] hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] text-[#262626] dark:text-[#F7F4ED] border border-[#D9D6CE] dark:border-[#383733] font-semibold rounded-xl text-sm transition-colors inline-flex items-center justify-center cursor-pointer"
-              >
-                <span>Volunteer sign in</span>
-              </button>
+              {canLoginVolunteer && (
+                <button
+                  type="button"
+                  onClick={() => onNavigate('/volunteer/sign-in')}
+                  className="w-full sm:w-60 h-[50px] bg-white dark:bg-[#201F1C] hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] text-[#262626] dark:text-[#F7F4ED] border border-[#D9D6CE] dark:border-[#383733] font-semibold rounded-xl text-sm transition-colors inline-flex items-center justify-center cursor-pointer"
+                >
+                  <span>Volunteer sign in</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            /* Stable loading state - ensures no layout shift and prevents Parent Sign In flash */
+            <div className="flex flex-wrap items-center gap-3 pt-1 mb-6 min-h-[48px]">
+              {canLoginParent && (
+                <button
+                  type="button"
+                  onClick={() => onNavigate('/parent/sign-in')}
+                  className="w-full sm:w-56 h-[48px] bg-[#C59B27] hover:bg-[#B89047] text-white font-semibold rounded-xl text-xs uppercase tracking-wider shadow-sm transition-colors flex items-center justify-center cursor-pointer"
+                >
+                  <span>Parent sign in</span>
+                </button>
+              )}
+              {canLoginVolunteer && (
+                <button
+                  type="button"
+                  onClick={() => onNavigate('/volunteer/sign-in')}
+                  className="w-full sm:w-56 h-[48px] bg-white dark:bg-[#201F1C] hover:bg-[#FAF6EB] dark:hover:bg-[#2A2926] text-[#262626] dark:text-[#F7F4ED] border border-[#D9D6CE] dark:border-[#383733] font-semibold rounded-xl text-xs uppercase tracking-wider transition-colors flex items-center justify-center cursor-pointer"
+                >
+                  <span>Volunteer sign in</span>
+                </button>
+              )}
             </div>
           )}
 
