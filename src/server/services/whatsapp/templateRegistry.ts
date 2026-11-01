@@ -278,6 +278,42 @@ export const ZOHO_TEMPLATE_REGISTRY: Record<string, ZohoTemplateDefinition> = {
     description: 'WhatsApp Parents Channel invitation linking to verified portal (/parents/channel) (alias)'
   },
 
+  // 17. Post-Attendance Check-in Confirmation
+  child_checked_in: {
+    intent: 'child_checked_in',
+    defaultAlias: 'koinonia_child_checked_in',
+    envVarKeys: ['ZOHO_WA_TEMPLATE_KOINONIA_CHILD_CHECKED_IN', 'ZOHO_WA_TEMPLATE_CHILD_CHECKED_IN'],
+    category: 'child_parent',
+    requiredMergeFields: ['parent_first_name', 'child_first_name', 'checkin_time'],
+    description: 'Automated WhatsApp confirmation to parent upon child check-in'
+  },
+  koinonia_child_checked_in: {
+    intent: 'child_checked_in',
+    defaultAlias: 'koinonia_child_checked_in',
+    envVarKeys: ['ZOHO_WA_TEMPLATE_KOINONIA_CHILD_CHECKED_IN', 'ZOHO_WA_TEMPLATE_CHILD_CHECKED_IN'],
+    category: 'child_parent',
+    requiredMergeFields: ['parent_first_name', 'child_first_name', 'checkin_time'],
+    description: 'Direct alias for koinonia_child_checked_in'
+  },
+
+  // 18. Post-Attendance Pickup / Checkout Confirmation
+  child_picked_up: {
+    intent: 'child_picked_up',
+    defaultAlias: 'koinonia_child_picked_up',
+    envVarKeys: ['ZOHO_WA_TEMPLATE_KOINONIA_CHILD_PICKED_UP', 'ZOHO_WA_TEMPLATE_CHILD_PICKED_UP'],
+    category: 'child_parent',
+    requiredMergeFields: ['parent_first_name', 'child_first_name', 'pickup_time'],
+    description: 'Automated WhatsApp confirmation to parent upon child pickup/checkout'
+  },
+  koinonia_child_picked_up: {
+    intent: 'child_picked_up',
+    defaultAlias: 'koinonia_child_picked_up',
+    envVarKeys: ['ZOHO_WA_TEMPLATE_KOINONIA_CHILD_PICKED_UP', 'ZOHO_WA_TEMPLATE_CHILD_PICKED_UP'],
+    category: 'child_parent',
+    requiredMergeFields: ['parent_first_name', 'child_first_name', 'pickup_time'],
+    description: 'Direct alias for koinonia_child_picked_up'
+  },
+
   // Direct template alias aliases for convenience
   koinonia_registration_ack: {
     intent: 'registration_ack',

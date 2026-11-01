@@ -234,6 +234,10 @@ export function validateMergeInfo(
         aliasSatisfied = true;
       } else if (key === 'selected_child_names' && mergeInfo.child_names?.trim()) {
         aliasSatisfied = true;
+      } else if (key === 'checkin_time' && (mergeInfo.check_in_time?.trim() || mergeInfo.checkin_time?.trim())) {
+        aliasSatisfied = true;
+      } else if (key === 'pickup_time' && (mergeInfo.pick_up_time?.trim() || mergeInfo.pickup_time?.trim())) {
+        aliasSatisfied = true;
       }
 
       if (!aliasSatisfied) {

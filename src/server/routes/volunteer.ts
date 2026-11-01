@@ -22,6 +22,10 @@ import {
   resolveEventChildIdentifier,
   WristbandDomainError
 } from '../services/wristbandService';
+import {
+  dispatchCheckInWhatsAppNotification,
+  dispatchPickupWhatsAppNotification
+} from '../services/whatsapp/attendanceNotifications';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -2889,6 +2893,13 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
       }
     }
 
+    // Dispatch automated WhatsApp check-in confirmation to parent (non-blocking, fail-safe)
+    dispatchCheckInWhatsAppNotification({
+      childEventEntryId: entryId,
+      eventId: currentEventId,
+      checkInTime: now
+    }).catch(waErr => console.error('[POST /check-in WhatsApp confirmation dispatch error]:', waErr));
+
     const stats = await getEventStats(currentEventId);
 
     res.json({
@@ -3309,6 +3320,14 @@ router.post('/check-out', authMiddleware, async (req: AuthenticatedRequest, res:
       now
     ]);
 
+    // Dispatch automated WhatsApp pickup confirmation to parent (non-blocking, fail-safe)
+    dispatchPickupWhatsAppNotification({
+      childEventEntryId: entryId,
+      eventId: currentEventId,
+      pickupTime: now,
+      pickupPersonName: pickupPersonDetails?.fullName
+    }).catch(waErr => console.error('[POST /check-out WhatsApp confirmation dispatch error]:', waErr));
+
     const stats = await getEventStats(currentEventId);
     const lastPickedUpVal = await getLastPickedUp(currentEventId);
 
@@ -3666,6 +3685,14 @@ router.post('/pickup/mark', authMiddleware, async (req: AuthenticatedRequest, re
       req.user.id,
       now
     ]);
+
+    // Dispatch automated WhatsApp pickup confirmation to parent (non-blocking, fail-safe)
+    dispatchPickupWhatsAppNotification({
+      childEventEntryId: entryId,
+      eventId: currentEventId,
+      pickupTime: now,
+      pickupPersonName: pickupPersonDetails?.fullName
+    }).catch(waErr => console.error('[POST /pickup/mark WhatsApp confirmation dispatch error]:', waErr));
 
     const stats = await getEventStats(currentEventId);
     const lastPickedUpVal = await getLastPickedUp(currentEventId);
@@ -4098,11 +4125,38 @@ router.get('/children/:childId', authMiddleware, async (req: AuthenticatedReques
 
     const event = await queryOne('SELECT * FROM events WHERE id = ?', [currentEventId]);
 
+    const passRow = await queryOne('SELECT pass_reference FROM event_passes WHERE child_event_entry_id = ?', [entry.id]);
+
+    let activeWristband: any = null;
+    try {
+      const activeAssignment = await queryOne<{
+        wristband_id: string;
+        assigned_at: string;
+        wristband_code: string;
+        status: string;
+      }>(
+        `SELECT cwa.wristband_id, cwa.assigned_at, wb.wristband_code, wb.status
+         FROM child_wristband_assignments cwa
+         JOIN wristbands wb ON cwa.wristband_id = wb.id
+         WHERE cwa.child_event_entry_id = ? AND cwa.deactivated_at IS NULL`,
+        [entry.id]
+      );
+      if (activeAssignment) {
+        activeWristband = {
+          id: activeAssignment.wristband_id,
+          wristbandCode: activeAssignment.wristband_code,
+          status: activeAssignment.status,
+          assignedAt: activeAssignment.assigned_at
+        };
+      }
+    } catch (_) {}
+
     res.json({
       success: true,
       child: {
         id: entry.canonical_child_id,
         entryId: entry.id,
+        passReference: passRow ? passRow.pass_reference : null,
         fullName: entry.child_name,
         firstName: entry.child_name.split(' ')[0],
         age: entry.calculated_age || 0,
@@ -4118,8 +4172,9 @@ router.get('/children/:childId', authMiddleware, async (req: AuthenticatedReques
         pickedUpAt: entry.picked_up_at,
         pickedUpBy: todayActivity.pickedUpBy,
         medicalNote: entry.has_medical_notes === 1 ? entry.medical_notes : null,
-        allergies: null,
-        extraSupport: entry.needs_extra_support === 1 ? entry.support_notes : null
+        allergies: entry.has_medical_notes === 1 ? 'Yes' : 'No',
+        extraSupport: entry.needs_extra_support === 1 ? entry.support_notes : null,
+        activeWristband: activeWristband
       },
       parent: {
         id: entry.parent_id,
