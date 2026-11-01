@@ -457,10 +457,9 @@ export async function sendChildReviewReceivedEmail(params: {
 
 /**
  * Renders the dedicated Parents Channel invitation section for successful selection / pass-ready emails.
- * Uses the first-party Koinonia route: https://koinonia12.netlify.app/parents/channel
- * (Never links directly to WhatsApp channel to protect URL and comply with security rules).
+ * Links directly to the WhatsApp channel so parents can join with one tap.
  */
-export function buildParentsChannelEmailSection(channelUrl: string = 'https://koinonia12.netlify.app/parents/channel') {
+export function buildParentsChannelEmailSection(channelUrl: string = 'https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U') {
   const html = `
     <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid #EAE8E1;">
       <p style="margin: 0 0 10px 0; font-size: 15px; font-weight: bold; color: #18181B;">
@@ -529,7 +528,7 @@ export async function sendChildReviewDecisionEmail(params: {
 
   const resolvedStatusLink = params.statusLink || buildPublicAppUrl('/parent/children');
   const resolvedPassLink = params.passLink || resolvedStatusLink;
-  const channelPortalUrl = 'https://koinonia12.netlify.app/parents/channel';
+  const channelPortalUrl = 'https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U';
 
   if (statusLower === 'selected' || statusLower === 'pass_ready' || statusLower === 'approved' || statusLower === 'active') {
     subject = isPlural ? `Event passes ready for ${formattedChildNames}` : `${formattedChildNames}${suffix} event pass is ready`;
@@ -710,7 +709,7 @@ export async function sendPassReadyEmail(params: {
   const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
   const subject = isPlural ? `Event passes ready for ${formattedChildNames}` : `${formattedChildNames}${suffix} event pass is ready`;
   const passWord = isPlural ? 'The event passes are' : 'The event pass is';
-  const channelPortalUrl = 'https://koinonia12.netlify.app/parents/channel';
+  const channelPortalUrl = 'https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U';
   const channelSection = buildParentsChannelEmailSection(channelPortalUrl);
   
   const bodyHtml = `
