@@ -2437,6 +2437,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   // Confirm and perform Check-in
   const handleConfirmCheckIn = async (child: any) => {
     if (isCheckingIn) return;
+
+    const rawStatus = (child?.entryStatus || child?.status || '').toLowerCase();
+    const isIneligible = ['under_review', 'waiting_list', 'not_selected', 'withdrawn', 'review_reopened', 'incomplete', 'draft'].includes(rawStatus);
+    if (isIneligible) {
+      showError('Check-In Blocked', `${child.fullName || 'Child'} is not eligible for check-in (${rawStatus.replace(/_/g, ' ')}).`);
+      return;
+    }
+
     setIsCheckingIn(true);
     setScanLoading(true);
 
@@ -3748,8 +3756,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               );
             })()
           ) : lookedUpChild ? (() => {
-            const isAlreadyCheckedIn = lookedUpChild.entryStatus === 'checked_in' || lookedUpChild.entryStatus === 'inside' || lookedUpChild.status === 'checked_in' || lookedUpChild.status === 'inside';
-            const isAlreadyPickedUp = lookedUpChild.entryStatus === 'picked_up' || lookedUpChild.entryStatus === 'checked_out' || lookedUpChild.status === 'picked_up' || lookedUpChild.status === 'checked_out';
+            const rawStatus = (lookedUpChild.entryStatus || lookedUpChild.status || '').toLowerCase();
+            const isAlreadyCheckedIn = rawStatus === 'checked_in' || rawStatus === 'inside';
+            const isAlreadyPickedUp = rawStatus === 'picked_up' || rawStatus === 'checked_out';
+            const isIneligible = ['under_review', 'waiting_list', 'not_selected', 'withdrawn', 'review_reopened', 'incomplete', 'draft'].includes(rawStatus);
             const medicalNoteText = lookedUpChild.medicalNotes || lookedUpChild.medicalNote || '';
             const allergiesText = lookedUpChild.allergies || '';
             const extraSupportText = lookedUpChild.supportNotes || lookedUpChild.extraSupport || '';
@@ -3781,9 +3791,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                             ? 'bg-zinc-100 dark:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] border border-zinc-200 dark:border-[#3A3835]'
                             : isAlreadyCheckedIn
                             ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40'
+                            : isIneligible
+                            ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40'
                             : 'bg-stone-50 dark:bg-[#262520] text-stone-700 dark:text-[#B8B0A5] border border-stone-200 dark:border-[#3A3835]'
                         }`}>
-                          {isAlreadyPickedUp ? 'Picked up' : (isAlreadyCheckedIn ? 'Checked in' : 'Ready for check-in')}
+                          {isAlreadyPickedUp ? 'Picked up' : (isAlreadyCheckedIn ? 'Checked in' : (isIneligible ? rawStatus.replace(/_/g, ' ') : 'Ready for check-in'))}
                         </span>
                       </div>
                       <p className="text-xs text-gray-600 dark:text-[#B8B0A5] font-medium mt-0.5 font-sans" data-component-version="volunteer-child-age-display-v2-under-one">
@@ -3847,6 +3859,18 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         <span className="text-xs font-normal text-gray-500 dark:text-[#7A7570] ml-1">
                           · Checked in at {formatTime(lookedUpChild.checkedInAt || lookedUpChild.checked_in_at || new Date().toISOString())}
                         </span>
+                      </div>
+                    ) : isIneligible ? (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-400">
+                          <span className="w-5 h-5 rounded-full bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400 flex items-center justify-center shrink-0">
+                            <AlertTriangle className="h-3.5 w-3.5 stroke-[2.5]" />
+                          </span>
+                          <span>Not eligible for check-in</span>
+                        </div>
+                        <p className="text-xs text-amber-700/80 dark:text-amber-300/70 pl-7 leading-relaxed">
+                          Current status is <span className="font-semibold uppercase tracking-wide">{rawStatus.replace(/_/g, ' ')}</span>. Check-in is not permitted.
+                        </p>
                       </div>
                     ) : (
                       <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-[#F0EBE3]">
@@ -3917,6 +3941,30 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         >
                           <User className="h-3.5 w-3.5 text-gray-400 dark:text-[#7A7570]" />
                           <span>View full child record</span>
+                        </button>
+                      </>
+                    ) : isIneligible ? (
+                      <>
+                        {/* PRIMARY: Scan another pass */}
+                        <button
+                          type="button"
+                          onClick={handleResetScannerState}
+                          data-component-version="volunteer-scan-another-action-v4"
+                          className="w-full min-h-[46px] bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#18181B] font-sans font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center space-x-2"
+                        >
+                          <QrCode className="h-4 w-4" />
+                          <span>SCAN ANOTHER PASS</span>
+                        </button>
+
+                        {/* SECONDARY: View child record */}
+                        <button
+                          type="button"
+                          onClick={() => handleViewScannedChildRecord(lookedUpChild)}
+                          data-component-version="volunteer-child-view-record-secondary-action-v7"
+                          className="w-full min-h-[44px] border border-gray-200 dark:border-[#302E29] hover:border-gray-300 dark:hover:border-[#3A3835] text-gray-800 dark:text-[#F0EBE3] font-sans font-semibold text-xs uppercase tracking-wider rounded-xl transition-all bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] cursor-pointer flex items-center justify-center space-x-2"
+                        >
+                          <User className="h-4 w-4 text-gray-500 dark:text-[#B8B0A5]" />
+                          <span>View child record →</span>
                         </button>
                       </>
                     ) : (
@@ -4171,6 +4219,30 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     </p>
                   )}
                 </div>
+
+                {/* 5. PARENT / GUARDIAN (where supported) */}
+                {(lookedUpChild.parentName || lookedUpChild.parentPhone) && (
+                  <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 sm:p-5 shadow-xs space-y-2" data-component-version="volunteer-child-parent-info-v1">
+                    <div className="text-[10px] font-mono font-bold text-gray-400 dark:text-[#7A7570] tracking-wider uppercase">
+                      Parent / Guardian
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl overflow-hidden bg-gray-100 dark:bg-[#262520] border border-gray-200/80 dark:border-[#302E29] shrink-0 flex items-center justify-center">
+                        <User className="h-5 w-5 text-gray-400 dark:text-[#7A7570]" />
+                      </div>
+                      <div className="min-w-0">
+                        <h5 className="text-sm font-sans font-bold text-gray-900 dark:text-[#F0EBE3] truncate">
+                          {lookedUpChild.parentName || 'Parent / Guardian'}
+                        </h5>
+                        {lookedUpChild.parentPhone && (
+                          <p className="text-xs text-gray-500 dark:text-[#B8B0A5] font-medium font-mono">
+                            {lookedUpChild.parentPhone}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })() : (
