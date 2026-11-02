@@ -75,6 +75,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
   const [profileError, setProfileError] = useState<string | null>(null);
   const [reviewNote, setReviewNote] = useState('');
   const [assignedTeam, setAssignedTeam] = useState('');
+  const [assignedAgeGroups, setAssignedAgeGroups] = useState<string[]>([]);
   const [submittingReview, setSubmittingReview] = useState(false);
   const [submittingAssignment, setSubmittingAssignment] = useState(false);
   const [resendingEmail, setResendingEmail] = useState(false);
@@ -359,6 +360,8 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
         setSelectedVol(res.volunteer);
         const team = res.volunteer.preferredTeam || res.volunteer.assignedTeam || 'General assistance';
         setAssignedTeam(team);
+        const rawAges = res.volunteer.assignedAgeGroups;
+        setAssignedAgeGroups(Array.isArray(rawAges) ? rawAges : (rawAges ? [rawAges] : []));
         setReviewNote(res.volunteer.note || '');
       } else if (fallbackVol) {
         setSelectedVol(fallbackVol);
@@ -382,6 +385,8 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
     setSelectedVolId(id);
     setSelectedVol(vol);
     setAssignedTeam(vol.preferredTeam || vol.assignedTeam || 'General assistance');
+    const rawAges = vol.assignedAgeGroups;
+    setAssignedAgeGroups(Array.isArray(rawAges) ? rawAges : (rawAges ? [rawAges] : []));
     setReviewNote(vol.note || '');
     setShowMoreActions(false);
     setOpenActionMenuId(null);
@@ -392,6 +397,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
     setSelectedVolId(null);
     setSelectedVol(null);
     setReviewNote('');
+    setAssignedAgeGroups([]);
     setSubmittingReview(false);
     setShowMoreActions(false);
     setProfileError(null);
@@ -433,9 +439,10 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
     const volName = selectedVol.fullName || selectedVol.name || 'Volunteer';
     setSubmittingAssignment(true);
     try {
-      const res = await api.admin.updateVolunteerAssignment(volId, assignedTeam);
+      const res = await api.admin.updateVolunteerAssignment(volId, { assignedTeam, assignedAgeGroups });
       if (res.success) {
-        showSuccess('Team updated', `${volName} has been assigned to the ${teamLabel(assignedTeam)} team.`);
+        const scopeText = assignedAgeGroups.length > 0 ? ` (${assignedAgeGroups.join(', ')})` : '';
+        showSuccess('Assignment updated', `${volName} has been assigned to the ${teamLabel(assignedTeam)} team${scopeText}.`);
         handleCloseReview();
         fetchVolunteers();
       }
@@ -955,6 +962,33 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
                         ))}
                       </select>
+                    </div>
+                    <div>
+                      <label className="text-zinc-400 dark:text-[#7A7570] text-[10px] uppercase tracking-wider block mb-1.5 font-bold">
+                        Assigned age groups (Operational Scope)
+                      </label>
+                      <p className="text-[11px] text-zinc-400 dark:text-[#7A7570] mb-2 leading-tight">
+                        Select the age group(s) this volunteer is assigned to operate for check-in scanning and pickup verification.
+                      </p>
+                      <div className="space-y-1.5 bg-[#FAF9F6] dark:bg-[#262520] p-3 rounded-xl border border-[#EAE8E1] dark:border-[#3A3835]">
+                        {['Ages 2–3', 'Ages 4–6', 'Ages 7–9', 'Ages 10–12', 'Ages 13–14'].map((grp) => (
+                          <label key={grp} className="flex items-center space-x-2 text-xs font-medium text-gray-800 dark:text-[#F0EBE3] cursor-pointer py-0.5 select-none">
+                            <input
+                              type="checkbox"
+                              checked={assignedAgeGroups.includes(grp)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setAssignedAgeGroups([...assignedAgeGroups, grp]);
+                                } else {
+                                  setAssignedAgeGroups(assignedAgeGroups.filter(g => g !== grp));
+                                }
+                              }}
+                              className="rounded border-gray-300 dark:border-[#3A3835] text-[#C59B27] focus:ring-[#C59B27]"
+                            />
+                            <span>{grp}</span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
                     <div>
                       <label className="text-zinc-400 dark:text-[#7A7570] text-[10px] uppercase tracking-wider block mb-1.5">Decision memo / Internal notes</label>

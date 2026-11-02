@@ -2380,10 +2380,11 @@ export const api = {
         method: 'POST'
       });
     },
-    async updateVolunteerAssignment(id: string, assignedTeam: string) {
+    async updateVolunteerAssignment(id: string, assignment: string | { assignedTeam?: string; assignedAgeGroups?: string[] }) {
+      const body = typeof assignment === 'string' ? { assignedTeam: assignment } : assignment;
       return api.request<{ success: boolean; message: string }>(`/api/admin/volunteers/${id}/assignment`, {
         method: 'PATCH',
-        body: JSON.stringify({ assignedTeam })
+        body: JSON.stringify(body)
       });
     },
     async resendVolunteerApprovalEmail(id: string) {

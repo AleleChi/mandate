@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   LogOut, QrCode, Search, BarChart3, User, RefreshCw, AlertTriangle, 
   ShieldCheck, Check, Home, Camera, CameraOff, X, Phone, MessageCircle, 
@@ -680,6 +680,49 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   // Phase 6 duty presence states
   const [currentDutyLocation, setCurrentDutyLocation] = useState<any>(null);
+
+  // Volunteer Operational Scope & Age Group Assignments (Sections 12-21)
+  const assignedAgeGroups: string[] = useMemo(() => {
+    const raw = volunteerProfile?.assignedAgeGroups || currentDutyLocation?.assignedAgeGroups;
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string' && raw.trim()) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {
+        return [raw.trim()];
+      }
+    }
+    return [];
+  }, [volunteerProfile, currentDutyLocation]);
+
+  const isOrdinaryVolunteer = useMemo(() => {
+    const role = (volunteerProfile?.role || '').toLowerCase();
+    return role !== 'admin' && role !== 'super_admin' && role !== 'team_lead' && role !== 'team';
+  }, [volunteerProfile]);
+
+  const assignedScopeLabel: string = useMemo(() => {
+    if (!isOrdinaryVolunteer) {
+      return assignedAgeGroups.length > 0 ? `Assigned: ${assignedAgeGroups.join(', ')} (Admin)` : '';
+    }
+    if (assignedAgeGroups.length === 0) {
+      return 'No age group assigned';
+    }
+    return `Assigned: ${assignedAgeGroups.join(', ')}`;
+  }, [isOrdinaryVolunteer, assignedAgeGroups]);
+
+  const isChildInAssignedScope = useCallback((child: any) => {
+    if (!isOrdinaryVolunteer) return true; // Admins / Team leads have cross-group visibility
+    if (assignedAgeGroups.length === 0) return false;
+
+    const rawChildGroup = (child?.ageGroup || child?.classGroup || child?.className || '').toLowerCase().trim();
+    const cleanChild = rawChildGroup.replace(/[\u2013\u2014]/g, '-').replace(/^ages\s*/i, '').trim();
+
+    return assignedAgeGroups.some(assigned => {
+      const cleanAssigned = assigned.toLowerCase().replace(/[\u2013\u2014]/g, '-').replace(/^ages\s*/i, '').trim();
+      return cleanChild === cleanAssigned || rawChildGroup.includes(cleanAssigned) || cleanAssigned.includes(cleanChild);
+    });
+  }, [isOrdinaryVolunteer, assignedAgeGroups]);
   const [showLocationSelectModal, setShowLocationSelectModal] = useState<boolean>(false);
   const [showLocationQRModal, setShowLocationQRModal] = useState<boolean>(false);
   const [showSetLocationSheet, setShowSetLocationSheet] = useState<boolean>(false);
@@ -2042,6 +2085,27 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         }
 
         if (childData) {
+          // Volunteer Operational Scope Enforcement (Sections 16, 17, 18)
+          if (isOrdinaryVolunteer && assignedAgeGroups.length === 0) {
+            showWarning('Assignment Required', 'No age group has been assigned to your event duty yet.');
+            isLookupInFlightRef.current = false;
+            lastScannedCodeRef.current = null;
+            isLookupInFlight.current = false;
+            lastScannedCode.current = '';
+            setManualCode('');
+            return;
+          }
+
+          if (!isChildInAssignedScope(childData)) {
+            showWarning('Out of Scope', 'This child is assigned to another age group.');
+            isLookupInFlightRef.current = false;
+            lastScannedCodeRef.current = null;
+            isLookupInFlight.current = false;
+            lastScannedCode.current = '';
+            setManualCode('');
+            return;
+          }
+
           hasSuccessfulScanRef.current = true;
 
           // Haptic feedback if available
@@ -2732,6 +2796,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     try {
       const res = await api.volunteer.lookupPickup({ passCode: code.trim().toUpperCase() });
       if (res && res.success && res.child) {
+        // Volunteer Operational Scope Enforcement (Sections 16, 17, 18)
+        if (isOrdinaryVolunteer && assignedAgeGroups.length === 0) {
+          showWarning('Assignment Required', 'No age group has been assigned to your event duty yet.');
+          return;
+        }
+        if (!isChildInAssignedScope(res.child)) {
+          showWarning('Out of Scope', 'This child is assigned to another age group.');
+          return;
+        }
+
         const childWithPickup = {
           ...res.child,
           pickup: res.child.authorizedPickup && res.child.authorizedPickup.length > 0 ? res.child.authorizedPickup[0] : null
@@ -2768,8 +2842,19 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         setPickupSuccessResult(res);
         showSuccess('Pickup Confirmed', `${res.child?.fullName || child.fullName} has been successfully released.`);
         
+        // Immediate counters update (Sections 9 & 10)
+        if (res.stats) {
+          setPickupStats(res.stats);
+          setStats((prev) => ({
+            ...prev,
+            checkedIn: res.stats.inside ?? res.stats.checkedIn ?? prev.checkedIn,
+            pickedUp: res.stats.pickedUp ?? prev.pickedUp,
+            attention: res.stats.attention ?? prev.attention
+          }));
+        }
         // Refresh pickup home data
         fetchPickupData(true);
+        fetchDashboardData(true);
         // Clear active child lookup
         setPickupChild(null);
         setPickupCode('');
@@ -2908,13 +2993,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   <p className="text-[9px] font-mono uppercase tracking-wider text-gray-500 dark:text-[#7A7570] truncate leading-none mt-0.5">
                     {eventDetails?.title?.toUpperCase() || 'THE GENERAL ASSEMBLY CHILDREN AND TEENS'}
                   </p>
+                  {assignedScopeLabel && (
+                    <p className="text-[9.5px] text-[#8C6D23] dark:text-[#C59B27] font-medium tracking-wide leading-none mt-1">
+                      {assignedScopeLabel}
+                    </p>
+                  )}
                 </div>
-              </div>
-              <div className="flex items-center space-x-1.5 shrink-0 pl-2">
-                <span className={`w-1.5 h-1.5 rounded-full ${offlineService.isOffline() ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                <span className="text-[10px] font-mono font-bold tracking-wider text-gray-600 dark:text-[#B8B0A5] uppercase">
-                  {offlineService.isOffline() ? 'OFFLINE' : 'ONLINE'}
-                </span>
               </div>
             </div>
           ) : cleanRoute === '/volunteer/pickup' ? (
@@ -2949,13 +3033,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   <p className="text-[10px] text-gray-500 dark:text-[#7A7570] font-sans truncate leading-none mt-0.5">
                     {eventDetails?.title || 'The General Assembly Children and Teens'}
                   </p>
+                  {assignedScopeLabel && (
+                    <p className="text-[9.5px] text-[#8C6D23] dark:text-[#C59B27] font-medium tracking-wide leading-none mt-1">
+                      {assignedScopeLabel}
+                    </p>
+                  )}
                 </div>
-              </div>
-              <div className="flex items-center space-x-1.5 shrink-0 pl-2">
-                <span className={`w-1.5 h-1.5 rounded-full ${offlineService.isOffline() ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                <span className="text-[10px] text-gray-600 dark:text-[#B8B0A5] font-sans">
-                  {offlineService.isOffline() ? 'Offline' : 'Online'}
-                </span>
               </div>
             </div>
           ) : (
