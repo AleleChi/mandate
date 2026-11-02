@@ -50,6 +50,16 @@ export interface SelectedParentAudienceChild {
   calculatedAge?: number | null;
 }
 
+export interface SelectedParentCommunicationHistoryItem {
+  id?: string;
+  channel: 'whatsapp' | 'email';
+  status: 'sent' | 'failed' | 'queued' | 'not_sent';
+  sentAt?: string | null;
+  attemptedAt?: string | null;
+  providerMessageId?: string | null;
+  failureReason?: string | null;
+}
+
 export interface SelectedParentAudienceRow {
   parentId: string;
   userId: string;
@@ -72,6 +82,18 @@ export interface SelectedParentAudienceRow {
   failureReason: string | null;
   providerMessageId: string | null;
   emailChannelAccessSent?: boolean;
+  whatsappSendCount?: number;
+  lastWhatsappSentAt?: string | null;
+  lastWhatsappAttemptAt?: string | null;
+  lastWhatsappStatus?: 'sent' | 'failed' | 'not_sent';
+  communicationHistory?: SelectedParentCommunicationHistoryItem[];
+}
+
+export interface SelectedParentsPagination {
+  page: number;
+  pageSize: number;
+  totalRecords: number;
+  totalPages: number;
 }
 
 export interface SelectedParentsAudienceSummary {
@@ -92,6 +114,7 @@ export interface SelectedParentsAudienceResponse {
   templateKeyOrAlias: string | null;
   summary: SelectedParentsAudienceSummary;
   parents: SelectedParentAudienceRow[];
+  pagination?: SelectedParentsPagination;
   error?: string;
 }
 
@@ -263,12 +286,24 @@ export const api = {
   },
 
 
-  async getSelectedParentsAudience(eventId: string, params?: { search?: string; status?: string; whatsappStatus?: string }) {
+  async getSelectedParentsAudience(eventId: string, params?: {
+    search?: string;
+    status?: string;
+    whatsappStatus?: string;
+    selectedCount?: string;
+    ageGroup?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
     const q = new URLSearchParams();
     q.append('eventId', eventId);
     if (params?.search) q.append('search', params.search);
     if (params?.status) q.append('status', params.status);
     if (params?.whatsappStatus) q.append('whatsappStatus', params.whatsappStatus);
+    if (params?.selectedCount) q.append('selectedCount', params.selectedCount);
+    if (params?.ageGroup) q.append('ageGroup', params.ageGroup);
+    if (params?.page) q.append('page', String(params.page));
+    if (params?.pageSize) q.append('pageSize', String(params.pageSize));
     return api.request<SelectedParentsAudienceResponse>(`/api/admin/messages/selected-parents?${q.toString()}`);
   },
 
@@ -276,6 +311,7 @@ export const api = {
     eventId: string;
     parentIds: string[];
     resend?: boolean;
+    skipAlreadySent?: boolean;
   }) {
     return api.request<SelectedParentsSendResponse>('/api/admin/messages/selected-parents/send', {
       method: 'POST',
