@@ -40,7 +40,7 @@ jobs:
       # app calls relative /api paths, which CloudFront answers with index.html.
       - name: Check build configuration
         env:
-          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || 'https://mandate-2i7u.onrender.com' }}
         run: |
           if [ -z "$VITE_API_BASE_URL" ]; then
             echo "::error::Repository variable VITE_API_BASE_URL is not set"
@@ -50,8 +50,8 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
-          VITE_PUBLIC_SITE_URL: ${{ vars.VITE_PUBLIC_SITE_URL }}
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || 'https://mandate-2i7u.onrender.com' }}
+          VITE_PUBLIC_SITE_URL: ${{ vars.VITE_PUBLIC_SITE_URL || 'https://kgachildren.koinoniageneralassembly.com' }}
 
       # Netlify-only config and the public/ dev note; S3 would serve them as plain files.
       - name: Remove non-deployable files
