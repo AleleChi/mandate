@@ -43,6 +43,16 @@ export interface AudienceChildDetail {
   calculatedAge?: number | null;
 }
 
+export interface CommunicationHistoryItem {
+  id?: string;
+  channel: 'whatsapp' | 'email';
+  status: 'sent' | 'failed' | 'queued' | 'not_sent';
+  sentAt?: string | null;
+  attemptedAt?: string | null;
+  providerMessageId?: string | null;
+  failureReason?: string | null;
+}
+
 export interface SelectedParentRecord {
   parentId: string;
   userId: string;
@@ -66,6 +76,18 @@ export interface SelectedParentRecord {
   providerMessageId: string | null;
   emailChannelAccessSent?: boolean;
   emailChannelSentAt?: string | null;
+  whatsappSendCount: number;
+  lastWhatsappSentAt: string | null;
+  lastWhatsappAttemptAt: string | null;
+  lastWhatsappStatus: 'sent' | 'failed' | 'not_sent';
+  communicationHistory: CommunicationHistoryItem[];
+}
+
+export interface SelectedParentsPagination {
+  page: number;
+  pageSize: number;
+  totalRecords: number;
+  totalPages: number;
 }
 
 export interface SelectedParentsAudienceResult {
@@ -83,6 +105,7 @@ export interface SelectedParentsAudienceResult {
     whatsappUnavailable: number;
   };
   parents: SelectedParentRecord[];
+  pagination: SelectedParentsPagination;
 }
 
 export interface SendResultDetail {
@@ -144,7 +167,11 @@ export async function getSelectedParentsAudience(
   options?: {
     search?: string;
     status?: string; // 'all' | 'not_sent' | 'sent' | 'failed'
-    whatsappStatus?: string; // 'all' | 'available' | 'unavailable'
+    whatsappStatus?: string; // 'all' | 'available' | 'unavailable' | 'opted_out'
+    selectedCount?: string; // 'all' | '1' | '2_plus'
+    ageGroup?: string; // 'all' | age group label
+    page?: number;
+    pageSize?: number;
   }
 ): Promise<SelectedParentsAudienceResult> {
   const event = await queryOne<{ id: string; title: string }>(
@@ -198,6 +225,34 @@ export async function getSelectedParentsAudience(
     [eventId, eventId, eventId]
   );
 
+  // Query delivery logs for this event/campaign
+  const deliveryLogs = await query<{
+    id: string;
+    parent_profile_id: string;
+    provider_message_id: string | null;
+    template_name: string | null;
+    status: string;
+    error_message: string | null;
+    sent_at: string | null;
+    created_at: string;
+  }>(
+    `SELECT id, parent_profile_id, provider_message_id, template_name, status, error_message, sent_at, created_at
+     FROM whatsapp_delivery_logs
+     WHERE (campaign_id = ? OR template_name LIKE '%selected_parent%')
+     ORDER BY created_at DESC`,
+    [`channel_invitation_${eventId}`]
+  );
+
+  const logsByParent = new Map<string, typeof deliveryLogs>();
+  for (const log of deliveryLogs) {
+    if (log.parent_profile_id) {
+      if (!logsByParent.has(log.parent_profile_id)) {
+        logsByParent.set(log.parent_profile_id, []);
+      }
+      logsByParent.get(log.parent_profile_id)!.push(log);
+    }
+  }
+
   // Group by parent_id
   const parentMap = new Map<string, {
     parent: any;
@@ -221,6 +276,7 @@ export async function getSelectedParentsAudience(
         },
         children: [],
         invitation: {
+          id: row.invitation_id || null,
           status: row.invitation_status || 'not_sent',
           sentAt: row.invitation_sent_at || null,
           attemptedAt: row.invitation_attempted_at || null,
@@ -278,6 +334,75 @@ export async function getSelectedParentsAudience(
       whatsappAvailability = 'invalid_number';
     }
 
+    // Determine authoritative send counts and communication history
+    const parentLogs = logsByParent.get(group.parent.id) || [];
+    const successfulLogs = parentLogs.filter(l => ['sent', 'delivered', 'read', 'queued'].includes(l.status));
+    const failedLogs = parentLogs.filter(l => l.status === 'failed');
+
+    const whatsappSendCount = Math.max(successfulLogs.length, group.invitation.status === 'sent' ? 1 : 0);
+
+    let lastWhatsappSentAt = group.invitation.sentAt;
+    if (successfulLogs.length > 0) {
+      lastWhatsappSentAt = successfulLogs[0].sent_at || successfulLogs[0].created_at || lastWhatsappSentAt;
+    }
+
+    let lastWhatsappAttemptAt = group.invitation.attemptedAt;
+    if (parentLogs.length > 0) {
+      lastWhatsappAttemptAt = parentLogs[0].sent_at || parentLogs[0].created_at || lastWhatsappAttemptAt;
+    }
+
+    let lastWhatsappStatus: 'sent' | 'failed' | 'not_sent' = 'not_sent';
+    if (whatsappSendCount > 0) {
+      lastWhatsappStatus = 'sent';
+    } else if (failedLogs.length > 0 || group.invitation.status === 'failed') {
+      lastWhatsappStatus = 'failed';
+    }
+
+    const commHistory: CommunicationHistoryItem[] = [];
+    for (const l of parentLogs) {
+      commHistory.push({
+        id: l.id,
+        channel: 'whatsapp',
+        status: (['sent', 'delivered', 'read'].includes(l.status)) ? 'sent' : l.status === 'failed' ? 'failed' : 'queued',
+        sentAt: l.sent_at || l.created_at,
+        attemptedAt: l.created_at,
+        providerMessageId: l.provider_message_id,
+        failureReason: l.error_message
+      });
+    }
+
+    if (parentLogs.length === 0 && (group.invitation.status === 'sent' || group.invitation.status === 'failed')) {
+      commHistory.push({
+        id: group.invitation.id || undefined,
+        channel: 'whatsapp',
+        status: group.invitation.status === 'sent' ? 'sent' : 'failed',
+        sentAt: group.invitation.sentAt,
+        attemptedAt: group.invitation.attemptedAt,
+        providerMessageId: group.invitation.providerMessageId,
+        failureReason: group.invitation.failureReason
+      });
+    }
+
+    if (group.invitation.emailChannelAccessSent) {
+      commHistory.push({
+        channel: 'email',
+        status: 'sent',
+        sentAt: group.invitation.emailChannelSentAt,
+        attemptedAt: group.invitation.emailChannelSentAt,
+        providerMessageId: null,
+        failureReason: null
+      });
+    }
+
+    commHistory.sort((a, b) => {
+      const tA = new Date(a.sentAt || a.attemptedAt || 0).getTime();
+      const tB = new Date(b.sentAt || b.attemptedAt || 0).getTime();
+      return tB - tA;
+    });
+
+    const invitationStatus: 'not_sent' | 'sent' | 'failed' =
+      whatsappSendCount > 0 ? 'sent' : (lastWhatsappStatus === 'failed' ? 'failed' : 'not_sent');
+
     allEligibleRecords.push({
       parentId: group.parent.id,
       userId: group.parent.userId,
@@ -294,31 +419,20 @@ export async function getSelectedParentsAudience(
       selectedRatioText,
       selectedChildNames,
       children: group.children,
-      invitationStatus: group.invitation.status === 'sent'
-        ? 'sent'
-        : group.invitation.status === 'failed'
-          ? 'failed'
-          : 'not_sent',
-      sentAt: group.invitation.sentAt,
-      attemptedAt: group.invitation.attemptedAt,
+      invitationStatus,
+      sentAt: lastWhatsappSentAt,
+      attemptedAt: lastWhatsappAttemptAt,
       failureReason: group.invitation.failureReason,
       providerMessageId: group.invitation.providerMessageId,
       emailChannelAccessSent: group.invitation.emailChannelAccessSent,
-      emailChannelSentAt: group.invitation.emailChannelSentAt
+      emailChannelSentAt: group.invitation.emailChannelSentAt,
+      whatsappSendCount,
+      lastWhatsappSentAt,
+      lastWhatsappAttemptAt,
+      lastWhatsappStatus,
+      communicationHistory: commHistory
     });
   }
-
-  // Global summary metrics across all eligible parents
-  const totalSelectedChildren = allEligibleRecords.reduce((sum, p) => sum + p.selectedChildrenCount, 0);
-  const summary = {
-    totalEligibleParents: allEligibleRecords.length,
-    totalSelectedChildren,
-    invitationsNotSent: allEligibleRecords.filter(p => p.invitationStatus === 'not_sent').length,
-    invitationsSent: allEligibleRecords.filter(p => p.invitationStatus === 'sent').length,
-    invitationsFailed: allEligibleRecords.filter(p => p.invitationStatus === 'failed').length,
-    whatsappAvailable: allEligibleRecords.filter(p => p.whatsappAvailability === 'available').length,
-    whatsappUnavailable: allEligibleRecords.filter(p => p.whatsappAvailability !== 'available').length
-  };
 
   // Apply filters if provided
   let filtered = allEligibleRecords;
@@ -328,11 +442,27 @@ export async function getSelectedParentsAudience(
   }
 
   if (options?.whatsappStatus && options.whatsappStatus !== 'all') {
-    if (options.whatsappStatus === 'available') {
+    if (options.whatsappStatus === 'available' || options.whatsappStatus === 'ready') {
       filtered = filtered.filter(p => p.whatsappAvailability === 'available');
     } else if (options.whatsappStatus === 'unavailable') {
       filtered = filtered.filter(p => p.whatsappAvailability !== 'available');
+    } else if (options.whatsappStatus === 'opted_out') {
+      filtered = filtered.filter(p => p.whatsappAvailability === 'opted_out');
     }
+  }
+
+  if (options?.selectedCount && options.selectedCount !== 'all') {
+    if (options.selectedCount === '1') {
+      filtered = filtered.filter(p => p.selectedChildrenCount === 1);
+    } else if (options.selectedCount === '2_plus') {
+      filtered = filtered.filter(p => p.selectedChildrenCount >= 2);
+    }
+  }
+
+  if (options?.ageGroup && options.ageGroup !== 'all') {
+    filtered = filtered.filter(p =>
+      p.children.some(c => c.isSelected && c.ageGroup === options.ageGroup)
+    );
   }
 
   if (options?.search && options.search.trim()) {
@@ -347,13 +477,39 @@ export async function getSelectedParentsAudience(
     );
   }
 
+  // Summary metrics representing the COMPLETE filtered/current-event audience
+  const totalSelectedChildren = filtered.reduce((sum, p) => sum + p.selectedChildrenCount, 0);
+  const summary = {
+    totalEligibleParents: filtered.length,
+    totalSelectedChildren,
+    invitationsNotSent: filtered.filter(p => p.invitationStatus === 'not_sent').length,
+    invitationsSent: filtered.filter(p => p.invitationStatus === 'sent').length,
+    invitationsFailed: filtered.filter(p => p.invitationStatus === 'failed').length,
+    whatsappAvailable: filtered.filter(p => p.whatsappAvailability === 'available').length,
+    whatsappUnavailable: filtered.filter(p => p.whatsappAvailability !== 'available').length
+  };
+
+  // Pagination calculation
+  const page = Math.max(1, Number(options?.page) || 1);
+  const pageSize = Math.max(1, Number(options?.pageSize) || 25);
+  const totalRecords = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
+  const start = (page - 1) * pageSize;
+  const pagedParents = filtered.slice(start, start + pageSize);
+
   return {
     eventId,
     eventTitle,
     templateConfigured: isChannelTemplateConfigured(),
     templateKeyOrAlias: getChannelTemplateKey(),
     summary,
-    parents: filtered
+    parents: pagedParents,
+    pagination: {
+      page,
+      pageSize,
+      totalRecords,
+      totalPages
+    }
   };
 }
 
@@ -423,8 +579,10 @@ export async function sendSelectedParentsChannelInvitations(params: {
   parentIds: string[];
   adminUserId: string;
   resend?: boolean;
+  skipAlreadySent?: boolean;
 }): Promise<SendChannelInvitationsResult> {
   const { eventId, parentIds, adminUserId, resend = false } = params;
+  const skipAlreadySent = params.skipAlreadySent !== undefined ? params.skipAlreadySent : !resend;
 
   const templateConfigured = isChannelTemplateConfigured();
   const templateKey = getChannelTemplateKey();
@@ -508,14 +666,23 @@ export async function sendSelectedParentsChannelInvitations(params: {
       continue;
     }
 
-    // 3. Check existing invitation delivery state
+    // 3. Revalidate live delivery state immediately before dispatch
     const existingInvitation = await queryOne<any>(
       `SELECT status, sent_at FROM parent_channel_invitations
-       WHERE parent_id = ? AND event_id = ? AND communication_purpose = 'parents_channel_invitation'`,
+       WHERE parent_id = ? AND event_id = ? AND communication_purpose = 'parents_channel_invitation' AND channel = 'whatsapp'`,
       [parentId, eventId]
     );
 
-    if (existingInvitation?.status === 'sent' && !resend) {
+    const deliveryLogs = await query<{ id: string; status: string }>(
+      `SELECT id, status FROM whatsapp_delivery_logs
+       WHERE parent_profile_id = ? AND (campaign_id = ? OR template_name LIKE '%selected_parent%')`,
+      [parentId, `channel_invitation_${eventId}`]
+    );
+
+    const priorSuccessfulSends = deliveryLogs.filter(l => ['sent', 'delivered', 'read', 'queued'].includes(l.status)).length;
+    const hasPriorSend = (existingInvitation?.status === 'sent') || (priorSuccessfulSends > 0);
+
+    if (hasPriorSend && (!resend || skipAlreadySent)) {
       skippedCount++;
       details.push({
         parentId,
@@ -635,6 +802,12 @@ export async function sendSelectedParentsChannelInvitations(params: {
           messageId
         });
 
+        let validAdminId: string | null = null;
+        if (adminUserId) {
+          const userRow = await queryOne<{ id: string }>('SELECT id FROM users WHERE id = ?', [adminUserId]);
+          if (userRow) validAdminId = adminUserId;
+        }
+
         // Record invitation as sent
         await recordChannelInvitationSent({
           parentId,
@@ -643,7 +816,7 @@ export async function sendSelectedParentsChannelInvitations(params: {
           templateAlias: 'selected-parent-channel-v2',
           provider: provider.name,
           providerMessageId: messageId,
-          initiatingAdminUserId: adminUserId,
+          initiatingAdminUserId: validAdminId,
           selectedChildNames
         });
 
@@ -670,6 +843,12 @@ export async function sendSelectedParentsChannelInvitations(params: {
         });
 
         // Record failure in parent_channel_invitations
+        let validAdminId: string | null = null;
+        if (adminUserId) {
+          const userRow = await queryOne<{ id: string }>('SELECT id FROM users WHERE id = ?', [adminUserId]);
+          if (userRow) validAdminId = adminUserId;
+        }
+
         const pciId = `pci-whatsapp-${eventId}-${parentId}`;
         await execute(
           `INSERT INTO parent_channel_invitations (
@@ -696,7 +875,7 @@ export async function sendSelectedParentsChannelInvitations(params: {
             'koinonia_selected_parent_channel',
             provider.name,
             errMsg,
-            adminUserId,
+            validAdminId,
             selectedChildNames,
             now,
             now,

@@ -10216,11 +10216,19 @@ router.get('/messages/selected-parents', async (req: AuthenticatedRequest, res: 
     const search = typeof req.query.search === 'string' ? req.query.search : undefined;
     const status = typeof req.query.status === 'string' ? req.query.status : undefined;
     const whatsappStatus = typeof req.query.whatsappStatus === 'string' ? req.query.whatsappStatus : undefined;
+    const selectedCount = typeof req.query.selectedCount === 'string' ? req.query.selectedCount : undefined;
+    const ageGroup = typeof req.query.ageGroup === 'string' ? req.query.ageGroup : undefined;
+    const page = req.query.page ? parseInt(req.query.page as string, 10) : undefined;
+    const pageSize = req.query.pageSize ? parseInt(req.query.pageSize as string, 10) : undefined;
 
     const result = await getSelectedParentsAudience(eventId, {
       search,
       status,
-      whatsappStatus
+      whatsappStatus,
+      selectedCount,
+      ageGroup,
+      page,
+      pageSize
     });
 
     return res.json({ success: true, ...result });
@@ -10237,7 +10245,7 @@ router.get('/messages/selected-parents', async (req: AuthenticatedRequest, res: 
 router.post('/messages/selected-parents/send', async (req: AuthenticatedRequest, res: Response) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   try {
-    const { eventId: rawEventId, parentIds, resend } = req.body || {};
+    const { eventId: rawEventId, parentIds, resend, skipAlreadySent } = req.body || {};
     const eventId = await resolveAdminEventId(rawEventId) || rawEventId || 'event-ga-2026';
 
     if (!Array.isArray(parentIds) || parentIds.length === 0) {
@@ -10252,7 +10260,8 @@ router.post('/messages/selected-parents/send', async (req: AuthenticatedRequest,
       eventId,
       parentIds,
       adminUserId,
-      resend: Boolean(resend)
+      resend: Boolean(resend),
+      skipAlreadySent: skipAlreadySent !== undefined ? Boolean(skipAlreadySent) : true
     });
 
     return res.json(result);

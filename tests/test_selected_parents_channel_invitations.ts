@@ -342,6 +342,114 @@ async function runTests() {
   assert(audienceEventA.parents.some(p => p.parentId === 'parent-case-a'), 'Case L: Parent A appears in Event A audience');
   assert(!audienceEventB.parents.some(p => p.parentId === 'parent-case-a'), 'Case L: Parent A does NOT appear in Event B audience');
 
+  // --- CASE M: Default 25 per page pagination ---
+  console.log('\n--- Case M: Default Pagination ---');
+  const pagedDefault = await getSelectedParentsAudience(EVENT_A);
+  assert(pagedDefault.pagination.page === 1, 'Case M: Page defaults to 1');
+  assert(pagedDefault.pagination.pageSize === 25, 'Case M: Page size defaults to 25');
+  assert(pagedDefault.pagination.totalRecords >= 1, 'Case M: totalRecords is populated');
+  assert(pagedDefault.pagination.totalPages >= 1, 'Case M: totalPages is populated');
+
+  // --- CASE N: 95 Records Across 4 Pages Simulation ---
+  console.log('\n--- Case N: 95 Records Across 4 Pages ---');
+  const EVENT_N = `test-event-n-${Date.now()}`;
+  await execute(`
+    INSERT INTO events (id, title, status, created_at, updated_at)
+    VALUES (?, 'Large Event 2026', 'open', ?, ?)
+  `, [EVENT_N, now, now]);
+
+  // Seed 95 parents with 1 child each
+  for (let i = 1; i <= 95; i++) {
+    const pId = `parent-case-n-${i}`;
+    const cId = `child-case-n-${i}`;
+    const eId = `entry-case-n-${i}`;
+    await createTestParent(pId, `Parent N ${i}`, `+23480000000${i.toString().padStart(3, '0')}`);
+    await createTestChild(cId, pId, `Child N ${i}`);
+    await createEntry(eId, cId, EVENT_N, 'selected');
+  }
+
+  const page1 = await getSelectedParentsAudience(EVENT_N, { page: 1, pageSize: 25 });
+  assert(page1.pagination.totalRecords === 95, 'Case N: Total records is 95');
+  assert(page1.pagination.totalPages === 4, 'Case N: Total pages is 4');
+  assert(page1.parents.length === 25, 'Case N: Page 1 has 25 rows');
+
+  const page4 = await getSelectedParentsAudience(EVENT_N, { page: 4, pageSize: 25 });
+  assert(page4.parents.length === 20, 'Case N: Page 4 has 20 rows');
+
+  // Summary represents COMPLETE audience, not just current page
+  assert(page1.summary.totalEligibleParents === 95, 'Case N: Summary represents complete audience of 95 parents');
+  assert(page1.summary.totalSelectedChildren === 95, 'Case N: Summary represents complete 95 selected children');
+
+  // --- CASE O: Sends Count & Resend Tracking ---
+  console.log('\n--- Case O: Sends Count & Resend Tracking ---');
+  const pOId = 'parent-case-o';
+  await createTestParent(pOId, 'Olumide Bakare', '+2348033334444');
+  await createTestChild('child-case-o-1', pOId, 'Femi Bakare');
+  await createEntry('entry-case-o-1', 'child-case-o-1', EVENT_A, 'selected');
+
+  // Check initial state
+  const audO0 = await getSelectedParentsAudience(EVENT_A);
+  const pO0 = audO0.parents.find(p => p.parentId === pOId);
+  assert(pO0?.whatsappSendCount === 0, 'Case O: Initial send count = 0');
+  assert(pO0?.lastWhatsappSentAt === null, 'Case O: Initial lastWhatsappSentAt = null');
+
+  // Send 1st time
+  const send1 = await sendSelectedParentsChannelInvitations({
+    eventId: EVENT_A,
+    parentIds: [pOId],
+    adminUserId: 'admin-tester'
+  });
+  assert(send1.sentCount === 1, 'Case O: 1st send succeeds');
+
+  const audO1 = await getSelectedParentsAudience(EVENT_A);
+  const pO1 = audO1.parents.find(p => p.parentId === pOId);
+  assert(pO1?.whatsappSendCount === 1, 'Case O: Send count = 1 after first send');
+  assert(pO1?.invitationStatus === 'sent', 'Case O: Invitation status = sent');
+  assert(pO1?.lastWhatsappSentAt !== null, 'Case O: lastWhatsappSentAt is populated');
+
+  // Resend 2nd time with resend=true, skipAlreadySent=false
+  const send2 = await sendSelectedParentsChannelInvitations({
+    eventId: EVENT_A,
+    parentIds: [pOId],
+    adminUserId: 'admin-tester',
+    resend: true,
+    skipAlreadySent: false
+  });
+  assert(send2.sentCount === 1, 'Case O: 2nd send succeeds with explicit resend');
+
+  // Resend 3rd time
+  const send3 = await sendSelectedParentsChannelInvitations({
+    eventId: EVENT_A,
+    parentIds: [pOId],
+    adminUserId: 'admin-tester',
+    resend: true,
+    skipAlreadySent: false
+  });
+  assert(send3.sentCount === 1, 'Case O: 3rd send succeeds with explicit resend');
+
+  const audO3 = await getSelectedParentsAudience(EVENT_A);
+  const pO3 = audO3.parents.find(p => p.parentId === pOId);
+  assert(pO3?.whatsappSendCount === 3, 'Case O: Send count = 3 after resends');
+
+  // Verify only ONE logical invitation record remains in parent_channel_invitations
+  const pciCount = await queryOne<{ count: number }>(
+    `SELECT COUNT(*) as count FROM parent_channel_invitations WHERE parent_id = ? AND event_id = ? AND channel = 'whatsapp'`,
+    [pOId, EVENT_A]
+  );
+  assert(Number(pciCount?.count) === 1, 'Case O: Exactly ONE logical invitation record remains in parent_channel_invitations');
+
+  // --- CASE P: Bulk Send Safety & Skip Already Sent ---
+  console.log('\n--- Case P: Bulk Send Safety ---');
+  // Attempt bulk send with skipAlreadySent=true (default) for parent O (already sent) and parent N 1 (never sent)
+  const bulkSafe = await sendSelectedParentsChannelInvitations({
+    eventId: EVENT_A,
+    parentIds: [pOId],
+    adminUserId: 'admin-tester',
+    skipAlreadySent: true
+  });
+  assert(bulkSafe.skippedCount === 1, 'Case P: Previously sent parent skipped by default in bulk send');
+  assert(bulkSafe.details.some(d => d.parentId === pOId && d.reason === 'Already sent'), 'Case P: Reason is "Already sent"');
+
   // Clean up mock env
   if (originalKey) process.env.ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL = originalKey;
   else delete process.env.ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL;
