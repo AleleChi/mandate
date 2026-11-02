@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { 
   Calendar, 
   MapPin, 
@@ -219,7 +219,24 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
     setCurrentScreen('create');
   };
 
+  const handleAdd13To14Group = () => {
+    const newGroup: AgeGroup = {
+      label: '13–14',
+      minAge: 13,
+      maxAge: 14,
+      capacity: 50,
+      manualReview: false
+    };
+    setFormAgeGroups([...formAgeGroups, newGroup]);
+  };
+
   const handleAddAgeGroupRow = () => {
+    // If 13–14 is missing from configured groups, default to adding it
+    const has1314 = formAgeGroups.some(g => (g.minAge === 13 && g.maxAge === 14) || g.label.includes('13'));
+    if (!has1314) {
+      handleAdd13To14Group();
+      return;
+    }
     const newGroup: AgeGroup = {
       label: `Group ${formAgeGroups.length + 1}`,
       minAge: 0,
@@ -229,6 +246,43 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
     };
     setFormAgeGroups([...formAgeGroups, newGroup]);
   };
+
+  // Advisory warnings for age-group configuration completeness and canonical parity
+  const ageGroupConfigWarnings = useMemo(() => {
+    if (formAgeGroups.length === 0) return [];
+    const warnings: string[] = [];
+
+    // Check coverage of 13–14 range
+    const has1314 = formAgeGroups.some(g => 
+      (g.minAge !== undefined && g.maxAge !== undefined && g.minAge <= 13 && g.maxAge >= 14) ||
+      g.label.includes('13')
+    );
+    if (!has1314) {
+      warnings.push('Age-group configuration does not fully cover the programme age range. Ages 13–14 are currently not assigned to a group.');
+    }
+
+    // Check for legacy / malformed group like 1–3 when programme minimum is 2
+    const hasSub2 = formAgeGroups.some(g => 
+      (g.minAge !== undefined && g.minAge < 2 && g.maxAge !== undefined && g.maxAge > 1) ||
+      g.label.includes('1–3') || g.label.includes('1-3')
+    );
+    if (hasSub2) {
+      warnings.push('Legacy or malformed group detected (e.g. 1–3 when programme minimum is 2). Canonical programme age groups are: 2–3, 4–6, 7–9, 10–12, 13–14.');
+    }
+
+    // Check for Below 0–1 group
+    const hasInfant = formAgeGroups.some(g => 
+      (g.minAge === 0 && g.maxAge <= 1) || 
+      g.label.toLowerCase().includes('below') || 
+      g.label.includes('0–1') || 
+      g.label.includes('0-1')
+    );
+    if (hasInfant) {
+      warnings.push('Group for ages 0–1 detected. Note that children under 2 are outside the 2026 General Assembly eligibility window.');
+    }
+
+    return warnings;
+  }, [formAgeGroups]);
 
   const handleRemoveAgeGroupRow = (index: number) => {
     if (formAgeGroups.length <= 1) {
@@ -980,15 +1034,54 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                     <h3 className="text-lg font-semibold text-[#18181B] dark:text-[#F0EBE3]">Capacity</h3>
                     <p className="text-xs text-zinc-500 dark:text-[#7A7570]">Configure total child capacity and age group headcount limits.</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleAddAgeGroupRow}
-                    className="text-xs font-semibold text-[#C59B27] hover:underline flex items-center space-x-1 cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Add group</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {!formAgeGroups.some(g => (g.minAge === 13 && g.maxAge === 14) || g.label.includes('13')) && (
+                      <button
+                        type="button"
+                        onClick={handleAdd13To14Group}
+                        className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-[#C59B27]/10 hover:bg-[#C59B27]/20 text-[#C59B27] border border-[#C59B27]/30 flex items-center space-x-1 transition-colors cursor-pointer"
+                        title="Add missing canonical 13–14 age group"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add 13–14 group</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleAddAgeGroupRow}
+                      className="text-xs font-semibold text-[#C59B27] hover:underline flex items-center space-x-1 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add group</span>
+                    </button>
+                  </div>
                 </div>
+
+                {/* Non-blocking Age Group Configuration Advisory Banner */}
+                {ageGroupConfigWarnings.length > 0 && (
+                  <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 space-y-2 text-xs">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-semibold text-amber-900 dark:text-amber-200">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                        <span>Age-Group Configuration Advisory</span>
+                      </div>
+                      {!formAgeGroups.some(g => (g.minAge === 13 && g.maxAge === 14) || g.label.includes('13')) && (
+                        <button
+                          type="button"
+                          onClick={handleAdd13To14Group}
+                          className="px-2 py-0.5 text-[11px] font-semibold rounded bg-amber-600 text-white hover:bg-amber-700 transition-colors cursor-pointer"
+                        >
+                          + Add 13–14 row
+                        </button>
+                      )}
+                    </div>
+                    <ul className="list-disc list-inside space-y-1 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
+                      {ageGroupConfigWarnings.map((warning, wIdx) => (
+                        <li key={wIdx}>{warning}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 {/* Total Event Capacity Field & Stats */}
                 <div className="space-y-4">
