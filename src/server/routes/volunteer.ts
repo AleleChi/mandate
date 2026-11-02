@@ -26,9 +26,41 @@ import {
   dispatchCheckInWhatsAppNotification,
   dispatchPickupWhatsAppNotification
 } from '../services/whatsapp/attendanceNotifications';
+import {
+  parseAssignedAgeGroups,
+  isChildInScope,
+  buildAgeGroupSqlFilter,
+  normalizeAgeGroup
+} from '../services/eligibilityService';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
+
+async function resolveVolunteerScope(userId: string, userRole: string, eventId: string): Promise<{
+  isScoped: boolean;
+  assignedAgeGroups: string[];
+}> {
+  if (['admin', 'super_admin', 'team', 'team_lead'].includes(userRole)) {
+    return { isScoped: false, assignedAgeGroups: [] };
+  }
+
+  const duty = await queryOne(
+    `SELECT assigned_age_groups, responsibility_key, team_key 
+     FROM event_duty_assignments 
+     WHERE event_id = ? AND user_id = ? AND status != 'cancelled'`,
+    [eventId, userId]
+  );
+
+  if (duty && ['admin', 'team_lead', 'lead'].includes(duty.responsibility_key?.toLowerCase())) {
+    return { isScoped: false, assignedAgeGroups: [] };
+  }
+
+  const assignedGroups = parseAssignedAgeGroups(duty?.assigned_age_groups);
+  return {
+    isScoped: true,
+    assignedAgeGroups: assignedGroups
+  };
+}
 
 export function normalizeAlertSeverity(value: string): string {
   const v = (value || '').toLowerCase().trim();
@@ -103,13 +135,22 @@ function rankSearchResults(results: any[], queryStr: string) {
   .sort((a, b) => b._score - a._score);
 }
 
-async function getEventStats(eventId?: string | null) {
+async function getEventStats(eventId?: string | null, assignedAgeGroups?: string[] | null) {
   const resolvedEventId = eventId || (await getCurrentEventId());
   if (!resolvedEventId) {
     return { expected: 0, checkedIn: 0, pickedUp: 0, attention: 0 };
   }
   const enableDemoData = process.env.ENABLE_DEMO_DATA === 'true';
   const demoFilter = !enableDemoData ? "AND e.child_id NOT IN (SELECT id FROM children WHERE full_name LIKE 'Test %')" : "";
+
+  let scopeFilter = "";
+  if (assignedAgeGroups !== undefined && assignedAgeGroups !== null) {
+    if (assignedAgeGroups.length === 0) {
+      return { expected: 0, checkedIn: 0, pickedUp: 0, attention: 0 };
+    }
+    const ageFilter = buildAgeGroupSqlFilter(assignedAgeGroups, 'c');
+    scopeFilter = `AND ${ageFilter.clause}`;
+  }
 
   // 1. Expected: All eligible active children registered for this event
   const expectedQuery = await queryOne(`
@@ -123,6 +164,7 @@ async function getEventStats(eventId?: string | null) {
       AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
       AND e.status != 'removed'
       ${demoFilter}
+      ${scopeFilter}
   `, [resolvedEventId]);
 
   // 2. Checked in / Inside
@@ -138,6 +180,7 @@ async function getEventStats(eventId?: string | null) {
       AND e.status != 'removed'
       AND e.status IN ('checked_in', 'inside')
       ${demoFilter}
+      ${scopeFilter}
   `, [resolvedEventId]);
 
   // 3. Picked up / Checked out
@@ -153,6 +196,7 @@ async function getEventStats(eventId?: string | null) {
       AND e.status != 'removed'
       AND e.status IN ('picked_up', 'checked_out')
       ${demoFilter}
+      ${scopeFilter}
   `, [resolvedEventId]);
   
   // 4. Attention items for active eligible children in this event only
@@ -169,13 +213,14 @@ async function getEventStats(eventId?: string | null) {
       AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
       AND e.status != 'removed'
       ${demoFilter}
+      ${scopeFilter}
   `, [resolvedEventId]);
 
   return {
-    expected: expectedQuery ? expectedQuery.count : 0,
-    checkedIn: checkedInQuery ? checkedInQuery.count : 0,
-    pickedUp: pickedUpQuery ? pickedUpQuery.count : 0,
-    attention: attentionQuery ? attentionQuery.count : 0
+    expected: Number(expectedQuery?.count ?? 0),
+    checkedIn: Number(checkedInQuery?.count ?? 0),
+    pickedUp: Number(pickedUpQuery?.count ?? 0),
+    attention: Number(attentionQuery?.count ?? 0)
   };
 }
 
@@ -1285,11 +1330,20 @@ router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Respons
     // Role-specific consent: Volunteer communication preferences are governed by volunteer_profiles
     const volunteerConsent = profile.whatsapp_consent_status || 'unknown';
 
+    const currentEvent = await getCurrentEvent();
+    const currentEventId = currentEvent ? currentEvent.id : (await getCurrentEventId());
+    let assignedAgeGroups: string[] = [];
+    if (currentEventId && req.user) {
+      const scope = await resolveVolunteerScope(req.user.id, req.user.role, currentEventId);
+      assignedAgeGroups = scope.assignedAgeGroups;
+    }
+
     const volunteerProfileObj = {
       id: profile.id,
       status: profile.status,
       preferredTeam: profile.preferred_team,
       assignedTeam,
+      assignedAgeGroups,
       assignedArea,
       accessScope,
       full_name: profile.full_name || 'Volunteer',
@@ -1334,9 +1388,6 @@ router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Respons
         }
       });
     }
-
-    const currentEvent = await getCurrentEvent();
-    const currentEventId = currentEvent ? currentEvent.id : null;
 
     // Real stats: count checkins / pick-ups by this user for the current event
     const checkInCountRow = currentEventId ? await queryOne(
@@ -2139,6 +2190,17 @@ router.get('/event-home', authMiddleware, async (req: AuthenticatedRequest, res:
     const enableDemoData = process.env.ENABLE_DEMO_DATA === 'true';
     const demoFilter = !enableDemoData ? "AND c.full_name NOT LIKE 'Test %'" : "";
 
+    const scope = await resolveVolunteerScope(req.user.id, req.user.role, currentEventId);
+    let scopeFilter = "";
+    if (scope.isScoped) {
+      if (scope.assignedAgeGroups.length === 0) {
+        scopeFilter = "AND 1=0";
+      } else {
+        const ageFilter = buildAgeGroupSqlFilter(scope.assignedAgeGroups, 'c');
+        scopeFilter = `AND ${ageFilter.clause}`;
+      }
+    }
+
     const dbAttentionItems = await query(`
       SELECT cai.*, 
              c.full_name as child_name, 
@@ -2155,6 +2217,7 @@ router.get('/event-home', authMiddleware, async (req: AuthenticatedRequest, res:
         AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
         AND e.status != 'removed'
       ${demoFilter}
+      ${scopeFilter}
       ORDER BY cai.priority = 'high' DESC, cai.created_at DESC
       LIMIT 10
     `, [currentEventId]);
@@ -2177,14 +2240,16 @@ router.get('/event-home', authMiddleware, async (req: AuthenticatedRequest, res:
       };
     });
 
-    const stats = await getEventStats(currentEventId);
+    const stats = await getEventStats(currentEventId, scope.isScoped ? scope.assignedAgeGroups : null);
     const dutyLocation = req.user?.id ? await resolveUserDutyLocation(req.user.id, currentEventId) : null;
 
     res.json({
       event,
       stats,
       attentionItems: attentionItems,
-      dutyLocation
+      dutyLocation,
+      assignedAgeGroups: scope.assignedAgeGroups,
+      isScoped: scope.isScoped
     });
   } catch (err) {
     console.error('Event home error:', err);
@@ -2372,6 +2437,22 @@ router.get('/children/search', authMiddleware, async (req: AuthenticatedRequest,
       "e.status != 'removed'"
     ];
     const params: any[] = [currentEventId];
+
+    const scope = await resolveVolunteerScope(req.user.id, req.user.role, currentEventId);
+    if (scope.isScoped) {
+      if (scope.assignedAgeGroups.length === 0) {
+        if (req.query.paginated === 'true') {
+          return res.json({
+            success: true,
+            children: [],
+            pagination: { page: 1, limit: 20, total: 0, totalPages: 0, hasNextPage: false }
+          });
+        }
+        return res.json([]);
+      }
+      const ageFilter = buildAgeGroupSqlFilter(scope.assignedAgeGroups, 'c');
+      whereClauses.push(ageFilter.clause);
+    }
 
     for (const token of tokens) {
       const likeToken = `%${token}%`;
@@ -2567,6 +2648,35 @@ router.post('/pass/lookup', authMiddleware, async (req: AuthenticatedRequest, re
     if (!child) {
       return res.status(404).json({ error: 'Registered child details not found' });
     }
+
+    const scope = await resolveVolunteerScope(req.user.id, req.user.role, currentEventId);
+    if (scope.isScoped) {
+      if (scope.assignedAgeGroups.length === 0) {
+        return res.status(403).json({
+          success: false,
+          error: 'No age group has been assigned to your event duty yet.',
+          code: 'NO_AGE_GROUP_ASSIGNED'
+        });
+      }
+      if (!isChildInScope(child, scope.assignedAgeGroups)) {
+        return res.status(403).json({
+          success: false,
+          error: 'This child is assigned to another age group.',
+          code: 'OUT_OF_SCOPE',
+          outOfScope: true
+        });
+      }
+    }
+
+    if (entry.status === 'picked_up' || entry.status === 'checked_out' || Boolean(entry.picked_up_at)) {
+      return res.status(400).json({
+        success: false,
+        error: 'This child has already been picked up and released from the event.',
+        code: 'ALREADY_PICKED_UP',
+        alreadyPickedUp: true
+      });
+    }
+
     const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [child.parent_profile_id]);
     const pickupRow = await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entryId]);
 
@@ -2773,6 +2883,26 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
     if (!child) {
       return res.status(404).json({ error: 'Registered child details not found' });
     }
+
+    const scope = await resolveVolunteerScope(req.user.id, req.user.role, currentEventId);
+    if (scope.isScoped) {
+      if (scope.assignedAgeGroups.length === 0) {
+        return res.status(403).json({
+          success: false,
+          error: 'No age group has been assigned to your event duty yet.',
+          code: 'NO_AGE_GROUP_ASSIGNED'
+        });
+      }
+      if (!isChildInScope(child, scope.assignedAgeGroups)) {
+        return res.status(403).json({
+          success: false,
+          error: 'This child is assigned to another age group.',
+          code: 'OUT_OF_SCOPE',
+          outOfScope: true
+        });
+      }
+    }
+
     const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [child.parent_profile_id]);
     const pickupRow = await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entryId]);
 
@@ -2812,9 +2942,19 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
     const dutyLoc = await resolveUserDutyLocation(req.user.id, currentEventId);
     const checkInLocation = (dutyLoc?.name as string) || null;
 
+    // Handle Already Picked Up
+    if (entry.status === 'picked_up' || entry.status === 'checked_out' || Boolean(entry.picked_up_at)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot check in. Child has already been picked up and released.',
+        code: 'ALREADY_PICKED_UP',
+        alreadyPickedUp: true
+      });
+    }
+
     // Handle Already Checked In
     if (entry.status === 'checked_in' || entry.status === 'inside') {
-      const stats = await getEventStats(currentEventId);
+      const stats = await getEventStats(currentEventId, scope.isScoped ? scope.assignedAgeGroups : null);
       const currentCheckedInAt = entry.checked_in_at || entry.updated_at || new Date().toISOString();
       return res.json({
         success: true,
@@ -2900,7 +3040,7 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
       checkInTime: now
     }).catch(waErr => console.error('[POST /check-in WhatsApp confirmation dispatch error]:', waErr));
 
-    const stats = await getEventStats(currentEventId);
+    const stats = await getEventStats(currentEventId, scope.isScoped ? scope.assignedAgeGroups : null);
 
     res.json({
       success: true,
@@ -3432,6 +3572,29 @@ router.post('/pickup/lookup', authMiddleware, async (req: AuthenticatedRequest, 
     }
 
     const child = await queryOne('SELECT * FROM children WHERE id = ?', [entry.child_id]);
+    if (!child) {
+      return res.status(404).json({ error: 'Registered child details not found' });
+    }
+
+    const scope = await resolveVolunteerScope(req.user.id, req.user.role, currentEventId);
+    if (scope.isScoped) {
+      if (scope.assignedAgeGroups.length === 0) {
+        return res.status(403).json({
+          success: false,
+          error: 'No age group has been assigned to your event duty yet.',
+          code: 'NO_AGE_GROUP_ASSIGNED'
+        });
+      }
+      if (!isChildInScope(child, scope.assignedAgeGroups)) {
+        return res.status(403).json({
+          success: false,
+          error: 'This child is assigned to another age group.',
+          code: 'OUT_OF_SCOPE',
+          outOfScope: true
+        });
+      }
+    }
+
     const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [child.parent_profile_id]);
     const pickupRow = await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entryId]);
 
@@ -3575,6 +3738,29 @@ router.post('/pickup/mark', authMiddleware, async (req: AuthenticatedRequest, re
     }
 
     const child = await queryOne('SELECT * FROM children WHERE id = ?', [entry.child_id]);
+    if (!child) {
+      return res.status(404).json({ error: 'Registered child details not found' });
+    }
+
+    const scope = await resolveVolunteerScope(req.user.id, req.user.role, currentEventId);
+    if (scope.isScoped) {
+      if (scope.assignedAgeGroups.length === 0) {
+        return res.status(403).json({
+          success: false,
+          error: 'No age group has been assigned to your event duty yet.',
+          code: 'NO_AGE_GROUP_ASSIGNED'
+        });
+      }
+      if (!isChildInScope(child, scope.assignedAgeGroups)) {
+        return res.status(403).json({
+          success: false,
+          error: 'This child is assigned to another age group.',
+          code: 'OUT_OF_SCOPE',
+          outOfScope: true
+        });
+      }
+    }
+
     const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [child.parent_profile_id]);
     const pickupRow = await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entryId]);
 
@@ -3599,7 +3785,7 @@ router.post('/pickup/mark', authMiddleware, async (req: AuthenticatedRequest, re
 
     // Handle Already Picked Up
     if (entry.status === 'picked_up' || entry.status === 'checked_out') {
-      const stats = await getEventStats(currentEventId);
+      const stats = await getEventStats(currentEventId, scope.isScoped ? scope.assignedAgeGroups : null);
       const lastPickedUpVal = await getLastPickedUp(currentEventId);
       const pickedUpAtVal = entry.picked_up_at || entry.updated_at || new Date().toISOString();
       return res.json({
@@ -3694,7 +3880,7 @@ router.post('/pickup/mark', authMiddleware, async (req: AuthenticatedRequest, re
       pickupPersonName: pickupPersonDetails?.fullName
     }).catch(waErr => console.error('[POST /pickup/mark WhatsApp confirmation dispatch error]:', waErr));
 
-    const stats = await getEventStats(currentEventId);
+    const stats = await getEventStats(currentEventId, scope.isScoped ? scope.assignedAgeGroups : null);
     const lastPickedUpVal = await getLastPickedUp(currentEventId);
 
     res.json({
@@ -3745,7 +3931,8 @@ router.get('/pickup-home', authMiddleware, async (req: AuthenticatedRequest, res
     }
 
     const currentEventId = await getCurrentEventId();
-    const stats = await getEventStats(currentEventId);
+    const scope = await resolveVolunteerScope(req.user.id, req.user.role, currentEventId || '');
+    const stats = await getEventStats(currentEventId, scope.isScoped ? scope.assignedAgeGroups : null);
     const lastPickedUpVal = await getLastPickedUp(currentEventId);
 
     res.json({
@@ -3754,7 +3941,9 @@ router.get('/pickup-home', authMiddleware, async (req: AuthenticatedRequest, res
         pickedUp: stats.pickedUp,
         attention: stats.attention
       },
-      lastPickedUp: lastPickedUpVal
+      lastPickedUp: lastPickedUpVal,
+      assignedAgeGroups: scope.assignedAgeGroups,
+      isScoped: scope.isScoped
     });
   } catch (err) {
     console.error('Pickup home stats error:', err);
@@ -3855,6 +4044,21 @@ router.get('/children', authMiddleware, async (req: AuthenticatedRequest, res: R
       });
     }
 
+    const scope = await resolveVolunteerScope(req.user.id, req.user.role, currentEventId);
+    if (scope.isScoped && scope.assignedAgeGroups.length === 0) {
+      return res.json({
+        items: [],
+        pagination: {
+          page: 1,
+          limit,
+          total: 0,
+          totalPages: 0,
+          hasNext: false,
+          hasPrevious: false
+        }
+      });
+    }
+
     const enableDemoData = process.env.ENABLE_DEMO_DATA === 'true';
 
     let whereClause = ` WHERE e.event_id = ?
@@ -3863,6 +4067,11 @@ router.get('/children', authMiddleware, async (req: AuthenticatedRequest, res: R
       AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
       AND e.status != 'removed'`;
     const whereParams: any[] = [currentEventId];
+
+    if (scope.isScoped && scope.assignedAgeGroups.length > 0) {
+      const ageFilter = buildAgeGroupSqlFilter(scope.assignedAgeGroups, 'c');
+      whereClause += ` AND ${ageFilter.clause}`;
+    }
 
     if (!enableDemoData) {
       whereClause += " AND c.full_name NOT LIKE 'Test %'";
@@ -4035,6 +4244,19 @@ router.get('/children/:childId', authMiddleware, async (req: AuthenticatedReques
 
     if (!entry) {
       return res.status(404).json({ error: 'This child is no longer available.' });
+    }
+
+    const scope = await resolveVolunteerScope(req.user.id, req.user.role, currentEventId);
+    if (scope.isScoped) {
+      if (
+        scope.assignedAgeGroups.length === 0 ||
+        !isChildInScope(
+          { age_group: entry.age_group, calculated_age: entry.calculated_age, date_of_birth: entry.date_of_birth },
+          scope.assignedAgeGroups
+        )
+      ) {
+        return res.status(403).json({ error: 'This child is assigned to another age group.' });
+      }
     }
 
     const childPhotoUrl = await resolvePhotoUrl(entry.child_photo_id);

@@ -886,6 +886,7 @@ function initSqliteSchema(db: Database.Database) {
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       responsibility_key TEXT NOT NULL,
       team_key TEXT,
+      assigned_age_groups TEXT,
       assignment_level TEXT DEFAULT 'primary',
       status TEXT DEFAULT 'scheduled',
       starts_at TEXT NOT NULL,
@@ -1873,6 +1874,7 @@ function initSqliteSchema(db: Database.Database) {
 
   // Safe column additions for Phase 6 in SQLite
   const sqlitePhase6Cols = [
+    { table: 'event_duty_assignments', col: 'assigned_age_groups TEXT' },
     { table: 'event_duty_assignments', col: 'assigned_location_id TEXT' },
     { table: 'event_safety_alerts', col: 'location_id TEXT' },
     { table: 'event_safety_alerts', col: 'location_path_snapshot TEXT' },
@@ -2889,6 +2891,7 @@ async function initPostgresSchema(pool: any) {
         user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         responsibility_key VARCHAR(255) NOT NULL,
         team_key VARCHAR(255),
+        assigned_age_groups TEXT,
         assignment_level VARCHAR(255) DEFAULT 'primary',
         status VARCHAR(255) DEFAULT 'scheduled',
         starts_at VARCHAR(255) NOT NULL,
@@ -3343,6 +3346,10 @@ async function initPostgresSchema(pool: any) {
 
     try {
       await pool.query(`ALTER TABLE whatsapp_delivery_logs ADD COLUMN IF NOT EXISTS user_id VARCHAR(64);`);
+    } catch (e) {}
+
+    try {
+      await pool.query(`ALTER TABLE event_duty_assignments ADD COLUMN IF NOT EXISTS assigned_age_groups TEXT;`);
     } catch (e) {}
 
     try {

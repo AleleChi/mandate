@@ -26,19 +26,18 @@ export async function issuePassForChild({
 
   let entry = null;
   if (eventId) {
+    // 1. exact child + supplied event
     entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, eventId]);
-  }
-  
-  if (!entry) {
+  } else {
+    // 2. current event only when eventId is genuinely absent
     const currentEventId = await getCurrentEventId();
     if (currentEventId) {
       entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, currentEventId]);
     }
-  }
-
-  // Resilient fallback: lookup the latest entry for this child if no event-specific entry was resolved
-  if (!entry) {
-    entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? ORDER BY created_at DESC LIMIT 1', [childId]);
+    // 3. avoid loose/latest-entry fallback in approval flows where an explicit event is known
+    if (!entry) {
+      entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? ORDER BY created_at DESC LIMIT 1', [childId]);
+    }
   }
 
   if (!entry) {
@@ -49,16 +48,13 @@ export async function issuePassForChild({
     throw new Error('Cannot issue event pass for an incomplete application draft');
   }
 
-  // Check if active pass already exists
-  const existingPass = await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entry.id, 'active']);
-  if (existingPass) {
-    return existingPass;
-  }
-
   // Validate required photo exists in DB for child
   if (!child.photo_file_id || String(child.photo_file_id).trim() === '') {
     throw new Error('Missing required child photo for pass generation');
   }
+
+  // A. Check for ANY existing pass for this child_event_entry_id
+  const existingPass = await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ? LIMIT 1', [entry.id]);
 
   let eventYear = '2026';
   const eventRecord = await queryOne('SELECT starts_at FROM events WHERE id = ?', [entry.event_id]);
@@ -70,22 +66,60 @@ export async function issuePassForChild({
     if (match) eventYear = match[0];
   }
 
+  const now = new Date().toISOString();
+
+  // B. Existing active pass: return it unchanged without creating another pass
+  if (existingPass) {
+    if (existingPass.status === 'active') {
+      if (entry.status === 'selected') {
+        await execute(`
+          UPDATE child_event_entries
+          SET status = 'pass_ready', updated_at = ?
+          WHERE id = ?
+        `, [now, entry.id]);
+      }
+      return existingPass;
+    }
+
+    // C. Existing inactive/revoked pass: reuse the same database row
+    const passRef = `KOI-${eventYear}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+    const passHash = crypto.randomBytes(16).toString('hex');
+
+    await execute(`
+      UPDATE event_passes
+      SET pass_reference = ?, pass_hash = ?, status = 'active', revoked_at = NULL, issued_at = ?, updated_at = ?
+      WHERE id = ?
+    `, [passRef, passHash, now, now, existingPass.id]);
+
+    if (!['checked_in', 'inside', 'picked_up', 'checked_out'].includes(entry.status)) {
+      await execute(`
+        UPDATE child_event_entries
+        SET status = 'pass_ready', updated_at = ?
+        WHERE id = ?
+      `, [now, entry.id]);
+    }
+
+    const updatedPass = await queryOne('SELECT * FROM event_passes WHERE id = ?', [existingPass.id]);
+    return updatedPass;
+  }
+
+  // D. No pass exists: only then INSERT a new pass
   const passId = crypto.randomUUID();
   const passRef = `KOI-${eventYear}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
   const passHash = crypto.randomBytes(16).toString('hex');
-  const now = new Date().toISOString();
 
   await execute(`
     INSERT INTO event_passes (id, child_event_entry_id, pass_reference, pass_hash, status, issued_at, created_at, updated_at)
     VALUES (?, ?, ?, ?, 'active', ?, ?, ?)
   `, [passId, entry.id, passRef, passHash, now, now, now]);
 
-  // Update entry status to 'pass_ready'
-  await execute(`
-    UPDATE child_event_entries
-    SET status = 'pass_ready', updated_at = ?
-    WHERE id = ?
-  `, [now, entry.id]);
+  if (!['checked_in', 'inside', 'picked_up', 'checked_out'].includes(entry.status)) {
+    await execute(`
+      UPDATE child_event_entries
+      SET status = 'pass_ready', updated_at = ?
+      WHERE id = ?
+    `, [now, entry.id]);
+  }
 
   const newPass = await queryOne('SELECT * FROM event_passes WHERE id = ?', [passId]);
   return newPass;
@@ -95,13 +129,17 @@ export async function issuePassForChild({
  * Gets the active pass for a child event registration
  */
 export async function getPassForChild(childId: string, eventId?: string) {
-  const targetEventId = eventId || (await getCurrentEventId());
   let entry = null;
-  if (targetEventId) {
-    entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, targetEventId]);
-  }
-  if (!entry) {
-    entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? ORDER BY created_at DESC LIMIT 1', [childId]);
+  if (eventId) {
+    entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, eventId]);
+  } else {
+    const targetEventId = await getCurrentEventId();
+    if (targetEventId) {
+      entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, targetEventId]);
+    }
+    if (!entry) {
+      entry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? ORDER BY created_at DESC LIMIT 1', [childId]);
+    }
   }
   if (!entry) return null;
   return await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entry.id, 'active']);

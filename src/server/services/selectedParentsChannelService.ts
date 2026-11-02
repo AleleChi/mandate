@@ -617,12 +617,14 @@ export async function sendSelectedParentsChannelInvitations(params: {
     // 7. Dispatch message
     const now = new Date().toISOString();
     const idempotencyKey = `pci:${eventId}:${parentId}:${Date.now()}`;
+    const messageBody = `Hello ${parentFirstName}, you are invited to join the verified Parents Channel for ${eventTitle}. Selected children: ${selectedChildNames}. Access link: ${channelUrl}`;
 
     try {
       const sendResult = await provider.sendSessionMessage({
         to: candidate.normalizedNumber,
+        body: messageBody,
         intent: 'selected_parent_channel',
-        template: templateKey || undefined,
+        templateKey: templateKey || undefined,
         mergeInfo,
         channelUrl,
         idempotencyKey

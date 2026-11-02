@@ -3351,6 +3351,7 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
     let finalStatus = status;
     let passData = null;
     let passErrorReason = null;
+    const isRepeatedApproval = (app.status === 'pass_ready' || app.status === 'selected') && (status === 'selected' || status === 'pass_ready');
 
     if (status === 'selected' || status === 'pass_ready') {
       const capCheck = await validateChildSelectionCapacity(app.event_id, app.child_id, app.status);
@@ -3361,6 +3362,11 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
           message: capCheck.error
         });
       }
+
+      const previousStatus = app.status;
+      const previousNote = app.note_to_team;
+      const previousReviewedAt = app.reviewed_at;
+      const previousUpdatedAt = app.updated_at;
 
       // First update to selected so we have an approved status before issuing
       await execute(`
@@ -3374,8 +3380,18 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
         finalStatus = 'pass_ready';
       } catch (err: any) {
         console.error('Failed to issue pass during admin review:', err);
-        passErrorReason = err.message || 'Pass generation failed';
-        finalStatus = 'selected';
+        // Compensating rollback so state remains coherent
+        await execute(`
+          UPDATE child_event_entries 
+          SET status = ?, note_to_team = ?, reviewed_at = ?, updated_at = ?
+          WHERE id = ?
+        `, [previousStatus, previousNote, previousReviewedAt, previousUpdatedAt, app.id]);
+
+        return res.status(400).json({
+          success: false,
+          error: `Pass issuance failed: ${err.message || 'Pass generation failed'}`,
+          message: `Approval failed because pass could not be generated: ${err.message || 'Pass generation failed'}`
+        });
       }
     }
 
@@ -3386,8 +3402,8 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
       WHERE id = ?
     `, [finalStatus, noteToTeam || app.note_to_team, now, now, app.id]);
 
-    // Process notification if requested
-    if (sendNotification) {
+    // Process notification if requested (avoid duplicate notifications if repeated approval)
+    if (sendNotification && !isRepeatedApproval) {
       let subject = 'Koinonia Application Review Update';
       let message = '';
       
@@ -4008,16 +4024,10 @@ router.post('/applications/bulk-review', authMiddleware, async (req: Authenticat
 
       // If pass_ready, auto-generate pass
       if (finalDecision === 'pass_ready') {
-        const pass = await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ?', [id]);
-        if (!pass) {
-          const passId = crypto.randomUUID();
-          const passRef = `KOI-2026-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
-          const passHash = crypto.randomBytes(16).toString('hex');
-
-          await execute(`
-            INSERT INTO event_passes (id, child_event_entry_id, pass_reference, pass_hash, status, issued_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'active', ?, ?, ?)
-          `, [passId, id, passRef, passHash, now, now, now]);
+        try {
+          await issuePassForChild({ childId: app.child_id, eventId: app.event_id });
+        } catch (pErr) {
+          console.error('Bulk review pass issue error:', pErr);
         }
       }
 
@@ -4211,6 +4221,11 @@ router.put('/applications/:id/status', async (req: AuthenticatedRequest, res: Re
         });
       }
 
+      const previousStatus = entry.status;
+      const previousNote = entry.note_to_team;
+      const previousReviewedAt = entry.reviewed_at;
+      const previousUpdatedAt = entry.updated_at;
+
       // First update to selected so we have an approved status before issuing
       if (noteToTeam !== undefined) {
         await execute(`
@@ -4231,8 +4246,18 @@ router.put('/applications/:id/status', async (req: AuthenticatedRequest, res: Re
         finalStatus = 'pass_ready';
       } catch (err: any) {
         console.error('Failed to issue pass during admin review:', err);
-        passErrorReason = err.message || 'Pass generation failed';
-        finalStatus = 'selected';
+        // Compensating rollback
+        await execute(`
+          UPDATE child_event_entries 
+          SET status = ?, note_to_team = ?, reviewed_at = ?, updated_at = ?
+          WHERE id = ?
+        `, [previousStatus, previousNote, previousReviewedAt, previousUpdatedAt, id]);
+
+        return res.status(400).json({
+          success: false,
+          error: `Pass issuance failed: ${err.message || 'Pass generation failed'}`,
+          message: `Approval failed because pass could not be generated: ${err.message || 'Pass generation failed'}`
+        });
       }
     }
 
@@ -4255,8 +4280,7 @@ router.put('/applications/:id/status', async (req: AuthenticatedRequest, res: Re
       success: true, 
       message: 'Application status updated successfully.',
       status: finalStatus,
-      pass: passData,
-      passErrorReason
+      pass: passData
     });
   } catch (err: any) {
     console.error('Error updating application status:', err);

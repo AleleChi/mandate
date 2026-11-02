@@ -125,7 +125,54 @@ async function mapChildToFrontend(
   let isPassLocked = false;
 
   if (entryRow) {
-    if (status === 'incomplete') {
+    const isPickedUp = entryRow.status === 'picked_up' || entryRow.status === 'checked_out' || Boolean(entryRow.picked_up_at);
+    const isCheckedIn = (entryRow.status === 'checked_in' || entryRow.status === 'inside' || Boolean(entryRow.checked_in_at)) && !isPickedUp;
+
+    // Load active pass if present
+    const pass = await queryOne('SELECT id, status, pass_reference, issued_at FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entryRow.id, 'active']);
+    if (pass) {
+      if (isBiometricProtected && parentProfileId && !(await isChildPassAuthorized(parentProfileId, childRow.id))) {
+        isPassLocked = true;
+        passReference = undefined;
+        passObject = {
+          id: pass.id,
+          status: pass.status,
+          issuedAt: pass.issued_at,
+          passLocked: true,
+          requiresBiometric: true
+        };
+      } else {
+        passReference = pass.pass_reference;
+        passObject = {
+          id: pass.id,
+          status: pass.status,
+          passCode: pass.pass_reference,
+          qrPayload: pass.pass_reference,
+          issuedAt: pass.issued_at
+        };
+      }
+    }
+
+    // Required Authoritative Priority:
+    // 1. Attendance = picked_up / checked_out -> Picked Up (overrides Pass Ready)
+    // 2. Attendance = checked_in / inside -> Checked In (overrides Pass Ready)
+    // 3. Selected + active pass + not checked in -> Pass ready
+    // 4. Otherwise canonical application/review status
+    if (isPickedUp) {
+      frontendStatus = 'Picked up';
+      statusNote = 'Picked up and released';
+    } else if (isCheckedIn) {
+      frontendStatus = 'Checked in';
+      statusNote = 'Successfully checked in';
+    } else if (status === 'selected' || status === 'pass_ready') {
+      if (passReference || isPassLocked) {
+        frontendStatus = 'Pass ready';
+        statusNote = 'Event pass is available';
+      } else {
+        frontendStatus = 'Selected';
+        statusNote = 'Event pass will be available shortly.';
+      }
+    } else if (status === 'incomplete') {
       frontendStatus = 'Incomplete';
       statusNote = 'Continue entering child details';
     } else if (status === 'under_review') {
@@ -135,38 +182,6 @@ async function mapChildToFrontend(
       frontendStatus = 'Review reopened';
       const first_name = childRow.full_name ? childRow.full_name.split(' ')[0] : 'your child';
       statusNote = `The event team has reopened the review for ${first_name}. We will share an update when a new decision is made.`;
-    } else if (status === 'selected' || status === 'pass_ready') {
-      const pass = await queryOne('SELECT id, status, pass_reference, issued_at FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entryRow.id, 'active']);
-      if (pass) {
-        if (isBiometricProtected && parentProfileId && !(await isChildPassAuthorized(parentProfileId, childRow.id))) {
-          isPassLocked = true;
-          passReference = undefined;
-          passObject = {
-            id: pass.id,
-            status: pass.status,
-            issuedAt: pass.issued_at,
-            passLocked: true,
-            requiresBiometric: true
-          };
-        } else {
-          passReference = pass.pass_reference;
-          passObject = {
-            id: pass.id,
-            status: pass.status,
-            passCode: pass.pass_reference,
-            qrPayload: pass.pass_reference,
-            issuedAt: pass.issued_at
-          };
-        }
-      }
-
-      if (passReference || isPassLocked) {
-        frontendStatus = 'Pass ready';
-        statusNote = 'Event pass is available';
-      } else {
-        frontendStatus = 'Selected';
-        statusNote = 'Event pass will be available shortly.';
-      }
     } else if (status === 'waiting_list') {
       frontendStatus = 'Waiting list';
       statusNote = 'Placed on waiting list';
@@ -176,44 +191,9 @@ async function mapChildToFrontend(
     } else if (status === 'withdrawn') {
       frontendStatus = 'Withdrawn';
       statusNote = 'Details withdrawn';
-    } else if (status === 'checked_in') {
-      frontendStatus = 'Checked in';
-      statusNote = 'Successfully checked in';
-    } else if (status === 'inside') {
-      frontendStatus = 'Inside';
-      statusNote = 'Inside the venue';
-    } else if (status === 'picked_up') {
-      frontendStatus = 'Picked up';
-      statusNote = 'Picked up and checked out';
-    } else if (status === 'checked_out') {
-      frontendStatus = 'Checked out';
-      statusNote = 'Checked out';
-    }
-
-    if (!passObject && ['checked_in', 'inside', 'picked_up', 'checked_out'].includes(status)) {
-      const pass = await queryOne('SELECT id, status, pass_reference, issued_at FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entryRow.id, 'active']);
-      if (pass) {
-        if (isBiometricProtected && parentProfileId && !(await isChildPassAuthorized(parentProfileId, childRow.id))) {
-          isPassLocked = true;
-          passReference = undefined;
-          passObject = {
-            id: pass.id,
-            status: pass.status,
-            issuedAt: pass.issued_at,
-            passLocked: true,
-            requiresBiometric: true
-          };
-        } else {
-          passReference = pass.pass_reference;
-          passObject = {
-            id: pass.id,
-            status: pass.status,
-            passCode: pass.pass_reference,
-            qrPayload: pass.pass_reference,
-            issuedAt: pass.issued_at
-          };
-        }
-      }
+    } else {
+      frontendStatus = status;
+      statusNote = status;
     }
   }
 
@@ -293,6 +273,8 @@ async function mapChildToFrontend(
     photoFileId: childRow.photo_file_id || '',
     photoUrl: resolvedChildPhoto,
     submittedAt: entryRow?.submitted_at || undefined,
+    checkedInAt: entryRow?.checked_in_at || null,
+    pickedUpAt: entryRow?.picked_up_at || null,
     passReference,
     passLocked: isPassLocked,
     pass: passObject,
