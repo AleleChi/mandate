@@ -460,6 +460,9 @@ export async function sendChildReviewReceivedEmail(params: {
  * Links directly to the WhatsApp channel so parents can join with one tap.
  */
 export function buildParentsChannelEmailSection(channelUrl: string = 'https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U') {
+  const officialUrl = 'https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U';
+  const targetUrl = (channelUrl && channelUrl.includes('whatsapp.com/channel/')) ? channelUrl : officialUrl;
+
   const html = `
     <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid #EAE8E1;">
       <p style="margin: 0 0 10px 0; font-size: 15px; font-weight: bold; color: #18181B;">
@@ -469,12 +472,18 @@ export function buildParentsChannelEmailSection(channelUrl: string = 'https://wh
         As a parent or guardian of a selected child, you can access the official Parents Channel for important Children's Session updates, including arrival, check-in and pickup information.
       </p>
       <div style="margin: 16px 0;">
-        <a href="${channelUrl}" style="background-color: #C59B27; color: #18181B; font-weight: 600; text-decoration: none; padding: 10px 20px; border-radius: 6px; display: inline-block; font-size: 14px;">
+        <a href="${targetUrl}" style="background-color: #C59B27; color: #18181B; font-weight: 600; text-decoration: none; padding: 10px 20px; border-radius: 6px; display: inline-block; font-size: 14px;">
           Access Parents Channel
         </a>
       </div>
+      <p style="margin: 0 0 12px 0; font-size: 13px; line-height: 1.5; color: #52525B;">
+        If the button does not open, use this link:<br>
+        <a href="${targetUrl}" style="color: #9A7B1C; text-decoration: underline; word-break: break-all;">
+          ${targetUrl}
+        </a>
+      </p>
       <p style="margin: 0; font-size: 11px; color: #71717A; line-height: 1.4;">
-        Please do not share access with anyone outside the registered parents and guardians of selected children.
+        Please do not share this channel link with anyone outside the registered parents and guardians of selected children.
       </p>
     </div>
   `;
@@ -484,10 +493,12 @@ export function buildParentsChannelEmailSection(channelUrl: string = 'https://wh
 Official Parents Channel:
 As a parent or guardian of a selected child, you can access the official Parents Channel for important Children's Session updates, including arrival, check-in and pickup information.
 
-Access Parents Channel:
-${channelUrl}
+Parents Channel: ${targetUrl}
 
-Please do not share access with anyone outside the registered parents and guardians of selected children.
+If the button does not open, use this link:
+${targetUrl}
+
+Please do not share this channel link with anyone outside the registered parents and guardians of selected children.
   `.trim();
 
   return { html, text };

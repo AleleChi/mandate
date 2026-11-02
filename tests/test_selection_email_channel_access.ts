@@ -46,22 +46,21 @@ describe('Selection & Pass-Ready Email Parents Channel Access Verification', () 
     `, [testParentId, testUserId]);
   });
 
-  it('1. builds the official Parents Channel email section with first-party URL and notice', () => {
-    const targetUrl = 'https://koinonia12.netlify.app/parents/channel';
-    const section = buildParentsChannelEmailSection(targetUrl);
+  it('1. builds the official Parents Channel email section with direct WhatsApp URL and fallback link', () => {
+    const section = buildParentsChannelEmailSection();
 
     assert.ok(section.html.includes('Official Parents Channel'));
     assert.ok(section.html.includes('As a parent or guardian of a selected child, you can access the official Parents Channel'));
     assert.ok(section.html.includes('Access Parents Channel'));
-    assert.ok(section.html.includes('href="https://koinonia12.netlify.app/parents/channel"'));
-    assert.ok(section.html.includes('Please do not share access with anyone outside the registered parents and guardians of selected children.'));
-    // Ensure raw WhatsApp channel URL is never in the email section
-    assert.ok(!section.html.includes('whatsapp.com/channel/'));
+    assert.ok(section.html.includes('href="https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U"'));
+    assert.ok(section.html.includes('If the button does not open, use this link:'));
+    assert.ok(section.html.includes('Please do not share this channel link with anyone outside the registered parents and guardians of selected children.'));
 
     assert.ok(section.text.includes('Official Parents Channel:'));
-    assert.ok(section.text.includes('https://koinonia12.netlify.app/parents/channel'));
-    assert.ok(section.text.includes('Please do not share access with anyone outside the registered parents and guardians of selected children.'));
-    assert.ok(!section.text.includes('whatsapp.com/channel/'));
+    assert.ok(section.text.includes('Parents Channel: https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U'));
+    assert.ok(section.text.includes('If the button does not open, use this link:'));
+    assert.ok(section.text.includes('https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U'));
+    assert.ok(section.text.includes('Please do not share this channel link with anyone outside the registered parents and guardians of selected children.'));
   });
 
   it('2. formats single child name and uses singular grammar', () => {
