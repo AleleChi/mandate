@@ -57,7 +57,7 @@ async function resolveVolunteerScope(userId: string, userRole: string, eventId: 
 
   const assignedGroups = parseAssignedAgeGroups(duty?.assigned_age_groups);
   return {
-    isScoped: true,
+    isScoped: assignedGroups.length > 0,
     assignedAgeGroups: assignedGroups
   };
 }
@@ -1340,6 +1340,7 @@ router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Respons
 
     const volunteerProfileObj = {
       id: profile.id,
+      role: req.user.role,
       status: profile.status,
       preferredTeam: profile.preferred_team,
       assignedTeam,
@@ -2607,10 +2608,22 @@ router.post('/pass/lookup', authMiddleware, async (req: AuthenticatedRequest, re
 
     if (!entryId) {
       if (passReference) {
-        let cleanRef = passReference.toString().trim().toUpperCase();
+        let cleanRef = passReference.toString().trim();
+        if (cleanRef.includes('/pass/')) {
+          cleanRef = cleanRef.split('/pass/')[1]?.split('?')[0]?.replace(/\/$/, '') || cleanRef;
+        } else if (cleanRef.includes('code=')) {
+          cleanRef = cleanRef.split('code=')[1]?.split('&')[0] || cleanRef;
+        } else if (cleanRef.includes('pass=')) {
+          cleanRef = cleanRef.split('pass=')[1]?.split('&')[0] || cleanRef;
+        } else if (cleanRef.includes('ref=')) {
+          cleanRef = cleanRef.split('ref=')[1]?.split('&')[0] || cleanRef;
+        } else if (cleanRef.includes('token=')) {
+          cleanRef = cleanRef.split('token=')[1]?.split('&')[0] || cleanRef;
+        }
         if (cleanRef.startsWith('KCT:')) {
           cleanRef = cleanRef.substring(4);
         }
+        cleanRef = cleanRef.trim().toUpperCase();
         if (cleanRef.startsWith('PASS-')) {
           cleanRef = cleanRef.replace('PASS-', 'KOI-2026-');
         } else if (!cleanRef.startsWith('KOI-2026-') && cleanRef.length === 6) {
@@ -2666,15 +2679,6 @@ router.post('/pass/lookup', authMiddleware, async (req: AuthenticatedRequest, re
           outOfScope: true
         });
       }
-    }
-
-    if (entry.status === 'picked_up' || entry.status === 'checked_out' || Boolean(entry.picked_up_at)) {
-      return res.status(400).json({
-        success: false,
-        error: 'This child has already been picked up and released from the event.',
-        code: 'ALREADY_PICKED_UP',
-        alreadyPickedUp: true
-      });
     }
 
     const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [child.parent_profile_id]);

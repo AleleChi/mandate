@@ -288,17 +288,18 @@ describe('Pass Idempotency, Approval Coherence, and Parent Passes Regression Sui
     const { childId, entryId } = await createTestChildWithEntry('Bethertrade SelectedActive', 'selected', true);
 
     const existingPassId = `pass-act-${crypto.randomUUID()}`;
+    const dynamicRef = `KOI-2026-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
     const now = new Date().toISOString();
     await execute(`
       INSERT INTO event_passes (id, child_event_entry_id, pass_reference, pass_hash, status, issued_at, created_at, updated_at)
-      VALUES (?, ?, 'KOI-2026-ACTIVE1', 'activehash1', 'active', ?, ?, ?)
-    `, [existingPassId, entryId, now, now, now]);
+      VALUES (?, ?, ?, 'activehash1', 'active', ?, ?, ?)
+    `, [existingPassId, entryId, dynamicRef, now, now, now]);
 
     // Admin calls generate/issue pass
     const pass = await issuePassForChild({ childId, eventId: testEventId });
 
     assert.equal(pass.id, existingPassId, 'Must return the existing active pass');
-    assert.equal(pass.pass_reference, 'KOI-2026-ACTIVE1');
+    assert.equal(pass.pass_reference, dynamicRef);
     assert.equal(pass.status, 'active');
 
     // Entry status must be reconciled to pass_ready

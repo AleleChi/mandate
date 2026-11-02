@@ -2120,6 +2120,8 @@ router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
     const offset = (page - 1) * limit;
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const filter = typeof req.query.filter === 'string' ? req.query.filter : '';
+    const ageGroup = typeof req.query.ageGroup === 'string' ? req.query.ageGroup.trim() : '';
+    const passStatus = typeof req.query.passStatus === 'string' ? req.query.passStatus.trim() : '';
 
     if (!eventId) {
       return res.json({
@@ -2168,7 +2170,9 @@ router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
       queryParams.push(searchPattern, searchPattern, searchPattern);
     }
 
-    if (filter === 'inside') {
+    if (filter === 'selected_children') {
+      filterClauses += ` AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')`;
+    } else if (filter === 'inside') {
       filterClauses += ` AND e.status IN ('checked_in', 'inside')`;
     } else if (filter === 'not_arrived') {
       filterClauses += ` AND e.status NOT IN ('checked_in', 'inside', 'picked_up')`;
@@ -2185,6 +2189,29 @@ router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
       filterClauses += ` AND c.needs_age_review = 1`;
     } else if (filter === 'special_support') {
       filterClauses += ` AND e.needs_extra_support = 1`;
+    }
+
+    if (ageGroup && ageGroup.toLowerCase() !== 'all' && ageGroup.toLowerCase() !== 'all age groups') {
+      filterClauses += ` AND c.age_group = ?`;
+      queryParams.push(ageGroup);
+    }
+
+    if (passStatus === 'missing_pass') {
+      filterClauses += ` AND e.status = 'selected' AND NOT EXISTS (
+        SELECT 1 FROM event_passes ep WHERE ep.child_event_entry_id = e.id AND ep.status = 'active'
+      )`;
+    } else if (passStatus === 'pass_ready') {
+      filterClauses += ` AND e.status NOT IN ('checked_in', 'inside', 'picked_up') AND (
+        e.status = 'pass_ready' OR EXISTS (
+          SELECT 1 FROM event_passes ep WHERE ep.child_event_entry_id = e.id AND ep.status = 'active'
+        )
+      )`;
+    } else if (passStatus === 'checked_in') {
+      filterClauses += ` AND e.status = 'checked_in'`;
+    } else if (passStatus === 'inside') {
+      filterClauses += ` AND e.status IN ('checked_in', 'inside')`;
+    } else if (passStatus === 'picked_up') {
+      filterClauses += ` AND e.status IN ('picked_up', 'checked_out')`;
     }
 
     // Get total count of filtered children
@@ -2250,6 +2277,13 @@ router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
         WHERE p.child_event_entry_id IN (${placeholders})
       `, entryIds);
 
+      const activePasses = await query(`
+        SELECT child_event_entry_id, pass_reference, status
+        FROM event_passes
+        WHERE child_event_entry_id IN (${placeholders}) AND status = 'active'
+      `, entryIds);
+      const passByEntryId = new Map(activePasses.map((p: any) => [p.child_event_entry_id, p]));
+
       formatted = childrenRows.map((app: any) => {
         const entryPickups = pickupPeople.filter((p: any) => p.child_event_entry_id === app.entry_id)
           .map((p: any) => ({
@@ -2261,6 +2295,29 @@ router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
             photoUrl: p.photo_url,
             approved: p.approved_by_parent === 1
           }));
+
+        const activePass = passByEntryId.get(app.entry_id);
+        const hasPass = Boolean(activePass);
+        const passReference = activePass?.pass_reference || null;
+
+        let passState: 'missing_pass' | 'pass_ready' | 'checked_in' | 'inside' | 'picked_up' | 'under_review' | 'waiting_list' | 'not_selected' | 'no_pass' = 'no_pass';
+        if (app.status === 'picked_up' || app.status === 'checked_out') {
+          passState = 'picked_up';
+        } else if (app.status === 'checked_in') {
+          passState = 'checked_in';
+        } else if (app.status === 'inside') {
+          passState = 'inside';
+        } else if (hasPass || app.status === 'pass_ready') {
+          passState = 'pass_ready';
+        } else if (app.status === 'selected') {
+          passState = 'missing_pass';
+        } else if (app.status === 'waiting_list') {
+          passState = 'waiting_list';
+        } else if (app.status === 'not_selected') {
+          passState = 'not_selected';
+        } else if (app.status === 'under_review') {
+          passState = 'under_review';
+        }
 
         const flags: string[] = [];
         if (app.has_medical_notes === 1) flags.push('medical_notes');
@@ -2299,6 +2356,9 @@ router.get('/children', async (req: AuthenticatedRequest, res: Response) => {
           reviewStatus: app.status,
           entryStatus,
           pickupStatus,
+          hasPass,
+          passStatus: passState,
+          passReference,
           isDeleted: !!app.entry_deleted || !!app.child_deleted,
           deleteReason: app.delete_reason || null,
           flags
@@ -12720,6 +12780,127 @@ router.post('/applications/bulk-revoke-pass', authMiddleware, async (req: Authen
     console.error('Error in bulk revoke passes:', err);
     return res.status(500).json({ success: false, error: "We couldn't revoke passes for selected children. Nothing was changed." });
   }
+});
+
+// POST /api/admin/applications/bulk-issue-pass - Controlled bulk pass recovery for selected children
+router.post('/applications/bulk-issue-pass', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { applicationIds, childIds } = req.body;
+    const targetIds: string[] = Array.isArray(applicationIds) && applicationIds.length > 0
+      ? applicationIds
+      : (Array.isArray(childIds) ? childIds : []);
+
+    if (targetIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one child or application is required.' });
+    }
+
+    const currentEventId = await getCurrentEventId();
+    if (!currentEventId) {
+      return res.status(400).json({ success: false, error: 'No active event is available.' });
+    }
+
+    let issuedCount = 0;
+    let alreadyHadPassCount = 0;
+    let skippedCount = 0;
+    let failedCount = 0;
+    const details: Array<{ id: string; childName: string; status: 'issued' | 'already_had_pass' | 'skipped' | 'failed'; reason: string }> = [];
+
+    for (const id of targetIds) {
+      let entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [id]);
+      if (!entry) {
+        entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [id, currentEventId]);
+      }
+      if (!entry) {
+        entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? ORDER BY created_at DESC LIMIT 1', [id]);
+      }
+
+      const child = entry ? await queryOne('SELECT * FROM children WHERE id = ?', [entry.child_id]) : null;
+      const childName = child ? child.full_name : `Child (${id})`;
+
+      if (!entry || entry.event_id !== currentEventId) {
+        skippedCount++;
+        details.push({ id, childName, status: 'skipped', reason: 'Outside current event' });
+        continue;
+      }
+
+      if (entry.status === 'checked_in' || entry.status === 'inside') {
+        skippedCount++;
+        details.push({ id, childName, status: 'skipped', reason: 'Checked in' });
+        continue;
+      }
+
+      if (entry.status === 'picked_up' || entry.status === 'checked_out') {
+        skippedCount++;
+        details.push({ id, childName, status: 'skipped', reason: 'Picked up' });
+        continue;
+      }
+
+      if (entry.status !== 'selected' && entry.status !== 'pass_ready') {
+        skippedCount++;
+        details.push({ id, childName, status: 'skipped', reason: `Not selected (status: ${entry.status})` });
+        continue;
+      }
+
+      // Check if an active pass already exists
+      const existingActivePass = await queryOne(
+        'SELECT id, pass_reference, status FROM event_passes WHERE child_event_entry_id = ? AND status = ?',
+        [entry.id, 'active']
+      );
+
+      if (existingActivePass) {
+        if (entry.status === 'selected') {
+          await execute('UPDATE child_event_entries SET status = ?, updated_at = ? WHERE id = ?', ['pass_ready', new Date().toISOString(), entry.id]);
+        }
+        alreadyHadPassCount++;
+        details.push({ id, childName, status: 'already_had_pass', reason: 'Already has active pass' });
+        continue;
+      }
+
+      // Check required child photo
+      if (!child || !child.photo_file_id) {
+        failedCount++;
+        details.push({ id, childName, status: 'failed', reason: 'Missing required child photo' });
+        continue;
+      }
+
+      try {
+        const pass = await issuePassForChild({ childId: entry.child_id, eventId: entry.event_id });
+        if (pass) {
+          issuedCount++;
+          details.push({ id, childName, status: 'issued', reason: 'Pass issued successfully' });
+        } else {
+          failedCount++;
+          details.push({ id, childName, status: 'failed', reason: 'Failed to generate pass' });
+        }
+      } catch (issueErr: any) {
+        failedCount++;
+        details.push({ id, childName, status: 'failed', reason: issueErr.message || 'Pass generation error' });
+      }
+    }
+
+    const summary = await getChildSummaryStats();
+    return res.json({
+      success: true,
+      totalProcessed: targetIds.length,
+      issuedCount,
+      alreadyHadPassCount,
+      skippedCount,
+      failedCount,
+      details,
+      summary,
+      message: `${issuedCount} passes issued, ${alreadyHadPassCount} already had passes, ${skippedCount + failedCount} skipped or could not be issued.`
+    });
+  } catch (err: any) {
+    console.error('Error in bulk pass issue:', err);
+    return res.status(500).json({ success: false, error: 'Failed to process bulk pass issue.' });
+  }
+});
+
+router.post('/children/passes/bulk-issue', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  // Alias to /applications/bulk-issue-pass
+  const { childIds, applicationIds } = req.body;
+  req.body.applicationIds = applicationIds || childIds;
+  return (router as any).handle(req, res);
 });
 
 // POST /api/admin/applications/:id/reset-progress - Super Admin action to reset event progress for a child
