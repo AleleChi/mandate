@@ -72,6 +72,7 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
 
   // Template preview toggle
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -379,6 +380,27 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
       invalidNumber
     };
   }, [selectedParentsList, selectedParentIds]);
+
+  // Context-aware message preview values: uses selected parent if exactly 1 parent is selected
+  const previewValues = useMemo(() => {
+    if (selectedParentIds.length === 1) {
+      const selectedParent = parents.find(p => p.parentId === selectedParentIds[0]);
+      if (selectedParent) {
+        return {
+          parentFirstName: selectedParent.firstName || selectedParent.fullName.split(' ')[0] || 'Grace',
+          selectedChildNames: selectedParent.selectedChildNames || 'Mary and Daniel',
+          isRealParent: true,
+          parentFullName: selectedParent.fullName
+        };
+      }
+    }
+    return {
+      parentFirstName: 'Grace',
+      selectedChildNames: 'Mary and Daniel',
+      isRealParent: false,
+      parentFullName: null
+    };
+  }, [selectedParentIds, parents]);
 
   return (
     <div className="space-y-4 text-stone-900 font-sans">
@@ -1464,51 +1486,113 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
         </div>
       )}
 
-      {/* 13. TEMPLATE PREVIEW MODAL */}
+      {/* 13. MESSAGE PREVIEW MODAL */}
       {showPreviewModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-md shadow-lg max-w-lg w-full p-5 text-xs">
-            <div className="flex items-center justify-between pb-2 border-b border-stone-200 mb-3">
-              <h3 className="text-sm font-bold text-stone-900">
-                WhatsApp Template Preview
-              </h3>
+          <div className="bg-white rounded-md border border-stone-200 shadow-lg max-w-[580px] w-full p-5 text-xs text-stone-900 font-sans">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-200">
+              <div>
+                <h3 className="text-sm font-bold text-stone-900">
+                  Message preview
+                </h3>
+                <p className="text-[11px] text-stone-500 mt-0.5">
+                  Parents Channel invitation · WhatsApp
+                </p>
+              </div>
               <button
                 type="button"
-                onClick={() => setShowPreviewModal(false)}
+                onClick={() => {
+                  setShowPreviewModal(false);
+                  setShowTechnicalDetails(false);
+                }}
                 className="text-stone-400 hover:text-stone-700 p-1"
+                aria-label="Close message preview"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="space-y-3">
-              <div className="bg-stone-50 border border-stone-200 rounded p-3 text-stone-700 leading-relaxed font-sans text-xs">
-                <p>Hi <span className="font-semibold text-stone-900 bg-stone-200/60 px-1 py-0.5 rounded">{'{{parent_first_name}}'}</span>,</p>
-                <p className="mt-2">
-                  Selection has been confirmed for <span className="font-semibold text-stone-900 bg-stone-200/60 px-1 py-0.5 rounded">{'{{selected_child_names}}'}</span> for the Koinonia General Assembly Children's Session 2026.
+            <div className="py-3 space-y-3">
+              {previewValues.isRealParent && (
+                <div className="text-[11px] text-stone-500 italic">
+                  Previewing for selected parent: <span className="font-medium text-stone-700 not-italic">{previewValues.parentFullName}</span>
+                </div>
+              )}
+
+              {/* Flat preview area: warm white, generous spacing, thin top/bottom separators only */}
+              <div className="py-4 px-3 border-y border-stone-200 bg-[#fbfaf8] text-stone-800 text-xs leading-relaxed space-y-3">
+                <p>
+                  Hi {previewValues.parentFirstName}, selection has been confirmed for {previewValues.selectedChildNames} for the Koinonia General Assembly Children's Session 2026.
                 </p>
-                <p className="mt-2">
+                <p>
                   Please follow the official Parents Channel for important Children's Session updates, including arrival, check-in and pickup information:
                 </p>
-                <p className="mt-2 text-blue-600 font-mono text-[11px] break-all">
-                  https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U
+                <p>
+                  <a
+                    href="https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[#a88242] underline hover:text-[#8e6c32] font-mono break-all inline-block"
+                  >
+                    https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U
+                  </a>
                 </p>
-                <p className="mt-2 text-stone-500 text-[11px]">
+                <p className="text-stone-500 text-[11px]">
                   This channel is for registered parents and guardians of selected children only. Please do not share this link with others.
                 </p>
               </div>
 
-              <div className="text-[11px] text-stone-500">
-                <div><strong>Template Alias:</strong> <code className="text-stone-800">koinonia_selected_parent_channel_v2</code></div>
-                <div><strong>Merge Fields:</strong> <code className="text-stone-800">parent_first_name</code>, <code className="text-stone-800">selected_child_names</code></div>
+              {/* Template pending status line if not configured */}
+              {!templateConfigured && (
+                <div className="text-[11px] text-amber-800 bg-amber-50/70 border border-amber-200/60 rounded px-2.5 py-1.5 flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                  <span>Sending is currently unavailable until the approved WhatsApp template is configured.</span>
+                </div>
+              )}
+
+              {/* Technical details behind collapsible accordion */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
+                  className="text-[11px] text-stone-500 hover:text-stone-800 inline-flex items-center gap-1 font-medium transition-colors"
+                >
+                  {showTechnicalDetails ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3 text-stone-400" />}
+                  <span>Technical details</span>
+                </button>
+
+                {showTechnicalDetails && (
+                  <div className="mt-2 p-2.5 bg-stone-50 border border-stone-200 rounded text-[11px] text-stone-600 space-y-1">
+                    <div>
+                      <span className="font-semibold text-stone-700">Template alias:</span>{' '}
+                      <code className="text-stone-800">koinonia_selected_parent_channel_v2</code>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-stone-700">Status:</span>{' '}
+                      {templateConfigured ? (
+                        <span className="text-emerald-700 font-medium">Ready</span>
+                      ) : (
+                        <span className="text-amber-800 font-medium">Pending configuration</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="font-semibold text-stone-700">Required variables:</span>{' '}
+                      <code className="text-stone-800">parent_first_name</code>,{' '}
+                      <code className="text-stone-800">selected_child_names</code>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="mt-4 pt-3 border-t border-stone-200 flex justify-end">
+            <div className="pt-3 border-t border-stone-200 flex justify-end">
               <button
                 type="button"
-                onClick={() => setShowPreviewModal(false)}
-                className="px-3 py-1.5 text-xs text-stone-700 bg-stone-100 hover:bg-stone-200 rounded font-medium"
+                onClick={() => {
+                  setShowPreviewModal(false);
+                  setShowTechnicalDetails(false);
+                }}
+                className="px-3.5 py-1.5 text-xs font-medium text-stone-700 bg-stone-100 hover:bg-stone-200 rounded transition-colors"
               >
                 Close
               </button>
