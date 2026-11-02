@@ -46,6 +46,8 @@ export interface SelectedParentAudienceChild {
   status: string;
   ageGroup: string | null;
   isSelected: boolean;
+  dateOfBirth?: string | null;
+  calculatedAge?: number | null;
 }
 
 export interface SelectedParentAudienceRow {
@@ -74,6 +76,7 @@ export interface SelectedParentAudienceRow {
 
 export interface SelectedParentsAudienceSummary {
   totalEligibleParents: number;
+  totalSelectedChildren?: number;
   invitationsNotSent: number;
   invitationsSent: number;
   invitationsFailed: number;

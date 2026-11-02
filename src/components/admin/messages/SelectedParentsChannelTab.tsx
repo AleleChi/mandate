@@ -9,6 +9,7 @@ import {
   Send,
   RotateCcw,
   ChevronDown,
+  ChevronUp,
   Info,
   X,
   Phone,
@@ -16,7 +17,8 @@ import {
   Check,
   AlertTriangle,
   RefreshCw,
-  ExternalLink
+  Eye,
+  MessageSquare
 } from 'lucide-react';
 import {
   api,
@@ -55,6 +57,7 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
   const [parents, setParents] = useState<SelectedParentRecord[]>([]);
   const [summary, setSummary] = useState<AudienceSummary>({
     totalEligibleParents: 0,
+    totalSelectedChildren: 0,
     invitationsNotSent: 0,
     invitationsSent: 0,
     invitationsFailed: 0,
@@ -65,10 +68,15 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
   const [templateConfigured, setTemplateConfigured] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
+  // Template preview toggle
+  const [showPreviewPanel, setShowPreviewPanel] = useState(false);
+
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'not_sent' | 'sent' | 'failed'>('all');
-  const [whatsappFilter, setWhatsappFilter] = useState<'all' | 'available' | 'unavailable'>('all');
+  const [whatsappFilter, setWhatsappFilter] = useState<'all' | 'available' | 'unavailable' | 'opted_out'>('all');
+  const [selectedCountFilter, setSelectedCountFilter] = useState<'all' | '1' | '2_plus'>('all');
+  const [ageGroupFilter, setAgeGroupFilter] = useState<string>('all');
 
   // Controlled bulk selection
   const [selectedParentIds, setSelectedParentIds] = useState<string[]>([]);
@@ -78,7 +86,11 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
   const [customAmountValue, setCustomAmountValue] = useState('');
   const [customAmountError, setCustomAmountError] = useState('');
 
+  // Expandable family rows
+  const [expandedParentIds, setExpandedParentIds] = useState<string[]>([]);
+
   // Modals & Action states
+  const [showBulkConfirmModal, setShowBulkConfirmModal] = useState(false);
   const [resendTargetParent, setResendTargetParent] = useState<SelectedParentRecord | null>(null);
   const [detailParent, setDetailParent] = useState<SelectedParentRecord | null>(null);
   const [bulkSendSummary, setBulkSendSummary] = useState<BulkSendSummaryData | null>(null);
@@ -108,16 +120,13 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
     setFetchError(null);
 
     try {
-      const res = await api.getSelectedParentsAudience(selectedEventId, {
-        search: searchQuery || undefined,
-        status: statusFilter !== 'all' ? statusFilter : undefined,
-        whatsappStatus: whatsappFilter !== 'all' ? whatsappFilter : undefined
-      });
+      const res = await api.getSelectedParentsAudience(selectedEventId);
 
       if (res && res.success) {
         setParents(res.parents || []);
         setSummary(res.summary || {
           totalEligibleParents: 0,
+          totalSelectedChildren: 0,
           invitationsNotSent: 0,
           invitationsSent: 0,
           invitationsFailed: 0,
@@ -141,26 +150,89 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
   useEffect(() => {
     fetchAudience();
     setSelectedParentIds([]);
-  }, [selectedEventId, statusFilter, whatsappFilter]);
+  }, [selectedEventId]);
 
-  // Handle client-side search debounce / immediate filtering
+  // Comprehensive client-side filtering
   const displayParents = useMemo(() => {
-    if (!searchQuery.trim()) return parents;
-    const q = searchQuery.trim().toLowerCase();
-    return parents.filter(p =>
-      p.fullName.toLowerCase().includes(q) ||
-      (p.email && p.email.toLowerCase().includes(q)) ||
-      (p.phoneNumber && p.phoneNumber.toLowerCase().includes(q)) ||
-      (p.whatsappNumber && p.whatsappNumber.toLowerCase().includes(q)) ||
-      p.selectedChildNames.toLowerCase().includes(q) ||
-      p.children.some(c => c.fullName.toLowerCase().includes(q))
-    );
-  }, [parents, searchQuery]);
+    return parents.filter(p => {
+      // 1. Status filter
+      if (statusFilter !== 'all' && p.invitationStatus !== statusFilter) {
+        return false;
+      }
+
+      // 2. WhatsApp filter
+      if (whatsappFilter !== 'all') {
+        if (whatsappFilter === 'available' && p.whatsappAvailability !== 'available') return false;
+        if (whatsappFilter === 'unavailable' && p.whatsappAvailability === 'available') return false;
+        if (whatsappFilter === 'opted_out' && p.whatsappAvailability !== 'opted_out') return false;
+      }
+
+      // 3. Selected count filter
+      if (selectedCountFilter === '1' && p.selectedChildrenCount !== 1) return false;
+      if (selectedCountFilter === '2_plus' && p.selectedChildrenCount < 2) return false;
+
+      // 4. Age group filter based on selected children
+      if (ageGroupFilter !== 'all') {
+        const matchesAgeGroup = p.children.some(c => {
+          if (!c.isSelected) return false;
+          const g = c.ageGroup || '';
+          const norm = g.replace(/^Ages\s+/i, '').replace(/-/g, '–').trim();
+          if (norm === ageGroupFilter) return true;
+          if (c.calculatedAge !== null && c.calculatedAge !== undefined) {
+            const age = c.calculatedAge;
+            if (ageGroupFilter === '2–3' && age >= 2 && age <= 3) return true;
+            if (ageGroupFilter === '4–6' && age >= 4 && age <= 6) return true;
+            if (ageGroupFilter === '7–9' && age >= 7 && age <= 9) return true;
+            if (ageGroupFilter === '10–12' && age >= 10 && age <= 12) return true;
+            if (ageGroupFilter === '13–14' && age >= 13 && age <= 14) return true;
+          }
+          return false;
+        });
+        if (!matchesAgeGroup) return false;
+      }
+
+      // 5. Search query
+      if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase();
+        const matches =
+          p.fullName.toLowerCase().includes(q) ||
+          (p.email && p.email.toLowerCase().includes(q)) ||
+          (p.phoneNumber && p.phoneNumber.toLowerCase().includes(q)) ||
+          (p.whatsappNumber && p.whatsappNumber.toLowerCase().includes(q)) ||
+          p.selectedChildNames.toLowerCase().includes(q) ||
+          p.children.some(c => c.fullName.toLowerCase().includes(q));
+        if (!matches) return false;
+      }
+
+      return true;
+    });
+  }, [parents, statusFilter, whatsappFilter, selectedCountFilter, ageGroupFilter, searchQuery]);
 
   // Bulk selection calculations
   const displayParentIds = useMemo(() => displayParents.map(p => p.parentId), [displayParents]);
   const isAllVisibleSelected = displayParentIds.length > 0 && displayParentIds.every(id => selectedParentIds.includes(id));
   const isIndeterminate = selectedParentIds.length > 0 && !isAllVisibleSelected;
+
+  // Selected parents metadata for confirmation modal
+  const selectedParentsList = useMemo(() => {
+    return parents.filter(p => selectedParentIds.includes(p.parentId));
+  }, [parents, selectedParentIds]);
+
+  const selectedChildrenRepresentedCount = useMemo(() => {
+    return selectedParentsList.reduce((sum, p) => sum + p.selectedChildrenCount, 0);
+  }, [selectedParentsList]);
+
+  const selectedWhatsAppAvailableCount = useMemo(() => {
+    return selectedParentsList.filter(p => p.whatsappAvailability === 'available').length;
+  }, [selectedParentsList]);
+
+  const selectedOptedOutCount = useMemo(() => {
+    return selectedParentsList.filter(p => p.whatsappAvailability === 'opted_out').length;
+  }, [selectedParentsList]);
+
+  const selectedInvalidNumberCount = useMemo(() => {
+    return selectedParentsList.filter(p => p.whatsappAvailability === 'invalid_number').length;
+  }, [selectedParentsList]);
 
   const handleToggleSelectParent = (id: string) => {
     setSelectedParentIds(prev =>
@@ -170,10 +242,8 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
 
   const handleToggleSelectVisible = () => {
     if (isAllVisibleSelected) {
-      // Deselect all visible
       setSelectedParentIds(prev => prev.filter(id => !displayParentIds.includes(id)));
     } else {
-      // Select all visible
       setSelectedParentIds(prev => Array.from(new Set([...prev, ...displayParentIds])));
     }
   };
@@ -201,6 +271,12 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
     setCustomAmountError('');
   };
 
+  const toggleExpandParent = (parentId: string) => {
+    setExpandedParentIds(prev =>
+      prev.includes(parentId) ? prev.filter(id => id !== parentId) : [...prev, parentId]
+    );
+  };
+
   // Dispatch channel invitation
   const executeSendInvitations = async (targetParentIds: string[], resend: boolean = false) => {
     if (!templateConfigured) {
@@ -222,7 +298,7 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
         setBulkSendSummary(res);
         if (res.sentCount > 0) {
           showSuccess(
-            'Channel invitations sent',
+            'Channel invitations complete',
             `${res.sentCount} invitation(s) sent successfully${res.skippedCount > 0 ? `, ${res.skippedCount} skipped` : ''}${res.failedCount > 0 ? `, ${res.failedCount} failed` : ''}.`
           );
         } else if (res.skippedCount > 0) {
@@ -240,6 +316,7 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
     } finally {
       setIsSubmittingSend(false);
       setResendTargetParent(null);
+      setShowBulkConfirmModal(false);
     }
   };
 
@@ -318,25 +395,42 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
     </div>
   );
 
+  const calculatedTotalSelectedChildren = useMemo(() => {
+    return summary.totalSelectedChildren !== undefined
+      ? summary.totalSelectedChildren
+      : parents.reduce((sum, p) => sum + p.selectedChildrenCount, 0);
+  }, [summary.totalSelectedChildren, parents]);
+
   return (
     <div className="space-y-5 animate-fade-in text-[#18181B] dark:text-[#F0EBE3]">
       {/* 1. Header Banner & Guidance */}
-      <div className="bg-[#FAF9F6] dark:bg-[#1C1B18] border border-[#EAE8E1] dark:border-[#2D2B27] rounded-lg p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-[#FAF9F6] dark:bg-[#1C1B18] border border-[#EAE8E1] dark:border-[#2D2B27] rounded-lg p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xs">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-[#C59B27]">Communication Workflow</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-[#C59B27]">Communication Module</span>
             <span className="text-xs text-neutral-400 dark:text-neutral-500">·</span>
             <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">{eventTitle}</span>
           </div>
           <h2 className="text-base font-semibold text-neutral-900 dark:text-white tracking-tight">
-            Selected Parents WhatsApp Channel Invitations
+            Selected Parents Channel
           </h2>
           <p className="text-xs text-neutral-500 dark:text-neutral-400 max-w-3xl leading-relaxed">
-            Parents whose children have been approved or selected for the current event. Name the confirmed child or children and send them the official Koinonia Parents Channel link before event day.
+            View parents with selected children and send the official Parents Channel invitation via WhatsApp.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start md:self-auto">
+        <div className="flex items-center gap-2 self-start md:self-auto flex-wrap">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowPreviewPanel(!showPreviewPanel)}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5"
+            title="Toggle WhatsApp template preview"
+          >
+            <Eye className="w-3.5 h-3.5 text-[#C59B27]" />
+            <span>{showPreviewPanel ? 'Hide Preview' : 'Preview Template'}</span>
+          </Button>
+
           <Button
             variant="secondary"
             size="sm"
@@ -351,7 +445,55 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
         </div>
       </div>
 
-      {/* 2. Pending Template Approval Notice (if not configured) */}
+      {/* 2. Compact Template Preview Panel */}
+      {showPreviewPanel && (
+        <div className="bg-[#FAF9F6] dark:bg-[#1E1D1A] border border-[#EAE8E1] dark:border-[#2E2C28] rounded-lg p-4 space-y-3 animate-fade-in">
+          <div className="flex items-center justify-between border-b border-[#EAE8E1] dark:border-[#2E2C28] pb-2.5">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 text-[#C59B27]" />
+              <span className="text-xs font-semibold text-neutral-900 dark:text-neutral-100">WhatsApp Template Preview</span>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 font-mono">
+                koinonia_selected_parent_channel_v2 (Utility)
+              </span>
+            </div>
+            <span className="text-[11px] text-neutral-400">Header: Children's Session Update</span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1 text-xs">
+            <div className="space-y-2 bg-white dark:bg-[#252421] p-3 rounded border border-[#EAE8E1] dark:border-[#383632]">
+              <div>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 block">Sample Parent</span>
+                <span className="font-semibold text-neutral-800 dark:text-neutral-200">Grace</span>
+              </div>
+              <div>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 block">Sample Selected Children</span>
+                <span className="font-semibold text-[#C59B27]">Mary and Daniel</span>
+              </div>
+              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 pt-1 leading-snug">
+                This preview is UI only. Actual sends use the approved Zoho template (<code className="font-mono text-[10px] bg-neutral-100 dark:bg-neutral-800 px-1 py-0.5 rounded">koinonia_selected_parent_channel_v2</code>) with direct channel link.
+              </p>
+            </div>
+
+            <div className="md:col-span-2 bg-white dark:bg-[#252421] border border-[#EAE8E1] dark:border-[#383632] rounded-lg p-3.5 space-y-2.5 font-sans text-xs text-neutral-800 dark:text-neutral-200 leading-relaxed shadow-2xs">
+              <div className="font-semibold text-[#C59B27] text-[11px] uppercase tracking-wider">Children's Session Update</div>
+              <p>
+                Hi Grace, selection has been confirmed for Mary and Daniel for the Koinonia General Assembly Children's Session 2026.
+              </p>
+              <p>
+                Please follow the official Parents Channel for important Children's Session updates, including arrival, check-in and pickup information:
+              </p>
+              <p className="text-emerald-700 dark:text-emerald-400 font-mono text-[11.5px] break-all underline font-medium">
+                https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U
+              </p>
+              <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                This channel is for registered parents and guardians of selected children only. Please do not share this link with others.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. Pending Template Approval Notice (if not configured) */}
       {!templateConfigured && (
         <div className="bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-lg p-3.5 flex items-start gap-3">
           <AlertCircle className="w-4 h-4 text-amber-700 dark:text-amber-400 shrink-0 mt-0.5" />
@@ -360,17 +502,25 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
               WhatsApp template pending approval
             </p>
             <p className="text-amber-800 dark:text-amber-400 leading-relaxed">
-              The dedicated template <code className="bg-amber-100/70 dark:bg-amber-900/40 px-1 py-0.5 rounded font-mono text-[11px]">koinonia_selected_parent_channel</code> is pending Meta approval or the template key is not yet configured. The audience, registered child counts, and selected names remain visible and operational below; send dispatches will become active once configured.
+              The approved template <code className="bg-amber-100/70 dark:bg-amber-900/40 px-1 py-0.5 rounded font-mono text-[11px]">koinonia_selected_parent_channel_v2</code> is pending configuration in the Render environment (<code className="bg-amber-100/70 dark:bg-amber-900/40 px-1 py-0.5 rounded font-mono text-[11px]">ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL</code>). The audience and registered children remain operational below; dispatch buttons will become active once configured.
             </p>
           </div>
         </div>
       )}
 
-      {/* 3. Summary Operational Metrics */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+      {/* 4. Summary Operational Metrics */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
         <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-md p-3">
           <div className="text-[10px] font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Eligible Parents</div>
           <div className="text-lg font-bold text-neutral-900 dark:text-white mt-0.5">{summary.totalEligibleParents}</div>
+        </div>
+
+        <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-md p-3">
+          <div className="text-[10px] font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Selected Children</div>
+          <div className="text-lg font-bold text-[#C59B27] mt-0.5">{calculatedTotalSelectedChildren}</div>
+          <div className="text-[9.5px] text-neutral-400 mt-0.5 truncate">
+            across {summary.totalEligibleParents} parents
+          </div>
         </div>
 
         <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-md p-3">
@@ -399,71 +549,109 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
         </div>
       </div>
 
-      {/* 4. Search & Filter Bar */}
-      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-lg p-3 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
-        <div className="relative flex-1 min-w-[240px] max-w-md">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search parent name, child name, phone or email..."
-            className="w-full pl-8 pr-3 py-1.5 text-xs bg-[#FAF9F6] dark:bg-[#242320] border border-[#EAE8E1] dark:border-[#383632] rounded focus:outline-none focus:border-[#C59B27] transition-colors"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 text-xs">
-            <span className="text-neutral-400 text-[11px] font-medium">Status:</span>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="text-xs bg-[#FAF9F6] dark:bg-[#242320] border border-[#EAE8E1] dark:border-[#383632] rounded px-2.5 py-1.5 focus:outline-none focus:border-[#C59B27]"
-            >
-              <option value="all">All selected parents</option>
-              <option value="not_sent">Invitation not sent</option>
-              <option value="sent">Sent</option>
-              <option value="failed">Failed</option>
-            </select>
+      {/* 5. Search & Compact Filter Bar */}
+      <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-lg p-3 space-y-2.5 shadow-2xs">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="relative flex-1 min-w-[240px] max-w-md">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search parent name, child name, phone or email..."
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-[#FAF9F6] dark:bg-[#242320] border border-[#EAE8E1] dark:border-[#383632] rounded focus:outline-none focus:border-[#C59B27] transition-colors"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
-          <div className="flex items-center gap-1.5 text-xs">
-            <span className="text-neutral-400 text-[11px] font-medium">WhatsApp:</span>
-            <select
-              value={whatsappFilter}
-              onChange={(e) => setWhatsappFilter(e.target.value as any)}
-              className="text-xs bg-[#FAF9F6] dark:bg-[#242320] border border-[#EAE8E1] dark:border-[#383632] rounded px-2.5 py-1.5 focus:outline-none focus:border-[#C59B27]"
-            >
-              <option value="all">All</option>
-              <option value="available">WhatsApp available</option>
-              <option value="unavailable">WhatsApp unavailable</option>
-            </select>
-          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Invitation Status */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-neutral-400 text-[11px] font-medium">Status:</span>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="text-xs bg-[#FAF9F6] dark:bg-[#242320] border border-[#EAE8E1] dark:border-[#383632] rounded px-2.5 py-1.5 focus:outline-none focus:border-[#C59B27]"
+              >
+                <option value="all">All</option>
+                <option value="not_sent">Not sent</option>
+                <option value="sent">Sent</option>
+                <option value="failed">Failed</option>
+              </select>
+            </div>
 
-          {(statusFilter !== 'all' || whatsappFilter !== 'all' || searchQuery) && (
-            <button
-              onClick={() => {
-                setStatusFilter('all');
-                setWhatsappFilter('all');
-                setSearchQuery('');
-              }}
-              className="text-xs text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 px-2 py-1 transition-colors cursor-pointer underline text-[11px]"
-            >
-              Reset filters
-            </button>
-          )}
+            {/* WhatsApp Availability */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-neutral-400 text-[11px] font-medium">WhatsApp:</span>
+              <select
+                value={whatsappFilter}
+                onChange={(e) => setWhatsappFilter(e.target.value as any)}
+                className="text-xs bg-[#FAF9F6] dark:bg-[#242320] border border-[#EAE8E1] dark:border-[#383632] rounded px-2.5 py-1.5 focus:outline-none focus:border-[#C59B27]"
+              >
+                <option value="all">All</option>
+                <option value="available">Available</option>
+                <option value="unavailable">Unavailable</option>
+                <option value="opted_out">Opted out</option>
+              </select>
+            </div>
+
+            {/* Selected Children Count */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-neutral-400 text-[11px] font-medium">Selected:</span>
+              <select
+                value={selectedCountFilter}
+                onChange={(e) => setSelectedCountFilter(e.target.value as any)}
+                className="text-xs bg-[#FAF9F6] dark:bg-[#242320] border border-[#EAE8E1] dark:border-[#383632] rounded px-2.5 py-1.5 focus:outline-none focus:border-[#C59B27]"
+              >
+                <option value="all">All</option>
+                <option value="1">1 selected</option>
+                <option value="2_plus">2+ selected</option>
+              </select>
+            </div>
+
+            {/* Age Group Filter */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-neutral-400 text-[11px] font-medium">Age Group:</span>
+              <select
+                value={ageGroupFilter}
+                onChange={(e) => setAgeGroupFilter(e.target.value)}
+                className="text-xs bg-[#FAF9F6] dark:bg-[#242320] border border-[#EAE8E1] dark:border-[#383632] rounded px-2.5 py-1.5 focus:outline-none focus:border-[#C59B27]"
+              >
+                <option value="all">All</option>
+                <option value="2–3">2–3</option>
+                <option value="4–6">4–6</option>
+                <option value="7–9">7–9</option>
+                <option value="10–12">10–12</option>
+                <option value="13–14">13–14</option>
+              </select>
+            </div>
+
+            {(statusFilter !== 'all' || whatsappFilter !== 'all' || selectedCountFilter !== 'all' || ageGroupFilter !== 'all' || searchQuery) && (
+              <button
+                onClick={() => {
+                  setStatusFilter('all');
+                  setWhatsappFilter('all');
+                  setSelectedCountFilter('all');
+                  setAgeGroupFilter('all');
+                  setSearchQuery('');
+                }}
+                className="text-xs text-[#C59B27] hover:underline px-2 py-1 transition-colors cursor-pointer text-[11px] font-medium"
+              >
+                Reset filters
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* 5. Controlled Bulk Selection Floating / Contextual Toolbar */}
+      {/* 6. Controlled Bulk Selection Contextual Toolbar */}
       {selectedParentIds.length > 0 && (
         <div className="bg-[#FAF8F2] dark:bg-[#20201E] border border-[#EAE8E1] dark:border-[#2A2926] rounded-md px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-2xs animate-fade-in">
           <div className="flex items-center gap-2 flex-wrap">
@@ -471,8 +659,8 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
             <span className="text-xs font-semibold text-neutral-900 dark:text-neutral-100">
               {selectedParentIds.length} {selectedParentIds.length === 1 ? 'parent selected' : 'parents selected'}
             </span>
-            <span className="text-[11px] text-neutral-400 dark:text-neutral-500 hidden sm:inline">
-              ({selectedParentIds.length} of {displayParents.length} eligible parents selected)
+            <span className="text-[11px] text-neutral-500 dark:text-neutral-400 hidden sm:inline">
+              ({selectedChildrenRepresentedCount} selected children represented)
             </span>
           </div>
 
@@ -491,22 +679,20 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
               {toolbarScopeMenuOpen && renderSelectionScopeDropdown(() => setToolbarScopeMenuOpen(false), "left-0 sm:right-0 sm:left-auto top-full mt-1.5")}
             </div>
 
-            {/* Send Channel Invitation Action Button */}
+            {/* Send WhatsApp Channel Invitation Button (Triggers Confirmation Modal) */}
             <button
               type="button"
               id="selected-parents-bulk-send-btn"
               disabled={isSubmittingSend || !templateConfigured}
-              onClick={() => executeSendInvitations(selectedParentIds, false)}
+              onClick={() => setShowBulkConfirmModal(true)}
               className="px-3 py-1.5 text-xs font-semibold text-white bg-[#C59B27] hover:bg-[#B08921] disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs focus:outline-none"
-              title={!templateConfigured ? 'WhatsApp template pending approval' : 'Send Parents Channel invitation'}
+              title={!templateConfigured ? 'WhatsApp template pending approval' : 'Send WhatsApp Channel Invitation'}
             >
               <Send className="w-3.5 h-3.5" />
               <span>
                 {!templateConfigured
                   ? 'WhatsApp template pending approval'
-                  : isSubmittingSend
-                    ? 'Sending...'
-                    : 'Send Channel Invitation'}
+                  : 'Send WhatsApp Channel Invitation'}
               </span>
             </button>
 
@@ -520,7 +706,7 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
         </div>
       )}
 
-      {/* 6. Main Selected Parents Table */}
+      {/* 7. Main Selected Parents Table */}
       <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-lg overflow-hidden shadow-2xs">
         {loading ? (
           <div className="p-12">
@@ -579,175 +765,243 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
                     </div>
                   </th>
                   <th className="py-3 px-4 text-[11px] font-semibold tracking-wider uppercase">Parent</th>
-                  <th className="py-3 px-4 text-[11px] font-semibold tracking-wider uppercase">Children</th>
-                  <th className="py-3 px-4 text-[11px] font-semibold tracking-wider uppercase">Selected</th>
+                  <th className="py-3 px-4 text-[11px] font-semibold tracking-wider uppercase">Children Overview</th>
+                  <th className="py-3 px-4 text-[11px] font-semibold tracking-wider uppercase">Selected Child Summary</th>
                   <th className="py-3 px-4 text-[11px] font-semibold tracking-wider uppercase">WhatsApp</th>
                   <th className="py-3 px-4 text-[11px] font-semibold tracking-wider uppercase">Channel Invitation</th>
-                  <th className="py-3 px-4 text-[11px] font-semibold tracking-wider uppercase">Sent At</th>
                   <th className="py-3 px-4 pr-6 text-right text-[11px] font-semibold tracking-wider uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#EAE8E1] dark:divide-[#2A2926]">
                 {displayParents.map((p) => {
                   const isSelected = selectedParentIds.includes(p.parentId);
+                  const isExpanded = expandedParentIds.includes(p.parentId);
 
                   return (
-                    <tr
-                      key={p.parentId}
-                      className={`transition-colors ${
-                        isSelected
-                          ? 'bg-[#FAF8F2] dark:bg-[#20201E]'
-                          : 'hover:bg-neutral-50/70 dark:hover:bg-[#22211E]'
-                      }`}
-                    >
-                      {/* Select Checkbox */}
-                      <td className="py-3 px-3 pl-4 w-10 text-center" onClick={(e) => e.stopPropagation()}>
-                        <AdminSelectionCheckbox
-                          checked={isSelected}
-                          onChange={() => handleToggleSelectParent(p.parentId)}
-                          ariaLabel={`Select ${p.fullName}`}
-                        />
-                      </td>
+                    <React.Fragment key={p.parentId}>
+                      <tr
+                        className={`transition-colors ${
+                          isSelected
+                            ? 'bg-[#FAF8F2] dark:bg-[#20201E]'
+                            : 'hover:bg-neutral-50/70 dark:hover:bg-[#22211E]'
+                        }`}
+                      >
+                        {/* Select Checkbox */}
+                        <td className="py-3 px-3 pl-4 w-10 text-center" onClick={(e) => e.stopPropagation()}>
+                          <AdminSelectionCheckbox
+                            checked={isSelected}
+                            onChange={() => handleToggleSelectParent(p.parentId)}
+                            ariaLabel={`Select ${p.fullName}`}
+                          />
+                        </td>
 
-                      {/* Parent details */}
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-neutral-900 dark:text-neutral-100">
-                          {p.fullName}
-                        </div>
-                        <div className="flex flex-col gap-0.5 text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
-                          {p.whatsappNumber || p.phoneNumber ? (
-                            <span className="flex items-center gap-1 font-mono text-[10.5px]">
-                              {p.whatsappNumber || p.phoneNumber}
-                            </span>
-                          ) : null}
-                          {p.email && (
-                            <span className="truncate max-w-[180px]">{p.email}</span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Registered Children */}
-                      <td className="py-3 px-4 whitespace-nowrap text-neutral-600 dark:text-neutral-300">
-                        <span className="font-medium">{p.totalRegisteredChildren}</span>
-                        <span className="text-neutral-400 dark:text-neutral-500 ml-1">
-                          {p.totalRegisteredChildren === 1 ? 'registered' : 'registered'}
-                        </span>
-                      </td>
-
-                      {/* Selected Children Ratio & Names */}
-                      <td className="py-3 px-4">
-                        <div className="font-medium text-neutral-900 dark:text-neutral-100">
-                          {p.selectedRatioText}
-                        </div>
-                        <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5 leading-snug">
-                          {p.selectedChildNames}
-                        </div>
-                      </td>
-
-                      {/* WhatsApp Status */}
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        {p.whatsappAvailability === 'available' ? (
-                          <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 text-[11px] font-medium">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                            <span>Available</span>
+                        {/* Parent details */}
+                        <td className="py-3 px-4">
+                          <div className="font-semibold text-neutral-900 dark:text-neutral-100 flex items-center gap-1.5">
+                            <span>{p.fullName}</span>
                           </div>
-                        ) : p.whatsappAvailability === 'opted_out' ? (
-                          <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400 text-[11px] font-medium">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                            <span>Not opted in</span>
+                          <div className="flex flex-col gap-0.5 text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+                            {p.whatsappNumber || p.phoneNumber ? (
+                              <span className="flex items-center gap-1 font-mono text-[10.5px]">
+                                {p.whatsappNumber || p.phoneNumber}
+                              </span>
+                            ) : null}
+                            {p.email && (
+                              <span className="truncate max-w-[180px]">{p.email}</span>
+                            )}
                           </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5 text-neutral-400 dark:text-neutral-500 text-[11px] font-medium">
-                            <span className="w-1.5 h-1.5 rounded-full bg-neutral-400" />
-                            <span>Invalid number</span>
-                          </div>
-                        )}
-                      </td>
+                        </td>
 
-                      {/* Channel Invitation Status */}
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        {p.invitationStatus === 'sent' ? (
-                          <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 text-[11px] font-medium">
-                            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                            <span>Sent</span>
-                          </span>
-                        ) : p.invitationStatus === 'failed' ? (
-                          <span
-                            className="inline-flex items-center gap-1 text-red-600 dark:text-red-400 text-[11px] font-medium cursor-help"
-                            title={p.failureReason || 'Failed to dispatch'}
+                        {/* Children Registered Overview */}
+                        <td className="py-3 px-4 whitespace-nowrap text-neutral-700 dark:text-neutral-300">
+                          <div className="font-medium">
+                            {p.totalRegisteredChildren} {p.totalRegisteredChildren === 1 ? 'child registered' : 'children registered'} · <span className="text-[#C59B27] font-semibold">{p.selectedChildrenCount} selected</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleExpandParent(p.parentId)}
+                            className="text-[11px] text-[#C59B27] hover:underline mt-1 flex items-center gap-1 cursor-pointer font-medium"
                           >
-                            <AlertCircle className="w-3.5 h-3.5" />
-                            <span>Failed</span>
-                          </span>
-                        ) : (
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-neutral-400 dark:text-neutral-500 text-[11px]">
-                              Not sent
+                            <span>{isExpanded ? 'Hide all children' : `View all ${p.totalRegisteredChildren} children`}</span>
+                            {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          </button>
+                        </td>
+
+                        {/* Selected Child Summary */}
+                        <td className="py-3 px-4 max-w-xs">
+                          <div className="font-semibold text-neutral-900 dark:text-neutral-100">
+                            {p.selectedRatioText}
+                          </div>
+                          <div className="text-[11px] text-neutral-600 dark:text-neutral-400 mt-0.5 leading-snug">
+                            <span className="font-medium text-neutral-500">Selected: </span>
+                            <span className="text-neutral-800 dark:text-neutral-200">{p.selectedChildNames}</span>
+                          </div>
+                        </td>
+
+                        {/* WhatsApp Status */}
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          {p.whatsappAvailability === 'available' ? (
+                            <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 text-[11px] font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              <span>Available</span>
+                            </div>
+                          ) : p.whatsappAvailability === 'opted_out' ? (
+                            <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400 text-[11px] font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                              <span>Opted out</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 text-neutral-400 dark:text-neutral-500 text-[11px] font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-neutral-400" />
+                              <span>Invalid number</span>
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Channel Invitation & Email Status */}
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          {p.invitationStatus === 'sent' ? (
+                            <div className="space-y-0.5">
+                              <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 text-[11px] font-medium">
+                                <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <span>Sent</span>
+                              </span>
+                              {p.sentAt && (
+                                <div className="text-[10px] text-neutral-400">
+                                  {new Date(p.sentAt).toLocaleDateString('en-GB', {
+                                    day: 'numeric',
+                                    month: 'short',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          ) : p.invitationStatus === 'failed' ? (
+                            <span
+                              className="inline-flex items-center gap-1 text-red-600 dark:text-red-400 text-[11px] font-medium cursor-help"
+                              title={p.failureReason || 'Failed to dispatch'}
+                            >
+                              <AlertCircle className="w-3.5 h-3.5" />
+                              <span>Failed</span>
                             </span>
-                            {p.emailChannelAccessSent && (
-                              <span className="text-[10px] text-blue-600 dark:text-blue-400 font-normal" title="Channel access link provided in selection email">
-                                Email sent
+                          ) : (
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-neutral-400 dark:text-neutral-500 text-[11px]">
+                                Not sent
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Secondary Email Status Indicator */}
+                          <div className="mt-1">
+                            {p.emailChannelAccessSent ? (
+                              <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/40 px-1.5 py-0.5 rounded">
+                                Email: sent
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-neutral-400 dark:text-neutral-500">
+                                Email: not sent
                               </span>
                             )}
                           </div>
-                        )}
-                      </td>
+                        </td>
 
-                      {/* Sent At */}
-                      <td className="py-3 px-4 whitespace-nowrap text-[11px] text-neutral-500 dark:text-neutral-400">
-                        {p.sentAt ? (
-                          new Date(p.sentAt).toLocaleDateString('en-GB', {
-                            day: 'numeric',
-                            month: 'short',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })
-                        ) : (
-                          <span className="text-neutral-300 dark:text-neutral-600">—</span>
-                        )}
-                      </td>
+                        {/* Actions */}
+                        <td className="py-3 px-4 pr-6 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-2">
+                            {p.invitationStatus === 'sent' ? (
+                              <button
+                                type="button"
+                                onClick={() => setResendTargetParent(p)}
+                                disabled={isSubmittingSend || !templateConfigured}
+                                className="px-2 py-1 text-[11px] font-medium text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed rounded transition-colors cursor-pointer"
+                                title={!templateConfigured ? 'WhatsApp template pending approval' : 'Resend channel invitation'}
+                              >
+                                Resend
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => executeSendInvitations([p.parentId], false)}
+                                disabled={isSubmittingSend || !templateConfigured || p.whatsappAvailability !== 'available'}
+                                className="px-2.5 py-1 text-[11px] font-semibold text-white bg-[#C59B27] hover:bg-[#B08921] disabled:opacity-40 disabled:cursor-not-allowed rounded transition-colors cursor-pointer shadow-2xs"
+                                title={
+                                  !templateConfigured
+                                    ? 'WhatsApp template pending approval'
+                                    : p.whatsappAvailability !== 'available'
+                                      ? 'WhatsApp not available for this parent'
+                                      : 'Send Parents Channel invitation'
+                                }
+                              >
+                                Send invitation
+                              </button>
+                            )}
 
-                      {/* Actions */}
-                      <td className="py-3 px-4 pr-6 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-2">
-                          {p.invitationStatus === 'sent' ? (
                             <button
                               type="button"
-                              onClick={() => setResendTargetParent(p)}
-                              disabled={isSubmittingSend || !templateConfigured}
-                              className="px-2 py-1 text-[11px] font-medium text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed rounded transition-colors cursor-pointer"
-                              title={!templateConfigured ? 'WhatsApp template pending approval' : 'Resend channel invitation'}
+                              onClick={() => setDetailParent(p)}
+                              className="px-2 py-1 text-[11px] text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors cursor-pointer"
                             >
-                              Resend
+                              Details
                             </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => executeSendInvitations([p.parentId], false)}
-                              disabled={isSubmittingSend || !templateConfigured || p.whatsappAvailability !== 'available'}
-                              className="px-2.5 py-1 text-[11px] font-semibold text-white bg-[#C59B27] hover:bg-[#B08921] disabled:opacity-40 disabled:cursor-not-allowed rounded transition-colors cursor-pointer shadow-2xs"
-                              title={
-                                !templateConfigured
-                                  ? 'WhatsApp template pending approval'
-                                  : p.whatsappAvailability !== 'available'
-                                    ? 'WhatsApp not available for this parent'
-                                    : 'Send Parents Channel invitation'
-                              }
-                            >
-                              Send
-                            </button>
-                          )}
+                          </div>
+                        </td>
+                      </tr>
 
-                          <button
-                            type="button"
-                            onClick={() => setDetailParent(p)}
-                            className="px-2 py-1 text-[11px] text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors cursor-pointer"
-                          >
-                            Details
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                      {/* Expandable Family Children Row */}
+                      {isExpanded && (
+                        <tr className="bg-neutral-50/50 dark:bg-[#1A1A18] border-b border-[#EAE8E1] dark:border-[#2A2926]">
+                          <td colSpan={7} className="py-3 px-6 pl-14">
+                            <div className="space-y-2">
+                              <div className="text-[10.5px] font-semibold uppercase tracking-wider text-neutral-400">
+                                All Registered Children ({p.totalRegisteredChildren})
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                {p.children.map(c => {
+                                  const ageStr = c.calculatedAge !== null && c.calculatedAge !== undefined 
+                                    ? `${c.calculatedAge} yrs` 
+                                    : '';
+                                  const groupStr = c.ageGroup || '';
+                                  const metaStr = [ageStr, groupStr].filter(Boolean).join(' · ');
+
+                                  return (
+                                    <div
+                                      key={c.id}
+                                      className={`p-2.5 rounded-lg border text-xs flex items-center justify-between ${
+                                        c.isSelected
+                                          ? 'bg-amber-500/10 border-amber-500/30 dark:bg-amber-500/15 text-neutral-900 dark:text-neutral-100'
+                                          : 'bg-white dark:bg-[#22211E] border-[#EAE8E1] dark:border-[#383632] text-neutral-700 dark:text-neutral-300'
+                                      }`}
+                                    >
+                                      <div>
+                                        <div className="font-semibold text-neutral-900 dark:text-white flex items-center gap-1.5">
+                                          <span>{c.fullName}</span>
+                                        </div>
+                                        <div className="text-[10.5px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+                                          {metaStr || 'Age unrecorded'}
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <span
+                                          className={`px-2 py-0.5 rounded text-[10px] font-medium capitalize ${
+                                            c.isSelected
+                                              ? 'bg-[#C59B27]/20 text-[#C59B27] dark:bg-[#C59B27]/30 dark:text-amber-300 font-semibold'
+                                              : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400'
+                                          }`}
+                                        >
+                                          {c.status.replace(/_/g, ' ')}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })}
               </tbody>
@@ -756,7 +1010,80 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
         )}
       </div>
 
-      {/* MODAL 1: Deliberate Resend Confirmation Modal */}
+      {/* MODAL 1: Bulk Send Confirmation Modal */}
+      {showBulkConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white dark:bg-[#1E1E1C] border border-[#EAE8E1] dark:border-[#2E2C28] rounded-xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-scale-in text-left">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-full bg-amber-50 dark:bg-amber-950/40 text-[#C59B27] shrink-0">
+                <Send className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">
+                  Send channel invitation to {selectedParentIds.length} {selectedParentIds.length === 1 ? 'parent' : 'parents'}?
+                </h3>
+                <p className="text-xs text-neutral-600 dark:text-neutral-300 leading-relaxed">
+                  Dispatch official WhatsApp Channel invitations to selected parents with confirmed children.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-[#FAF9F6] dark:bg-[#262522] border border-[#EAE8E1] dark:border-[#383632] rounded-lg p-3 text-xs space-y-2">
+              <div className="flex items-center justify-between text-neutral-700 dark:text-neutral-300">
+                <span>Parents selected:</span>
+                <span className="font-semibold text-neutral-900 dark:text-white">{selectedParentIds.length}</span>
+              </div>
+              <div className="flex items-center justify-between text-neutral-700 dark:text-neutral-300">
+                <span>Selected children represented:</span>
+                <span className="font-semibold text-[#C59B27]">{selectedChildrenRepresentedCount}</span>
+              </div>
+              <div className="border-t border-[#EAE8E1] dark:border-[#383632] pt-2 space-y-1 text-[11px]">
+                <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-400">
+                  <span>WhatsApp available:</span>
+                  <span className="font-semibold">{selectedWhatsAppAvailableCount}</span>
+                </div>
+                <div className="flex items-center justify-between text-amber-700 dark:text-amber-400">
+                  <span>Opted out (will be skipped):</span>
+                  <span className="font-semibold">{selectedOptedOutCount}</span>
+                </div>
+                <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400">
+                  <span>Invalid/missing number (will be skipped):</span>
+                  <span className="font-semibold">{selectedInvalidNumberCount}</span>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
+              Only eligible/opted-in parents will be sent. Unavailable parents will be skipped with reason. One message per parent.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#2E2C28]">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowBulkConfirmModal(false)}
+                disabled={isSubmittingSend}
+                className="text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setShowBulkConfirmModal(false);
+                  executeSendInvitations(selectedParentIds, false);
+                }}
+                disabled={isSubmittingSend || !templateConfigured}
+                className="text-xs bg-[#C59B27] hover:bg-[#B08921] text-white"
+              >
+                {isSubmittingSend ? 'Sending...' : 'Confirm & Send'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: Deliberate Resend Confirmation Modal */}
       {resendTargetParent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-in">
           <div className="bg-white dark:bg-[#1E1E1C] border border-[#EAE8E1] dark:border-[#2E2C28] rounded-xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-scale-in text-left">
@@ -804,7 +1131,7 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
         </div>
       )}
 
-      {/* MODAL 2: Parent Communication Context / Detail Modal */}
+      {/* MODAL 3: Parent Communication Context / Detail Modal */}
       {detailParent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-in">
           <div className="bg-white dark:bg-[#1E1E1C] border border-[#EAE8E1] dark:border-[#2E2C28] rounded-xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-scale-in text-left">
@@ -855,30 +1182,38 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
                 <span className="text-[#C59B27] font-bold">{detailParent.selectedRatioText}</span>
               </div>
               <div className="space-y-1.5">
-                {detailParent.children.map(c => (
-                  <div
-                    key={c.id}
-                    className={`flex items-center justify-between p-2.5 rounded border text-xs ${
-                      c.isSelected
-                        ? 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-200/60 dark:border-amber-900/40'
-                        : 'bg-neutral-50/50 dark:bg-neutral-900/40 border-[#EAE8E1] dark:border-[#302F2C]'
-                    }`}
-                  >
-                    <div>
-                      <div className="font-semibold text-neutral-900 dark:text-neutral-100">{c.fullName}</div>
-                      <div className="text-[10px] text-neutral-400">{c.ageGroup || 'Unspecified Age Group'}</div>
-                    </div>
-                    <div>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+                {detailParent.children.map(c => {
+                  const ageStr = c.calculatedAge !== null && c.calculatedAge !== undefined 
+                    ? `${c.calculatedAge} yrs` 
+                    : '';
+                  const groupStr = c.ageGroup || '';
+                  const metaStr = [ageStr, groupStr].filter(Boolean).join(' · ');
+
+                  return (
+                    <div
+                      key={c.id}
+                      className={`flex items-center justify-between p-2.5 rounded border text-xs ${
                         c.isSelected
-                          ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300'
-                          : 'bg-neutral-200/60 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400'
-                      }`}>
-                        {c.status.replace('_', ' ')}
-                      </span>
+                          ? 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-200/60 dark:border-amber-900/40'
+                          : 'bg-neutral-50/50 dark:bg-neutral-900/40 border-[#EAE8E1] dark:border-[#302F2C]'
+                      }`}
+                    >
+                      <div>
+                        <div className="font-semibold text-neutral-900 dark:text-neutral-100">{c.fullName}</div>
+                        <div className="text-[10px] text-neutral-400">{metaStr || c.ageGroup || 'Unspecified Age'}</div>
+                      </div>
+                      <div>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+                          c.isSelected
+                            ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300'
+                            : 'bg-neutral-200/60 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400'
+                        }`}>
+                          {c.status.replace(/_/g, ' ')}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -951,7 +1286,7 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
         </div>
       )}
 
-      {/* MODAL 3: Custom Amount Selection Modal */}
+      {/* MODAL 4: Custom Amount Selection Modal */}
       {showCustomAmountModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-in">
           <form
@@ -1008,7 +1343,7 @@ export const SelectedParentsChannelTab: React.FC<SelectedParentsChannelTabProps>
         </div>
       )}
 
-      {/* MODAL 4: Bulk Send Result Summary Modal */}
+      {/* MODAL 5: Bulk Send Result Summary Modal */}
       {bulkSendSummary && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-in">
           <div className="bg-white dark:bg-[#1E1E1C] border border-[#EAE8E1] dark:border-[#2E2C28] rounded-xl max-w-lg w-full p-6 shadow-2xl space-y-4 animate-scale-in text-left">
