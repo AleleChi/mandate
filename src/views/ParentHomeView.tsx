@@ -1598,7 +1598,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           <div className="w-px self-stretch bg-[#EDE6D4] dark:bg-[#302E29]" />
           <div className="flex-1 flex flex-col items-center justify-center py-3 px-2">
             <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#8B867D] dark:text-[#7A7570] block">
-              Waiting
+              In review
             </span>
             <span className="text-[22px] font-bold text-[#18181B] dark:text-[#F0EBE3] leading-none mt-1">
               {waitingCount}
@@ -1785,8 +1785,14 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                         </p>
                       </div>
                     </div>
-                    <span className="shrink-0 self-start mt-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] px-2.5 py-1 rounded border bg-amber-50 border-amber-200 text-amber-700 dark:bg-transparent dark:border-[#3A3835] dark:text-[#C59B27]">
-                      {c.status === 'Selected' ? 'Waiting' : 'Under review'}
+                    <span className={`shrink-0 self-start mt-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] px-2.5 py-1 rounded border ${
+                      c.status === 'Selected'
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-transparent dark:border-[#3A3835] dark:text-emerald-400'
+                        : c.status === 'Waiting list'
+                        ? 'bg-orange-50 border-orange-200 text-orange-700 dark:bg-transparent dark:border-[#3A3835] dark:text-orange-400'
+                        : 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-transparent dark:border-[#3A3835] dark:text-[#C59B27]'
+                    }`}>
+                      {c.status === 'Selected' ? 'Selected' : c.status === 'Waiting list' ? 'Waiting List' : 'Under review'}
                     </span>
                   </div>
 
@@ -1800,7 +1806,11 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                       {activeEvent ? (activeEvent.title || 'The General Assembly') : 'The General Assembly'}
                     </span>
                     <p className="text-[11px] text-[#8B867D] dark:text-[#7A7570] mt-2 leading-relaxed">
-                      Pass will appear here once your child is selected.
+                      {c.status === 'Selected'
+                        ? 'Your child has been selected. Event pass is being generated and will appear here shortly.'
+                        : c.status === 'Waiting list'
+                        ? 'Your child is on the waiting list. We will notify you if a space opens.'
+                        : 'Pass will appear here once your child is selected.'}
                     </p>
                   </div>
 
