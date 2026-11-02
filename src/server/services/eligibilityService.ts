@@ -285,3 +285,85 @@ export function checkEventEligibility(
     eventDate
   };
 }
+
+export function normalizeAgeGroup(g?: string | null): string {
+  if (!g) return '';
+  return g.replace(/^Ages\s+/i, '').replace(/\s+to\s+/i, '–').replace(/-/g, '–').trim();
+}
+
+export function parseAssignedAgeGroups(raw: any): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map(String);
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return parsed.map(String);
+      } catch (e) {}
+    }
+    return trimmed.split(',').map(s => s.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+export function isChildInScope(
+  child: { age_group?: string | null; calculated_age?: number | null; date_of_birth?: string | null },
+  assignedGroups: string[]
+): boolean {
+  if (!assignedGroups || assignedGroups.length === 0) return false;
+  const normalizedAssigned = assignedGroups.map(normalizeAgeGroup);
+
+  const childNorm = normalizeAgeGroup(child.age_group);
+  if (childNorm && normalizedAssigned.includes(childNorm)) {
+    return true;
+  }
+
+  let childAge = child.calculated_age;
+  if ((childAge === null || childAge === undefined) && child.date_of_birth) {
+    const resolution = resolveCanonicalAgeGroup(child.date_of_birth);
+    if (resolution.group && normalizedAssigned.includes(resolution.group)) {
+      return true;
+    }
+    childAge = resolution.age;
+  }
+
+  if (typeof childAge === 'number') {
+    for (const group of normalizedAssigned) {
+      if (group === '2–3' && childAge >= 2 && childAge <= 3) return true;
+      if (group === '4–6' && childAge >= 4 && childAge <= 6) return true;
+      if (group === '7–9' && childAge >= 7 && childAge <= 9) return true;
+      if (group === '10–12' && childAge >= 10 && childAge <= 12) return true;
+      if (group === '13–14' && childAge >= 13 && childAge <= 14) return true;
+    }
+  }
+
+  return false;
+}
+
+export function buildAgeGroupSqlFilter(assignedGroups: string[], tableAlias = 'c'): { clause: string; params: any[] } {
+  if (!assignedGroups || assignedGroups.length === 0) {
+    return { clause: '1=0', params: [] };
+  }
+  const conditions: string[] = [];
+  for (const group of assignedGroups) {
+    const norm = normalizeAgeGroup(group);
+    if (norm === '2–3') {
+      conditions.push(`(${tableAlias}.age_group LIKE '%2%3%' OR (${tableAlias}.calculated_age >= 2 AND ${tableAlias}.calculated_age <= 3))`);
+    } else if (norm === '4–6') {
+      conditions.push(`(${tableAlias}.age_group LIKE '%4%6%' OR (${tableAlias}.calculated_age >= 4 AND ${tableAlias}.calculated_age <= 6))`);
+    } else if (norm === '7–9') {
+      conditions.push(`(${tableAlias}.age_group LIKE '%7%9%' OR (${tableAlias}.calculated_age >= 7 AND ${tableAlias}.calculated_age <= 9))`);
+    } else if (norm === '10–12') {
+      conditions.push(`(${tableAlias}.age_group LIKE '%10%12%' OR (${tableAlias}.calculated_age >= 10 AND ${tableAlias}.calculated_age <= 12))`);
+    } else if (norm === '13–14') {
+      conditions.push(`(${tableAlias}.age_group LIKE '%13%14%' OR (${tableAlias}.calculated_age >= 13 AND ${tableAlias}.calculated_age <= 14))`);
+    } else {
+      conditions.push(`${tableAlias}.age_group = '${group.replace(/'/g, "''")}'`);
+    }
+  }
+  return {
+    clause: conditions.length > 0 ? `(${conditions.join(' OR ')})` : '1=1',
+    params: []
+  };
+}
