@@ -36,11 +36,12 @@ import {
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-async function resolveVolunteerScope(userId: string, userRole: string, eventId: string): Promise<{
+export async function resolveVolunteerScope(userId: string, userRole: string, eventId: string): Promise<{
   isScoped: boolean;
   assignedAgeGroups: string[];
 }> {
-  if (['admin', 'super_admin', 'team', 'team_lead'].includes(userRole)) {
+  const normRole = (userRole || '').toLowerCase();
+  if (['admin', 'super_admin', 'team', 'team_lead', 'lead', 'staff'].includes(normRole)) {
     return { isScoped: false, assignedAgeGroups: [] };
   }
 
@@ -51,13 +52,13 @@ async function resolveVolunteerScope(userId: string, userRole: string, eventId: 
     [eventId, userId]
   );
 
-  if (duty && ['admin', 'team_lead', 'lead'].includes(duty.responsibility_key?.toLowerCase())) {
+  if (duty && ['admin', 'super_admin', 'team_lead', 'lead'].includes(duty.responsibility_key?.toLowerCase())) {
     return { isScoped: false, assignedAgeGroups: [] };
   }
 
   const assignedGroups = parseAssignedAgeGroups(duty?.assigned_age_groups);
   return {
-    isScoped: assignedGroups.length > 0,
+    isScoped: true,
     assignedAgeGroups: assignedGroups
   };
 }
@@ -3352,6 +3353,28 @@ router.post('/check-out', authMiddleware, async (req: AuthenticatedRequest, res:
     }
 
     const child = await queryOne('SELECT * FROM children WHERE id = ?', [entry.child_id]);
+    if (!child) {
+      return res.status(404).json({ error: 'Registered child details not found' });
+    }
+
+    const scope = await resolveVolunteerScope(req.user.id, req.user.role, currentEventId);
+    if (scope.isScoped) {
+      if (scope.assignedAgeGroups.length === 0) {
+        return res.status(403).json({
+          success: false,
+          error: 'No age group has been assigned to your event duty yet.',
+          code: 'NO_AGE_GROUP_ASSIGNED'
+        });
+      }
+      if (!isChildInScope(child, scope.assignedAgeGroups)) {
+        return res.status(403).json({
+          success: false,
+          error: 'This child is assigned to another age group.',
+          code: 'OUT_OF_SCOPE',
+          outOfScope: true
+        });
+      }
+    }
     const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [child.parent_profile_id]);
     const pickupRow = await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entryId]);
 
@@ -4457,6 +4480,30 @@ router.post('/pickup/prepare-child', authMiddleware, async (req: AuthenticatedRe
       return res.status(404).json({ error: 'Child registration entry not found for this event' });
     }
 
+    const childRow = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
+    if (!childRow) {
+      return res.status(404).json({ error: 'Registered child details not found' });
+    }
+
+    const scope = await resolveVolunteerScope(req.user.id, req.user.role, currentEventId);
+    if (scope.isScoped) {
+      if (scope.assignedAgeGroups.length === 0) {
+        return res.status(403).json({
+          success: false,
+          error: 'No age group has been assigned to your event duty yet.',
+          code: 'NO_AGE_GROUP_ASSIGNED'
+        });
+      }
+      if (!isChildInScope(childRow, scope.assignedAgeGroups)) {
+        return res.status(403).json({
+          success: false,
+          error: 'This child is assigned to another age group.',
+          code: 'OUT_OF_SCOPE',
+          outOfScope: true
+        });
+      }
+    }
+
     if (entry.status !== 'checked_in' && entry.status !== 'inside') {
       return res.status(400).json({ error: 'Child is not checked in' });
     }
@@ -4476,7 +4523,6 @@ router.post('/pickup/prepare-child', authMiddleware, async (req: AuthenticatedRe
     }
 
     // Return the same payload structure as lookupPass
-    const childRow = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
     const childPhotoUrl = await resolvePhotoUrl(childRow.photo_file_id);
     const parentPhotoUrl = parent ? await resolvePhotoUrl(parent.photo_file_id) : '';
 

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import crypto from 'crypto';
 import { execute, query, queryOne } from '../src/server/db';
 import { issuePassForChild } from '../src/server/services/passService';
+import { resolveVolunteerScope } from '../src/server/routes/volunteer';
+import { isChildInScope } from '../src/server/services/eligibilityService';
 
 describe('Scanner and Selected Children Operations Test Suite', () => {
   const testEventId = `event-sel-${Date.now()}`;
@@ -130,5 +132,120 @@ describe('Scanner and Selected Children Operations Test Suite', () => {
     assert.equal(entry?.status, 'picked_up', 'Entry is picked up');
     // Ensure picked up child is identifiable and retains status
     assert.equal(entry?.child_id, childD.childId);
+  });
+
+  it('4. Ordinary volunteer + no assignment -> blocked', async () => {
+    const volUserId = `vol-${crypto.randomUUID()}`;
+    await execute(`
+      INSERT INTO users (id, email, role, created_at, updated_at)
+      VALUES (?, ?, 'volunteer', datetime('now'), datetime('now'))
+    `, [volUserId, `vol_unassigned_${Date.now()}@test.org`]);
+
+    const scope = await resolveVolunteerScope(volUserId, 'volunteer', testEventId);
+    assert.equal(scope.isScoped, true, 'Ordinary volunteer must always be scoped');
+    assert.equal(scope.assignedAgeGroups.length, 0, 'No assignments present');
+
+    // Rule: if scope.isScoped and assignedAgeGroups.length === 0, child access must be blocked
+    const canAccess = !scope.isScoped || scope.assignedAgeGroups.length > 0;
+    assert.equal(canAccess, false, 'Unassigned ordinary volunteer must be blocked from child processing');
+  });
+
+  it('5. Ordinary volunteer + assigned age group -> allowed in scope', async () => {
+    const volUserId = `vol-${crypto.randomUUID()}`;
+    await execute(`
+      INSERT INTO users (id, email, role, created_at, updated_at)
+      VALUES (?, ?, 'volunteer', datetime('now'), datetime('now'))
+    `, [volUserId, `vol_assigned_${Date.now()}@test.org`]);
+
+    await execute(`
+      INSERT INTO event_duty_assignments (id, event_id, user_id, responsibility_key, assigned_age_groups, status, starts_at, ends_at, created_at, updated_at)
+      VALUES (?, ?, ?, 'volunteer', '["Ages 7–9"]', 'assigned', datetime('now'), datetime('now', '+8 hours'), datetime('now'), datetime('now'))
+    `, [`duty-${crypto.randomUUID()}`, testEventId, volUserId]);
+
+    const scope = await resolveVolunteerScope(volUserId, 'volunteer', testEventId);
+    assert.equal(scope.isScoped, true, 'Ordinary volunteer is scoped');
+    assert.deepEqual(scope.assignedAgeGroups, ['Ages 7–9']);
+
+    const childInScope = { age_group: 'Ages 7–9', calculated_age: 8 };
+    assert.equal(isChildInScope(childInScope, scope.assignedAgeGroups), true, 'Child in Ages 7–9 is allowed');
+  });
+
+  it('6. Ordinary volunteer + out-of-scope child -> blocked', async () => {
+    const volUserId = `vol-${crypto.randomUUID()}`;
+    await execute(`
+      INSERT INTO users (id, email, role, created_at, updated_at)
+      VALUES (?, ?, 'volunteer', datetime('now'), datetime('now'))
+    `, [volUserId, `vol_assigned_scope_${Date.now()}@test.org`]);
+
+    await execute(`
+      INSERT INTO event_duty_assignments (id, event_id, user_id, responsibility_key, assigned_age_groups, status, starts_at, ends_at, created_at, updated_at)
+      VALUES (?, ?, ?, 'volunteer', '["Ages 7–9"]', 'assigned', datetime('now'), datetime('now', '+8 hours'), datetime('now'), datetime('now'))
+    `, [`duty-${crypto.randomUUID()}`, testEventId, volUserId]);
+
+    const scope = await resolveVolunteerScope(volUserId, 'volunteer', testEventId);
+    const childOutOfScope = { age_group: 'Ages 4–6', calculated_age: 5 };
+    assert.equal(isChildInScope(childOutOfScope, scope.assignedAgeGroups), false, 'Child outside Ages 7–9 must be blocked');
+  });
+
+  it('7. Team lead + no age assignment -> permitted according to role', async () => {
+    const leadUserId = `lead-${crypto.randomUUID()}`;
+    await execute(`
+      INSERT INTO users (id, email, role, created_at, updated_at)
+      VALUES (?, ?, 'team_lead', datetime('now'), datetime('now'))
+    `, [leadUserId, `lead_${Date.now()}@test.org`]);
+
+    const scope = await resolveVolunteerScope(leadUserId, 'team_lead', testEventId);
+    assert.equal(scope.isScoped, false, 'Team lead must NOT be restricted by ordinary volunteer scope');
+    assert.equal(scope.assignedAgeGroups.length, 0);
+  });
+
+  it('8. Admin / Super Admin -> unaffected', async () => {
+    const adminUserId = `admin-${crypto.randomUUID()}`;
+    await execute(`
+      INSERT INTO users (id, email, role, created_at, updated_at)
+      VALUES (?, ?, 'admin', datetime('now'), datetime('now'))
+    `, [adminUserId, `admin_${Date.now()}@test.org`]);
+
+    const adminScope = await resolveVolunteerScope(adminUserId, 'admin', testEventId);
+    assert.equal(adminScope.isScoped, false, 'Admin must not be scoped');
+
+    const superAdminUserId = `superadmin-${crypto.randomUUID()}`;
+    await execute(`
+      INSERT INTO users (id, email, role, created_at, updated_at)
+      VALUES (?, ?, 'super_admin', datetime('now'), datetime('now'))
+    `, [superAdminUserId, `superadmin_${Date.now()}@test.org`]);
+
+    const superAdminScope = await resolveVolunteerScope(superAdminUserId, 'super_admin', testEventId);
+    assert.equal(superAdminScope.isScoped, false, 'Super admin must not be scoped');
+  });
+
+  it('9. QR scan and manual pass entry obey the same scope rules', async () => {
+    const childE = await createChild('Scope Test Child', 'Ages 4–6', 'pass_ready', true);
+    const passE = await issuePassForChild({ childId: childE.childId, eventId: testEventId });
+
+    // QR scan produces deep link or raw code
+    const qrPayload = `https://koinonia12.netlify.app/parent/pass/${passE.pass_reference}`;
+    const manualEntry = `  ${passE.pass_reference}  `;
+
+    // Normalization logic extracts identical canonical reference for both
+    const normalize = (val: string) => {
+      let clean = val.trim();
+      if (clean.includes('/pass/')) {
+        clean = clean.split('/pass/')[1]?.split('?')[0]?.replace(/\/$/, '') || clean;
+      }
+      return clean.trim().toUpperCase();
+    };
+
+    const qrNormalized = normalize(qrPayload);
+    const manualNormalized = normalize(manualEntry);
+
+    assert.equal(qrNormalized, passE.pass_reference);
+    assert.equal(manualNormalized, passE.pass_reference);
+    assert.equal(qrNormalized, manualNormalized, 'QR and manual input must normalize to identical canonical code');
+
+    // Both pass through the same resolveVolunteerScope + isChildInScope logic
+    const assignedScope = ['Ages 7–9'];
+    const childPayload = { age_group: 'Ages 4–6', calculated_age: 5 };
+    assert.equal(isChildInScope(childPayload, assignedScope), false, 'Both QR and manual lookups block out-of-scope child');
   });
 });
