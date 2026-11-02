@@ -1498,10 +1498,12 @@ export const api = {
     async getOverview(options?: RequestInit) {
       return api.request<any>('/api/admin/overview', options);
     },
-    async getChildren(params?: { q?: string; filter?: string; page?: number; limit?: number }) {
+    async getChildren(params?: { q?: string; filter?: string; ageGroup?: string; passStatus?: string; page?: number; limit?: number }) {
       const queryParams = new URLSearchParams();
       if (params?.q) queryParams.append('q', params.q);
       if (params?.filter) queryParams.append('filter', params.filter);
+      if (params?.ageGroup) queryParams.append('ageGroup', params.ageGroup);
+      if (params?.passStatus) queryParams.append('passStatus', params.passStatus);
       if (params?.page) queryParams.append('page', params.page.toString());
       if (params?.limit) queryParams.append('limit', params.limit.toString());
       const queryString = queryParams.toString();
@@ -1516,6 +1518,12 @@ export const api = {
           pages: number;
         };
       }>(`/api/admin/children${queryString ? `?${queryString}` : ''}`);
+    },
+    async bulkIssuePasses(applicationIds: string[], childIds?: string[]) {
+      return api.request<any>('/api/admin/applications/bulk-issue-pass', {
+        method: 'POST',
+        body: JSON.stringify({ applicationIds, childIds })
+      });
     },
     async getAttendance(params?: { q?: string; status?: string }) {
       const queryParams = new URLSearchParams();

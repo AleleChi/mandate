@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Search, 
   Users, 
@@ -126,6 +126,17 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
 
   const [submittingActionId, setSubmittingActionId] = useState<string | null>(null);
 
+  // Selected Children operational filters
+  const [selectedAgeGroupFilter, setSelectedAgeGroupFilter] = useState<string>('all');
+  const [selectedPassStatusFilter, setSelectedPassStatusFilter] = useState<string>('all');
+  const [tempAgeGroupFilter, setTempAgeGroupFilter] = useState<string>('all');
+  const [tempPassStatusFilter, setTempPassStatusFilter] = useState<string>('all');
+
+  // Bulk Pass Issuance states
+  const [showBulkPassModal, setShowBulkPassModal] = useState(false);
+  const [submittingBulkPass, setSubmittingBulkPass] = useState(false);
+  const [bulkPassResultModal, setBulkPassResultModal] = useState<any | null>(null);
+
   // Close dropdown on click outside
   useEffect(() => {
     const handleGlobalClick = () => {
@@ -148,7 +159,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
   useEffect(() => {
     setCurrentPage(1);
     setSelectedChildIds([]);
-  }, [debouncedQuery, activeFilter]);
+  }, [debouncedQuery, activeFilter, selectedAgeGroupFilter, selectedPassStatusFilter]);
 
   useEffect(() => {
     setSelectedChildIds([]);
@@ -162,7 +173,9 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
         page: pageToFetch,
         limit,
         q: debouncedQuery,
-        filter: activeFilter === 'all' ? '' : activeFilter
+        filter: activeFilter === 'all' ? '' : activeFilter,
+        ageGroup: activeFilter === 'selected_children' && selectedAgeGroupFilter !== 'all' ? selectedAgeGroupFilter : undefined,
+        passStatus: activeFilter === 'selected_children' && selectedPassStatusFilter !== 'all' ? selectedPassStatusFilter : undefined
       });
       if (res.success) {
         setChildren(res.children || []);
@@ -187,11 +200,13 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
 
   useEffect(() => {
     fetchChildren(currentPage);
-  }, [debouncedQuery, activeFilter, currentPage]);
+  }, [debouncedQuery, activeFilter, selectedAgeGroupFilter, selectedPassStatusFilter, currentPage]);
 
   const handleClearFilters = () => {
     setSearchQuery('');
     setActiveFilter('all');
+    setSelectedAgeGroupFilter('all');
+    setSelectedPassStatusFilter('all');
   };
 
   // List actions implementations
@@ -305,6 +320,70 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
 
   const canRestore = isRemovedTab && selectedChildren.length > 0 && selectedChildren.every(c => c.isDeleted);
   const canPurge = isRemovedTab && isSuperAdmin && selectedChildren.length > 0;
+
+  // Bulk Pass Issuance Calculations
+  const missingPassEligible = selectedChildren.filter(c => 
+    (c.reviewStatus === 'selected' || c.reviewStatus === 'pass_ready') &&
+    !c.hasPass &&
+    (c.passStatus === 'missing_pass' || !c.passStatus) &&
+    !['checked_in', 'inside', 'picked_up'].includes(c.entryStatus) &&
+    !c.isDeleted
+  );
+  const missingPassEligibleCount = missingPassEligible.length;
+  const missingPassSkipped = selectedChildren.filter(c => !missingPassEligible.some(e => e.applicationId === c.applicationId));
+  const missingPassSkippedCount = missingPassSkipped.length;
+
+  const skippedReasonsBreakdown = useMemo(() => {
+    const breakdown: Record<string, number> = {};
+    for (const c of missingPassSkipped) {
+      if (c.hasPass || c.passStatus === 'pass_ready') {
+        breakdown['Already has active pass'] = (breakdown['Already has active pass'] || 0) + 1;
+      } else if (['checked_in', 'inside'].includes(c.entryStatus)) {
+        breakdown['Checked in / Inside'] = (breakdown['Checked in / Inside'] || 0) + 1;
+      } else if (c.entryStatus === 'picked_up') {
+        breakdown['Picked up'] = (breakdown['Picked up'] || 0) + 1;
+      } else if (c.isDeleted) {
+        breakdown['Record removed'] = (breakdown['Record removed'] || 0) + 1;
+      } else if (!c.photoUrl) {
+        breakdown['Missing required photo'] = (breakdown['Missing required photo'] || 0) + 1;
+      } else if (c.reviewStatus !== 'selected' && c.reviewStatus !== 'pass_ready') {
+        breakdown[`Status: ${c.reviewStatus || 'unknown'}`] = (breakdown[`Status: ${c.reviewStatus || 'unknown'}`] || 0) + 1;
+      } else {
+        breakdown['Outside current event or ineligible'] = (breakdown['Outside current event or ineligible'] || 0) + 1;
+      }
+    }
+    return breakdown;
+  }, [missingPassSkipped]);
+
+  const handleBulkIssuePassesSubmit = async () => {
+    if (missingPassEligible.length === 0 || submittingBulkPass) return;
+    setSubmittingBulkPass(true);
+    try {
+      const res = await api.admin.bulkIssuePasses(
+        missingPassEligible.map(c => c.applicationId),
+        missingPassEligible.map(c => c.childId)
+      );
+      if (res && res.success) {
+        setShowBulkPassModal(false);
+        setBulkPassResultModal({
+          processed: res.processed ?? 0,
+          alreadyHadPass: res.alreadyHadPass ?? 0,
+          couldNotIssue: res.couldNotIssue ?? 0,
+          results: res.results || []
+        });
+        showSuccess('Pass Recovery Completed', `${res.processed} passes issued, ${res.alreadyHadPass} already had passes, ${res.couldNotIssue} could not be issued.`);
+        setSelectedChildIds([]);
+        await fetchChildren();
+      } else {
+        showError('Pass Issuance Failed', res?.error || 'Could not issue passes.');
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Pass Issuance Failed', parsed.message || 'Error occurred while issuing passes.');
+    } finally {
+      setSubmittingBulkPass(false);
+    }
+  };
 
   const handleBulkReviewDecision = async (decision: 'selected' | 'waiting_list' | 'not_selected') => {
     const eligibleIds = reviewEligibleChildren.map(c => c.applicationId);
@@ -598,6 +677,54 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
     );
   };
 
+  const getPassStatusDisplay = (child: any) => {
+    const ps = child.passStatus || (child.hasPass ? 'pass_ready' : (child.reviewStatus === 'selected' ? 'missing_pass' : child.reviewStatus));
+    switch (ps) {
+      case 'missing_pass':
+        return (
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+            Missing pass
+          </span>
+        );
+      case 'pass_ready':
+        return (
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            Pass ready
+          </span>
+        );
+      case 'checked_in':
+        return (
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-teal-700 dark:text-teal-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-500" />
+            Checked in
+          </span>
+        );
+      case 'inside':
+        return (
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[#C59B27] dark:text-amber-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#C59B27]" />
+            Inside
+          </span>
+        );
+      case 'picked_up':
+        return (
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 dark:text-[#7A7570]">
+            <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" />
+            Picked up
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-zinc-300" />
+            {ps}
+          </span>
+        );
+    }
+  };
+
   const getPickupStatusBadge = (status: string) => {
     switch (status) {
       case 'inside':
@@ -737,6 +864,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
             <div className="flex flex-wrap gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
               {[
                 { id: 'all', label: 'All' },
+                { id: 'selected_children', label: 'Selected Children' },
                 { id: 'inside', label: 'Inside' },
                 { id: 'not_arrived', label: 'Not arrived' },
                 { id: 'picked_up', label: 'Picked up' },
@@ -762,6 +890,61 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                 );
               })}
             </div>
+
+            {/* Selected Children Operational Sub-filters */}
+            {activeFilter === 'selected_children' && (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-[#EAE8E1] dark:border-[#302E29] animate-fade-in" data-component-version="admin-selected-children-subfilters-v1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570]">Age group:</span>
+                  {[
+                    { id: 'all', label: 'All age groups' },
+                    { id: 'Ages 2–3', label: 'Ages 2–3' },
+                    { id: 'Ages 4–6', label: 'Ages 4–6' },
+                    { id: 'Ages 7–9', label: 'Ages 7–9' },
+                    { id: 'Ages 10–12', label: 'Ages 10–12' },
+                    { id: 'Ages 13–14', label: 'Ages 13–14' }
+                  ].map((g) => (
+                    <button
+                      key={g.id}
+                      type="button"
+                      onClick={() => setSelectedAgeGroupFilter(g.id)}
+                      className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-all cursor-pointer ${
+                        selectedAgeGroupFilter === g.id
+                          ? 'bg-[#C59B27]/10 text-[#C59B27] border-[#C59B27]/40 font-semibold dark:bg-amber-950/40 dark:text-amber-400'
+                          : 'bg-[#FAF9F6] dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] border-[#EAE8E1] dark:border-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#2A2926]'
+                      }`}
+                    >
+                      {g.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570]">Pass status:</span>
+                  {[
+                    { id: 'all', label: 'All selected' },
+                    { id: 'missing_pass', label: 'Missing pass' },
+                    { id: 'pass_ready', label: 'Pass ready' },
+                    { id: 'checked_in', label: 'Checked in' },
+                    { id: 'inside', label: 'Inside' },
+                    { id: 'picked_up', label: 'Picked up' }
+                  ].map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setSelectedPassStatusFilter(p.id)}
+                      className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-all cursor-pointer ${
+                        selectedPassStatusFilter === p.id
+                          ? 'bg-[#C59B27]/10 text-[#C59B27] border-[#C59B27]/40 font-semibold dark:bg-amber-950/40 dark:text-amber-400'
+                          : 'bg-[#FAF9F6] dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] border-[#EAE8E1] dark:border-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#2A2926]'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -793,6 +976,8 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
             type="button"
             onClick={() => {
               setTempFilter(activeFilter);
+              setTempAgeGroupFilter(selectedAgeGroupFilter);
+              setTempPassStatusFilter(selectedPassStatusFilter);
               setIsFilterSheetOpen(true);
             }}
             data-component-version="admin-children-mobile-filter-trigger-v1"
@@ -901,6 +1086,18 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                           </button>
                         </>
                       )}
+                      {missingPassEligibleCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowBulkPassModal(true)}
+                          disabled={submittingBulkPass}
+                          className="px-3.5 py-1.5 rounded-xl bg-[#C59B27] text-white font-medium hover:bg-[#b08a23] transition-colors focus:outline-none disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                          id="btn-bulk-issue-missing-passes"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>Issue missing passes ({missingPassEligibleCount})</span>
+                        </button>
+                      )}
                       {removeEligibleCount > 0 && (
                         <button
                           type="button"
@@ -985,8 +1182,9 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                     <th className="py-3 px-4">Age</th>
                     <th className="py-3 px-4">Group</th>
                     <th className="py-3 px-4">Parent</th>
-                    <th className="py-3 px-4">Pickup person</th>
+                    {activeFilter !== 'selected_children' && <th className="py-3 px-4">Pickup person</th>}
                     <th className="py-3 px-4 text-center">Review</th>
+                    <th className="py-3 px-4">Pass status</th>
                     <th className="py-3 px-4">Entry</th>
                     <th className="py-3 px-4">Pickup</th>
                     <th className="py-3 px-4 text-right">Action</th>
@@ -1071,35 +1269,42 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                         </div>
                       </td>
 
-                      {/* Pickup Person */}
-                      <td className="py-3 px-4">
-                        {c.pickupPersonName ? (
-                          <div className="flex items-center space-x-2">
-                            <div className="w-5 h-5 bg-zinc-50 dark:bg-[#262520] border border-zinc-100 dark:border-[#3A3835] rounded-full overflow-hidden shrink-0 flex items-center justify-center">
-                              {c.pickupPersonPhotoUrl ? (
-                                <img 
-                                  src={c.pickupPersonPhotoUrl} 
-                                  alt={c.pickupPersonName} 
-                                  className="w-full h-full object-cover"
-                                  referrerPolicy="no-referrer"
-                                />
-                              ) : (
-                                <Users className="w-2.5 h-2.5 text-zinc-300 dark:text-[#5A5550]" />
-                              )}
+                      {/* Pickup Person when not selected_children */}
+                      {activeFilter !== 'selected_children' && (
+                        <td className="py-3 px-4">
+                          {c.pickupPersonName ? (
+                            <div className="flex items-center space-x-2">
+                              <div className="w-5 h-5 bg-zinc-50 dark:bg-[#262520] border border-zinc-100 dark:border-[#3A3835] rounded-full overflow-hidden shrink-0 flex items-center justify-center">
+                                {c.pickupPersonPhotoUrl ? (
+                                  <img 
+                                    src={c.pickupPersonPhotoUrl} 
+                                    alt={c.pickupPersonName} 
+                                    className="w-full h-full object-cover"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                ) : (
+                                  <Users className="w-2.5 h-2.5 text-zinc-300 dark:text-[#5A5550]" />
+                                )}
+                              </div>
+                              <span className="font-medium text-zinc-700 dark:text-[#F0EBE3]">{c.pickupPersonName}</span>
                             </div>
-                            <span className="font-medium text-zinc-700 dark:text-[#F0EBE3]">{c.pickupPersonName}</span>
-                          </div>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-rose-500 dark:text-red-400">
-                            <CameraOff className="w-3 h-3" />
-                            Missing
-                          </span>
-                        )}
-                      </td>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-rose-500 dark:text-red-400">
+                              <CameraOff className="w-3 h-3" />
+                              Missing
+                            </span>
+                          )}
+                        </td>
+                      )}
 
                       {/* Review status */}
                       <td className="py-3 px-4 text-center">
                         {getReviewStatusBadge(c.reviewStatus)}
+                      </td>
+
+                      {/* Pass status */}
+                      <td className="py-3 px-4">
+                        {getPassStatusDisplay(c)}
                       </td>
 
                       {/* Entry status */}
@@ -1115,6 +1320,30 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                       {/* Action */}
                       <td className="py-3 px-4 text-right relative">
                         <div className="inline-flex items-center gap-1.5">
+                          {/* Selected Children Pass Action */}
+                          {c.passStatus === 'missing_pass' || (c.reviewStatus === 'selected' && !c.hasPass) ? (
+                            <button
+                              type="button"
+                              onClick={() => handleGeneratePass(c.childId)}
+                              disabled={submittingActionId !== null}
+                              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-[#C59B27] text-white hover:bg-[#b08a23] transition-colors disabled:opacity-50 cursor-pointer shadow-2xs whitespace-nowrap"
+                              title="Issue event pass"
+                              id={`issue-pass-btn-${c.childId}`}
+                            >
+                              {submittingActionId === c.childId + '-pass' ? 'Issuing...' : 'Issue pass'}
+                            </button>
+                          ) : c.hasPass || c.passStatus === 'pass_ready' ? (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedApplicationId(c.applicationId)}
+                              className="px-2.5 py-1 text-xs font-medium rounded-lg border border-zinc-200 dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] hover:bg-zinc-50 dark:hover:bg-[#262520] transition-colors cursor-pointer whitespace-nowrap"
+                              title="View pass / details"
+                              id={`view-pass-btn-${c.childId}`}
+                            >
+                              View pass
+                            </button>
+                          ) : null}
+
                           <button
                             onClick={() => setSelectedApplicationId(c.applicationId)}
                             className="p-1.5 hover:bg-zinc-50 dark:hover:bg-[#262520] rounded-lg text-zinc-400 dark:text-[#7A7570] hover:text-[#C59B27] dark:hover:text-[#C59B27] transition-all cursor-pointer"
@@ -1357,6 +1586,10 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                     <span className="font-semibold text-[#C59B27] dark:text-amber-400">{getTodayStatusText(c.entryStatus, c.pickupStatus)}</span>
                   </div>
                   <div className="flex items-baseline justify-between border-t border-zinc-100 dark:border-[#302E29] pt-2.5">
+                    <span className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium">Pass status</span>
+                    <span>{getPassStatusDisplay(c)}</span>
+                  </div>
+                  <div className="flex items-baseline justify-between border-t border-zinc-100 dark:border-[#302E29] pt-2.5">
                     <span className="text-xs text-zinc-500 dark:text-[#7A7570] font-medium">Pickup</span>
                     <span className="font-semibold text-zinc-700 dark:text-[#F0EBE3]">
                       {c.pickupPersonName || (
@@ -1366,17 +1599,32 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                   </div>
                 </div>
 
-                {/* View Details action */}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  fullWidth
-                  onClick={() => setSelectedApplicationId(c.applicationId)}
-                  className="py-2 text-xs font-semibold border-zinc-200 dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-700 dark:text-[#F0EBE3] hover:text-[#C59B27] dark:hover:text-[#C59B27] transition-colors"
-                >
-                  View details
-                </Button>
+                <div className="flex gap-2">
+                  {(c.passStatus === 'missing_pass' || (c.reviewStatus === 'selected' && !c.hasPass)) && (
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      fullWidth
+                      onClick={() => handleGeneratePass(c.childId)}
+                      loading={submittingActionId === c.childId + '-pass'}
+                      className="py-2 text-xs font-semibold bg-[#C59B27] text-white hover:bg-[#b08a23]"
+                    >
+                      Issue pass
+                    </Button>
+                  )}
+                  {/* View Details action */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    fullWidth
+                    onClick={() => setSelectedApplicationId(c.applicationId)}
+                    className="py-2 text-xs font-semibold border-zinc-200 dark:border-[#3A3835] bg-white dark:bg-[#262520] text-zinc-700 dark:text-[#F0EBE3] hover:text-[#C59B27] dark:hover:text-[#C59B27] transition-colors"
+                  >
+                    View details
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -1483,6 +1731,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     { id: 'all', label: 'All' },
+                    { id: 'selected_children', label: 'Selected Children' },
                     { id: 'inside', label: 'Inside' },
                     { id: 'not_arrived', label: 'Not arrived' },
                     { id: 'picked_up', label: 'Picked up' }
@@ -1505,6 +1754,69 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                   })}
                 </div>
               </div>
+
+              {/* Selected Children Sub-options on Mobile */}
+              {tempFilter === 'selected_children' && (
+                <div className="space-y-3 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-semibold text-zinc-700 dark:text-[#F0EBE3] block">
+                      Age group
+                    </span>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {[
+                        { id: 'all', label: 'All age groups' },
+                        { id: 'Ages 2–3', label: 'Ages 2–3' },
+                        { id: 'Ages 4–6', label: 'Ages 4–6' },
+                        { id: 'Ages 7–9', label: 'Ages 7–9' },
+                        { id: 'Ages 10–12', label: 'Ages 10–12' },
+                        { id: 'Ages 13–14', label: 'Ages 13–14' }
+                      ].map((g) => (
+                        <button
+                          key={g.id}
+                          type="button"
+                          onClick={() => setTempAgeGroupFilter(g.id)}
+                          className={`p-2 rounded-lg border text-[11px] font-medium transition-all ${
+                            tempAgeGroupFilter === g.id
+                              ? 'bg-[#C59B27]/10 text-[#C59B27] border-[#C59B27] font-bold'
+                              : 'bg-white text-zinc-600 border-zinc-200 dark:bg-[#262520] dark:text-[#B8B0A5] dark:border-[#3A3835]'
+                          }`}
+                        >
+                          {g.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-semibold text-zinc-700 dark:text-[#F0EBE3] block">
+                      Pass status
+                    </span>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {[
+                        { id: 'all', label: 'All selected' },
+                        { id: 'missing_pass', label: 'Missing pass' },
+                        { id: 'pass_ready', label: 'Pass ready' },
+                        { id: 'checked_in', label: 'Checked in' },
+                        { id: 'inside', label: 'Inside' },
+                        { id: 'picked_up', label: 'Picked up' }
+                      ].map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setTempPassStatusFilter(p.id)}
+                          className={`p-2 rounded-lg border text-[11px] font-medium transition-all ${
+                            tempPassStatusFilter === p.id
+                              ? 'bg-[#C59B27]/10 text-[#C59B27] border-[#C59B27] font-bold'
+                              : 'bg-white text-zinc-600 border-zinc-200 dark:bg-[#262520] dark:text-[#B8B0A5] dark:border-[#3A3835]'
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Group 2: Care and Attention */}
               <div className="space-y-2">
@@ -1545,7 +1857,11 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                 type="button"
                 onClick={() => {
                   setTempFilter('all');
+                  setTempAgeGroupFilter('all');
+                  setTempPassStatusFilter('all');
                   setActiveFilter('all');
+                  setSelectedAgeGroupFilter('all');
+                  setSelectedPassStatusFilter('all');
                   setIsFilterSheetOpen(false);
                 }}
                 className="py-2.5 rounded-xl border border-zinc-200 text-zinc-600 font-semibold hover:bg-zinc-50 dark:border-[#3A3835] dark:text-[#B8B0A5] dark:hover:bg-[#262520] transition-colors"
@@ -1556,6 +1872,8 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                 type="button"
                 onClick={() => {
                   setActiveFilter(tempFilter);
+                  setSelectedAgeGroupFilter(tempAgeGroupFilter);
+                  setSelectedPassStatusFilter(tempPassStatusFilter);
                   setIsFilterSheetOpen(false);
                 }}
                 className="py-2.5 rounded-xl bg-[#C59B27] text-white font-semibold hover:bg-[#C59B27]/90 transition-colors shadow-sm"
@@ -2064,6 +2382,124 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                 id="confirm-bulk-restore-btn"
               >
                 Restore {selectedChildIds.length} children
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Issue Passes Confirmation Modal */}
+      {showBulkPassModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in font-sans" id="confirm-bulk-pass-modal">
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => !submittingBulkPass && setShowBulkPassModal(false)} />
+          <div className="relative bg-[#FFFDF9] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center space-x-2 text-[#C59B27] dark:text-amber-400">
+              <Sparkles className="w-5 h-5 shrink-0" />
+              <h3 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3]">
+                Issue passes for {missingPassEligibleCount} {missingPassEligibleCount === 1 ? 'child' : 'children'}?
+              </h3>
+            </div>
+            
+            <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
+              This will generate secure digital event passes with valid QR codes for selected children who currently have no active pass.
+            </p>
+
+            <div className="bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3.5 space-y-2 text-xs">
+              <div className="flex justify-between items-center font-semibold text-zinc-800 dark:text-[#F0EBE3] pb-1.5 border-b border-[#EAE8E1] dark:border-[#302E29]">
+                <span>Pass Issuance Summary</span>
+                <span className="text-[#C59B27]">{missingPassEligibleCount} eligible</span>
+              </div>
+              <div className="flex justify-between text-xs text-emerald-700 dark:text-emerald-400">
+                <span>Eligible for pass generation</span>
+                <span className="font-semibold">{missingPassEligibleCount}</span>
+              </div>
+              {missingPassSkippedCount > 0 && (
+                <div className="pt-1.5 border-t border-[#EAE8E1] dark:border-[#302E29] space-y-1">
+                  <div className="flex justify-between text-xs text-zinc-500 dark:text-[#7A7570] font-medium">
+                    <span>Skipped ({missingPassSkippedCount})</span>
+                    <span className="text-[11px]">Reasons below</span>
+                  </div>
+                  {Object.entries(skippedReasonsBreakdown).map(([reason, count]) => (
+                    <div key={reason} className="flex justify-between text-[11px] text-zinc-400 dark:text-[#7A7570] pl-2">
+                      <span>• {reason}</span>
+                      <span className="font-medium text-zinc-600 dark:text-[#B8B0A5]">{String(count)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+              <Button
+                type="button"
+                onClick={() => setShowBulkPassModal(false)}
+                variant="secondary"
+                disabled={submittingBulkPass}
+                className="px-4 py-2 text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleBulkIssuePassesSubmit}
+                loading={submittingBulkPass}
+                disabled={submittingBulkPass || missingPassEligibleCount === 0}
+                className="px-5 py-2 text-xs bg-[#C59B27] hover:bg-[#b08a23] hover:text-white border-none text-white font-semibold rounded-xl cursor-pointer"
+                id="btn-confirm-bulk-issue-passes"
+              >
+                Issue {missingPassEligibleCount} {missingPassEligibleCount === 1 ? 'pass' : 'passes'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Issue Passes Result Modal */}
+      {bulkPassResultModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in font-sans" id="bulk-pass-result-modal">
+          <div className="fixed inset-0 bg-black/45 backdrop-blur-xs" onClick={() => setBulkPassResultModal(null)} />
+          <div className="relative bg-[#FFFDF9] dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center space-x-2 text-emerald-600 dark:text-emerald-400">
+              <CheckCircle className="w-5 h-5 shrink-0" />
+              <h3 className="text-base font-semibold text-zinc-900 dark:text-[#F0EBE3]">
+                Pass Generation Results
+              </h3>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 rounded-xl flex justify-between items-center text-emerald-800 dark:text-emerald-300">
+                <span className="font-medium">Passes successfully issued</span>
+                <span className="font-bold text-sm">{bulkPassResultModal.processed}</span>
+              </div>
+              {bulkPassResultModal.alreadyHadPass > 0 && (
+                <div className="p-3 bg-zinc-50 dark:bg-[#262520] border border-zinc-200 dark:border-[#3A3835] rounded-xl flex justify-between items-center text-zinc-700 dark:text-[#B8B0A5]">
+                  <span>Already had active pass</span>
+                  <span className="font-bold">{bulkPassResultModal.alreadyHadPass}</span>
+                </div>
+              )}
+              {bulkPassResultModal.couldNotIssue > 0 && (
+                <div className="p-3 bg-rose-50 dark:bg-red-950/20 border border-rose-100 dark:border-red-900/40 rounded-xl space-y-2 text-rose-800 dark:text-rose-300">
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium">Could not be issued</span>
+                    <span className="font-bold text-sm">{bulkPassResultModal.couldNotIssue}</span>
+                  </div>
+                  <div className="text-[11px] space-y-1 text-rose-700 dark:text-rose-400">
+                    {bulkPassResultModal.results?.filter((r: any) => !r.success && r.reason).map((r: any, idx: number) => (
+                      <p key={idx}>• {r.childId ? `Child #${r.childId.slice(-4)}: ` : ''}{r.reason}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+              <Button
+                type="button"
+                onClick={() => setBulkPassResultModal(null)}
+                variant="primary"
+                className="px-5 py-2 text-xs bg-[#C59B27] hover:bg-[#b08a23]"
+              >
+                Close
               </Button>
             </div>
           </div>

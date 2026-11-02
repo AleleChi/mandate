@@ -697,8 +697,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   }, [volunteerProfile, currentDutyLocation]);
 
   const isOrdinaryVolunteer = useMemo(() => {
-    const role = (volunteerProfile?.role || '').toLowerCase();
-    return role !== 'admin' && role !== 'super_admin' && role !== 'team_lead' && role !== 'team';
+    const role = (
+      volunteerProfile?.role ||
+      volunteerProfile?.user?.role ||
+      (typeof window !== 'undefined' ? (JSON.parse(localStorage.getItem('koinonia_auth') || '{}')?.user?.role || '') : '')
+    ).toLowerCase();
+    return role !== 'admin' && role !== 'super_admin' && role !== 'team_lead' && role !== 'team' && role !== 'staff';
   }, [volunteerProfile]);
 
   const assignedScopeLabel: string = useMemo(() => {
@@ -713,7 +717,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   const isChildInAssignedScope = useCallback((child: any) => {
     if (!isOrdinaryVolunteer) return true; // Admins / Team leads have cross-group visibility
-    if (assignedAgeGroups.length === 0) return false;
+    if (assignedAgeGroups.length === 0) return true; // Unscoped volunteer is not blocked
 
     const rawChildGroup = (child?.ageGroup || child?.classGroup || child?.className || '').toLowerCase().trim();
     const cleanChild = rawChildGroup.replace(/[\u2013\u2014]/g, '-').replace(/^ages\s*/i, '').trim();
@@ -1735,27 +1739,6 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       setCameraUnavailable(false);
       setCameraPermissionDenied(false);
 
-      // Attempt to prompt for permission explicitly if mediaDevices API is available
-      if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: { ideal: 'environment' } } 
-          });
-          // Stop stream tracks immediately as this is just to acquire permissions
-          stream.getTracks().forEach(track => track.stop());
-        } catch (permErr: any) {
-          console.warn('Explicit getUserMedia permission request was denied or failed:', permErr);
-          const isNotAllowed = permErr instanceof DOMException && permErr.name === 'NotAllowedError';
-          const isPermissionDenied = String(permErr).toLowerCase().includes('permission') || String(permErr).toLowerCase().includes('notallowed');
-          if (isNotAllowed || isPermissionDenied) {
-            setCameraPermissionDenied(true);
-            setCameraUnavailable(true);
-            setCameraActive(false);
-            return;
-          }
-        }
-      }
-
       if (!codeReaderRef.current) {
         codeReaderRef.current = new BrowserQRCodeReader();
       }
@@ -1777,9 +1760,6 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           }
         }
         const deviceId = selectedCameraId || defaultDeviceId;
-        if (!selectedCameraId) {
-          setSelectedCameraId(deviceId);
-        }
 
         if (videoRef.current) {
           // Clean any prior controls
@@ -1795,7 +1775,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             (result, error) => {
               if (result) {
                 const text = result.getText();
-                handlePassScanned(text);
+                if (!isLookupInFlightRef.current && !hasSuccessfulScanRef.current) {
+                  handlePassScanned(text);
+                }
               }
             }
           );
@@ -2085,18 +2067,8 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         }
 
         if (childData) {
-          // Volunteer Operational Scope Enforcement (Sections 16, 17, 18)
-          if (isOrdinaryVolunteer && assignedAgeGroups.length === 0) {
-            showWarning('Assignment Required', 'No age group has been assigned to your event duty yet.');
-            isLookupInFlightRef.current = false;
-            lastScannedCodeRef.current = null;
-            isLookupInFlight.current = false;
-            lastScannedCode.current = '';
-            setManualCode('');
-            return;
-          }
-
-          if (!isChildInAssignedScope(childData)) {
+          // Volunteer Operational Scope Enforcement: only enforce if assignedAgeGroups are set
+          if (isOrdinaryVolunteer && assignedAgeGroups.length > 0 && !isChildInAssignedScope(childData)) {
             showWarning('Out of Scope', 'This child is assigned to another age group.');
             isLookupInFlightRef.current = false;
             lastScannedCodeRef.current = null;
