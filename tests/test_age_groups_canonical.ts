@@ -8,7 +8,14 @@ import {
   CANONICAL_MIN_AGE,
   CANONICAL_MAX_AGE
 } from '../src/server/services/eligibilityService';
-import { deriveAgeGroup } from '../src/server/routes/admin';
+import {
+  deriveAgeGroup,
+  isChildInAgeGroup,
+  normalizeAgeGroupLabelToRange,
+  validateChildSelectionCapacity
+} from '../src/server/routes/admin';
+import { execute, queryOne } from '../src/server/db';
+import crypto from 'crypto';
 
 async function runCanonicalAgeGroupTests() {
   console.log('================================================================');
@@ -189,8 +196,133 @@ async function runCanonicalAgeGroupTests() {
   assert.strictEqual('2011-05-01' <= cutoffs.maxAgeDobCutoff, true);
   console.log('  ✓ Lexicographical SQL string comparisons are mathematically sound');
 
+  // 6. Capacity Age-Group Matching & Selection Validation (Cases A-F)
+  console.log('\n--- TEST 6: Capacity Age-Group Matching & Selection Validation (Cases A-F) ---');
+
+  // Case A: Child age 10 / stored age_group 'Ages 10'
+  // Configured groups: Ages 1 -> 1-3, Ages 10 -> 10-12
+  const faithChild = {
+    id: `child-faith-${Date.now()}`,
+    full_name: 'Faith Ariyo',
+    date_of_birth: '2016-09-19',
+    calculated_age: 10,
+    age_group: 'Ages 10'
+  };
+
+  const groupAges1 = { id: 'ag-1', label: 'Ages 1', min_age: 1, max_age: 3, capacity: 50 };
+  const groupAges10 = { id: 'ag-10', label: 'Ages 10', min_age: 10, max_age: 12, capacity: 293 };
+
+  assert.strictEqual(
+    isChildInAgeGroup(faithChild, groupAges1, EVENT_DATE),
+    false,
+    'Case A: 10-year-old child must NEVER match Ages 1 (1–3)'
+  );
+  assert.strictEqual(
+    isChildInAgeGroup(faithChild, groupAges10, EVENT_DATE),
+    true,
+    'Case A: 10-year-old child must match Ages 10 (10–12)'
+  );
+
+  // Exact-label fallback check (no DOB, only stored age_group 'Ages 10')
+  const faithFallback = { age_group: 'Ages 10' };
+  assert.strictEqual(
+    isChildInAgeGroup(faithFallback, groupAges1, EVENT_DATE),
+    false,
+    'Case A (fallback): "Ages 10" label must never match "Ages 1"'
+  );
+  assert.strictEqual(
+    isChildInAgeGroup(faithFallback, groupAges10, EVENT_DATE),
+    true,
+    'Case A (fallback): "Ages 10" label must match "Ages 10" (10–12)'
+  );
+  console.log('  ✓ Case A passed: Age 10 / "Ages 10" matches ONLY 10–12 and never 1–3');
+
+  // Database-backed setup for Case B & C
+  const testCapEventId = `ev-cap-${Date.now()}`;
+  await execute(`
+    INSERT INTO events (id, title, status, capacity, starts_at, ends_at, created_at, updated_at)
+    VALUES (?, 'Capacity Test Event', 'open', 1000, ?, ?, datetime('now'), datetime('now'))
+  `, [testCapEventId, EVENT_DATE, EVENT_DATE]);
+
+  await execute(`
+    INSERT INTO event_age_groups (id, event_id, label, min_age, max_age, capacity, manual_review, sort_order, created_at, updated_at)
+    VALUES (?, ?, 'Ages 1', 1, 3, 1, 0, 1, datetime('now'), datetime('now')),
+           (?, ?, 'Ages 10', 10, 12, 293, 0, 2, datetime('now'), datetime('now'))
+  `, [`ag-1-${Date.now()}`, testCapEventId, `ag-10-${Date.now()}`, testCapEventId]);
+
+  // Seed 1 selected child in Ages 1 (making Ages 1 FULL: 1 of 1 selected)
+  const parentRow = await queryOne('SELECT id FROM parent_profiles LIMIT 1');
+  const parentId = parentRow ? parentRow.id : `parent-${Date.now()}`;
+
+  const toddlerId = `child-toddler-${Date.now()}`;
+  await execute(`
+    INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, calculated_age, age_group, created_at, updated_at)
+    VALUES (?, ?, 'Toddler Full', 'female', '2023-11-21', 3, 'Ages 1', datetime('now'), datetime('now'))
+  `, [toddlerId, parentId]);
+  await execute(`
+    INSERT INTO child_event_entries (id, event_id, child_id, status, created_at, updated_at)
+    VALUES (?, ?, ?, 'selected', datetime('now'), datetime('now'))
+  `, [`entry-toddler-${Date.now()}`, testCapEventId, toddlerId]);
+
+  // Seed the 10-year-old child in database
+  const child10DbId = `child-10-${Date.now()}`;
+  await execute(`
+    INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, calculated_age, age_group, created_at, updated_at)
+    VALUES (?, ?, 'Faith Ariyo Test', 'female', '2016-09-19', 10, 'Ages 10', datetime('now'), datetime('now'))
+  `, [child10DbId, parentId]);
+  await execute(`
+    INSERT INTO child_event_entries (id, event_id, child_id, status, created_at, updated_at)
+    VALUES (?, ?, ?, 'submitted', datetime('now'), datetime('now'))
+  `, [`entry-10-${Date.now()}`, testCapEventId, child10DbId]);
+
+  // Case B: Ages 1 is full, but 10–12 has remaining capacity. Approving 10-year-old MUST SUCCEED.
+  const capCheckB = await validateChildSelectionCapacity(testCapEventId, child10DbId, 'submitted');
+  assert.strictEqual(capCheckB.allowed, true, 'Case B: Approving 10-year-old must succeed even when Ages 1 is full');
+  console.log('  ✓ Case B passed: Approval of 10-year-old succeeds when Ages 1 is full but 10–12 has capacity');
+
+  // Case C: 10–12 is actually full.
+  // Seed an existing selected 10-year-old child in 10–12 and set capacity = 1
+  const existing10Id = `child-ex10-${Date.now()}`;
+  await execute(`
+    INSERT INTO children (id, parent_profile_id, full_name, gender, date_of_birth, calculated_age, age_group, created_at, updated_at)
+    VALUES (?, ?, 'Existing 10 Child', 'female', '2016-01-15', 10, 'Ages 10', datetime('now'), datetime('now'))
+  `, [existing10Id, parentId]);
+  await execute(`
+    INSERT INTO child_event_entries (id, event_id, child_id, status, created_at, updated_at)
+    VALUES (?, ?, ?, 'selected', datetime('now'), datetime('now'))
+  `, [`entry-ex10-${Date.now()}`, testCapEventId, existing10Id]);
+
+  await execute(`
+    UPDATE event_age_groups SET capacity = 1 WHERE event_id = ? AND min_age = 10
+  `, [testCapEventId]);
+
+  const capCheckC = await validateChildSelectionCapacity(testCapEventId, child10DbId, 'submitted');
+  assert.strictEqual(capCheckC.allowed, false, 'Case C: Must be blocked when 10–12 is actually full');
+  assert.ok(
+    capCheckC.error && capCheckC.error.includes('The 10–12 age group has reached its capacity (1 of 1 places selected).'),
+    `Case C: Expected clear canonical error message, got: "${capCheckC.error}"`
+  );
+  console.log(`  ✓ Case C passed: Correct error message emitted: "${capCheckC.error}"`);
+
+  // Case D: Age 13 -> Expected canonical group: 13–14
+  const caseDAge13 = resolveCanonicalAgeGroup(13, EVENT_DATE);
+  assert.strictEqual(caseDAge13.group, '13–14', 'Case D: Age 13 must resolve to 13–14');
+  console.log('  ✓ Case D passed: Age 13 resolves to canonical 13–14');
+
+  // Case E: Age 14 -> Expected canonical group: 13–14
+  const caseEAge14 = resolveCanonicalAgeGroup(14, EVENT_DATE);
+  assert.strictEqual(caseEAge14.group, '13–14', 'Case E: Age 14 must resolve to 13–14');
+  console.log('  ✓ Case E passed: Age 14 resolves to canonical 13–14');
+
+  // Case F: Age 1 -> Expected: outside current 2–14 programme eligibility
+  const age1ResF = resolveCanonicalAgeGroup(1, EVENT_DATE);
+  assert.strictEqual(age1ResF.isOutOfRange, true, 'Case F: Age 1 must be out of range');
+  assert.strictEqual(age1ResF.group, null, 'Case F: Age 1 canonical group must be null');
+  assert.strictEqual(age1ResF.label, 'Age review needed', 'Case F: Age 1 label must be "Age review needed"');
+  console.log('  ✓ Case F passed: Age 1 is outside 2–14 programme eligibility');
+
   console.log('\n================================================================');
-  console.log('ALL CANONICAL AGE GROUP BOUNDARY TESTS PASSED');
+  console.log('ALL CANONICAL AGE GROUP BOUNDARY & CAPACITY TESTS PASSED');
   console.log('================================================================');
 }
 

@@ -186,26 +186,73 @@ export function isSubmittedRegistrationStatus(status?: string | null): boolean {
   return !EXCLUDED_REGISTRATION_STATUSES.includes(s as any);
 }
 
-function isChildInAgeGroup(c: any, group: { min_age?: number; minAge?: number; max_age?: number; maxAge?: number; label?: string }): boolean {
-  const minAge = group.min_age !== undefined ? group.min_age : (group.minAge !== undefined ? group.minAge : 0);
-  const maxAge = group.max_age !== undefined ? group.max_age : (group.maxAge !== undefined ? group.maxAge : 999);
-  const groupLabel = (group.label || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+export function normalizeAgeGroupLabelToRange(raw?: string | null): string {
+  if (!raw) return '';
+  const s = String(raw).trim()
+    .replace(/^Ages\s+/i, '')
+    .replace(/\s+Years$/i, '')
+    .replace(/\s+to\s+/i, '–')
+    .replace(/-/g, '–')
+    .trim();
 
-  if (c.age_group && groupLabel) {
-    const normChild = String(c.age_group).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (normChild === groupLabel || normChild.includes(groupLabel) || groupLabel.includes(normChild)) {
-      return true;
+  const rangeMatch = s.match(/^(\d+)\s*[\u2013-]\s*(\d+)$/);
+  if (rangeMatch) {
+    return `${rangeMatch[1]}–${rangeMatch[2]}`;
+  }
+
+  if (s === '10') return '10–12';
+  if (s === '7') return '7–9';
+  if (s === '4') return '4–6';
+  if (s === '2' || s === '3') return '2–3';
+  if (s === '13' || s === '14') return '13–14';
+  if (s === '1') return '1–3';
+  if (s === '0') return '0–1';
+
+  return s.toLowerCase();
+}
+
+export function isChildInAgeGroup(
+  c: any,
+  group: { min_age?: number; minAge?: number; max_age?: number; maxAge?: number; label?: string },
+  referenceDate?: string | Date | null
+): boolean {
+  const minAge = group.min_age !== undefined && group.min_age !== null
+    ? Number(group.min_age)
+    : (group.minAge !== undefined && group.minAge !== null ? Number(group.minAge) : null);
+  const maxAge = group.max_age !== undefined && group.max_age !== null
+    ? Number(group.max_age)
+    : (group.maxAge !== undefined && group.maxAge !== null ? Number(group.maxAge) : null);
+
+  // 1. Primary rule: Determine numeric age on event date and match using: age >= minAge && age <= maxAge
+  const age = getChildAge(c, referenceDate);
+  if (age !== null && age >= 0) {
+    if (minAge !== null && maxAge !== null && !isNaN(minAge) && !isNaN(maxAge)) {
+      return age >= minAge && age <= maxAge;
+    }
+    if (minAge !== null && !isNaN(minAge) && maxAge === null) {
+      return age >= minAge;
+    }
+    if (maxAge !== null && !isNaN(maxAge) && minAge === null) {
+      return age <= maxAge;
     }
   }
 
-  const age = getChildAge(c);
-  if (age >= 0) {
-    return age >= minAge && age <= maxAge;
+  // 2. Exact-label fallback only (when child numeric age could not be calculated)
+  if (c.age_group && group.label) {
+    const childNorm = normalizeAgeGroupLabelToRange(c.age_group);
+    const groupNorm = (minAge !== null && maxAge !== null)
+      ? `${minAge}–${maxAge}`
+      : normalizeAgeGroupLabelToRange(group.label);
+
+    if (childNorm && groupNorm) {
+      return childNorm === groupNorm;
+    }
   }
+
   return false;
 }
 
-async function validateChildSelectionCapacity(
+export async function validateChildSelectionCapacity(
   eventId: string,
   childId: string,
   currentStatus?: string
@@ -236,8 +283,9 @@ async function validateChildSelectionCapacity(
   // 2. Enforce Age Group Capacity
   const child = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
   if (child) {
+    const eventDate = event?.starts_at || CANONICAL_GA_EVENT_DATE;
     const ageGroups = await query('SELECT * FROM event_age_groups WHERE event_id = ? ORDER BY sort_order ASC', [eventId]);
-    const matchedGroup = ageGroups.find((g: any) => isChildInAgeGroup(child, g));
+    const matchedGroup = ageGroups.find((g: any) => isChildInAgeGroup(child, g, eventDate));
     if (matchedGroup && matchedGroup.capacity !== null && matchedGroup.capacity !== undefined && Number(matchedGroup.capacity) > 0) {
       const selectedChildren = await query(`
         SELECT c.id, c.gender, c.date_of_birth, c.calculated_age, c.age_group
@@ -251,13 +299,30 @@ async function validateChildSelectionCapacity(
 
       let groupSelected = 0;
       for (const selChild of selectedChildren) {
-        if (isChildInAgeGroup(selChild, matchedGroup)) {
+        if (isChildInAgeGroup(selChild, matchedGroup, eventDate)) {
           groupSelected++;
         }
       }
 
-      if (groupSelected >= Number(matchedGroup.capacity)) {
-        return { allowed: false, error: `The ${matchedGroup.label} group has reached its capacity.` };
+      const groupCap = Number(matchedGroup.capacity);
+      if (groupSelected >= groupCap) {
+        let groupDisplay = '';
+        if (matchedGroup.min_age !== undefined && matchedGroup.max_age !== undefined) {
+          groupDisplay = `${matchedGroup.min_age}–${matchedGroup.max_age}`;
+        } else {
+          groupDisplay = normalizeAgeGroupLabelToRange(matchedGroup.label) || matchedGroup.label;
+        }
+
+        const childAge = getChildAge(child, eventDate);
+        const canonicalRes = resolveCanonicalAgeGroup(child.date_of_birth || (childAge >= 0 ? childAge : null), eventDate);
+        if (canonicalRes.group) {
+          groupDisplay = canonicalRes.group;
+        }
+
+        return {
+          allowed: false,
+          error: `The ${groupDisplay} age group has reached its capacity (${groupSelected} of ${groupCap} places selected).`
+        };
       }
     }
   }
@@ -4788,8 +4853,9 @@ router.get('/events/:eventId', async (req: AuthenticatedRequest, res: Response) 
   const enrichedAgeGroups = ageGroups.map((g: any) => {
     let groupRegistered = 0;
     let groupSelected = 0;
+    const eventDate = event?.starts_at || CANONICAL_GA_EVENT_DATE;
     for (const ch of activeChildren) {
-      if (isChildInAgeGroup(ch, g)) {
+      if (isChildInAgeGroup(ch, g, eventDate)) {
         groupRegistered++;
         if (['selected', 'pass_ready', 'checked_in', 'inside', 'picked_up'].includes(ch.status)) {
           groupSelected++;
