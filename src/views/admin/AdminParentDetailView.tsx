@@ -32,7 +32,8 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
   parentId,
   onNavigate,
   onBack,
-  currentEvent
+  currentEvent,
+  adminUser
 }) => {
   const { showError, showSuccess } = useNotification();
 

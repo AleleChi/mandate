@@ -282,6 +282,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   isSwitchingExperience = false
 }) => {
   const { showSuccess, showWarning, showError } = useNotification();
+  const rawCleanRoute = currentRoute.split('?')[0];
+  const cleanRoute = rawCleanRoute === '/volunteer/summary'
+    ? '/volunteer/reports'
+    : rawCleanRoute === '/volunteer/safety'
+    ? '/volunteer/team-alerts'
+    : rawCleanRoute;
 
   // Real-time volunteer notification states
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -1298,13 +1304,6 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [attentionNote, setAttentionNote] = useState<string>('');
   const [resolvingAttention, setResolvingAttention] = useState<boolean>(false);
   const [attentionError, setAttentionError] = useState<string | null>(null);
-
-  const rawCleanRoute = currentRoute.split('?')[0];
-  const cleanRoute = rawCleanRoute === '/volunteer/summary'
-    ? '/volunteer/reports'
-    : rawCleanRoute === '/volunteer/safety'
-    ? '/volunteer/team-alerts'
-    : rawCleanRoute;
   const canAssignWristbands = React.useMemo(() => {
     if (!volunteerProfile) return false;
     if (volunteerProfile.role === 'admin' || volunteerProfile.role === 'super_admin') return true;

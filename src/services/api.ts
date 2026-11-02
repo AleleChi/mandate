@@ -2,6 +2,7 @@
 
 import { safeStorage } from '../utils/storage';
 import { buildApiUrl, getApiBaseUrl } from '../utils/urlHelper';
+import { ParentMessageThread, ParentMessage, AdminMessageThread, AdminMessageParticipant, VolunteerMessageThread, VolunteerMessage, Announcement } from '../types';
 
 const TOKEN_KEY = 'koinonia_token';
 
@@ -18,12 +19,8 @@ const INTERNAL_LEAK_PATTERNS = [
   'node_modules',
   'cannot read properties of undefined',
   'cannot read property',
-  'referenceerror',
-  'typeerror',
-  'prisma',
-  'foreign key constraint',
-  'unique constraint',
-  'password_hash'
+  'table has no column',
+  'null constraint failed'
 ];
 
 export class ParentApiError extends Error {
@@ -41,22 +38,6 @@ export class ParentApiError extends Error {
   }
 }
 
-export function extractApiError(err: any): { message: string; description: string; code?: string; status?: number } {
-  console.error('[extractApiError - Caught Source Error]:', err);
-  if (err instanceof ParentApiError) {
-    return { message: err.message, description: err.description, code: err.code, status: err.status };
-  }
-  const raw = (typeof err === 'string' ? err : err?.message || err?.error || '').trim();
-  if (!raw || raw.includes('Failed to fetch') || raw.includes('NetworkError') || raw.includes('Load failed') || raw.includes('Connection problem')) {
-    return { message: 'Connection problem', description: 'Please check your internet and try again.' };
-  }
-  const lower = raw.toLowerCase();
-  const isInternalStack = lower.includes('at ') || lower.includes('node_modules') || INTERNAL_LEAK_PATTERNS.some(p => lower.includes(p));
-  if (isInternalStack || raw.includes('Request failed (5')) {
-    return { message: 'Something went wrong', description: 'Please try again.', code: err?.code, status: err?.status };
-  }
-  return { message: raw, description: err?.description || 'Please try again.', code: err?.code, status: err?.status };
-}
 
 export interface SelectedParentAudienceChild {
   id: string;
@@ -89,7 +70,6 @@ export interface SelectedParentAudienceRow {
   failureReason: string | null;
   providerMessageId: string | null;
   emailChannelAccessSent?: boolean;
-  emailChannelSentAt?: string | null;
 }
 
 export interface SelectedParentsAudienceSummary {
@@ -129,6 +109,23 @@ export interface SelectedParentsSendResponse {
   failedCount: number;
   details: SelectedParentsSendDetail[];
   error?: string;
+}
+
+export function extractApiError(err: any): { message: string; description: string; code?: string; status?: number } {
+  console.error('[extractApiError - Caught Source Error]:', err);
+  if (err instanceof ParentApiError) {
+    return { message: err.message, description: err.description, code: err.code, status: err.status };
+  }
+  const raw = (typeof err === 'string' ? err : err?.message || '').trim();
+  if (!raw || raw.includes('Failed to fetch') || raw.includes('NetworkError') || raw.includes('Load failed') || raw.includes('Connection problem')) {
+    return { message: 'Connection problem', description: 'Please check your internet and try again.' };
+  }
+  const lower = raw.toLowerCase();
+  const isInternalStack = lower.includes('at ') || lower.includes('node_modules') || lower.includes('syntax error');
+  if (isInternalStack || raw.includes('Request failed (5')) {
+    return { message: 'Something went wrong', description: 'Please try again.', code: err?.code };
+  }
+  return { message: raw, description: 'Please try again.', code: err?.code };
 }
 
 export const api = {
@@ -215,6 +212,28 @@ export const api = {
 
     if (!res.ok) {
       if (res.status === 401) {
+        const isAuthEndpoint = [
+          '/sign-in',
+          '/login',
+          '/create-account',
+          '/passkeys/login'
+        ].some(p => endpoint.includes(p));
+
+        const rawMsg = data?.message || data?.error;
+        const errorCode = data?.code || (isAuthEndpoint ? 'INVALID_CREDENTIALS' : 'UNAUTHORIZED');
+
+        // On sign-in / login endpoints, or if explicit credential error was returned, never claim the session expired
+        if (isAuthEndpoint || errorCode === 'INVALID_CREDENTIALS') {
+          const authMsg = rawMsg || 'Email or password is incorrect.';
+          throw new ParentApiError(authMsg, 'Please check your credentials and try again.', errorCode, data, 401);
+        }
+
+        // If backend returned a specific error message other than token rejection, prioritize it
+        if (rawMsg && rawMsg !== 'Authentication required' && rawMsg !== 'Invalid or expired token' && rawMsg !== 'Unauthorized') {
+          throw new ParentApiError(rawMsg, 'Please try again.', errorCode, data, 401);
+        }
+
+        // Genuine session expiration on protected endpoints
         throw new ParentApiError('Your session has expired. Please sign in again.', 'Please sign in again to continue.', 'UNAUTHORIZED', data, 401);
       }
       if (res.status === 403) {
@@ -228,15 +247,37 @@ export const api = {
       }
       const errorCode = data.code;
       console.error('[api.request Error Details]:', { url, status: res.status, rawError, errorCode, data });
+      const lower = rawError.toLowerCase();
       const isAdminRoute = url.includes('/api/admin/');
       const isInternalStack = lower.includes('at ') || lower.includes('node_modules') || lower.includes('syntax error');
-      const containsInternalLeak = !isAdminRoute && INTERNAL_LEAK_PATTERNS.some(w => lower.includes(w));
-      if (isInternalStack || (!isAdminRoute && (containsInternalLeak || res.status >= 500))) {
+      const containsTechnicalLeak = !isAdminRoute && INTERNAL_LEAK_PATTERNS.some(w => lower.includes(w));
+      if (isInternalStack || (!isAdminRoute && (containsTechnicalLeak || res.status >= 500))) {
         throw new ParentApiError('Something went wrong', 'Please try again.', errorCode, data, res.status);
       }
       throw new ParentApiError(rawError, data?.description || 'Please try again.', errorCode, data, res.status);
     }
     return data as T;
+  },
+
+
+  async getSelectedParentsAudience(eventId: string, params?: { search?: string; status?: string; whatsappStatus?: string }) {
+    const q = new URLSearchParams();
+    q.append('eventId', eventId);
+    if (params?.search) q.append('search', params.search);
+    if (params?.status) q.append('status', params.status);
+    if (params?.whatsappStatus) q.append('whatsappStatus', params.whatsappStatus);
+    return api.request<SelectedParentsAudienceResponse>(`/api/admin/messages/selected-parents?${q.toString()}`);
+  },
+
+  async sendSelectedParentsChannelInvitations(payload: {
+    eventId: string;
+    parentIds: string[];
+    resend?: boolean;
+  }) {
+    return api.request<SelectedParentsSendResponse>('/api/admin/messages/selected-parents/send', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
   },
 
   async getRegistrationStatus(eventId?: string) {
@@ -250,6 +291,7 @@ export const api = {
         parentDashboardHero: { url: string | null; thumbnailUrl: string | null };
         volunteerDashboardHero: { url: string | null; thumbnailUrl: string | null };
         defaultEventHero: { url: string | null; thumbnailUrl: string | null };
+        heroFeatureImage?: { url: string | null; thumbnailUrl: string | null };
       };
     }>('/api/public/app-media');
   },
@@ -320,6 +362,8 @@ export const api = {
           opensAtFormatted: string | null;
           closesAtFormatted: string | null;
         };
+        parentRegistrationEnabled?: boolean;
+        volunteerRegistrationEnabled?: boolean;
         volunteer: {
           isOpen: boolean;
           state: 'open' | 'not_open_yet' | 'closed';
@@ -392,12 +436,13 @@ export const api = {
         body: JSON.stringify(profile)
       });
     },
-    async updateWhatsAppConsent(payload: { action: 'opt_in' | 'opt_out'; whatsappNumber?: string }) {
+    async updateWhatsAppConsent(payload: { action: 'opt_in' | 'opt_out'; whatsappNumber?: string; whatsappCountryIso?: string }) {
       return api.request<{ success: boolean; message: string; profile: any }>('/api/parent/whatsapp/consent', {
         method: 'POST',
         body: JSON.stringify(payload)
       });
     },
+
     async getChannelAccess() {
       return api.request<{
         success: boolean;
@@ -525,6 +570,158 @@ export const api = {
         method: 'PATCH',
         body: JSON.stringify(payload)
       });
+    },
+
+    messages: {
+      async listThreads(params?: { page?: number; limit?: number; category?: string; status?: string }) {
+        const q = new URLSearchParams();
+        if (params?.page) q.append('page', String(params.page));
+        if (params?.limit) q.append('limit', String(params.limit));
+        if (params?.category) q.append('category', params.category);
+        if (params?.status) q.append('status', params.status);
+        const qs = q.toString() ? `?${q.toString()}` : '';
+        return api.request<{
+          success: boolean;
+          threads: ParentMessageThread[];
+          pagination: { page: number; limit: number; total: number; totalPages: number; hasMore: boolean };
+        }>(`/api/parent/messages${qs}`);
+      },
+
+      async getUnreadCount() {
+        return api.request<{
+          success: boolean;
+          unreadThreadCount: number;
+          unreadMessageCount: number;
+          unreadCount: number;
+        }>('/api/parent/messages/unread-count');
+      },
+
+      async createThread(payload: {
+        category: 'general_support' | 'registration_support' | 'child_application';
+        subject: string;
+        body: string;
+        linkedChildId?: string | null;
+        linkedEntryId?: string | null;
+        eventId?: string | null;
+      }) {
+        return api.request<{
+          success: boolean;
+          thread: ParentMessageThread;
+          message: ParentMessage;
+          isReused?: boolean;
+        }>('/api/parent/messages', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+
+      async getThread(threadId: string) {
+        return api.request<{
+          success: boolean;
+          thread: ParentMessageThread;
+          participants: any[];
+        }>(`/api/parent/messages/${encodeURIComponent(threadId)}`);
+      },
+
+      async getMessages(threadId: string, params?: { page?: number; limit?: number }) {
+        const q = new URLSearchParams();
+        if (params?.page) q.append('page', String(params.page));
+        if (params?.limit) q.append('limit', String(params.limit));
+        const qs = q.toString() ? `?${q.toString()}` : '';
+        return api.request<{
+          success: boolean;
+          messages: ParentMessage[];
+          pagination: { page: number; limit: number; total: number; totalPages: number; hasMore: boolean };
+        }>(`/api/parent/messages/${encodeURIComponent(threadId)}/messages${qs}`);
+      },
+
+      async sendMessage(threadId: string, body: string) {
+        return api.request<{
+          success: boolean;
+          message: ParentMessage;
+        }>(`/api/parent/messages/${encodeURIComponent(threadId)}/messages`, {
+          method: 'POST',
+          body: JSON.stringify({ body })
+        });
+      },
+
+      async markRead(threadId: string) {
+        return api.request<{
+          success: boolean;
+          markedRead: boolean;
+        }>(`/api/parent/messages/${encodeURIComponent(threadId)}/read`, {
+          method: 'POST'
+        });
+      }
+    },
+
+    async getThreads(params?: { page?: number; limit?: number; category?: string; status?: string }) {
+      return api.parent.messages.listThreads(params);
+    },
+    async getThread(threadId: string) {
+      return api.parent.messages.getThread(threadId);
+    },
+    async getThreadMessages(threadId: string, params?: { page?: number; limit?: number }) {
+      return api.parent.messages.getMessages(threadId, params);
+    },
+    async sendMessage(threadId: string, body: string) {
+      return api.parent.messages.sendMessage(threadId, body);
+    },
+    async markThreadRead(threadId: string) {
+      return api.parent.messages.markRead(threadId);
+    },
+    async getUnreadMessageCount() {
+      return api.parent.messages.getUnreadCount();
+    },
+    async createThread(payload: {
+      category: 'general_support' | 'registration_support' | 'child_application';
+      subject: string;
+      body: string;
+      linkedChildId?: string | null;
+      linkedEntryId?: string | null;
+      eventId?: string | null;
+    }) {
+      return api.parent.messages.createThread(payload);
+    },
+
+    announcements: {
+      async list(params?: { page?: number; limit?: number }) {
+        const q = new URLSearchParams();
+        if (params?.page) q.append('page', String(params.page));
+        if (params?.limit) q.append('limit', String(params.limit));
+        const qs = q.toString() ? `?${q.toString()}` : '';
+        return api.request<{
+          success: boolean;
+          announcements: Announcement[];
+          total: number;
+          page: number;
+          limit: number;
+          totalPages: number;
+        }>(`/api/parent/announcements${qs}`);
+      },
+
+      async get(id: string) {
+        return api.request<{
+          success: boolean;
+          announcement: Announcement;
+        }>(`/api/parent/announcements/${encodeURIComponent(id)}`);
+      },
+
+      async getUnreadCount() {
+        return api.request<{
+          success: boolean;
+          unreadCount: number;
+        }>('/api/parent/announcements/unread-count');
+      },
+
+      async markRead(id: string) {
+        return api.request<{
+          success: boolean;
+          read_at: string;
+        }>(`/api/parent/announcements/${encodeURIComponent(id)}/read`, {
+          method: 'POST'
+        });
+      }
     }
   },
 
@@ -586,7 +783,7 @@ export const api = {
         body: JSON.stringify(profile)
       });
     },
-    async updateWhatsAppConsent(payload: { action: 'opt_in' | 'opt_out'; whatsappNumber?: string; whatsappCountryIso?: string }) {
+    async updateWhatsAppConsent(payload: { action: 'opt_in' | 'opt_out'; whatsappNumber?: string }) {
       return api.request<{ success: boolean; message: string; consentStatus: string; isDualRole?: boolean; profile?: any }>('/api/volunteer/whatsapp/consent', {
         method: 'POST',
         body: JSON.stringify(payload)
@@ -766,6 +963,122 @@ export const api = {
       return api.request<{ success: boolean; message: string }>(`/api/volunteer/safety-alerts/${id}/escalate`, {
         method: 'POST'
       });
+    },
+
+    messages: {
+      async listThreads(params?: { page?: number; limit?: number; category?: string; status?: string }) {
+        const q = new URLSearchParams();
+        if (params?.page) q.append('page', String(params.page));
+        if (params?.limit) q.append('limit', String(params.limit));
+        if (params?.category) q.append('category', params.category);
+        if (params?.status) q.append('status', params.status);
+        const qs = q.toString() ? `?${q.toString()}` : '';
+        return api.request<{
+          success: boolean;
+          threads: VolunteerMessageThread[];
+          pagination: { page: number; limit: number; total: number; totalPages: number; hasMore: boolean };
+        }>(`/api/volunteer/messages${qs}`);
+      },
+
+      async getUnreadCount() {
+        return api.request<{
+          success: boolean;
+          unreadThreadCount: number;
+          unreadMessageCount: number;
+          unreadCount: number;
+        }>('/api/volunteer/messages/unread-count');
+      },
+
+      async createThread(payload: { category: string; subject: string; body: string; eventId?: string }) {
+        return api.request<{
+          success: boolean;
+          thread: VolunteerMessageThread;
+          message: VolunteerMessage;
+          isReused?: boolean;
+        }>('/api/volunteer/messages', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      },
+
+      async getThread(threadId: string) {
+        return api.request<{
+          success: boolean;
+          thread: VolunteerMessageThread;
+          participants: any[];
+        }>(`/api/volunteer/messages/${encodeURIComponent(threadId)}`);
+      },
+
+      async getMessages(threadId: string, params?: { page?: number; limit?: number }) {
+        const q = new URLSearchParams();
+        if (params?.page) q.append('page', String(params.page));
+        if (params?.limit) q.append('limit', String(params.limit));
+        const qs = q.toString() ? `?${q.toString()}` : '';
+        return api.request<{
+          success: boolean;
+          messages: VolunteerMessage[];
+          pagination: { page: number; limit: number; total: number; totalPages: number; hasMore: boolean };
+        }>(`/api/volunteer/messages/${encodeURIComponent(threadId)}/messages${qs}`);
+      },
+
+      async sendMessage(threadId: string, body: string) {
+        return api.request<{
+          success: boolean;
+          message: VolunteerMessage;
+        }>(`/api/volunteer/messages/${encodeURIComponent(threadId)}/messages`, {
+          method: 'POST',
+          body: JSON.stringify({ body })
+        });
+      },
+
+      async markRead(threadId: string) {
+        return api.request<{
+          success: boolean;
+          markedRead: boolean;
+        }>(`/api/volunteer/messages/${encodeURIComponent(threadId)}/read`, {
+          method: 'POST'
+        });
+      }
+    },
+
+    announcements: {
+      async list(params?: { page?: number; limit?: number }) {
+        const q = new URLSearchParams();
+        if (params?.page) q.append('page', String(params.page));
+        if (params?.limit) q.append('limit', String(params.limit));
+        const qs = q.toString() ? `?${q.toString()}` : '';
+        return api.request<{
+          success: boolean;
+          announcements: Announcement[];
+          total: number;
+          page: number;
+          limit: number;
+          totalPages: number;
+        }>(`/api/volunteer/announcements${qs}`);
+      },
+
+      async get(id: string) {
+        return api.request<{
+          success: boolean;
+          announcement: Announcement;
+        }>(`/api/volunteer/announcements/${encodeURIComponent(id)}`);
+      },
+
+      async getUnreadCount() {
+        return api.request<{
+          success: boolean;
+          unreadCount: number;
+        }>('/api/volunteer/announcements/unread-count');
+      },
+
+      async markRead(id: string) {
+        return api.request<{
+          success: boolean;
+          read_at: string;
+        }>(`/api/volunteer/announcements/${encodeURIComponent(id)}/read`, {
+          method: 'POST'
+        });
+      }
     }
   },
 
@@ -931,26 +1244,6 @@ export const api = {
         body: JSON.stringify(payload)
       });
     }
-  },
-
-  async getSelectedParentsAudience(eventId: string, params?: { search?: string; status?: string; whatsappStatus?: string }): Promise<SelectedParentsAudienceResponse> {
-    const q = new URLSearchParams();
-    q.append('eventId', eventId);
-    if (params?.search) q.append('search', params.search);
-    if (params?.status) q.append('status', params.status);
-    if (params?.whatsappStatus) q.append('whatsappStatus', params.whatsappStatus);
-    return api.request<SelectedParentsAudienceResponse>(`/api/admin/messages/selected-parents?${q.toString()}`);
-  },
-
-  async sendSelectedParentsChannelInvitations(payload: {
-    eventId: string;
-    parentIds: string[];
-    resend?: boolean;
-  }): Promise<SelectedParentsSendResponse> {
-    return api.request<SelectedParentsSendResponse>('/api/admin/messages/selected-parents/send', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
   },
 
   admin: {
@@ -1267,12 +1560,92 @@ export const api = {
       }>(`/api/admin/applications${queryString ? `?${queryString}` : ''}`);
     },
     async getApplicationDetails(id: string) {
-      return api.request<{ success: boolean; application: any }>(`/api/admin/applications/${id}`);
+      return api.request<{ success: boolean; application: any; error?: string }>(`/api/admin/applications/${id}`);
     },
     async updateApplicationDetails(id: string, payload: any) {
       return api.request<any>(`/api/admin/applications/${id}`, {
         method: 'PUT',
         body: JSON.stringify(payload)
+      });
+    },
+    async previewCompletionReminder(entryId: string) {
+      return api.request<{
+        success: boolean;
+        eligible: boolean;
+        canSend: boolean;
+        entryId: string;
+        childId?: string;
+        child?: { id: string; firstName: string };
+        parent?: { id: string; firstName: string };
+        childFirstName?: string;
+        parentFirstName?: string;
+        registrationDeadline?: string;
+        subject: string;
+        prefilledBody?: string;
+        body?: string;
+        lastReminderSentAt: string | null;
+        cooldownEndsAt: string | null;
+        reason?: string;
+        missingSections?: string[];
+        whatsapp?: {
+          eligible: boolean;
+          reason?: string;
+          phone: string | null;
+          consentStatus: string;
+          lastSentAt: string | null;
+          cooldownEndsAt: string | null;
+          canSend: boolean;
+          defaultBody: string;
+        };
+      }>(`/api/admin/applications/${encodeURIComponent(entryId)}/completion-reminder`);
+    },
+    async sendCompletionReminder(
+      entryId: string,
+      body?: string,
+      channel: 'portal' | 'whatsapp' | 'both' = 'portal',
+      whatsappBody?: string,
+      ignoreCooldown?: boolean
+    ) {
+      return api.request<{
+        success: boolean;
+        messageId?: string;
+        threadId?: string;
+        lastReminderSentAt?: string;
+        lastWhatsAppSentAt?: string;
+        cooldownEndsAt?: string;
+        channels?: {
+          portal?: {
+            success: boolean;
+            messageId?: string;
+            threadId?: string;
+            error?: string;
+            cooldownEndsAt?: string;
+          };
+          whatsapp?: {
+            success: boolean;
+            deliveryLogId?: string;
+            providerMessageId?: string;
+            status?: string;
+            error?: string;
+            cooldownEndsAt?: string;
+          };
+        };
+        portal?: {
+          sent: boolean;
+          messageId?: string;
+          threadId?: string;
+          error?: string;
+        };
+        whatsapp?: {
+          sent: boolean;
+          status?: string;
+          error?: string;
+          skipped?: boolean;
+          reason?: string;
+        };
+      }>(`/api/admin/applications/${encodeURIComponent(entryId)}/completion-reminder`, {
+        method: 'POST',
+        body: JSON.stringify({ body, channel, whatsappBody, ignoreCooldown })
       });
     },
     async removeChild(id: string, reason: string) {
@@ -1369,8 +1742,13 @@ export const api = {
         body: JSON.stringify({ reason })
       });
     },
-    async returnApplicationToDraft(id: string, payload: { reason?: string; customMessage?: string; notifyEmail?: boolean; notifyWhatsApp?: boolean }) {
-      return api.request<any>(`/api/admin/applications/${id}/return-to-draft`, {
+    async returnApplicationToDraft(id: string, payload: {
+      reason?: string;
+      customMessage?: string;
+      notifyEmail?: boolean;
+      notifyWhatsApp?: boolean;
+    }) {
+      return api.request<{ success: boolean; message: string; newStatus: string; error?: string }>(`/api/admin/applications/${id}/return-to-draft`, {
         method: 'POST',
         body: JSON.stringify(payload)
       });
@@ -1642,6 +2020,162 @@ export const api = {
         lastUpdated?: string;
       }>(`/api/admin/messages/campaign-status/${campaignId}`);
     },
+    messages: {
+      async listThreads(params?: {
+        page?: number;
+        limit?: number;
+        status?: string;
+        category?: string;
+        participantRole?: string;
+        unreadOnly?: boolean;
+        search?: string;
+      }) {
+        const queryParams = new URLSearchParams();
+        if (params?.page) queryParams.append('page', params.page.toString());
+        if (params?.limit) queryParams.append('limit', params.limit.toString());
+        if (params?.status) queryParams.append('status', params.status);
+        if (params?.category) queryParams.append('category', params.category);
+        if (params?.participantRole) queryParams.append('participantRole', params.participantRole);
+        if (params?.unreadOnly) queryParams.append('unreadOnly', '1');
+        if (params?.search) queryParams.append('search', params.search);
+        const qs = queryParams.toString() ? `?${queryParams.toString()}` : '';
+        return api.request<{
+          success: boolean;
+          threads: AdminMessageThread[];
+          pagination: {
+            page: number;
+            limit: number;
+            total: number;
+            totalCount: number;
+            totalPages: number;
+            hasMore: boolean;
+          };
+        }>(`/api/admin/messages/threads${qs}`);
+      },
+      async getUnreadCount() {
+        return api.request<{
+          success: boolean;
+          unreadThreadCount: number;
+          unreadMessageCount: number;
+          unreadCount: number;
+        }>('/api/admin/messages/unread-count');
+      },
+      async getThread(threadId: string) {
+        return api.request<{
+          success: boolean;
+          thread: AdminMessageThread;
+          participants: AdminMessageParticipant[];
+        }>(`/api/admin/messages/threads/${encodeURIComponent(threadId)}`);
+      },
+      async getMessages(threadId: string, params?: { page?: number; limit?: number }) {
+        const queryParams = new URLSearchParams();
+        if (params?.page) queryParams.append('page', params.page.toString());
+        if (params?.limit) queryParams.append('limit', params.limit.toString());
+        const qs = queryParams.toString() ? `?${queryParams.toString()}` : '';
+        return api.request<{
+          success: boolean;
+          messages: ParentMessage[];
+          pagination: {
+            page: number;
+            limit: number;
+            total: number;
+            totalPages: number;
+            hasMore: boolean;
+          };
+        }>(`/api/admin/messages/threads/${encodeURIComponent(threadId)}/messages${qs}`);
+      },
+      async sendMessage(threadId: string, body: string) {
+        return api.request<{
+          success: boolean;
+          message: ParentMessage;
+          thread: AdminMessageThread;
+        }>(`/api/admin/messages/threads/${encodeURIComponent(threadId)}/messages`, {
+          method: 'POST',
+          body: JSON.stringify({ body })
+        });
+      },
+      async markRead(threadId: string) {
+        return api.request<{
+          success: boolean;
+          markedReadAt: string;
+        }>(`/api/admin/messages/threads/${encodeURIComponent(threadId)}/read`, {
+          method: 'POST'
+        });
+      },
+      async resolveThread(threadId: string) {
+        return api.request<{
+          success: boolean;
+          threadId: string;
+          status: string;
+        }>(`/api/admin/messages/threads/${encodeURIComponent(threadId)}/resolve`, {
+          method: 'POST'
+        });
+      },
+      async reopenThread(threadId: string) {
+        return api.request<{
+          success: boolean;
+          threadId: string;
+          status: string;
+        }>(`/api/admin/messages/threads/${encodeURIComponent(threadId)}/reopen`, {
+          method: 'POST'
+        });
+      }
+    },
+
+    announcements: {
+      async list(params?: { page?: number; limit?: number }) {
+        const q = new URLSearchParams();
+        if (params?.page) q.append('page', String(params.page));
+        if (params?.limit) q.append('limit', String(params.limit));
+        const qs = q.toString() ? `?${q.toString()}` : '';
+        return api.request<{
+          success: boolean;
+          announcements: Announcement[];
+          total: number;
+          page: number;
+          limit: number;
+          totalPages: number;
+        }>(`/api/admin/announcements${qs}`);
+      },
+
+      async get(id: string) {
+        return api.request<{
+          success: boolean;
+          announcement: Announcement;
+        }>(`/api/admin/announcements/${encodeURIComponent(id)}`);
+      },
+
+      async create(data: {
+        title: string;
+        body: string;
+        audience_type: string;
+        target_user_id?: string | null;
+        event_id?: string | null;
+      }) {
+        return api.request<{
+          success: boolean;
+          announcement: Announcement;
+        }>('/api/admin/announcements', {
+          method: 'POST',
+          body: JSON.stringify(data)
+        });
+      },
+
+      async getRecipients(params: { role: 'parent' | 'volunteer'; query?: string }) {
+        const q = new URLSearchParams();
+        q.append('role', params.role);
+        if (params.query) q.append('query', params.query);
+        return api.request<{
+          success: boolean;
+          recipients: Array<{ id: string; name: string; email: string }>;
+        }>(`/api/admin/announcements/recipients?${q.toString()}`);
+      },
+
+      async searchRecipients(params: { role: 'parent' | 'volunteer'; query?: string }) {
+        return api.admin.announcements.getRecipients(params);
+      }
+    },
+
     async getSelectedParentsAudience(eventId: string, params?: { search?: string; status?: string; whatsappStatus?: string }) {
       return api.getSelectedParentsAudience(eventId, params);
     },
@@ -1709,21 +2243,25 @@ export const api = {
         success: boolean;
         settings: {
           parentRegistrationEnabled: number;
+          volunteerRegistrationEnabled?: number;
           parentLoginEnabled: number;
           requiredChildPhoto: number;
           requiredParentPhoto: number;
           requiredMedicalNotes: number;
           requiredPickupPerson: number;
+          showVenueOnLanding?: number;
         };
       }>('/api/admin/general-settings');
     },
     async updateGeneralSettings(payload: {
       parentRegistrationEnabled: boolean;
+      volunteerRegistrationEnabled?: boolean;
       parentLoginEnabled: boolean;
       requiredChildPhoto: boolean;
       requiredParentPhoto: boolean;
       requiredMedicalNotes: boolean;
       requiredPickupPerson: boolean;
+      showVenueOnLanding?: boolean | number;
     }) {
       return api.request<{ success: boolean; message: string }>('/api/admin/general-settings', {
         method: 'POST',
@@ -1897,8 +2435,8 @@ export const api = {
       country?: string; 
       stateRegion?: string; 
       city?: string; 
-      hasChildren?: string;
-      hasLocation?: string;
+      hasChildren?: string; 
+      hasLocation?: string; 
       ageGroup?: string;
       eventId?: string;
     }) {
