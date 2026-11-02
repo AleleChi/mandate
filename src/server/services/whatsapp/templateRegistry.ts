@@ -263,19 +263,35 @@ export const ZOHO_TEMPLATE_REGISTRY: Record<string, ZohoTemplateDefinition> = {
   // 16. Selected Parents Channel Invitation
   selected_parent_channel: {
     intent: 'selected_parent_channel',
-    defaultAlias: 'koinonia_selected_parent_channel',
+    defaultAlias: 'selected-parent-channel-v2',
     envVarKeys: ['ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL', 'ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL'],
     category: 'parent',
     requiredMergeFields: ['parent_first_name', 'selected_child_names'],
-    description: 'WhatsApp Parents Channel invitation linking to verified portal (/parents/channel)'
+    description: 'WhatsApp Parents Channel invitation linking directly to official WhatsApp Channel in approved template body'
   },
   selected_parents_channel: {
     intent: 'selected_parent_channel',
-    defaultAlias: 'koinonia_selected_parent_channel',
+    defaultAlias: 'selected-parent-channel-v2',
     envVarKeys: ['ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL', 'ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL'],
     category: 'parent',
     requiredMergeFields: ['parent_first_name', 'selected_child_names'],
-    description: 'WhatsApp Parents Channel invitation linking to verified portal (/parents/channel) (alias)'
+    description: 'WhatsApp Parents Channel invitation linking directly to official WhatsApp Channel in approved template body (alias)'
+  },
+  koinonia_selected_parent_channel_v2: {
+    intent: 'selected_parent_channel',
+    defaultAlias: 'selected-parent-channel-v2',
+    envVarKeys: ['ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL', 'ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL'],
+    category: 'parent',
+    requiredMergeFields: ['parent_first_name', 'selected_child_names'],
+    description: 'Approved v2 WhatsApp Parents Channel invitation with direct channel URL in body'
+  },
+  selected_parent_channel_v2: {
+    intent: 'selected_parent_channel',
+    defaultAlias: 'selected-parent-channel-v2',
+    envVarKeys: ['ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL', 'ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL'],
+    category: 'parent',
+    requiredMergeFields: ['parent_first_name', 'selected_child_names'],
+    description: 'Approved v2 WhatsApp Parents Channel invitation with direct channel URL in body (alias)'
   },
 
   // 17. Post-Attendance Check-in Confirmation

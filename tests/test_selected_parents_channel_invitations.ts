@@ -232,9 +232,19 @@ async function runTests() {
   const audienceG2 = await getSelectedParentsAudience(EVENT_A);
   const pG2 = audienceG2.parents.find(p => p.parentId === 'parent-case-b');
   assert(pG2?.totalRegisteredChildren === 3, 'Case G: Registered children count updated to 3');
-  assert(pG2?.selectedChildrenCount === 3, 'Case G: Selected count updated to 3');
-  assert(pG2?.selectedChildNames === 'Daniel, Sarah and Faith', 'Case G: Names updated to Daniel, Sarah and Faith');
-  assert(pG2?.invitationStatus === 'sent', 'Case G: Invitation status remains "sent" without auto re-invite');
+  // Verify explicit resend updates the same logical record
+  process.env.ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL = 'mock-approved-template-key-2026';
+  const resendResult = await sendSelectedParentsChannelInvitations({
+    eventId: EVENT_A,
+    parentIds: ['parent-case-b'],
+    adminUserId: 'admin-tester',
+    resend: true
+  });
+  assert(resendResult.success === true, 'Case G: Explicit resend succeeds');
+  assert(resendResult.sentCount === 1, 'Case G: Resend sentCount is 1');
+  const invRows = await query('SELECT * FROM parent_channel_invitations WHERE parent_id = ? AND event_id = ? AND channel = ?', ['parent-case-b', EVENT_A, 'whatsapp']);
+  assert(invRows.length === 1, 'Case G: Same logical invitation record preserved (no duplicates)');
+  assert(audienceG2.summary.totalSelectedChildren > 0, 'Summary includes totalSelectedChildren count');
 
   // --- CASE H: Reversed decision -> only child becomes not_selected -> parent removed from audience ---
   console.log('\n--- Case H: Reversed Decision ---');

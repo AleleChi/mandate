@@ -39,6 +39,8 @@ export interface AudienceChildDetail {
   status: string;
   ageGroup: string | null;
   isSelected: boolean;
+  dateOfBirth?: string | null;
+  calculatedAge?: number | null;
 }
 
 export interface SelectedParentRecord {
@@ -73,6 +75,7 @@ export interface SelectedParentsAudienceResult {
   templateKeyOrAlias: string | null;
   summary: {
     totalEligibleParents: number;
+    totalSelectedChildren: number;
     invitationsNotSent: number;
     invitationsSent: number;
     invitationsFailed: number;
@@ -165,6 +168,8 @@ export async function getSelectedParentsAudience(
        c.id AS child_id,
        c.full_name AS child_name,
        c.age_group AS child_age_group,
+       c.date_of_birth AS child_dob,
+       c.calculated_age AS child_calculated_age,
        cee.id AS entry_id,
        cee.status AS child_status,
        pci.id AS invitation_id,
@@ -196,14 +201,7 @@ export async function getSelectedParentsAudience(
   // Group by parent_id
   const parentMap = new Map<string, {
     parent: any;
-    children: Array<{
-      id: string;
-      fullName: string;
-      firstName: string;
-      status: string;
-      ageGroup: string | null;
-      isSelected: boolean;
-    }>;
+    children: AudienceChildDetail[];
     invitation: any;
   }>();
 
@@ -242,7 +240,9 @@ export async function getSelectedParentsAudience(
       firstName: extractFirstName(row.child_name),
       status: row.child_status,
       ageGroup: row.child_age_group || null,
-      isSelected
+      isSelected,
+      dateOfBirth: row.child_dob || null,
+      calculatedAge: row.child_calculated_age !== null && row.child_calculated_age !== undefined ? Number(row.child_calculated_age) : null
     });
   }
 
@@ -309,8 +309,10 @@ export async function getSelectedParentsAudience(
   }
 
   // Global summary metrics across all eligible parents
+  const totalSelectedChildren = allEligibleRecords.reduce((sum, p) => sum + p.selectedChildrenCount, 0);
   const summary = {
     totalEligibleParents: allEligibleRecords.length,
+    totalSelectedChildren,
     invitationsNotSent: allEligibleRecords.filter(p => p.invitationStatus === 'not_sent').length,
     invitationsSent: allEligibleRecords.filter(p => p.invitationStatus === 'sent').length,
     invitationsFailed: allEligibleRecords.filter(p => p.invitationStatus === 'failed').length,
@@ -452,13 +454,8 @@ export async function sendSelectedParentsChannelInvitations(params: {
   const eventTitle = event?.title || 'Koinonia General Assembly Children\'s Session 2026';
 
   const provider = getWhatsAppProvider();
-  // Meta policy prohibits direct WhatsApp URLs in template buttons ("Buttons cannot contain direct links to WhatsApp").
-  // The CTA destination for the template points to the first-party Koinonia protected portal route:
-  const channelUrl = (
-    process.env.PUBLIC_APP_URL
-      ? `${process.env.PUBLIC_APP_URL.replace(/\/+$/, '')}/parents/channel`
-      : 'https://koinonia12.netlify.app/parents/channel'
-  );
+  // Approved template koinonia_selected_parent_channel_v2 embeds the direct WhatsApp Channel link directly in message body.
+  // Static destination: https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U
 
   let sentCount = 0;
   let skippedCount = 0;
@@ -594,8 +591,7 @@ export async function sendSelectedParentsChannelInvitations(params: {
       parentFirstName,
       parentFullName: parent.full_name,
       selectedChildNames,
-      eventName: eventTitle,
-      channelUrl
+      eventName: eventTitle
     });
 
     const validation = validateMergeInfo(
@@ -617,7 +613,7 @@ export async function sendSelectedParentsChannelInvitations(params: {
     // 7. Dispatch message
     const now = new Date().toISOString();
     const idempotencyKey = `pci:${eventId}:${parentId}:${Date.now()}`;
-    const messageBody = `Hello ${parentFirstName}, you are invited to join the verified Parents Channel for ${eventTitle}. Selected children: ${selectedChildNames}. Access link: ${channelUrl}`;
+    const messageBody = `Hi ${parentFirstName}, selection has been confirmed for ${selectedChildNames} for the Koinonia General Assembly Children's Session 2026.\n\nPlease follow the official Parents Channel for important Children's Session updates, including arrival, check-in and pickup information:\n\nhttps://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U\n\nThis channel is for registered parents and guardians of selected children only. Please do not share this link with others.`;
 
     try {
       const sendResult = await provider.sendSessionMessage({
@@ -626,7 +622,6 @@ export async function sendSelectedParentsChannelInvitations(params: {
         intent: 'selected_parent_channel',
         templateKey: templateKey || undefined,
         mergeInfo,
-        channelUrl,
         idempotencyKey
       });
 
@@ -645,7 +640,7 @@ export async function sendSelectedParentsChannelInvitations(params: {
           parentId,
           eventId,
           templateKey,
-          templateAlias: 'koinonia_selected_parent_channel',
+          templateAlias: 'selected-parent-channel-v2',
           provider: provider.name,
           providerMessageId: messageId,
           initiatingAdminUserId: adminUserId,
@@ -660,7 +655,7 @@ export async function sendSelectedParentsChannelInvitations(params: {
           recipientPhone: candidate.normalizedNumber,
           provider: provider.name,
           providerMessageId: messageId,
-          templateName: templateKey || 'koinonia_selected_parent_channel',
+          templateName: templateKey || 'koinonia_selected_parent_channel_v2',
           status: sendResult.status === 'queued' ? 'queued' : 'sent',
           sentAt: now
         });
