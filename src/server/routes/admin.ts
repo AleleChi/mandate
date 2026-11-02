@@ -61,7 +61,8 @@ import {
   CANONICAL_MAX_AGE,
   resolveCanonicalAgeGroup,
   getDobCutoffsForEvent,
-  CANONICAL_PROGRAMME_AGE_GROUPS
+  CANONICAL_PROGRAMME_AGE_GROUPS,
+  parseAssignedAgeGroups
 } from '../services/eligibilityService';
 import {
   getSelectedParentsAudience,
@@ -3428,13 +3429,13 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
       if (finalStatus === 'pass_ready') {
         subject = isPlural ? `Koinonia Event Passes Ready for ${formattedChildNames}!` : 'Koinonia Event Pass Ready!';
         message = `Hello ${pName},\n\nWe are delighted to inform you that ${formattedChildNames} ${verb} been selected to attend the upcoming Koinonia Children and Teens Event!\n\n${passNoun} now ready in your portal. Please log in to download and keep handy during check-in.\n\nWarm regards,\nKoinonia Children and Teens Team`;
-        const channelSection = buildParentsChannelEmailSection('https://koinonia12.netlify.app/parents/channel');
+        const channelSection = buildParentsChannelEmailSection();
         channelSectionHtml = channelSection.html;
         channelSectionText = `\n\n${channelSection.text}`;
       } else if (finalStatus === 'selected') {
         subject = isPlural ? `Koinonia Applications Selected for ${formattedChildNames}!` : 'Koinonia Application Selected!';
         message = `Hello ${pName},\n\nWe are delighted to inform you that ${formattedChildNames} ${verb} been selected to attend the upcoming Koinonia Children and Teens Event!\n\nOur team is finalizing your event details. ${passNounFuture}\n\nWarm regards,\nKoinonia Children and Teens Team`;
-        const channelSection = buildParentsChannelEmailSection('https://koinonia12.netlify.app/parents/channel');
+        const channelSection = buildParentsChannelEmailSection();
         channelSectionHtml = channelSection.html;
         channelSectionText = `\n\n${channelSection.text}`;
       } else if (finalStatus === 'waiting_list') {
@@ -3473,8 +3474,7 @@ router.post('/applications/:id/review', async (req: AuthenticatedRequest, res: R
                 parentId: app.parent_profile_id,
                 eventId: app.event_id,
                 channel: 'email',
-                selectedChildNames: selectedChildrenNames,
-                status: 'sent'
+                selectedChildNames: formattedChildNames
               });
             } catch (trackErr) {
               console.error('Failed to record email channel invitation tracking:', trackErr);
@@ -4063,13 +4063,13 @@ router.post('/applications/bulk-review', authMiddleware, async (req: Authenticat
         if (finalDecision === 'pass_ready') {
           subject = isPlural ? `Koinonia Event Passes Ready for ${formattedChildNames}!` : 'Koinonia Event Pass Ready!';
           message = `Hello ${pName},\n\nWe are delighted to inform you that ${formattedChildNames} ${verb} been selected to attend the upcoming Koinonia Children and Teens Event!\n\n${passNoun} now ready in your portal. Please log in to download and keep handy during check-in.\n\nWarm regards,\nKoinonia Children and Teens Team`;
-          const channelSection = buildParentsChannelEmailSection('https://koinonia12.netlify.app/parents/channel');
+          const channelSection = buildParentsChannelEmailSection();
           channelSectionHtml = channelSection.html;
           channelSectionText = `\n\n${channelSection.text}`;
         } else if (finalDecision === 'selected') {
           subject = isPlural ? `Koinonia Applications Selected for ${formattedChildNames}!` : 'Koinonia Application Selected!';
           message = `Hello ${pName},\n\nWe are delighted to inform you that ${formattedChildNames} ${verb} been selected to attend the upcoming Koinonia Children and Teens Event!\n\nOur team is finalizing your event details. ${passNounFuture}\n\nWarm regards,\nKoinonia Children and Teens Team`;
-          const channelSection = buildParentsChannelEmailSection('https://koinonia12.netlify.app/parents/channel');
+          const channelSection = buildParentsChannelEmailSection();
           channelSectionHtml = channelSection.html;
           channelSectionText = `\n\n${channelSection.text}`;
         } else if (finalDecision === 'waiting_list') {
@@ -4104,8 +4104,7 @@ router.post('/applications/bulk-review', authMiddleware, async (req: Authenticat
                   parentId: app.parent_profile_id,
                   eventId: app.event_id,
                   channel: 'email',
-                  selectedChildNames: selectedChildrenNames,
-                  status: 'sent'
+                  selectedChildNames: formattedChildNames
                 });
               } catch (trackErr) {
                 console.error('Failed to record email channel invitation tracking in bulk review:', trackErr);
@@ -10185,6 +10184,25 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
     const paginatedParams = [...queryParams, limit, offset];
 
     const rows = await query(queryStr, paginatedParams);
+    const currentEventId = await getCurrentEventId();
+    const userIds = rows.map((v: any) => v.user_id).filter(Boolean);
+    const assignmentMap = new Map<string, { assignedTeam?: string; assignedAgeGroups: string[] }>();
+    if (currentEventId && userIds.length > 0) {
+      const placeholders = userIds.map(() => '?').join(',');
+      const duties = await query(
+        `SELECT user_id, team_key, assigned_age_groups 
+         FROM event_duty_assignments 
+         WHERE event_id = ? AND user_id IN (${placeholders}) AND status != 'cancelled'`,
+        [currentEventId, ...userIds]
+      );
+      for (const d of duties) {
+        assignmentMap.set(d.user_id, {
+          assignedTeam: d.team_key || undefined,
+          assignedAgeGroups: parseAssignedAgeGroups(d.assigned_age_groups)
+        });
+      }
+    }
+
     const formatted = rows.map((v: any) => ({
       id: v.id,
       userId: v.user_id,
@@ -10194,7 +10212,8 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
       isKoinoniaWorker: v.is_koinonia_worker === 1,
       department: v.department,
       preferredTeam: v.preferred_team,
-      assignedTeam: v.preferred_team,
+      assignedTeam: assignmentMap.get(v.user_id)?.assignedTeam || v.preferred_team,
+      assignedAgeGroups: assignmentMap.get(v.user_id)?.assignedAgeGroups || [],
       servingExperience: v.serving_experience,
       note: v.note,
       status: v.status || 'pending_review',
@@ -10411,6 +10430,22 @@ router.get('/volunteers/:id', async (req: AuthenticatedRequest, res: Response) =
       return res.status(404).json({ success: false, error: 'Volunteer not found' });
     }
 
+    const currentEventId = await getCurrentEventId();
+    let assignedAgeGroups: string[] = [];
+    let assignedTeam = v.preferred_team;
+    if (currentEventId && v.user_id) {
+      const duty = await queryOne(
+        `SELECT team_key, assigned_age_groups 
+         FROM event_duty_assignments 
+         WHERE event_id = ? AND user_id = ? AND status != 'cancelled'`,
+        [currentEventId, v.user_id]
+      );
+      if (duty) {
+        if (duty.team_key) assignedTeam = duty.team_key;
+        assignedAgeGroups = parseAssignedAgeGroups(duty.assigned_age_groups);
+      }
+    }
+
     const formatted = {
       id: v.id,
       userId: v.user_id,
@@ -10420,6 +10455,8 @@ router.get('/volunteers/:id', async (req: AuthenticatedRequest, res: Response) =
       isKoinoniaWorker: v.is_koinonia_worker === 1,
       department: v.department,
       preferredTeam: v.preferred_team,
+      assignedTeam,
+      assignedAgeGroups,
       servingExperience: v.serving_experience,
       note: v.note,
       status: v.status,
@@ -10439,17 +10476,17 @@ router.get('/volunteers/:id', async (req: AuthenticatedRequest, res: Response) =
   }
 });
 
-// PATCH /api/admin/volunteers/:id/assignment - Update team assignment of a volunteer
+// PATCH /api/admin/volunteers/:id/assignment - Update team and age-group assignment of a volunteer
 router.patch('/volunteers/:id/assignment', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+    if (!req.user || !['admin', 'super_admin', 'team'].includes(req.user.role)) {
       return res.status(403).json({ success: false, error: 'Admin access required' });
     }
     const id = req.params.id;
-    const { assignedTeam } = req.body;
+    const { assignedTeam, assignedAgeGroups } = req.body;
 
-    if (!assignedTeam) {
-      return res.status(400).json({ success: false, error: 'Assigned team is required' });
+    if (!assignedTeam && assignedAgeGroups === undefined) {
+      return res.status(400).json({ success: false, error: 'Assigned team or age groups required' });
     }
 
     const v = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [id]);
@@ -10458,13 +10495,57 @@ router.patch('/volunteers/:id/assignment', async (req: AuthenticatedRequest, res
     }
 
     const nowStr = new Date().toISOString();
-    await execute(`
-      UPDATE volunteer_profiles 
-      SET preferred_team = ?, updated_at = ?
-      WHERE id = ?
-    `, [assignedTeam, nowStr, id]);
+    if (assignedTeam) {
+      await execute(`
+        UPDATE volunteer_profiles 
+        SET preferred_team = ?, updated_at = ?
+        WHERE id = ?
+      `, [assignedTeam, nowStr, id]);
+    }
 
-    return res.json({ success: true, message: 'Volunteer team assignment updated successfully' });
+    const currentEventId = await getCurrentEventId();
+    if (currentEventId && v.user_id) {
+      const existingDuty = await queryOne(
+        `SELECT id, assigned_age_groups FROM event_duty_assignments WHERE event_id = ? AND user_id = ? AND status != 'cancelled'`,
+        [currentEventId, v.user_id]
+      );
+
+      const parsedGroups = assignedAgeGroups !== undefined ? parseAssignedAgeGroups(assignedAgeGroups) : (existingDuty ? parseAssignedAgeGroups(existingDuty.assigned_age_groups) : []);
+      const jsonAgeGroups = JSON.stringify(parsedGroups);
+
+      if (existingDuty) {
+        await execute(
+          `UPDATE event_duty_assignments SET assigned_age_groups = ?, team_key = COALESCE(?, team_key), updated_at = ? WHERE id = ?`,
+          [jsonAgeGroups, assignedTeam || null, nowStr, existingDuty.id]
+        );
+      } else {
+        const dutyId = `eda-${crypto.randomUUID()}`;
+        await execute(`
+          INSERT INTO event_duty_assignments (
+            id, event_id, user_id, responsibility_key, team_key, assigned_age_groups, status, starts_at, ends_at, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          dutyId,
+          currentEventId,
+          v.user_id,
+          'volunteer',
+          assignedTeam || v.preferred_team || 'general',
+          jsonAgeGroups,
+          'scheduled',
+          nowStr,
+          nowStr,
+          nowStr,
+          nowStr
+        ]);
+      }
+    }
+
+    return res.json({ 
+      success: true, 
+      message: 'Volunteer assignment updated successfully',
+      assignedTeam,
+      assignedAgeGroups: assignedAgeGroups !== undefined ? parseAssignedAgeGroups(assignedAgeGroups) : undefined
+    });
   } catch (err: any) {
     console.error('Error updating volunteer assignment:', err);
     return res.status(500).json({ success: false, error: 'Failed to update volunteer assignment' });
@@ -12698,7 +12779,7 @@ router.post('/applications/:id/reset-event-state', authMiddleware, async (req: A
           if (activeAssignment) {
             await deactivateAssignment({
               assignmentId: activeAssignment.id,
-              deactivatedBy: adminId,
+              deactivatedByUserId: adminId,
               deactivationReason: 'manual_test_reset'
             });
           }

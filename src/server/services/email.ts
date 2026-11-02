@@ -455,13 +455,15 @@ export async function sendChildReviewReceivedEmail(params: {
   return sendEmail({ to: params.parentEmail, subject, html, text });
 }
 
+/** Immutable destination for the Parents Channel CTA in every email. Never route through a portal or login page. */
+const PARENTS_CHANNEL_URL = 'https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U';
+
 /**
  * Renders the dedicated Parents Channel invitation section for successful selection / pass-ready emails.
- * Links directly to the WhatsApp channel so parents can join with one tap.
+ * Always links directly to the official WhatsApp channel — no portal, no login redirect.
  */
-export function buildParentsChannelEmailSection(channelUrl: string = 'https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U') {
-  const officialUrl = 'https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U';
-  const targetUrl = (channelUrl && channelUrl.includes('whatsapp.com/channel/')) ? channelUrl : officialUrl;
+export function buildParentsChannelEmailSection() {
+  const targetUrl = PARENTS_CHANNEL_URL;
 
   const html = `
     <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid #EAE8E1;">
@@ -539,12 +541,11 @@ export async function sendChildReviewDecisionEmail(params: {
 
   const resolvedStatusLink = params.statusLink || buildPublicAppUrl('/parent/children');
   const resolvedPassLink = params.passLink || resolvedStatusLink;
-  const channelPortalUrl = 'https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U';
 
   if (statusLower === 'selected' || statusLower === 'pass_ready' || statusLower === 'approved' || statusLower === 'active') {
     subject = isPlural ? `Event passes ready for ${formattedChildNames}` : `${formattedChildNames}${suffix} event pass is ready`;
     const passWord = isPlural ? 'The event passes are' : 'The event pass is';
-    const channelSection = buildParentsChannelEmailSection(channelPortalUrl);
+    const channelSection = buildParentsChannelEmailSection();
 
     bodyHtml = `
       <p style="margin-top: 0;">${greeting}</p>
@@ -720,8 +721,7 @@ export async function sendPassReadyEmail(params: {
   const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
   const subject = isPlural ? `Event passes ready for ${formattedChildNames}` : `${formattedChildNames}${suffix} event pass is ready`;
   const passWord = isPlural ? 'The event passes are' : 'The event pass is';
-  const channelPortalUrl = 'https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U';
-  const channelSection = buildParentsChannelEmailSection(channelPortalUrl);
+  const channelSection = buildParentsChannelEmailSection();
   
   const bodyHtml = `
     <p style="margin-top: 0;">${greeting}</p>

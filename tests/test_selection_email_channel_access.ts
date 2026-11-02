@@ -109,7 +109,7 @@ describe('Selection & Pass-Ready Email Parents Channel Access Verification', () 
     assert.equal(tracking, null, 'Non-selected email must NOT create a parent_channel_invitations record');
   });
 
-  it('6. sendPassReadyEmail adds Parents Channel CTA pointing to /parents/channel and records email delivery', async () => {
+  it('6. sendPassReadyEmail adds Parents Channel CTA with direct WhatsApp URL and records email delivery', async () => {
     const result = await sendPassReadyEmail({
       parentEmail: 'parent_passready_test@example.com',
       parentFirstName: 'Elizabeth',
@@ -143,11 +143,13 @@ describe('Selection & Pass-Ready Email Parents Channel Access Verification', () 
     assert.equal(waTracking, null, 'Email delivery must NOT mark channel = whatsapp');
   });
 
-  it('7. Zoho WhatsApp provider forces CTA destination to /parents/channel and sanitizes direct WhatsApp links', () => {
+  it('7. Zoho WhatsApp provider sanitizeChannelUrl redirects direct WhatsApp links to portal (WhatsApp messages only, not email)', () => {
     const rawWaLink = 'https://whatsapp.com/channel/0029VbE5UslCHDykcFlf3y0U';
     const sanitized = ZohoWhatsAppProvider.sanitizeChannelUrl(rawWaLink);
 
-    assert.notEqual(sanitized, rawWaLink, 'Direct whatsapp.com channel link must be stripped');
+    // For WhatsApp template messages, direct whatsapp.com links are not allowed by the provider
+    // so they are redirected to the first-party portal. This does NOT affect email CTAs.
+    assert.notEqual(sanitized, rawWaLink, 'Direct whatsapp.com channel link must be stripped for WhatsApp messages');
     assert.equal(sanitized, 'https://koinonia12.netlify.app/parents/channel');
 
     // Also verify when channelUrl is undefined or empty string
