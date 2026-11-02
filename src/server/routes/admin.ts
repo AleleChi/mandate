@@ -11825,17 +11825,32 @@ router.get('/children/:childId/pass', authMiddleware, async (req: AuthenticatedR
 router.post('/children/:childId/pass/generate', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { childId } = req.params;
-    
-    // First let's check if the child has registration
-    const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ?', [childId]);
+    const targetEventId = (req.body?.eventId || req.query?.eventId) as string | undefined;
+
+    let entry = null;
+    if (targetEventId) {
+      entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, targetEventId]);
+    }
+    if (!entry) {
+      const currentEventId = await getCurrentEventId();
+      if (currentEventId) {
+        entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, currentEventId]);
+      }
+    }
+    if (!entry) {
+      entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? ORDER BY created_at DESC LIMIT 1', [childId]);
+    }
     if (!entry) {
       return res.status(404).json({ success: false, error: 'Child registration not found' });
     }
 
-    const pass = await issuePassForChild({ childId });
+    const pass = await issuePassForChild({ childId, eventId: entry.event_id });
     if (!pass) {
       return res.status(400).json({ success: false, error: 'Failed to issue pass' });
     }
+
+    const updatedEntry = await queryOne('SELECT status FROM child_event_entries WHERE id = ?', [entry.id]);
+    const entryStatus = updatedEntry?.status || 'pass_ready';
 
     const child = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
     const childFirstName = child ? child.full_name.split(' ')[0] : 'Child';
@@ -11863,6 +11878,7 @@ router.post('/children/:childId/pass/generate', authMiddleware, async (req: Auth
 
     return res.json({
       success: true,
+      entryStatus,
       pass: {
         id: pass.id,
         passReference: pass.pass_reference,
@@ -11872,6 +11888,41 @@ router.post('/children/:childId/pass/generate', authMiddleware, async (req: Auth
     });
   } catch (err: any) {
     console.error('Error in POST /api/admin/children/:childId/pass/generate:', err);
+    return res.status(400).json({ success: false, error: err.message || 'Failed to generate pass' });
+  }
+});
+
+router.post('/applications/:id/pass/generate', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    let entry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [id]);
+    if (!entry) {
+      entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? ORDER BY created_at DESC LIMIT 1', [id]);
+    }
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Child registration not found' });
+    }
+
+    const pass = await issuePassForChild({ childId: entry.child_id, eventId: entry.event_id });
+    if (!pass) {
+      return res.status(400).json({ success: false, error: 'Failed to issue pass' });
+    }
+
+    const updatedEntry = await queryOne('SELECT status FROM child_event_entries WHERE id = ?', [entry.id]);
+    const entryStatus = updatedEntry?.status || 'pass_ready';
+
+    return res.json({
+      success: true,
+      entryStatus,
+      pass: {
+        id: pass.id,
+        passReference: pass.pass_reference,
+        status: pass.status,
+        issuedAt: pass.issued_at
+      }
+    });
+  } catch (err: any) {
+    console.error('Error in POST /api/admin/applications/:id/pass/generate:', err);
     return res.status(400).json({ success: false, error: err.message || 'Failed to generate pass' });
   }
 });

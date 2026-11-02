@@ -249,4 +249,64 @@ describe('Pass Idempotency, Approval Coherence, and Parent Passes Regression Sui
     assert.ok(error, 'Must throw when child is not registered for specified event');
     assert.ok(error.message.includes('Child event registration not found'));
   });
+
+  it('Test J: Historical selected child with no pass -> generate pass -> entry promoted to pass_ready', async () => {
+    // Exactly simulates Bethertrade's stale production state: entry status is 'selected', no pass in event_passes
+    const { childId, entryId } = await createTestChildWithEntry('Bethertrade StaleSelected', 'selected', true);
+
+    // Verify initial condition: selected, 0 passes in database
+    const initialEntry = await queryOne('SELECT status FROM child_event_entries WHERE id = ?', [entryId]);
+    assert.equal(initialEntry?.status, 'selected');
+    const initialPasses = await query('SELECT * FROM event_passes WHERE child_event_entry_id = ?', [entryId]);
+    assert.equal(initialPasses.length, 0);
+
+    // Simulate Admin calling generate pass
+    const pass = await issuePassForChild({ childId, eventId: testEventId });
+
+    assert.ok(pass, 'Pass must be issued');
+    assert.equal(pass.status, 'active');
+    assert.equal(pass.child_event_entry_id, entryId);
+
+    // Check entry status promoted to pass_ready
+    const updatedEntry = await queryOne('SELECT status FROM child_event_entries WHERE id = ?', [entryId]);
+    assert.equal(updatedEntry?.status, 'pass_ready');
+
+    // Exactly 1 pass row
+    const finalPasses = await query('SELECT * FROM event_passes WHERE child_event_entry_id = ?', [entryId]);
+    assert.equal(finalPasses.length, 1);
+
+    // Parent Passes API now returns the active pass
+    const parentPasses = await getPassesForParent(testParentId, testEventId);
+    const childPass = parentPasses.passes.find(p => p.childId === childId);
+    assert.ok(childPass, 'Child pass should now appear in parent passes');
+    assert.equal(childPass?.status, 'ready');
+    assert.equal(childPass?.passCode, pass.pass_reference);
+  });
+
+  it('Test K: Selected child with active pass -> reconcile without duplicate', async () => {
+    // Child has status 'selected' but an active pass already exists
+    const { childId, entryId } = await createTestChildWithEntry('Bethertrade SelectedActive', 'selected', true);
+
+    const existingPassId = `pass-act-${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+    await execute(`
+      INSERT INTO event_passes (id, child_event_entry_id, pass_reference, pass_hash, status, issued_at, created_at, updated_at)
+      VALUES (?, ?, 'KOI-2026-ACTIVE1', 'activehash1', 'active', ?, ?, ?)
+    `, [existingPassId, entryId, now, now, now]);
+
+    // Admin calls generate/issue pass
+    const pass = await issuePassForChild({ childId, eventId: testEventId });
+
+    assert.equal(pass.id, existingPassId, 'Must return the existing active pass');
+    assert.equal(pass.pass_reference, 'KOI-2026-ACTIVE1');
+    assert.equal(pass.status, 'active');
+
+    // Entry status must be reconciled to pass_ready
+    const updatedEntry = await queryOne('SELECT status FROM child_event_entries WHERE id = ?', [entryId]);
+    assert.equal(updatedEntry?.status, 'pass_ready');
+
+    // No duplicate passes created
+    const finalPasses = await query('SELECT * FROM event_passes WHERE child_event_entry_id = ?', [entryId]);
+    assert.equal(finalPasses.length, 1);
+  });
 });
