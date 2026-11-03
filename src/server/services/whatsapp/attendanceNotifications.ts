@@ -3,6 +3,7 @@ import { evaluateWhatsAppEligibility } from './consent';
 import { extractFirstName, buildMergeInfo } from './personalization';
 import { logWhatsAppDelivery } from './worker';
 import { sendWhatsApp } from '../notifications';
+import { resolveZohoTemplateConfig } from './zohoProvider';
 
 export interface AttendanceNotificationResult {
   sent: boolean;
@@ -113,6 +114,29 @@ export async function dispatchCheckInWhatsAppNotification(params: {
 
     const fallbackBody = `Hi ${parentFirstName}, ${childFirstName} has been checked in successfully for the Koinonia General Assembly Children's Session.\n\nCheck-in time: ${checkinTimeStr}.\n\nWe will continue to keep you updated during the session.`;
 
+    // Safe pre-check: verify check-in template configuration before outbound dispatch
+    const effectiveProvider = (process.env.WHATSAPP_PROVIDER || 'zoho').toLowerCase();
+    if (effectiveProvider === 'zoho') {
+      const templateConfig = resolveZohoTemplateConfig('child_checked_in');
+      if (!templateConfig) {
+        console.log('[WhatsApp] child_checked_in template not configured; notification skipped.');
+        await logWhatsAppDelivery({
+          childEventEntryId,
+          parentProfileId: entry.parent_id,
+          recipientPhone: eligibility.normalizedNumber,
+          provider: 'zoho',
+          providerMessageId: idempotencyKey,
+          templateName: 'koinonia_child_checked_in',
+          status: 'failed',
+          errorCode: 'TEMPLATE_NOT_CONFIGURED',
+          errorMessage: 'child_checked_in template not configured; notification skipped.',
+          failedAt: new Date().toISOString()
+        }).catch(err => console.error('[dispatchCheckInWhatsAppNotification] log failure:', err));
+
+        return { sent: false, reason: 'TEMPLATE_NOT_CONFIGURED' };
+      }
+    }
+
     const result = await sendWhatsApp(
       eligibility.normalizedNumber,
       fallbackBody,
@@ -125,6 +149,15 @@ export async function dispatchCheckInWhatsAppNotification(params: {
       }
     );
 
+    const isUnconfigured = !result.success && (
+      result.error === 'ZOHO_TEMPLATE_NOT_CONFIGURED' ||
+      result.error === 'TEMPLATE_NOT_CONFIGURED'
+    );
+
+    if (isUnconfigured) {
+      console.log('[WhatsApp] child_checked_in template not configured; notification skipped.');
+    }
+
     // Record delivery attempt in audit log
     await logWhatsAppDelivery({
       childEventEntryId,
@@ -134,7 +167,7 @@ export async function dispatchCheckInWhatsAppNotification(params: {
       providerMessageId: result.messageSid || idempotencyKey,
       templateName: 'koinonia_child_checked_in',
       status: result.success ? 'sent' : 'failed',
-      errorCode: result.success ? idempotencyKey : (result.error || 'SEND_FAILED'),
+      errorCode: result.success ? idempotencyKey : (isUnconfigured ? 'TEMPLATE_NOT_CONFIGURED' : (result.error || 'SEND_FAILED')),
       errorMessage: result.error,
       sentAt: result.success ? new Date().toISOString() : null,
       failedAt: !result.success ? new Date().toISOString() : null
@@ -143,7 +176,7 @@ export async function dispatchCheckInWhatsAppNotification(params: {
     return {
       sent: result.success,
       messageId: result.messageSid,
-      reason: result.error
+      reason: isUnconfigured ? 'TEMPLATE_NOT_CONFIGURED' : result.error
     };
   } catch (err: any) {
     console.error('[dispatchCheckInWhatsAppNotification] error:', err);
@@ -256,6 +289,29 @@ export async function dispatchPickupWhatsAppNotification(params: {
       fallbackBody = `Hi ${parentFirstName}, ${childFirstName} was successfully picked up by ${pickupPersonFirst} at ${pickupTimeStr}.\n\nThank you.`;
     }
 
+    // Safe pre-check: verify pickup template configuration before outbound dispatch
+    const effectiveProvider = (process.env.WHATSAPP_PROVIDER || 'zoho').toLowerCase();
+    if (effectiveProvider === 'zoho') {
+      const templateConfig = resolveZohoTemplateConfig('child_picked_up');
+      if (!templateConfig) {
+        console.log('[WhatsApp] child_picked_up template not configured; notification skipped.');
+        await logWhatsAppDelivery({
+          childEventEntryId,
+          parentProfileId: entry.parent_id,
+          recipientPhone: eligibility.normalizedNumber,
+          provider: 'zoho',
+          providerMessageId: idempotencyKey,
+          templateName: 'koinonia_child_picked_up',
+          status: 'failed',
+          errorCode: 'TEMPLATE_NOT_CONFIGURED',
+          errorMessage: 'child_picked_up template not configured; notification skipped.',
+          failedAt: new Date().toISOString()
+        }).catch(err => console.error('[dispatchPickupWhatsAppNotification] log failure:', err));
+
+        return { sent: false, reason: 'TEMPLATE_NOT_CONFIGURED' };
+      }
+    }
+
     const result = await sendWhatsApp(
       eligibility.normalizedNumber,
       fallbackBody,
@@ -268,6 +324,15 @@ export async function dispatchPickupWhatsAppNotification(params: {
       }
     );
 
+    const isUnconfigured = !result.success && (
+      result.error === 'ZOHO_TEMPLATE_NOT_CONFIGURED' ||
+      result.error === 'TEMPLATE_NOT_CONFIGURED'
+    );
+
+    if (isUnconfigured) {
+      console.log('[WhatsApp] child_picked_up template not configured; notification skipped.');
+    }
+
     // Record delivery attempt in audit log
     await logWhatsAppDelivery({
       childEventEntryId,
@@ -277,7 +342,7 @@ export async function dispatchPickupWhatsAppNotification(params: {
       providerMessageId: result.messageSid || idempotencyKey,
       templateName: 'koinonia_child_picked_up',
       status: result.success ? 'sent' : 'failed',
-      errorCode: result.success ? idempotencyKey : (result.error || 'SEND_FAILED'),
+      errorCode: result.success ? idempotencyKey : (isUnconfigured ? 'TEMPLATE_NOT_CONFIGURED' : (result.error || 'SEND_FAILED')),
       errorMessage: result.error,
       sentAt: result.success ? new Date().toISOString() : null,
       failedAt: !result.success ? new Date().toISOString() : null
@@ -286,7 +351,7 @@ export async function dispatchPickupWhatsAppNotification(params: {
     return {
       sent: result.success,
       messageId: result.messageSid,
-      reason: result.error
+      reason: isUnconfigured ? 'TEMPLATE_NOT_CONFIGURED' : result.error
     };
   } catch (err: any) {
     console.error('[dispatchPickupWhatsAppNotification] error:', err);

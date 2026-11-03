@@ -51,69 +51,277 @@ export interface ResolvedZohoTemplate {
 }
 
 /**
+ * Strict transactional intents that MUST NEVER fall back to generic / unrelated templates.
+ * If their specific environment variables are missing, resolution returns null.
+ */
+export const STRICT_TRANSACTIONAL_INTENT_ENVS: Record<string, string[]> = {
+  // Check-in confirmation
+  child_checked_in: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_CHILD_CHECKED_IN',
+    'ZOHO_WA_TEMPLATE_CHILD_CHECKED_IN'
+  ],
+  koinonia_child_checked_in: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_CHILD_CHECKED_IN',
+    'ZOHO_WA_TEMPLATE_CHILD_CHECKED_IN'
+  ],
+
+  // Pickup / checkout confirmation
+  child_picked_up: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_CHILD_PICKED_UP',
+    'ZOHO_WA_TEMPLATE_CHILD_PICKED_UP'
+  ],
+  koinonia_child_picked_up: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_CHILD_PICKED_UP',
+    'ZOHO_WA_TEMPLATE_CHILD_PICKED_UP'
+  ],
+
+  // Child approved / selected
+  child_approved: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_CHILD_APPROVED',
+    'ZOHO_WA_TEMPLATE_CHILD_APPROVED',
+    'ZOHO_WA_TEMPLATE_REVIEW_DECISION'
+  ],
+  koinonia_child_approved: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_CHILD_APPROVED',
+    'ZOHO_WA_TEMPLATE_CHILD_APPROVED',
+    'ZOHO_WA_TEMPLATE_REVIEW_DECISION'
+  ],
+  review_decision: [
+    'ZOHO_WA_TEMPLATE_REVIEW_DECISION',
+    'ZOHO_WA_TEMPLATE_KOINONIA_CHILD_APPROVED',
+    'ZOHO_WA_TEMPLATE_CHILD_APPROVED'
+  ],
+
+  // Under review
+  child_under_review: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_CHILD_UNDER_REVIEW',
+    'ZOHO_WA_TEMPLATE_CHILD_UNDER_REVIEW'
+  ],
+  under_review: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_CHILD_UNDER_REVIEW',
+    'ZOHO_WA_TEMPLATE_CHILD_UNDER_REVIEW'
+  ],
+  koinonia_child_under_review: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_CHILD_UNDER_REVIEW',
+    'ZOHO_WA_TEMPLATE_CHILD_UNDER_REVIEW'
+  ],
+
+  // Not selected
+  child_not_selected: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_CHILD_NOT_SELECTED',
+    'ZOHO_WA_TEMPLATE_CHILD_NOT_SELECTED'
+  ],
+  not_selected: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_CHILD_NOT_SELECTED',
+    'ZOHO_WA_TEMPLATE_CHILD_NOT_SELECTED'
+  ],
+  koinonia_child_not_selected: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_CHILD_NOT_SELECTED',
+    'ZOHO_WA_TEMPLATE_CHILD_NOT_SELECTED'
+  ],
+
+  // Waitlisted
+  child_waitlisted: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_CHILD_WAITLISTED',
+    'ZOHO_WA_TEMPLATE_CHILD_WAITLISTED'
+  ],
+  waiting_list: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_CHILD_WAITLISTED',
+    'ZOHO_WA_TEMPLATE_CHILD_WAITLISTED'
+  ],
+  koinonia_child_waitlisted: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_CHILD_WAITLISTED',
+    'ZOHO_WA_TEMPLATE_CHILD_WAITLISTED'
+  ],
+
+  // Pass ready
+  pass_ready: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY_V2',
+    'ZOHO_WA_TEMPLATE_PASS_READY_V2',
+    'ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY',
+    'ZOHO_WA_TEMPLATE_PASS_READY'
+  ],
+  pass_ready_v2: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY_V2',
+    'ZOHO_WA_TEMPLATE_PASS_READY_V2',
+    'ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY',
+    'ZOHO_WA_TEMPLATE_PASS_READY'
+  ],
+  koinonia_pass_ready: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY_V2',
+    'ZOHO_WA_TEMPLATE_PASS_READY_V2',
+    'ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY',
+    'ZOHO_WA_TEMPLATE_PASS_READY'
+  ],
+  koinonia_pass_ready_v2: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY_V2',
+    'ZOHO_WA_TEMPLATE_PASS_READY_V2',
+    'ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY',
+    'ZOHO_WA_TEMPLATE_PASS_READY'
+  ],
+
+  // Selected parents channel
+  selected_parent_channel: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL',
+    'ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL'
+  ],
+  selected_parents_channel: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL',
+    'ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL'
+  ],
+  selected_parent_channel_v2: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL',
+    'ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL'
+  ],
+  koinonia_selected_parent_channel: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL',
+    'ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL'
+  ],
+  koinonia_selected_parent_channel_v2: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL',
+    'ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL'
+  ],
+
+  // Registration acknowledgement
+  registration_ack: [
+    'ZOHO_WA_TEMPLATE_REGISTRATION_ACK',
+    'ZOHO_WA_TEMPLATE_KOINONIA_REGISTRATION_ACK'
+  ],
+  registration_acknowledgement: [
+    'ZOHO_WA_TEMPLATE_REGISTRATION_ACK',
+    'ZOHO_WA_TEMPLATE_KOINONIA_REGISTRATION_ACK'
+  ],
+  koinonia_registration_ack: [
+    'ZOHO_WA_TEMPLATE_REGISTRATION_ACK',
+    'ZOHO_WA_TEMPLATE_KOINONIA_REGISTRATION_ACK'
+  ]
+};
+
+// Known non-strict / general intents mapping
+const GENERAL_INTENT_ENVS: Record<string, string[]> = {
+  return_to_draft: [
+    'ZOHO_WA_TEMPLATE_RETURN_TO_DRAFT',
+    'ZOHO_WA_TEMPLATE_KOINONIA_APPLICATION_INCOMPLETE',
+    'ZOHO_WA_TEMPLATE_COMPLETION_REMINDER'
+  ],
+  completion_reminder: [
+    'ZOHO_WA_TEMPLATE_COMPLETION_REMINDER',
+    'ZOHO_WA_TEMPLATE_KOINONIA_APPLICATION_INCOMPLETE',
+    'ZOHO_WA_TEMPLATE_RETURN_TO_DRAFT'
+  ],
+  koinonia_application_incomplete: [
+    'ZOHO_WA_TEMPLATE_COMPLETION_REMINDER',
+    'ZOHO_WA_TEMPLATE_KOINONIA_APPLICATION_INCOMPLETE',
+    'ZOHO_WA_TEMPLATE_RETURN_TO_DRAFT'
+  ],
+  inquiry_reply: ['ZOHO_WA_TEMPLATE_INQUIRY_REPLY'],
+  volunteer_reply: ['ZOHO_WA_TEMPLATE_VOLUNTEER_REPLY'],
+  duty_reminder: ['ZOHO_WA_TEMPLATE_DUTY_REMINDER'],
+  pickup_reminder: ['ZOHO_WA_TEMPLATE_PICKUP_REMINDER'],
+  checkin_opening: [
+    'ZOHO_WA_TEMPLATE_CHECKIN_OPENING',
+    'ZOHO_WA_TEMPLATE_KOINONIA_CHECKIN_REMINDER'
+  ],
+  checkin_reminder: [
+    'ZOHO_WA_TEMPLATE_KOINONIA_CHECKIN_REMINDER',
+    'ZOHO_WA_TEMPLATE_CHECKIN_OPENING'
+  ],
+  broadcast: ['ZOHO_WA_TEMPLATE_BROADCAST', 'ZOHO_WA_DEFAULT_TEMPLATE'],
+  manual_broadcast: ['ZOHO_WA_TEMPLATE_BROADCAST', 'ZOHO_WA_DEFAULT_TEMPLATE'],
+  escalation: ['ZOHO_WA_TEMPLATE_ESCALATION'],
+  super_admin_test: ['ZOHO_WA_TEMPLATE_TEST', 'ZOHO_WA_DEFAULT_TEMPLATE'],
+  test: ['ZOHO_WA_TEMPLATE_TEST', 'ZOHO_WA_DEFAULT_TEMPLATE']
+};
+
+/**
  * Resolves configured template key or alias for a given intent or template name.
+ * 
+ * STRICT RESOLUTION RULES:
+ * 1. For recognized transactional intents (child_checked_in, child_picked_up, child_approved,
+ *    child_under_review, child_not_selected, child_waitlisted, pass_ready, selected_parent_channel,
+ *    registration_ack), NEVER fall back to ZOHO_WA_DEFAULT_TEMPLATE, broadcast template,
+ *    registration template, or first available template.
+ * 2. If the intent-specific environment variable is missing for these intents, return null.
+ * 3. Log the resolved intent and configured ENV VARIABLE NAME (never secrets / template-key values).
  */
 export function resolveZohoTemplateConfig(intentOrName?: string): ResolvedZohoTemplate | null {
-  const clean = intentOrName ? intentOrName.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_') : '';
-
-  // Intent-specific environment variable lookups
-  const intentMap: Record<string, string | undefined> = {
-    registration_ack: process.env.ZOHO_WA_TEMPLATE_REGISTRATION_ACK || process.env.ZOHO_WA_TEMPLATE_KOINONIA_REGISTRATION_ACK || process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY,
-    registration_acknowledgement: process.env.ZOHO_WA_TEMPLATE_REGISTRATION_ACK || process.env.ZOHO_WA_TEMPLATE_KOINONIA_REGISTRATION_ACK || process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY,
-    review_decision: process.env.ZOHO_WA_TEMPLATE_REVIEW_DECISION || process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_APPROVED,
-    child_approved: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_APPROVED || process.env.ZOHO_WA_TEMPLATE_REVIEW_DECISION,
-    child_under_review: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_UNDER_REVIEW,
-    under_review: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_UNDER_REVIEW,
-    child_not_selected: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_NOT_SELECTED,
-    not_selected: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_NOT_SELECTED,
-    child_waitlisted: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_WAITLISTED,
-    waiting_list: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_WAITLISTED,
-    pass_ready: process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY_V2 || process.env.ZOHO_WA_TEMPLATE_PASS_READY_V2 || process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY || process.env.ZOHO_WA_TEMPLATE_REGISTRATION_ACK,
-    pass_ready_v2: process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY_V2 || process.env.ZOHO_WA_TEMPLATE_PASS_READY_V2 || process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY,
-    koinonia_pass_ready_v2: process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY_V2 || process.env.ZOHO_WA_TEMPLATE_PASS_READY_V2 || process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY,
-    koinonia_pass_ready: process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY_V2 || process.env.ZOHO_WA_TEMPLATE_PASS_READY_V2 || process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY,
-    return_to_draft: process.env.ZOHO_WA_TEMPLATE_RETURN_TO_DRAFT || process.env.ZOHO_WA_TEMPLATE_KOINONIA_APPLICATION_INCOMPLETE || process.env.ZOHO_WA_TEMPLATE_COMPLETION_REMINDER,
-    completion_reminder: process.env.ZOHO_WA_TEMPLATE_COMPLETION_REMINDER || process.env.ZOHO_WA_TEMPLATE_KOINONIA_APPLICATION_INCOMPLETE,
-    inquiry_reply: process.env.ZOHO_WA_TEMPLATE_INQUIRY_REPLY,
-    volunteer_reply: process.env.ZOHO_WA_TEMPLATE_VOLUNTEER_REPLY,
-    duty_reminder: process.env.ZOHO_WA_TEMPLATE_DUTY_REMINDER,
-    pickup_reminder: process.env.ZOHO_WA_TEMPLATE_PICKUP_REMINDER,
-    checkin_opening: process.env.ZOHO_WA_TEMPLATE_CHECKIN_OPENING || process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHECKIN_REMINDER,
-    checkin_reminder: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHECKIN_REMINDER || process.env.ZOHO_WA_TEMPLATE_CHECKIN_OPENING,
-    broadcast: process.env.ZOHO_WA_TEMPLATE_BROADCAST || process.env.ZOHO_WA_DEFAULT_TEMPLATE || process.env.ZOHO_WA_TEMPLATE_KOINONIA_PASS_READY,
-    manual_broadcast: process.env.ZOHO_WA_TEMPLATE_BROADCAST || process.env.ZOHO_WA_DEFAULT_TEMPLATE,
-    escalation: process.env.ZOHO_WA_TEMPLATE_ESCALATION,
-    selected_parent_channel: process.env.ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL || process.env.ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL,
-    selected_parents_channel: process.env.ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL || process.env.ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL,
-    koinonia_selected_parent_channel: process.env.ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL || process.env.ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL,
-    koinonia_selected_parent_channel_v2: process.env.ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL || process.env.ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL,
-    selected_parent_channel_v2: process.env.ZOHO_WA_TEMPLATE_KOINONIA_SELECTED_PARENT_CHANNEL || process.env.ZOHO_WA_TEMPLATE_SELECTED_PARENT_CHANNEL,
-    child_checked_in: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_CHECKED_IN || process.env.ZOHO_WA_TEMPLATE_CHILD_CHECKED_IN,
-    koinonia_child_checked_in: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_CHECKED_IN || process.env.ZOHO_WA_TEMPLATE_CHILD_CHECKED_IN,
-    child_picked_up: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_PICKED_UP || process.env.ZOHO_WA_TEMPLATE_CHILD_PICKED_UP,
-    koinonia_child_picked_up: process.env.ZOHO_WA_TEMPLATE_KOINONIA_CHILD_PICKED_UP || process.env.ZOHO_WA_TEMPLATE_CHILD_PICKED_UP,
-    super_admin_test: process.env.ZOHO_WA_TEMPLATE_TEST || process.env.ZOHO_WA_DEFAULT_TEMPLATE,
-    test: process.env.ZOHO_WA_TEMPLATE_TEST || process.env.ZOHO_WA_DEFAULT_TEMPLATE
-  };
-
-  if (clean) {
-    const matchedEnv = intentMap[clean] || process.env[`ZOHO_WA_TEMPLATE_${clean.toUpperCase()}`];
-    if (matchedEnv?.trim()) {
-      return parseTemplateValue(matchedEnv.trim());
+  if (!intentOrName) {
+    const fallback = process.env.ZOHO_WA_DEFAULT_TEMPLATE?.trim();
+    if (fallback) {
+      return parseTemplateValue(fallback);
     }
+    return null;
   }
 
-  // Fallback to default template if configured
-  const fallback = process.env.ZOHO_WA_DEFAULT_TEMPLATE?.trim();
-  if (fallback) {
-    return parseTemplateValue(fallback);
+  const raw = intentOrName.trim();
+  if (
+    raw.toLowerCase().startsWith('key:') ||
+    raw.toLowerCase().startsWith('alias:') ||
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)
+  ) {
+    return parseTemplateValue(raw);
   }
 
-  // Fallback to any configured template if no default set
-  for (const [k, v] of Object.entries(process.env)) {
-    if (k.startsWith('ZOHO_WA_TEMPLATE_') && v?.trim()) {
-      return parseTemplateValue(v.trim());
+  const clean = raw.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+
+  // 1. Strict transactional intents
+  if (clean && STRICT_TRANSACTIONAL_INTENT_ENVS[clean]) {
+    const candidateKeys = STRICT_TRANSACTIONAL_INTENT_ENVS[clean];
+    for (const envKey of candidateKeys) {
+      const val = process.env[envKey]?.trim();
+      if (val) {
+        // Safe audit logging: log intent and configured env variable name (never the secret key value)
+        console.log('[WhatsApp] intent=%s env=%s', clean, envKey);
+
+        const lowerVal = val.toLowerCase();
+        // Validation / mismatch detection
+        if (
+          (clean.includes('check_in') || clean.includes('checked_in')) &&
+          (lowerVal.includes('registration') || lowerVal.includes('f72d56f0'))
+        ) {
+          console.warn(
+            '[WhatsApp] WARNING: Configured template value for intent "%s" in env %s matches registration template!',
+            clean,
+            envKey
+          );
+        } else if (
+          (clean.includes('picked_up') || clean.includes('pickup')) &&
+          (lowerVal.includes('registration') || lowerVal.includes('f72d56f0') || lowerVal.includes('pass'))
+        ) {
+          console.warn(
+            '[WhatsApp] WARNING: Configured template value for intent "%s" in env %s appears to belong to another intent!',
+            clean,
+            envKey
+          );
+        }
+
+        return parseTemplateValue(val);
+      }
     }
+
+    // Strict transactional intent with no configured env var -> STRICT NULL. No fallback!
+    return null;
+  }
+
+  // 2. Non-strict / general intents
+  if (clean && GENERAL_INTENT_ENVS[clean]) {
+    const candidateKeys = GENERAL_INTENT_ENVS[clean];
+    for (const envKey of candidateKeys) {
+      const val = process.env[envKey]?.trim();
+      if (val) {
+        console.log('[WhatsApp] intent=%s env=%s', clean, envKey);
+        return parseTemplateValue(val);
+      }
+    }
+    return null;
+  }
+
+  // 3. Check direct upper-cased variable name (e.g. ZOHO_WA_TEMPLATE_<INTENT>)
+  const directEnvKey = `ZOHO_WA_TEMPLATE_${clean.toUpperCase()}`;
+  const directVal = process.env[directEnvKey]?.trim();
+  if (directVal) {
+    console.log('[WhatsApp] intent=%s env=%s', clean, directEnvKey);
+    return parseTemplateValue(directVal);
   }
 
   return null;
@@ -361,6 +569,23 @@ export class ZohoWhatsAppProvider implements WhatsAppProvider {
     // Any template CTA button targeting channel access must link to the first-party Koinonia route: /parents/channel.
     // The canonical real WhatsApp Channel URL is held strictly server-side and only revealed to authenticated, eligible parents.
     // Note: Do not forcibly inject channel_url into templates (like selected_parent_channel_v2) that have no such merge variable.
+    // For pass_ready_v2 which explicitly expects a channel CTA link, inject configured channel URL
+    const activeTemplateStr = (templateAlias || templateKey || params.intent || '').toLowerCase();
+    if (activeTemplateStr.includes('pass_ready_v2')) {
+      const effectiveChannelUrl = (
+        params.channelUrl ||
+        process.env.WHATSAPP_CHANNEL_URL ||
+        process.env.PUBLIC_WHATSAPP_CHANNEL_URL ||
+        ''
+      ).trim();
+      if (effectiveChannelUrl) {
+        payload.merge_info = payload.merge_info || {};
+        if (!payload.merge_info.channel_url) {
+          payload.merge_info.channel_url = effectiveChannelUrl;
+        }
+      }
+    }
+
     if (payload.merge_info && payload.merge_info.channel_url) {
       if (payload.merge_info.channel_url.includes('whatsapp.com')) {
         payload.merge_info.channel_url = ZohoWhatsAppProvider.sanitizeChannelUrl(payload.merge_info.channel_url);

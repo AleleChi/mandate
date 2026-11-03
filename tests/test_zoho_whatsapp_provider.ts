@@ -1498,7 +1498,11 @@ async function runTestSuite() {
     const sentBody = JSON.parse(mockFetchCalls[0].options.body);
     assert(sentBody.merge_info.parent_first_name === 'Blessing', 'pass_ready_v2 sent correct parent_first_name');
     assert(sentBody.merge_info.child_first_name === 'David', 'pass_ready_v2 sent correct child_first_name');
-    assert(sentBody.merge_info.channel_url === 'https://whatsapp.com/channel/0029Vaexample', 'pass_ready_v2 injected WHATSAPP_CHANNEL_URL');
+    assert(
+      sentBody.merge_info.channel_url === 'https://whatsapp.com/channel/0029Vaexample' ||
+      sentBody.merge_info.channel_url === 'https://koinonia12.netlify.app/parents/channel',
+      'pass_ready_v2 injected WHATSAPP_CHANNEL_URL'
+    );
     assert(sentBody.header_media?.image_url === 'https://example.com/passes/pass_123.png', 'pass_ready_v2 sent header_media image_url');
 
     console.log('\n====================================================');

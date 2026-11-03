@@ -498,13 +498,17 @@ export function getRequiredMergeFieldsForIntent(intentOrName?: string): string[]
   if (clean.includes('selected_parent') || clean.includes('channel_invitation')) {
     return ['parent_first_name', 'selected_child_names'];
   }
+  if (clean.includes('checkin') || clean.includes('checked_in')) {
+    return ['parent_first_name', 'child_first_name', 'checkin_time'];
+  }
+  if (clean.includes('pickup') || clean.includes('picked_up')) {
+    return ['parent_first_name', 'child_first_name', 'pickup_time'];
+  }
   if (
     clean.includes('pass') ||
     clean.includes('child') ||
-    clean.includes('checkin') ||
     clean.includes('under_review') ||
-    clean.includes('waitlist') ||
-    clean.includes('pickup')
+    clean.includes('waitlist')
   ) {
     return ['parent_first_name', 'child_first_name'];
   }
