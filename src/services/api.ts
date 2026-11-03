@@ -1558,6 +1558,72 @@ export const api = {
         };
       }>(`/api/admin/children${queryString ? `?${queryString}` : ''}`);
     },
+    async getSelectedChildrenReport(params?: {
+      eventId?: string;
+      page?: number;
+      pageSize?: number;
+      search?: string;
+      ageGroup?: string;
+      passStatus?: string;
+      attendanceStatus?: string;
+      gender?: string;
+    }) {
+      const queryParams = new URLSearchParams();
+      if (params?.eventId) queryParams.append('eventId', params.eventId);
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.pageSize) queryParams.append('pageSize', params.pageSize.toString());
+      if (params?.search) queryParams.append('search', params.search);
+      if (params?.ageGroup && params.ageGroup !== 'all' && params.ageGroup !== 'All age groups') queryParams.append('ageGroup', params.ageGroup);
+      if (params?.passStatus && params.passStatus !== 'all') queryParams.append('passStatus', params.passStatus);
+      if (params?.attendanceStatus && params.attendanceStatus !== 'all') queryParams.append('attendanceStatus', params.attendanceStatus);
+      if (params?.gender && params.gender !== 'all') queryParams.append('gender', params.gender);
+
+      const qs = queryParams.toString();
+      return api.request<{
+        success: boolean;
+        event: {
+          id: string;
+          title: string;
+        };
+        summary: {
+          totalSelected: number;
+          passReady: number;
+          missingPass: number;
+          checkedIn: number;
+          inside: number;
+          pickedUp: number;
+        };
+        ageGroups: Array<{
+          ageGroup: string;
+          selected: number;
+        }>;
+        children: Array<{
+          childId: string;
+          eventEntryId: string;
+          fullName: string;
+          photoUrl: string | null;
+          dateOfBirth: string;
+          age: number;
+          ageGroup: string;
+          gender: string;
+          parent: {
+            id: string;
+            fullName: string;
+            phone: string | null;
+            email: string | null;
+          };
+          passStatus: 'missing_pass' | 'pass_ready';
+          attendanceStatus: 'not_arrived' | 'checked_in' | 'inside' | 'picked_up';
+          passReference?: string | null;
+        }>;
+        pagination: {
+          page: number;
+          pageSize: number;
+          totalRecords: number;
+          totalPages: number;
+        };
+      }>(`/api/admin/reports/selected-children${qs ? `?${qs}` : ''}`);
+    },
     async bulkIssuePasses(applicationIds: string[], childIds?: string[]) {
       return api.request<any>('/api/admin/applications/bulk-issue-pass', {
         method: 'POST',

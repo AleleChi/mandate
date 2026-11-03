@@ -24,6 +24,7 @@ import { TemplateConfigureView } from '../../components/admin/TemplateConfigureV
 import { GeneratedReportPreviewModal } from '../../components/admin/reports/GeneratedReportPreviewModal';
 import { ReportActionsMenu } from '../../components/admin/reports/ReportActionsMenu';
 import { ReportChartRenderer } from '../../components/admin/reports/ReportChartRenderer';
+import { SelectedChildrenReportView } from '../../components/admin/reports/SelectedChildrenReportView';
 
 interface AdminReportsViewProps {
   onBackToOverview: () => void;
@@ -31,8 +32,8 @@ interface AdminReportsViewProps {
   currentRoute?: string;
 }
 
-// 4 Canonical Tabs (Prompt Section 5)
-type MainTab = 'reports_centre' | 'template_library' | 'custom_builder' | 'live_metrics';
+// Canonical Tabs (Reports, Selected Children, Templates, Create report, Event overview)
+type MainTab = 'reports_centre' | 'selected_children' | 'template_library' | 'custom_builder' | 'live_metrics';
 
 function formatReportDate(value?: string | null): string {
   if (!value) return 'Date unavailable';
@@ -282,8 +283,27 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
 }) => {
   const { showError, showSuccess } = useNotification();
   
-  // Tabs State (Prompt Section 5: Reports, Templates, Create report, Event overview)
-  const [activeMainTab, setActiveMainTab] = useState<MainTab>('reports_centre');
+  // Tabs State (Reports, Selected Children, Templates, Create report, Event overview)
+  const [activeMainTab, setActiveMainTab] = useState<MainTab>(() => {
+    if (
+      currentRoute?.includes('view=selected-children') ||
+      currentRoute?.includes('view=selected_children') ||
+      currentRoute?.endsWith('/reports/selected-children')
+    ) {
+      return 'selected_children';
+    }
+    return 'reports_centre';
+  });
+
+  useEffect(() => {
+    if (
+      currentRoute?.includes('view=selected-children') ||
+      currentRoute?.includes('view=selected_children') ||
+      currentRoute?.endsWith('/reports/selected-children')
+    ) {
+      setActiveMainTab('selected_children');
+    }
+  }, [currentRoute]);
 
   // Loading States
   const [loadingReportsList, setLoadingReportsList] = useState(false);
@@ -892,6 +912,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
         <div className="flex space-x-8 min-w-max pb-1">
           {[
             { id: 'reports_centre', label: 'Reports' },
+            { id: 'selected_children', label: 'Selected Children' },
             { id: 'template_library', label: 'Templates' },
             { id: 'custom_builder', label: 'Create report' },
             { id: 'live_metrics', label: 'Event overview' }
@@ -941,6 +962,14 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ----------------- TAB: SELECTED CHILDREN OPERATIONAL REPORT ----------------- */}
+      {activeMainTab === 'selected_children' && (
+        <SelectedChildrenReportView
+          eventId={selectedEventId}
+          onNavigate={onNavigate}
+        />
+      )}
 
       {/* ----------------- TAB 1: REPORTS ARCHIVE (Prompt Section 6, 7, 8) ----------------- */}
       {activeMainTab === 'reports_centre' && (() => {

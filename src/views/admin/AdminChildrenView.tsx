@@ -126,12 +126,6 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
 
   const [submittingActionId, setSubmittingActionId] = useState<string | null>(null);
 
-  // Selected Children operational filters
-  const [selectedAgeGroupFilter, setSelectedAgeGroupFilter] = useState<string>('all');
-  const [selectedPassStatusFilter, setSelectedPassStatusFilter] = useState<string>('all');
-  const [tempAgeGroupFilter, setTempAgeGroupFilter] = useState<string>('all');
-  const [tempPassStatusFilter, setTempPassStatusFilter] = useState<string>('all');
-
   // Bulk Pass Issuance states
   const [showBulkPassModal, setShowBulkPassModal] = useState(false);
   const [submittingBulkPass, setSubmittingBulkPass] = useState(false);
@@ -159,7 +153,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
   useEffect(() => {
     setCurrentPage(1);
     setSelectedChildIds([]);
-  }, [debouncedQuery, activeFilter, selectedAgeGroupFilter, selectedPassStatusFilter]);
+  }, [debouncedQuery, activeFilter]);
 
   useEffect(() => {
     setSelectedChildIds([]);
@@ -173,9 +167,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
         page: pageToFetch,
         limit,
         q: debouncedQuery,
-        filter: activeFilter === 'all' ? '' : activeFilter,
-        ageGroup: activeFilter === 'selected_children' && selectedAgeGroupFilter !== 'all' ? selectedAgeGroupFilter : undefined,
-        passStatus: activeFilter === 'selected_children' && selectedPassStatusFilter !== 'all' ? selectedPassStatusFilter : undefined
+        filter: activeFilter === 'all' ? '' : activeFilter
       });
       if (res.success) {
         setChildren(res.children || []);
@@ -200,13 +192,11 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
 
   useEffect(() => {
     fetchChildren(currentPage);
-  }, [debouncedQuery, activeFilter, selectedAgeGroupFilter, selectedPassStatusFilter, currentPage]);
+  }, [debouncedQuery, activeFilter, currentPage]);
 
   const handleClearFilters = () => {
     setSearchQuery('');
     setActiveFilter('all');
-    setSelectedAgeGroupFilter('all');
-    setSelectedPassStatusFilter('all');
   };
 
   // List actions implementations
@@ -811,18 +801,28 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
       >
         {[
           { label: 'Children', value: stats.totalChildren, color: 'border-[#EAE8E1] dark:border-[#302E29] text-[#18181B] dark:text-[#F0EBE3]' },
-          { label: 'Selected', value: stats.selected, color: 'border-emerald-100 dark:border-emerald-900/40 text-[#18181B] dark:text-[#F0EBE3]' },
+          { label: 'Selected', value: stats.selected, color: 'border-emerald-100 dark:border-emerald-900/40 text-[#18181B] dark:text-[#F0EBE3]', isActionable: true },
           { label: 'Checked in', value: stats.checkedIn, color: 'border-teal-100 dark:border-teal-900/40 text-[#18181B] dark:text-[#F0EBE3]' },
           { label: 'Inside', value: stats.inside, color: 'border-[#C59B27]/20 dark:border-[#C59B27]/30 text-[#18181B] dark:text-[#F0EBE3]' },
           { label: 'Picked up', value: stats.pickedUp, color: 'border-zinc-200 dark:border-[#3A3835] text-zinc-500 dark:text-[#7A7570]' }
         ].map((card, idx) => (
           <div 
             key={idx}
-            className={`bg-white dark:bg-[#21211E] border rounded-2xl p-4 space-y-1.5 shadow-2xs ${card.color}`}
+            onClick={card.isActionable ? () => onNavigate?.('/admin/reports?view=selected-children') : undefined}
+            className={`bg-white dark:bg-[#21211E] border rounded-2xl p-4 space-y-1.5 shadow-2xs ${card.color} ${
+              card.isActionable ? 'cursor-pointer hover:border-[#C59B27]/60 hover:shadow-xs transition-all group' : ''
+            }`}
           >
-            <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
-              {card.label}
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570] block">
+                {card.label}
+              </span>
+              {card.isActionable && (
+                <span className="text-[10px] text-[#C59B27] dark:text-amber-400 font-medium group-hover:underline">
+                  View report →
+                </span>
+              )}
+            </div>
             <div className="text-2xl font-semibold text-[#18181B] dark:text-[#F0EBE3] tracking-tight">
               {card.value}
             </div>
@@ -864,7 +864,6 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
             <div className="flex flex-wrap gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
               {[
                 { id: 'all', label: 'All' },
-                { id: 'selected_children', label: 'Selected Children' },
                 { id: 'inside', label: 'Inside' },
                 { id: 'not_arrived', label: 'Not arrived' },
                 { id: 'picked_up', label: 'Picked up' },
@@ -890,61 +889,6 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                 );
               })}
             </div>
-
-            {/* Selected Children Operational Sub-filters */}
-            {activeFilter === 'selected_children' && (
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-[#EAE8E1] dark:border-[#302E29] animate-fade-in" data-component-version="admin-selected-children-subfilters-v1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570]">Age group:</span>
-                  {[
-                    { id: 'all', label: 'All age groups' },
-                    { id: 'Ages 2–3', label: 'Ages 2–3' },
-                    { id: 'Ages 4–6', label: 'Ages 4–6' },
-                    { id: 'Ages 7–9', label: 'Ages 7–9' },
-                    { id: 'Ages 10–12', label: 'Ages 10–12' },
-                    { id: 'Ages 13–14', label: 'Ages 13–14' }
-                  ].map((g) => (
-                    <button
-                      key={g.id}
-                      type="button"
-                      onClick={() => setSelectedAgeGroupFilter(g.id)}
-                      className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-all cursor-pointer ${
-                        selectedAgeGroupFilter === g.id
-                          ? 'bg-[#C59B27]/10 text-[#C59B27] border-[#C59B27]/40 font-semibold dark:bg-amber-950/40 dark:text-amber-400'
-                          : 'bg-[#FAF9F6] dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] border-[#EAE8E1] dark:border-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#2A2926]'
-                      }`}
-                    >
-                      {g.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-medium text-zinc-500 dark:text-[#7A7570]">Pass status:</span>
-                  {[
-                    { id: 'all', label: 'All selected' },
-                    { id: 'missing_pass', label: 'Missing pass' },
-                    { id: 'pass_ready', label: 'Pass ready' },
-                    { id: 'checked_in', label: 'Checked in' },
-                    { id: 'inside', label: 'Inside' },
-                    { id: 'picked_up', label: 'Picked up' }
-                  ].map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => setSelectedPassStatusFilter(p.id)}
-                      className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-all cursor-pointer ${
-                        selectedPassStatusFilter === p.id
-                          ? 'bg-[#C59B27]/10 text-[#C59B27] border-[#C59B27]/40 font-semibold dark:bg-amber-950/40 dark:text-amber-400'
-                          : 'bg-[#FAF9F6] dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] border-[#EAE8E1] dark:border-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#2A2926]'
-                      }`}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
@@ -976,8 +920,6 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
             type="button"
             onClick={() => {
               setTempFilter(activeFilter);
-              setTempAgeGroupFilter(selectedAgeGroupFilter);
-              setTempPassStatusFilter(selectedPassStatusFilter);
               setIsFilterSheetOpen(true);
             }}
             data-component-version="admin-children-mobile-filter-trigger-v1"
@@ -1182,7 +1124,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                     <th className="py-3 px-4">Age</th>
                     <th className="py-3 px-4">Group</th>
                     <th className="py-3 px-4">Parent</th>
-                    {activeFilter !== 'selected_children' && <th className="py-3 px-4">Pickup person</th>}
+                    <th className="py-3 px-4">Pickup person</th>
                     <th className="py-3 px-4 text-center">Review</th>
                     <th className="py-3 px-4">Pass status</th>
                     <th className="py-3 px-4">Entry</th>
@@ -1269,33 +1211,31 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                         </div>
                       </td>
 
-                      {/* Pickup Person when not selected_children */}
-                      {activeFilter !== 'selected_children' && (
-                        <td className="py-3 px-4">
-                          {c.pickupPersonName ? (
-                            <div className="flex items-center space-x-2">
-                              <div className="w-5 h-5 bg-zinc-50 dark:bg-[#262520] border border-zinc-100 dark:border-[#3A3835] rounded-full overflow-hidden shrink-0 flex items-center justify-center">
-                                {c.pickupPersonPhotoUrl ? (
-                                  <img 
-                                    src={c.pickupPersonPhotoUrl} 
-                                    alt={c.pickupPersonName} 
-                                    className="w-full h-full object-cover"
-                                    referrerPolicy="no-referrer"
-                                  />
-                                ) : (
-                                  <Users className="w-2.5 h-2.5 text-zinc-300 dark:text-[#5A5550]" />
-                                )}
-                              </div>
-                              <span className="font-medium text-zinc-700 dark:text-[#F0EBE3]">{c.pickupPersonName}</span>
+                      {/* Pickup Person */}
+                      <td className="py-3 px-4">
+                        {c.pickupPersonName ? (
+                          <div className="flex items-center space-x-2">
+                            <div className="w-5 h-5 bg-zinc-50 dark:bg-[#262520] border border-zinc-100 dark:border-[#3A3835] rounded-full overflow-hidden shrink-0 flex items-center justify-center">
+                              {c.pickupPersonPhotoUrl ? (
+                                <img 
+                                  src={c.pickupPersonPhotoUrl} 
+                                  alt={c.pickupPersonName} 
+                                  className="w-full h-full object-cover" 
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <Users className="w-2.5 h-2.5 text-zinc-300 dark:text-[#5A5550]" />
+                              )}
                             </div>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-xs font-medium text-rose-500 dark:text-red-400">
-                              <CameraOff className="w-3 h-3" />
-                              Missing
-                            </span>
-                          )}
-                        </td>
-                      )}
+                            <span className="font-medium text-zinc-700 dark:text-[#F0EBE3]">{c.pickupPersonName}</span>
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-rose-500 dark:text-red-400">
+                            <CameraOff className="w-3 h-3" />
+                            Missing
+                          </span>
+                        )}
+                      </td>
 
                       {/* Review status */}
                       <td className="py-3 px-4 text-center">
@@ -1731,7 +1671,6 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     { id: 'all', label: 'All' },
-                    { id: 'selected_children', label: 'Selected Children' },
                     { id: 'inside', label: 'Inside' },
                     { id: 'not_arrived', label: 'Not arrived' },
                     { id: 'picked_up', label: 'Picked up' }
@@ -1754,69 +1693,6 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                   })}
                 </div>
               </div>
-
-              {/* Selected Children Sub-options on Mobile */}
-              {tempFilter === 'selected_children' && (
-                <div className="space-y-3 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
-                  <div className="space-y-1.5">
-                    <span className="text-[11px] font-semibold text-zinc-700 dark:text-[#F0EBE3] block">
-                      Age group
-                    </span>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {[
-                        { id: 'all', label: 'All age groups' },
-                        { id: 'Ages 2–3', label: 'Ages 2–3' },
-                        { id: 'Ages 4–6', label: 'Ages 4–6' },
-                        { id: 'Ages 7–9', label: 'Ages 7–9' },
-                        { id: 'Ages 10–12', label: 'Ages 10–12' },
-                        { id: 'Ages 13–14', label: 'Ages 13–14' }
-                      ].map((g) => (
-                        <button
-                          key={g.id}
-                          type="button"
-                          onClick={() => setTempAgeGroupFilter(g.id)}
-                          className={`p-2 rounded-lg border text-[11px] font-medium transition-all ${
-                            tempAgeGroupFilter === g.id
-                              ? 'bg-[#C59B27]/10 text-[#C59B27] border-[#C59B27] font-bold'
-                              : 'bg-white text-zinc-600 border-zinc-200 dark:bg-[#262520] dark:text-[#B8B0A5] dark:border-[#3A3835]'
-                          }`}
-                        >
-                          {g.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <span className="text-[11px] font-semibold text-zinc-700 dark:text-[#F0EBE3] block">
-                      Pass status
-                    </span>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {[
-                        { id: 'all', label: 'All selected' },
-                        { id: 'missing_pass', label: 'Missing pass' },
-                        { id: 'pass_ready', label: 'Pass ready' },
-                        { id: 'checked_in', label: 'Checked in' },
-                        { id: 'inside', label: 'Inside' },
-                        { id: 'picked_up', label: 'Picked up' }
-                      ].map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => setTempPassStatusFilter(p.id)}
-                          className={`p-2 rounded-lg border text-[11px] font-medium transition-all ${
-                            tempPassStatusFilter === p.id
-                              ? 'bg-[#C59B27]/10 text-[#C59B27] border-[#C59B27] font-bold'
-                              : 'bg-white text-zinc-600 border-zinc-200 dark:bg-[#262520] dark:text-[#B8B0A5] dark:border-[#3A3835]'
-                          }`}
-                        >
-                          {p.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
 
               {/* Group 2: Care and Attention */}
               <div className="space-y-2">
@@ -1857,11 +1733,7 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                 type="button"
                 onClick={() => {
                   setTempFilter('all');
-                  setTempAgeGroupFilter('all');
-                  setTempPassStatusFilter('all');
                   setActiveFilter('all');
-                  setSelectedAgeGroupFilter('all');
-                  setSelectedPassStatusFilter('all');
                   setIsFilterSheetOpen(false);
                 }}
                 className="py-2.5 rounded-xl border border-zinc-200 text-zinc-600 font-semibold hover:bg-zinc-50 dark:border-[#3A3835] dark:text-[#B8B0A5] dark:hover:bg-[#262520] transition-colors"
@@ -1872,8 +1744,6 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                 type="button"
                 onClick={() => {
                   setActiveFilter(tempFilter);
-                  setSelectedAgeGroupFilter(tempAgeGroupFilter);
-                  setSelectedPassStatusFilter(tempPassStatusFilter);
                   setIsFilterSheetOpen(false);
                 }}
                 className="py-2.5 rounded-xl bg-[#C59B27] text-white font-semibold hover:bg-[#C59B27]/90 transition-colors shadow-sm"
