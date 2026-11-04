@@ -6,6 +6,7 @@ import { execute, query, queryOne } from '../src/server/db';
 import { issuePassForChild } from '../src/server/services/passService';
 import { generateToken } from '../src/server/auth';
 import adminRoutes from '../src/server/routes/admin';
+import reportsRoutes from '../src/server/routes/reports';
 
 describe('Selected Children Report Test Suite (A-J)', () => {
   const testEventId = `ev-sel-rpt-${Date.now()}`;
@@ -18,6 +19,27 @@ describe('Selected Children Report Test Suite (A-J)', () => {
 
   before(async () => {
     // 1. Setup isolated test event
+    await execute(`
+      CREATE TABLE IF NOT EXISTS events (
+        id TEXT PRIMARY KEY,
+        title TEXT,
+        status TEXT,
+        starts_at TEXT,
+        ends_at TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      )
+    `);
+
+    await execute(`
+      CREATE TABLE IF NOT EXISTS report_jobs (
+        id TEXT PRIMARY KEY,
+        event_id TEXT,
+        status TEXT,
+        created_at TEXT
+      )
+    `);
+
     await execute(`
       INSERT OR IGNORE INTO events (id, title, status, starts_at, ends_at, created_at, updated_at)
       VALUES (?, 'The General Assembly Test Event', 'current', '2026-06-01T08:00:00Z', '2026-06-05T18:00:00Z', datetime('now'), datetime('now'))
@@ -46,6 +68,8 @@ describe('Selected Children Report Test Suite (A-J)', () => {
 
     const app = express();
     app.use(express.json());
+    // Mirror server.ts mounting order: reportsRoutes mounted on /api/admin/reports BEFORE adminRoutes on /api/admin
+    app.use('/api/admin/reports', reportsRoutes);
     app.use('/api/admin', adminRoutes);
 
     await new Promise<void>((resolve) => {
@@ -463,5 +487,52 @@ describe('Selected Children Report Test Suite (A-J)', () => {
     const data2: any = await res2.json();
     assert.equal(data2.success, true);
     assert.ok(data2.children.length > 0, 'Must return child records for filter=selected');
+  });
+
+  it('N: Route Precedence Regression: GET /api/admin/reports/selected-children does NOT match /:reportId and does NOT return "Report job not found."', async () => {
+    const res = await fetch(`${testBaseUrl}/api/admin/reports/selected-children?eventId=${testEventId}`, {
+      headers: {
+        'Authorization': `Bearer ${adminToken}`
+      }
+    });
+
+    const rawText = await res.text();
+    // Strictly verify error condition is absent
+    assert.ok(!rawText.includes('Report job not found.'), 'Response must NOT return "Report job not found."');
+    assert.equal(res.status, 200, 'HTTP status must be 200 OK');
+
+    const data = JSON.parse(rawText);
+    assert.equal(data.success, true);
+    assert.ok(data.summary, 'Must contain summary');
+    assert.ok(data.summary.totalSelected >= 418, 'Must return non-zero selected children count from fixture');
+    assert.ok(Array.isArray(data.ageGroups) && data.ageGroups.length >= 5, 'Must return age group breakdown');
+    assert.ok(Array.isArray(data.children) && data.children.length > 0, 'Must return children list');
+    assert.ok(data.pagination, 'Must return pagination metadata');
+  });
+
+  it('O: Route Precedence Regression: GET /api/admin/reports/selected-children/export-csv does NOT return "Report job not found."', async () => {
+    const res = await fetch(`${testBaseUrl}/api/admin/reports/selected-children/export-csv?eventId=${testEventId}`, {
+      headers: {
+        'Authorization': `Bearer ${adminToken}`
+      }
+    });
+
+    const rawText = await res.text();
+    assert.ok(!rawText.includes('Report job not found.'), 'CSV export must NOT return "Report job not found."');
+    assert.equal(res.status, 200, 'HTTP status must be 200 OK');
+    const contentType = res.headers.get('content-type') || '';
+    assert.ok(contentType.includes('text/csv'), 'Content-Type must be text/csv');
+  });
+
+  it('P: Dynamic Route Precedence Verification: Non-existent report jobs correctly match /:reportId and return 404 "Report job not found."', async () => {
+    const res = await fetch(`${testBaseUrl}/api/admin/reports/non-existent-report-job-id-999`, {
+      headers: {
+        'Authorization': `Bearer ${adminToken}`
+      }
+    });
+
+    assert.equal(res.status, 404, 'Non-existent report jobs must return 404');
+    const data: any = await res.json();
+    assert.equal(data.error, 'Report job not found.', 'Must return "Report job not found." only for dynamic reportId paths');
   });
 });

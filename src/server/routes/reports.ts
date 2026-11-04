@@ -20,6 +20,7 @@ import {
 } from '../services/reportService';
 import { calculateAnalytics } from '../services/reportAnalyticsService';
 import { createZipArchive } from '../utils/zipHelper';
+import { handleSelectedChildrenReport } from '../services/selectedChildrenReportService';
 
 export { formatReportFilename };
 
@@ -623,6 +624,15 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
     console.error('[Reports Route] Generation request failed:', err);
     return res.status(500).json({ error: err?.message || 'Failed to initialize report generation job.' });
   }
+});
+
+// 3.5. Operational Selected Children Report (registered BEFORE dynamic /:reportId routes)
+router.get('/selected-children', async (req: AuthenticatedRequest, res: Response) => {
+  return handleSelectedChildrenReport(req, res, false);
+});
+
+router.get('/selected-children/export-csv', async (req: AuthenticatedRequest, res: Response) => {
+  return handleSelectedChildrenReport(req, res, true);
 });
 
 // 4. Get individual job status
