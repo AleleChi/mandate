@@ -628,11 +628,15 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
 
 // 3.5. Operational Selected Children Report (registered BEFORE dynamic /:reportId routes)
 router.get('/selected-children', async (req: AuthenticatedRequest, res: Response) => {
-  return handleSelectedChildrenReport(req, res, false);
+  return handleSelectedChildrenReport(req, res, 'json');
 });
 
 router.get('/selected-children/export-csv', async (req: AuthenticatedRequest, res: Response) => {
-  return handleSelectedChildrenReport(req, res, true);
+  return handleSelectedChildrenReport(req, res, 'csv');
+});
+
+router.get('/selected-children/export-pdf', async (req: AuthenticatedRequest, res: Response) => {
+  return handleSelectedChildrenReport(req, res, 'pdf');
 });
 
 // 4. Get individual job status

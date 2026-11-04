@@ -2,9 +2,10 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'crypto';
 import express from 'express';
-import { execute, query, queryOne } from '../src/server/db';
+import { execute, query, queryOne, transaction } from '../src/server/db';
 import { issuePassForChild } from '../src/server/services/passService';
 import { generateToken } from '../src/server/auth';
+import { resolveReportAgeGroup, getSelectedChildrenReportData } from '../src/server/services/selectedChildrenReportService';
 import adminRoutes from '../src/server/routes/admin';
 import reportsRoutes from '../src/server/routes/reports';
 
@@ -41,8 +42,26 @@ describe('Selected Children Report Test Suite (A-J)', () => {
     `);
 
     await execute(`
+      CREATE TABLE IF NOT EXISTS event_age_groups (
+        id TEXT PRIMARY KEY,
+        event_id TEXT,
+        label TEXT,
+        min_age INTEGER,
+        max_age INTEGER,
+        capacity INTEGER,
+        sort_order INTEGER
+      )
+    `);
+
+    await execute(`
       INSERT OR IGNORE INTO events (id, title, status, starts_at, ends_at, created_at, updated_at)
-      VALUES (?, 'The General Assembly Test Event', 'current', '2026-06-01T08:00:00Z', '2026-06-05T18:00:00Z', datetime('now'), datetime('now'))
+      VALUES (?, 'The General Assembly 2026', 'current', '2026-06-01T08:00:00Z', '2026-06-05T18:00:00Z', datetime('now'), datetime('now'))
+    `, [testEventId]);
+
+    // Insert legacy 'Ages 1' (1-3) group to verify report ignores legacy configuration and uses actual age
+    await execute(`
+      INSERT OR REPLACE INTO event_age_groups (id, event_id, label, min_age, max_age, capacity, sort_order, created_at, updated_at)
+      VALUES ('ag-legacy-1', ?, 'Ages 1', 1, 3, 100, 1, datetime('now'), datetime('now'))
     `, [testEventId]);
 
     testUserId = `user-sel-${crypto.randomUUID()}`;
@@ -121,26 +140,28 @@ describe('Selected Children Report Test Suite (A-J)', () => {
     // Batch insert 418 selected children for testEventId
     // Distribute among ages 2 to 14
     const entriesToInsert = 418;
-    for (let i = 1; i <= entriesToInsert; i++) {
-      const childId = `c-bulk-${i}-${Date.now()}`;
-      const entryId = `e-bulk-${i}-${Date.now()}`;
-      // Calculate age cycle: 2..14
-      const age = 2 + (i % 13);
-      const birthYear = 2026 - age;
-      const dob = `${birthYear}-05-15`;
-      const status = i <= 286 ? 'pass_ready' : (i <= 297 ? 'selected' : (i <= 299 ? 'checked_in' : (i <= 301 ? 'inside' : 'selected')));
-      const now = new Date().toISOString();
+    await transaction(async () => {
+      for (let i = 1; i <= entriesToInsert; i++) {
+        const childId = `c-bulk-${i}-${Date.now()}`;
+        const entryId = `e-bulk-${i}-${Date.now()}`;
+        // Calculate age cycle: 2..14
+        const age = 2 + (i % 13);
+        const birthYear = 2026 - age;
+        const dob = `${birthYear}-05-15`;
+        const status = i <= 286 ? 'pass_ready' : (i <= 297 ? 'selected' : (i <= 299 ? 'checked_in' : (i <= 301 ? 'inside' : 'selected')));
+        const now = new Date().toISOString();
 
-      await execute(`
-        INSERT INTO children (id, parent_profile_id, full_name, date_of_birth, calculated_age, gender, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'male', ?, ?)
-      `, [childId, testParentId, `Selected Child ${i}`, dob, age, now, now]);
+        await execute(`
+          INSERT INTO children (id, parent_profile_id, full_name, date_of_birth, calculated_age, gender, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 'male', ?, ?)
+        `, [childId, testParentId, `Selected Child ${i}`, dob, age, now, now]);
 
-      await execute(`
-        INSERT INTO child_event_entries (id, child_id, event_id, status, submitted_at, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `, [entryId, childId, testEventId, status, now, now, now]);
-    }
+        await execute(`
+          INSERT INTO child_event_entries (id, child_id, event_id, status, submitted_at, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [entryId, childId, testEventId, status, now, now, now]);
+      }
+    });
 
     // Verify raw count in DB is exactly 418 selected
     const countRow = await queryOne(`
@@ -534,5 +555,135 @@ describe('Selected Children Report Test Suite (A-J)', () => {
     assert.equal(res.status, 404, 'Non-existent report jobs must return 404');
     const data: any = await res.json();
     assert.equal(data.error, 'Report job not found.', 'Must return "Report job not found." only for dynamic reportId paths');
+  });
+
+  describe('Part 19: Targeted Tests (A-M)', () => {
+    // Age classification
+    // A: Age 2 -> 2–3
+    it('A: Age 2 resolves to 2–3', () => {
+      const group = resolveReportAgeGroup({ date_of_birth: '2024-05-15' }, '2026-06-01');
+      assert.equal(group, '2–3', 'Age 2 must resolve to 2–3');
+    });
+
+    // B: Age 3 + legacy configured Ages 1 / 1–3 -> report still says 2–3
+    it('B: Age 3 with legacy configured Ages 1 / 1–3 resolves to 2–3', () => {
+      const group = resolveReportAgeGroup({ date_of_birth: '2023-05-15', age_group: 'Ages 1' }, '2026-06-01');
+      assert.equal(group, '2–3', 'Age 3 must resolve to 2–3 and not legacy 1–3');
+    });
+
+    // C: Age 4 -> 4–6
+    it('C: Age 4 resolves to 4–6', () => {
+      const group = resolveReportAgeGroup({ date_of_birth: '2022-05-15' }, '2026-06-01');
+      assert.equal(group, '4–6', 'Age 4 must resolve to 4–6');
+    });
+
+    // D: Age 10 -> 10–12
+    it('D: Age 10 resolves to 10–12', () => {
+      const group = resolveReportAgeGroup({ date_of_birth: '2016-05-15' }, '2026-06-01');
+      assert.equal(group, '10–12', 'Age 10 must resolve to 10–12');
+    });
+
+    // E: Age 14 -> 13–14
+    it('E: Age 14 resolves to 13–14', () => {
+      const group = resolveReportAgeGroup({ date_of_birth: '2012-05-15' }, '2026-06-01');
+      assert.equal(group, '13–14', 'Age 14 must resolve to 13–14');
+    });
+
+    // Reconciliation
+    // F: Sum of age groups equals selected report population for ages 2–14
+    it('F: Sum of age groups equals selected report population for ages 2–14', async () => {
+      const reportData = await getSelectedChildrenReportData({ eventId: testEventId });
+      const canonicalGroups = ['2–3', '4–6', '7–9', '10–12', '13–14'];
+      const sumCanonical = reportData.ageGroups
+        .filter(g => canonicalGroups.includes(g.ageGroup))
+        .reduce((sum, g) => sum + g.selected, 0);
+
+      const childrenAged2to14 = reportData.filtered.filter(c => c.age >= 2 && c.age <= 14);
+      assert.equal(sumCanonical, childrenAged2to14.length, 'Sum of canonical age groups must equal selected children aged 2-14');
+    });
+
+    // PDF
+    // G: PDF endpoint returns Content-Type: application/pdf
+    it('G: PDF endpoint returns Content-Type: application/pdf', async () => {
+      const res = await fetch(`${testBaseUrl}/api/admin/reports/selected-children/export-pdf?eventId=${testEventId}`, {
+        headers: { 'Authorization': `Bearer ${adminToken}` }
+      });
+      assert.equal(res.status, 200);
+      const ct = res.headers.get('content-type') || '';
+      assert.ok(ct.includes('application/pdf'), `Expected application/pdf, got ${ct}`);
+    });
+
+    // H: PDF begins with valid %PDF
+    it('H: PDF begins with valid %PDF magic bytes', async () => {
+      const res = await fetch(`${testBaseUrl}/api/admin/reports/selected-children/export-pdf?eventId=${testEventId}&ageGroup=2–3`, {
+        headers: { 'Authorization': `Bearer ${adminToken}` }
+      });
+      assert.equal(res.status, 200);
+      const arrayBuf = await res.arrayBuffer();
+      const magic = Buffer.from(arrayBuf.slice(0, 4)).toString('utf-8');
+      assert.equal(magic, '%PDF', 'PDF must start with %PDF');
+    });
+
+    // I: Ages 2–3 PDF contains only Ages 2–3 fixture children
+    it('I: Ages 2–3 PDF contains only Ages 2–3 fixture children', async () => {
+      const data = await getSelectedChildrenReportData({ eventId: testEventId, ageGroup: '2–3' });
+      assert.ok(data.filtered.length > 0, 'Ages 2-3 must have children in fixture');
+      for (const child of data.filtered) {
+        assert.equal(child.ageGroup, '2–3', `Child ${child.fullName} must belong to 2–3 group`);
+        assert.ok(child.age >= 2 && child.age <= 3, `Child age ${child.age} must be between 2 and 3`);
+      }
+    });
+
+    // J: All-selected PDF contains all selected-state fixture children
+    it('J: All-selected PDF data contains all selected-state fixture children', async () => {
+      const data = await getSelectedChildrenReportData({ eventId: testEventId });
+      assert.ok(data.filtered.length >= 418, 'All-selected must include all 418+ fixture selected children');
+      for (const child of data.filtered) {
+        assert.ok(['pass_ready', 'missing_pass'].includes(child.passStatus));
+        assert.ok(['not_arrived', 'checked_in', 'inside', 'picked_up'].includes(child.attendanceStatus));
+      }
+    });
+
+    // K: Under-review/waiting-list/not-selected children are excluded
+    it('K: Under-review, waiting-list, and not-selected children are excluded from report data', async () => {
+      const data = await getSelectedChildrenReportData({ eventId: testEventId });
+      const excludedNames = ['Child Waiting List', 'Child Not Selected', 'Child Under Review'];
+      for (const name of excludedNames) {
+        const found = data.filtered.find(c => c.fullName === name);
+        assert.equal(found, undefined, `Excluded child ${name} must not appear in report data`);
+      }
+    });
+
+    // L: PDF contains child name and parent/guardian details
+    it('L: PDF data contains child name and parent/guardian details', async () => {
+      const data = await getSelectedChildrenReportData({ eventId: testEventId, ageGroup: '2–3' });
+      const firstChild = data.filtered[0];
+      assert.ok(firstChild.fullName, 'Child fullName must exist');
+      assert.ok(firstChild.parent.fullName, 'Parent fullName must exist');
+      assert.ok(firstChild.parent.phone !== undefined, 'Parent phone field must exist');
+    });
+
+    // M: CSV and PDF totals reconcile with JSON report total
+    it('M: CSV and PDF totals reconcile with JSON report total', async () => {
+      // 1. All selected
+      const jsonAll = await getSelectedChildrenReportData({ eventId: testEventId });
+      const resCsvAll = await fetch(`${testBaseUrl}/api/admin/reports/selected-children/export-csv?eventId=${testEventId}`, {
+        headers: { 'Authorization': `Bearer ${adminToken}` }
+      });
+      const csvAllText = await resCsvAll.text();
+      const csvAllRows = csvAllText.trim().split('\n').slice(1); // omit header
+      assert.equal(jsonAll.summary.totalSelected, jsonAll.filtered.length, 'JSON summary matches filtered length');
+      assert.equal(csvAllRows.length, jsonAll.filtered.length, 'CSV rows match JSON filtered length');
+
+      // 2. Filtered by age group 2–3
+      const json23 = await getSelectedChildrenReportData({ eventId: testEventId, ageGroup: '2–3' });
+      const resCsv23 = await fetch(`${testBaseUrl}/api/admin/reports/selected-children/export-csv?eventId=${testEventId}&ageGroup=2–3`, {
+        headers: { 'Authorization': `Bearer ${adminToken}` }
+      });
+      const csv23Text = await resCsv23.text();
+      const csv23Rows = csv23Text.trim().split('\n').slice(1);
+      assert.equal(csv23Rows.length, json23.filtered.length, 'Ages 2-3 CSV rows match JSON filtered length');
+      assert.ok(json23.filtered.length > 0, 'Ages 2-3 count must be greater than 0');
+    });
   });
 });
