@@ -8,7 +8,8 @@ import {
   ChevronRight, 
   User,
   Loader2,
-  X
+  X,
+  ChevronDown
 } from 'lucide-react';
 import { api } from '../../../services/api';
 import { buildApiUrl } from '../../../utils/urlHelper';
@@ -93,6 +94,23 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
   // Row Action Loading
   const [issuingPassChildId, setIssuingPassChildId] = useState<string | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
+  const downloadMenuRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (downloadMenuRef.current && !downloadMenuRef.current.contains(event.target as Node)) {
+        setDownloadMenuOpen(false);
+      }
+    };
+    if (downloadMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [downloadMenuOpen]);
 
   // Selected-count context helper (Requirement 7 & 12)
   const getFilterContextSubtitle = () => {
@@ -225,6 +243,79 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
     }
   };
 
+  // Download PDF Report (Requirements 7, 8, 14, 16, 18)
+  const handleDownloadPdf = async (targetAgeGroup?: string) => {
+    try {
+      setDownloadingPdf(true);
+      setDownloadMenuOpen(false);
+
+      const queryParams = new URLSearchParams();
+      if (eventId) queryParams.append('eventId', eventId);
+      if (debouncedSearch) queryParams.append('search', debouncedSearch);
+
+      const effectiveAgeGroup = targetAgeGroup !== undefined
+        ? targetAgeGroup
+        : (ageGroupFilter !== 'all' ? ageGroupFilter : '');
+
+      if (effectiveAgeGroup && effectiveAgeGroup !== 'all') {
+        queryParams.append('ageGroup', effectiveAgeGroup);
+      }
+      if (passStatusFilter && passStatusFilter !== 'all') queryParams.append('passStatus', passStatusFilter);
+      if (attendanceStatusFilter && attendanceStatusFilter !== 'all') queryParams.append('attendanceStatus', attendanceStatusFilter);
+      if (genderFilter && genderFilter !== 'all') queryParams.append('gender', genderFilter);
+
+      const downloadUrl = buildApiUrl(`/api/admin/reports/selected-children/export-pdf?${queryParams.toString()}`);
+      const token = api.getToken();
+
+      const res = await fetch(downloadUrl, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to generate PDF report');
+      }
+
+      let filename = '';
+      const disposition = res.headers.get('content-disposition');
+      if (disposition && disposition.includes('filename=')) {
+        const match = disposition.match(/filename="?([^";]+)"?/);
+        if (match && match[1]) {
+          filename = match[1];
+        }
+      }
+
+      if (!filename) {
+        if (effectiveAgeGroup && effectiveAgeGroup !== 'all') {
+          filename = `Koinonia-GA-2026-Selected-Children-Ages-${effectiveAgeGroup.replace(/[\s–—]+/g, '-')}.pdf`;
+        } else {
+          filename = `Koinonia-GA-2026-All-Selected-Children.pdf`;
+        }
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }, 200);
+
+      showSuccess('Report Downloaded', `Selected children PDF (${effectiveAgeGroup ? `Ages ${effectiveAgeGroup}` : 'All'}) ready.`);
+    } catch (err: any) {
+      console.error(err);
+      showError('Download Failed', err?.message || 'Could not download PDF report.');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
   // Export CSV (Requirements 8, 9, 22)
   const handleExportCsv = () => {
     try {
@@ -295,7 +386,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
 
   return (
     <div className="space-y-4 pb-12 text-stone-900 dark:text-[#F0EBE3]" id="selected-children-operational-report">
-      {/* 1. CLEAN REPORT HEADER & ACTIONS (Requirements 1, 7, 9) */}
+      {/* 1. CLEAN REPORT HEADER & ACTIONS (Requirements 1, 7, 9, 16) */}
       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 border-b border-stone-200 dark:border-[#302E29] pb-4">
         <div>
           <h1 className="text-lg font-semibold tracking-tight text-stone-900 dark:text-[#F0EBE3]">
@@ -310,12 +401,104 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
         </div>
 
         <div className="flex items-center gap-2 self-start md:self-auto">
-          {/* Export CSV (Restrained Koinonia gold emphasis per Requirement 9 & 22) */}
+          {/* Download report (Primary Koinonia gold per Requirements 7, 16) */}
+          <div className="relative inline-block" ref={downloadMenuRef}>
+            <div className="inline-flex rounded shadow-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  if (ageGroupFilter !== 'all') {
+                    handleDownloadPdf(ageGroupFilter);
+                  } else {
+                    setDownloadMenuOpen(prev => !prev);
+                  }
+                }}
+                disabled={downloadingPdf || loading}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-l text-xs font-medium bg-[#C59B27] hover:bg-[#b58e22] text-white dark:text-[#181816] transition-colors cursor-pointer disabled:opacity-50"
+                id="btn-download-selected-pdf"
+              >
+                {downloadingPdf ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" />
+                )}
+                {ageGroupFilter !== 'all' ? `Download Ages ${ageGroupFilter} report` : 'Download report'}
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDownloadMenuOpen(prev => !prev);
+                }}
+                disabled={downloadingPdf || loading}
+                aria-label="Download options"
+                className="inline-flex items-center px-1.5 py-1.5 rounded-r border-l border-[#ab841e] bg-[#C59B27] hover:bg-[#b58e22] text-white dark:text-[#181816] transition-colors cursor-pointer disabled:opacity-50"
+                id="btn-download-selected-options"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Small restrained dropdown menu per Requirement 7 */}
+            {downloadMenuOpen && (
+              <div 
+                className="absolute right-0 mt-1 w-52 bg-white dark:bg-[#1E1E1C] border border-stone-200 dark:border-[#33312B] rounded shadow-lg z-50 py-1 text-xs"
+                role="menu"
+              >
+                {ageGroupFilter !== 'all' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadPdf(ageGroupFilter)}
+                      className="w-full text-left px-3 py-2 hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-900 dark:text-[#F0EBE3] font-medium flex items-center justify-between cursor-pointer"
+                    >
+                      <span>Download Ages {ageGroupFilter} report</span>
+                      <span className="text-[10px] text-stone-400">Current</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadPdf('')}
+                      className="w-full text-left px-3 py-2 hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-700 dark:text-[#C5BFB5] cursor-pointer"
+                    >
+                      Download all selected children
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadPdf('')}
+                      className="w-full text-left px-3 py-2 hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-900 dark:text-[#F0EBE3] font-medium cursor-pointer"
+                    >
+                      All selected children
+                    </button>
+                    <div className="border-t border-stone-100 dark:border-[#2C2A26] my-1" />
+                    <div className="px-3 py-1 text-[10px] font-semibold text-stone-400 uppercase tracking-wider">
+                      By Age Group
+                    </div>
+                    {['2–3', '4–6', '7–9', '10–12', '13–14'].map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => handleDownloadPdf(g)}
+                        className="w-full text-left px-3 py-1.5 hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-700 dark:text-[#C5BFB5] cursor-pointer"
+                      >
+                        Ages {g}
+                      </button>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Export CSV (Secondary per Requirement 16) */}
           <button
             type="button"
             onClick={handleExportCsv}
             disabled={exportingCsv || loading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium bg-[#C59B27] hover:bg-[#b58e22] text-white dark:text-[#181816] transition-colors cursor-pointer disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium border border-stone-300 dark:border-[#383630] bg-white dark:bg-[#1E1E1C] text-stone-700 dark:text-[#C5BFB5] hover:bg-stone-50 dark:hover:bg-[#252522] hover:text-stone-900 dark:hover:text-[#F0EBE3] transition-colors cursor-pointer disabled:opacity-50"
             id="btn-export-selected-csv"
           >
             {exportingCsv ? (
@@ -323,15 +506,15 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
             ) : (
               <Download className="w-3.5 h-3.5" />
             )}
-            {ageGroupFilter !== 'all' ? `Export Ages ${ageGroupFilter}` : 'Export CSV'}
+            Export CSV
           </button>
 
-          {/* Refresh (Secondary/quiet per Requirement 9) */}
+          {/* Refresh (Quiet action per Requirement 16) */}
           <button
             type="button"
             onClick={() => fetchReport(true)}
             disabled={refreshing || loading}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium border border-stone-200 dark:border-[#35332E] bg-white dark:bg-[#1E1E1C] text-stone-600 dark:text-[#A8A095] hover:bg-stone-50 dark:hover:bg-[#252522] hover:text-stone-900 dark:hover:text-[#F0EBE3] transition-colors cursor-pointer disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium border border-stone-200 dark:border-[#302E29] bg-transparent text-stone-600 dark:text-[#A0988D] hover:bg-stone-100/50 dark:hover:bg-[#252420] hover:text-stone-900 dark:hover:text-[#F0EBE3] transition-colors cursor-pointer disabled:opacity-50"
             id="btn-refresh-selected-report"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
@@ -456,21 +639,35 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                     </span>
                   </td>
                   <td className="py-2 px-3 text-right">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setAgeGroupFilter(isActive ? 'all' : ag.ageGroup);
-                        setPage(1);
-                      }}
-                      className={`text-xs cursor-pointer ${
-                        isActive 
-                          ? 'text-[#C59B27] dark:text-amber-400 font-semibold underline' 
-                          : 'text-[#C59B27] dark:text-amber-400/90 hover:underline'
-                      }`}
-                    >
-                      {isActive ? 'Filtered' : 'View list'}
-                    </button>
+                    <div className="inline-flex items-center justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setAgeGroupFilter(isActive ? 'all' : ag.ageGroup);
+                          setPage(1);
+                        }}
+                        className={`text-xs cursor-pointer ${
+                          isActive 
+                            ? 'text-[#C59B27] dark:text-amber-400 font-semibold underline' 
+                            : 'text-[#C59B27] dark:text-amber-400/90 hover:underline'
+                        }`}
+                      >
+                        {isActive ? 'Filtered' : 'View list'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDownloadPdf(ag.ageGroup);
+                        }}
+                        disabled={downloadingPdf}
+                        className="text-xs text-stone-500 hover:text-stone-900 dark:text-stone-400 dark:hover:text-[#F0EBE3] hover:underline cursor-pointer disabled:opacity-50"
+                        title={`Download Ages ${ag.ageGroup} PDF`}
+                      >
+                        Download
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
