@@ -1596,6 +1596,8 @@ export const api = {
         ageGroups: Array<{
           ageGroup: string;
           selected: number;
+          passReady?: number;
+          missingPass?: number;
         }>;
         children: Array<{
           childId: string;

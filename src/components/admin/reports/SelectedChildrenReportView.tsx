@@ -69,12 +69,12 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
     pickedUp: 0
   });
 
-  const [ageGroups, setAgeGroups] = useState<Array<{ ageGroup: string; selected: number }>>([
-    { ageGroup: '2–3', selected: 0 },
-    { ageGroup: '4–6', selected: 0 },
-    { ageGroup: '7–9', selected: 0 },
-    { ageGroup: '10–12', selected: 0 },
-    { ageGroup: '13–14', selected: 0 }
+  const [ageGroups, setAgeGroups] = useState<Array<{ ageGroup: string; selected: number; passReady?: number; missingPass?: number }>>([
+    { ageGroup: '2–3', selected: 0, passReady: 0, missingPass: 0 },
+    { ageGroup: '4–6', selected: 0, passReady: 0, missingPass: 0 },
+    { ageGroup: '7–9', selected: 0, passReady: 0, missingPass: 0 },
+    { ageGroup: '10–12', selected: 0, passReady: 0, missingPass: 0 },
+    { ageGroup: '13–14', selected: 0, passReady: 0, missingPass: 0 }
   ]);
 
   const [children, setChildren] = useState<SelectedChildRecord[]>([]);
@@ -96,6 +96,38 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
   // Row Action Loading
   const [issuingPassChildId, setIssuingPassChildId] = useState<string | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
+
+  // Selected-count context helper (Requirement 7)
+  const getFilterContextSubtitle = () => {
+    const parts: string[] = [];
+    parts.push(`${totalRecords} selected children`);
+    if (ageGroupFilter !== 'all') {
+      parts.push(`Ages ${ageGroupFilter}`);
+    }
+    if (passStatusFilter === 'missing_pass') {
+      parts.push('Missing pass');
+    } else if (passStatusFilter === 'pass_ready') {
+      parts.push('Pass ready');
+    }
+    if (attendanceStatusFilter === 'not_arrived') {
+      parts.push('Not arrived');
+    } else if (attendanceStatusFilter === 'checked_in') {
+      parts.push('Checked in');
+    } else if (attendanceStatusFilter === 'inside') {
+      parts.push('Inside');
+    } else if (attendanceStatusFilter === 'picked_up') {
+      parts.push('Picked up');
+    }
+    if (genderFilter === 'male') {
+      parts.push('Male');
+    } else if (genderFilter === 'female') {
+      parts.push('Female');
+    }
+    if (debouncedSearch) {
+      parts.push(`Matching "${debouncedSearch}"`);
+    }
+    return parts.join(' · ');
+  };
 
   // Debounce search
   useEffect(() => {
@@ -273,17 +305,17 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight text-stone-900 dark:text-[#F0EBE3]">
-              Selected Children
+              {ageGroupFilter !== 'all' ? `Selected Children · Ages ${ageGroupFilter}` : 'Selected Children'}
             </h1>
             <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-amber-50 dark:bg-amber-950/40 text-[#C59B27] dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40">
               Live Report
             </span>
           </div>
           <p className="text-xs text-stone-500 dark:text-[#7A7570] mt-1 font-medium">
-            {eventInfo.title} · Current Event
+            {eventInfo.title} · Current Event · {getFilterContextSubtitle()}
           </p>
           <p className="text-xs text-stone-400 dark:text-[#5A5550] mt-0.5">
-            View children selected for the current event, grouped by age and operational status.
+            View children selected for the current event by age group and operational status.
           </p>
         </div>
 
@@ -300,7 +332,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
             ) : (
               <Download className="w-3.5 h-3.5 text-stone-500 dark:text-[#7A7570]" />
             )}
-            Export CSV
+            {ageGroupFilter !== 'all' ? `Export Ages ${ageGroupFilter}` : 'Export selected children'}
           </button>
 
           <button
@@ -377,42 +409,126 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
         )}
       </div>
 
-      {/* 3. COMPACT AGE-GROUP BREAKDOWN (Requirement 7) */}
+      {/* 3. PRIMARY REPORT NAVIGATION: FLAT AGE-GROUP BREAKDOWN TABLE (Requirements 2, 3, 6, 14) */}
       <div className="space-y-1.5">
-        <span className="text-[11px] font-medium text-stone-500 dark:text-[#7A7570] block uppercase tracking-wider">
-          Age group breakdown
-        </span>
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-medium text-stone-500 dark:text-[#7A7570] uppercase tracking-wider">
+            Age group breakdown
+          </span>
+          {ageGroupFilter !== 'all' && (
+            <button
+              type="button"
+              onClick={() => {
+                setAgeGroupFilter('all');
+                setPage(1);
+              }}
+              className="text-xs text-[#C59B27] dark:text-amber-400 hover:underline font-medium cursor-pointer"
+            >
+              Show all age groups
+            </button>
+          )}
+        </div>
         <div className="bg-white dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] rounded-xl overflow-hidden shadow-2xs">
-          <div className="grid grid-cols-2 sm:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-stone-100 dark:divide-[#302E29]">
-            {ageGroups.map((ag) => {
-              const isSelectedGroup = ageGroupFilter === ag.ageGroup;
-              return (
-                <button
-                  key={ag.ageGroup}
-                  type="button"
-                  onClick={() => {
-                    setAgeGroupFilter(isSelectedGroup ? 'all' : ag.ageGroup);
-                    setPage(1);
-                  }}
-                  className={`p-3 text-left transition-colors cursor-pointer hover:bg-stone-50 dark:hover:bg-[#262520] ${
-                    isSelectedGroup ? 'bg-amber-50/60 dark:bg-amber-950/20' : ''
-                  }`}
-                >
-                  <div className="text-[11px] font-medium text-stone-500 dark:text-[#7A7570] flex items-center justify-between">
-                    <span>Ages {ag.ageGroup}</span>
-                    {isSelectedGroup && <Check className="w-3 h-3 text-[#C59B27] dark:text-amber-400" />}
-                  </div>
-                  <div className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3] tracking-tight mt-0.5">
-                    {ag.selected}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="bg-stone-50/70 dark:bg-[#262520] border-b border-stone-200/80 dark:border-[#302E29] text-[11px] font-medium text-stone-500 dark:text-[#7A7570]">
+                <th className="py-2.5 px-4 font-medium">Age group</th>
+                <th className="py-2.5 px-3 font-medium text-right">Selected</th>
+                <th className="py-2.5 px-3 font-medium text-right">Pass ready</th>
+                <th className="py-2.5 px-3 font-medium text-right">Missing pass</th>
+                <th className="py-2.5 px-4 font-medium text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-100 dark:divide-[#2A2926] text-stone-700 dark:text-[#C5BFB5]">
+              {ageGroups.map((ag) => {
+                const isActive = ageGroupFilter === ag.ageGroup;
+                const passReadyCount = ag.passReady ?? 0;
+                const missingPassCount = ag.missingPass ?? 0;
+
+                return (
+                  <tr
+                    key={ag.ageGroup}
+                    onClick={() => {
+                      setAgeGroupFilter(isActive ? 'all' : ag.ageGroup);
+                      setPage(1);
+                    }}
+                    className={`transition-colors hover:bg-stone-50/70 dark:hover:bg-[#262520]/70 cursor-pointer ${
+                      isActive 
+                        ? 'bg-amber-50/60 dark:bg-amber-950/25 font-semibold text-stone-900 dark:text-[#F0EBE3]' 
+                        : ''
+                    }`}
+                  >
+                    <td className="py-2.5 px-4">
+                      <div className="flex items-center gap-2">
+                        {isActive && <div className="w-1.5 h-1.5 rounded-full bg-[#C59B27] dark:bg-amber-400 shrink-0" />}
+                        <span className={isActive ? 'text-[#C59B27] dark:text-amber-400 font-semibold' : 'text-stone-900 dark:text-[#F0EBE3] font-medium'}>
+                          Ages {ag.ageGroup}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-medium text-stone-900 dark:text-[#F0EBE3]">
+                      {ag.selected}
+                    </td>
+                    <td className="py-2.5 px-3 text-right text-stone-600 dark:text-[#A8A095]">
+                      {passReadyCount}
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      <span className={missingPassCount > 0 ? 'text-amber-700 dark:text-amber-400 font-medium' : 'text-stone-400 dark:text-[#6A6560]'}>
+                        {missingPassCount}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-4 text-right">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setAgeGroupFilter(isActive ? 'all' : ag.ageGroup);
+                          setPage(1);
+                        }}
+                        className={`text-xs font-medium hover:underline cursor-pointer ${
+                          isActive 
+                            ? 'text-[#C59B27] dark:text-amber-400 font-semibold' 
+                            : 'text-stone-500 hover:text-stone-800 dark:text-[#7A7570] dark:hover:text-[#F0EBE3]'
+                        }`}
+                      >
+                        {isActive ? 'Active list' : 'View list'}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="bg-stone-50/50 dark:bg-[#262520]/50 border-t border-stone-200/80 dark:border-[#302E29] text-[11px] font-semibold text-stone-700 dark:text-[#D5CFC5]">
+                <td className="py-2.5 px-4">Total</td>
+                <td className="py-2.5 px-3 text-right text-stone-900 dark:text-[#F0EBE3]">{summary.totalSelected}</td>
+                <td className="py-2.5 px-3 text-right">{summary.passReady}</td>
+                <td className="py-2.5 px-3 text-right">
+                  <span className={summary.missingPass > 0 ? 'text-amber-700 dark:text-amber-400' : ''}>
+                    {summary.missingPass}
+                  </span>
+                </td>
+                <td className="py-2.5 px-4 text-right">
+                  {ageGroupFilter !== 'all' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAgeGroupFilter('all');
+                        setPage(1);
+                      }}
+                      className="text-[11px] text-[#C59B27] dark:text-amber-400 hover:underline font-medium cursor-pointer"
+                    >
+                      View all
+                    </button>
+                  )}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
       </div>
 
-      {/* 4. COMPACT TOOLBAR (Requirement 8) */}
+      {/* 4. COMPACT TOOLBAR (Requirement 8 & 12) */}
       <div className="bg-white dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] rounded-xl p-3 flex flex-wrap items-center gap-3 shadow-2xs">
         {/* Search */}
         <div className="relative flex-1 min-w-[200px]">
@@ -437,18 +553,18 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
 
         {/* Age group filter */}
         <div className="flex items-center gap-1.5">
-          <label className="text-xs text-stone-500 dark:text-[#7A7570] font-medium hidden sm:inline">Age:</label>
+          <label className="text-xs text-stone-500 dark:text-[#7A7570] font-medium hidden sm:inline">Age group:</label>
           <select
             value={ageGroupFilter}
             onChange={handleFilterChange(setAgeGroupFilter)}
             className="bg-[#FAF9F6] dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg px-2.5 py-1.5 text-xs text-stone-800 dark:text-[#F0EBE3] focus:outline-hidden focus:border-[#C59B27] cursor-pointer font-medium"
           >
             <option value="all">All age groups</option>
-            <option value="2–3">2–3</option>
-            <option value="4–6">4–6</option>
-            <option value="7–9">7–9</option>
-            <option value="10–12">10–12</option>
-            <option value="13–14">13–14</option>
+            <option value="2–3">Ages 2–3</option>
+            <option value="4–6">Ages 4–6</option>
+            <option value="7–9">Ages 7–9</option>
+            <option value="10–12">Ages 10–12</option>
+            <option value="13–14">Ages 13–14</option>
           </select>
         </div>
 
@@ -572,8 +688,8 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                   <th className="py-3 px-3">Age group</th>
                   <th className="py-3 px-3">Gender</th>
                   <th className="py-3 px-4">Parent / Guardian</th>
-                  <th className="py-3 px-3">Phone</th>
-                  <th className="py-3 px-3">Pass</th>
+                  <th className="py-3 px-3">Parent phone</th>
+                  <th className="py-3 px-3">Pass status</th>
                   <th className="py-3 px-3">Attendance</th>
                   <th className="py-3 px-4 text-right">Action</th>
                 </tr>
@@ -718,7 +834,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
         {!loading && children.length > 0 && (
           <div className="border-t border-stone-200/80 dark:border-[#302E29] px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-stone-500 dark:text-[#7A7570]">
             <div>
-              Showing {Math.min((page - 1) * pageSize + 1, totalRecords)}–{Math.min(page * pageSize, totalRecords)} of {totalRecords} selected children
+              Showing {totalRecords === 0 ? 0 : Math.min((page - 1) * pageSize + 1, totalRecords)}–{Math.min(page * pageSize, totalRecords)} of {totalRecords} selected children{ageGroupFilter !== 'all' ? ` · Ages ${ageGroupFilter}` : ''}
             </div>
 
             <div className="flex items-center gap-4">
