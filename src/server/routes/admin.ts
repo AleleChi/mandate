@@ -4972,12 +4972,14 @@ async function handleSelectedChildrenReport(req: AuthenticatedRequest, res: Resp
     // Unpaginated age group breakdown (Requirement 7 & 13)
     const canonicalBuckets = ['2–3', '4–6', '7–9', '10–12', '13–14'];
     const ageGroups = canonicalBuckets.map((bucket) => {
-      const count = allMapped.filter((c: any) => {
+      const inBucket = allMapped.filter((c: any) => {
         return c.ageGroup === bucket || normalizeAgeGroupLabelToRange(c.ageGroup) === bucket;
-      }).length;
+      });
       return {
         ageGroup: bucket,
-        selected: count
+        selected: inBucket.length,
+        passReady: inBucket.filter((c: any) => c.passStatus === 'pass_ready').length,
+        missingPass: inBucket.filter((c: any) => c.passStatus === 'missing_pass').length
       };
     });
 

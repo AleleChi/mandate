@@ -162,24 +162,117 @@ describe('Selected Children Report Test Suite (A-J)', () => {
     assert.equal(rows.length, 418, 'Total count remains 418 even on Page 1');
   });
 
-  it('C: Age group 10–12 returns only 10–12 children', async () => {
-    // Query children aged 10-12
-    const rows = await query(`
-      SELECT c.full_name, c.calculated_age
-      FROM child_event_entries e
-      JOIN children c ON c.id = e.child_id
-      WHERE e.event_id = ?
-        AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
-        AND c.calculated_age >= 10 AND c.calculated_age <= 12
-    `, [testEventId]);
+  it('A: All age groups returns complete selected count via API', async () => {
+    const res = await fetch(`${testBaseUrl}/api/admin/reports/selected-children?eventId=${testEventId}&ageGroup=all`, {
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    assert.equal(res.status, 200);
+    const data: any = await res.json();
+    assert.equal(data.success, true);
+    assert.equal(data.summary.totalSelected, 418, 'Summary must be 418');
+    assert.equal(data.pagination.totalRecords, 418, 'Total records must be 418');
+  });
 
-    assert.ok(rows.length > 0, 'Should find children in age group 10-12');
-    for (const r of rows) {
-      assert.ok(r.calculated_age >= 10 && r.calculated_age <= 12, `Age ${r.calculated_age} must be between 10 and 12`);
+  it('B: ageGroup=2-3 returns only ages 2–3', async () => {
+    const res = await fetch(`${testBaseUrl}/api/admin/reports/selected-children?eventId=${testEventId}&ageGroup=2-3&pageSize=100`, {
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    assert.equal(res.status, 200);
+    const data: any = await res.json();
+    assert.ok(data.children.length > 0, 'Must have children in 2-3');
+    for (const c of data.children) {
+      assert.ok(c.age >= 2 && c.age <= 3, `Child age ${c.age} must be between 2 and 3`);
     }
   });
 
-  it('D: Parent name and phone returned correctly with joined data', async () => {
+  it('C: ageGroup=4-6 returns only ages 4–6', async () => {
+    const res = await fetch(`${testBaseUrl}/api/admin/reports/selected-children?eventId=${testEventId}&ageGroup=4-6&pageSize=100`, {
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    assert.equal(res.status, 200);
+    const data: any = await res.json();
+    assert.ok(data.children.length > 0, 'Must have children in 4-6');
+    for (const c of data.children) {
+      assert.ok(c.age >= 4 && c.age <= 6, `Child age ${c.age} must be between 4 and 6`);
+    }
+  });
+
+  it('D: ageGroup=7-9 returns only ages 7–9', async () => {
+    const res = await fetch(`${testBaseUrl}/api/admin/reports/selected-children?eventId=${testEventId}&ageGroup=7-9&pageSize=100`, {
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    assert.equal(res.status, 200);
+    const data: any = await res.json();
+    assert.ok(data.children.length > 0, 'Must have children in 7-9');
+    for (const c of data.children) {
+      assert.ok(c.age >= 7 && c.age <= 9, `Child age ${c.age} must be between 7 and 9`);
+    }
+  });
+
+  it('E: ageGroup=10-12 returns only ages 10–12', async () => {
+    const res = await fetch(`${testBaseUrl}/api/admin/reports/selected-children?eventId=${testEventId}&ageGroup=10-12&pageSize=100`, {
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    assert.equal(res.status, 200);
+    const data: any = await res.json();
+    assert.ok(data.children.length > 0, 'Must have children in 10-12');
+    for (const c of data.children) {
+      assert.ok(c.age >= 10 && c.age <= 12, `Child age ${c.age} must be between 10 and 12`);
+    }
+  });
+
+  it('F: ageGroup=13-14 returns only ages 13–14', async () => {
+    const res = await fetch(`${testBaseUrl}/api/admin/reports/selected-children?eventId=${testEventId}&ageGroup=13-14&pageSize=100`, {
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    assert.equal(res.status, 200);
+    const data: any = await res.json();
+    assert.ok(data.children.length > 0, 'Must have children in 13-14');
+    for (const c of data.children) {
+      assert.ok(c.age >= 13 && c.age <= 14, `Child age ${c.age} must be between 13 and 14`);
+    }
+  });
+
+  it('G: Age-group count matches the number represented in the breakdown', async () => {
+    const res = await fetch(`${testBaseUrl}/api/admin/reports/selected-children?eventId=${testEventId}&ageGroup=all`, {
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    assert.equal(res.status, 200);
+    const data: any = await res.json();
+    const sumBreakdown = data.ageGroups.reduce((acc: number, g: any) => acc + g.selected, 0);
+    assert.equal(sumBreakdown, data.summary.totalSelected, 'Breakdown sum must match summary totalSelected');
+
+    // Also verify passReady + missingPass = selected for each age group
+    for (const g of data.ageGroups) {
+      assert.equal(g.passReady + g.missingPass, g.selected, `Group ${g.ageGroup} passReady + missingPass must equal selected`);
+    }
+  });
+
+  it('H: Search + age group works together', async () => {
+    const res = await fetch(`${testBaseUrl}/api/admin/reports/selected-children?eventId=${testEventId}&ageGroup=10-12&search=Selected Child 10`, {
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    assert.equal(res.status, 200);
+    const data: any = await res.json();
+    for (const c of data.children) {
+      assert.ok(c.fullName.includes('Selected Child 10'), 'Must match search query');
+      assert.ok(c.age >= 10 && c.age <= 12, 'Must match age group 10-12');
+    }
+  });
+
+  it('I: Pass filter + age group works together', async () => {
+    const res = await fetch(`${testBaseUrl}/api/admin/reports/selected-children?eventId=${testEventId}&ageGroup=10-12&passStatus=pass_ready&pageSize=100`, {
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    assert.equal(res.status, 200);
+    const data: any = await res.json();
+    for (const c of data.children) {
+      assert.equal(c.passStatus, 'pass_ready', 'Must be pass_ready');
+      assert.ok(c.age >= 10 && c.age <= 12, 'Must match age group 10-12');
+    }
+  });
+
+  it('Parent details visibility: Parent name and phone returned correctly with joined data', async () => {
     const sample = await queryOne(`
       SELECT 
         c.full_name as child_name,
@@ -255,7 +348,7 @@ describe('Selected Children Report Test Suite (A-J)', () => {
     assert.equal(rows.length, 0, 'waiting_list, not_selected, and under_review must be excluded');
   });
 
-  it('I: CSV export respects age filter', async () => {
+  it('J: CSV contains only the selected age group', async () => {
     // Generate CSV for age 10-12
     const rows = await query(`
       SELECT c.full_name as child_name, c.calculated_age as age, p.full_name as parent_name, p.phone_number as parent_phone
