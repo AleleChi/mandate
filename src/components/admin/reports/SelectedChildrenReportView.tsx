@@ -4,12 +4,9 @@ import {
   Download, 
   RefreshCw, 
   Ticket, 
-  Eye, 
   ChevronLeft, 
   ChevronRight, 
-  Users, 
-  Check, 
-  AlertCircle,
+  User,
   Loader2,
   X
 } from 'lucide-react';
@@ -97,7 +94,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
   const [issuingPassChildId, setIssuingPassChildId] = useState<string | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
 
-  // Selected-count context helper (Requirement 7)
+  // Selected-count context helper (Requirement 7 & 12)
   const getFilterContextSubtitle = () => {
     const parts: string[] = [];
     parts.push(`${totalRecords} selected children`);
@@ -181,11 +178,11 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
           setTotalPages(res.pagination.totalPages || 1);
         }
       } else {
-        setError('Could not load selected children report right now.');
+        setError('We couldn\'t load selected children.');
       }
     } catch (err: any) {
       console.error('Failed to load selected children report:', err);
-      setError(err?.message || 'Could not load selected children report right now.');
+      setError('We couldn\'t load selected children.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -196,14 +193,13 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
     fetchReport();
   }, [fetchReport]);
 
-  // Issue pass for a single child with missing pass (Requirement 17)
+  // Issue pass for a single child with missing pass
   const handleIssuePass = async (childId: string, fullName: string) => {
     setIssuingPassChildId(childId);
     try {
       const res = await api.admin.generateChildPass(childId);
       if (res && res.success) {
         showSuccess('Pass Issued', `Event pass generated successfully for ${fullName}.`);
-        // Update row locally without full page reload
         setChildren(prev => prev.map(c => {
           if (c.childId === childId) {
             return {
@@ -214,7 +210,6 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
           }
           return c;
         }));
-        // Update summary counts locally
         setSummary(prev => ({
           ...prev,
           passReady: prev.passReady + 1,
@@ -230,7 +225,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
     }
   };
 
-  // Export CSV (Requirement 15)
+  // Export CSV (Requirements 8, 9, 22)
   const handleExportCsv = () => {
     try {
       setExportingCsv(true);
@@ -299,246 +294,228 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
   );
 
   return (
-    <div className="space-y-6 pb-12" id="selected-children-operational-report">
-      {/* 1. HEADER & ACTIONS */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-stone-200 dark:border-[#302E29] pb-5">
+    <div className="space-y-4 pb-12 text-stone-900 dark:text-[#F0EBE3]" id="selected-children-operational-report">
+      {/* 1. CLEAN REPORT HEADER & ACTIONS (Requirements 1, 7, 9) */}
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 border-b border-stone-200 dark:border-[#302E29] pb-4">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight text-stone-900 dark:text-[#F0EBE3]">
-              {ageGroupFilter !== 'all' ? `Selected Children · Ages ${ageGroupFilter}` : 'Selected Children'}
-            </h1>
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-amber-50 dark:bg-amber-950/40 text-[#C59B27] dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40">
-              Live Report
-            </span>
-          </div>
-          <p className="text-xs text-stone-500 dark:text-[#7A7570] mt-1 font-medium">
-            {eventInfo.title} · Current Event · {getFilterContextSubtitle()}
+          <h1 className="text-lg font-semibold tracking-tight text-stone-900 dark:text-[#F0EBE3]">
+            Selected Children
+          </h1>
+          <p className="text-xs text-stone-500 dark:text-[#8A847A] mt-0.5 font-medium">
+            {eventInfo.title} · Current Event
           </p>
-          <p className="text-xs text-stone-400 dark:text-[#5A5550] mt-0.5">
+          <p className="text-xs text-stone-400 dark:text-[#6A6560] mt-0.5">
             View children selected for the current event by age group and operational status.
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2 self-start md:self-auto">
+          {/* Export CSV (Restrained Koinonia gold emphasis per Requirement 9 & 22) */}
           <button
             type="button"
             onClick={handleExportCsv}
             disabled={exportingCsv || loading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#21211E] text-stone-700 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#262520] hover:text-stone-900 dark:hover:text-[#F0EBE3] transition-colors cursor-pointer disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium bg-[#C59B27] hover:bg-[#b58e22] text-white dark:text-[#181816] transition-colors cursor-pointer disabled:opacity-50"
             id="btn-export-selected-csv"
           >
             {exportingCsv ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-stone-500" />
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
-              <Download className="w-3.5 h-3.5 text-stone-500 dark:text-[#7A7570]" />
+              <Download className="w-3.5 h-3.5" />
             )}
-            {ageGroupFilter !== 'all' ? `Export Ages ${ageGroupFilter}` : 'Export selected children'}
+            {ageGroupFilter !== 'all' ? `Export Ages ${ageGroupFilter}` : 'Export CSV'}
           </button>
 
+          {/* Refresh (Secondary/quiet per Requirement 9) */}
           <button
             type="button"
             onClick={() => fetchReport(true)}
             disabled={refreshing || loading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-stone-200 dark:border-[#3A3835] bg-white dark:bg-[#21211E] text-stone-700 dark:text-[#B8B0A5] hover:bg-stone-50 dark:hover:bg-[#262520] hover:text-stone-900 dark:hover:text-[#F0EBE3] transition-colors cursor-pointer disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium border border-stone-200 dark:border-[#35332E] bg-white dark:bg-[#1E1E1C] text-stone-600 dark:text-[#A8A095] hover:bg-stone-50 dark:hover:bg-[#252522] hover:text-stone-900 dark:hover:text-[#F0EBE3] transition-colors cursor-pointer disabled:opacity-50"
             id="btn-refresh-selected-report"
           >
-            <RefreshCw className={`w-3.5 h-3.5 text-stone-500 dark:text-[#7A7570] ${refreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
           </button>
         </div>
       </div>
 
-      {/* 2. FLAT SUMMARY STRIP (Requirement Part 3) */}
+      {/* 2. FLAT SUMMARY STRIP BENEATH HEADER (Requirement 10) */}
       <div 
-        className="bg-stone-50/60 dark:bg-[#21211E]/60 border border-stone-200/80 dark:border-[#302E29] rounded-xl px-4 py-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-medium text-stone-600 dark:text-[#B8B0A5]"
+        className="py-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-stone-600 dark:text-[#9A9388] border-b border-stone-200/80 dark:border-[#2C2A26]"
         data-testid="selected-summary-strip"
       >
         <div className="flex items-center gap-1.5">
-          <span className="font-semibold text-stone-900 dark:text-[#F0EBE3] text-sm tracking-tight text-[#C59B27] dark:text-amber-400">
+          <span className="font-semibold text-stone-900 dark:text-[#F0EBE3]">
             {summary.totalSelected}
           </span>
-          <span className="text-stone-600 dark:text-[#A8A095]">selected children</span>
+          <span>selected children</span>
         </div>
 
-        <div className="h-3.5 w-px bg-stone-300/80 dark:bg-[#3A3835] hidden sm:block" />
+        <div className="h-3 w-px bg-stone-300 dark:bg-[#35332E] hidden sm:block" />
 
         <div className="flex items-center gap-1.5">
-          <span className="font-semibold text-stone-900 dark:text-[#F0EBE3] text-sm tracking-tight">
+          <span className="font-medium text-stone-800 dark:text-[#D5CFC5]">
             {summary.passReady}
           </span>
-          <span className="text-stone-600 dark:text-[#A8A095]">pass ready</span>
+          <span>pass ready</span>
         </div>
 
-        <div className="h-3.5 w-px bg-stone-300/80 dark:bg-[#3A3835] hidden sm:block" />
+        <div className="h-3 w-px bg-stone-300 dark:bg-[#35332E] hidden sm:block" />
 
         <div className="flex items-center gap-1.5">
-          <span className={`font-semibold text-sm tracking-tight ${summary.missingPass > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-stone-900 dark:text-[#F0EBE3]'}`}>
+          <span className={`font-medium ${summary.missingPass > 0 ? 'text-amber-700 dark:text-amber-400 font-semibold' : 'text-stone-800 dark:text-[#D5CFC5]'}`}>
             {summary.missingPass}
           </span>
-          <span className="text-stone-600 dark:text-[#A8A095]">missing pass</span>
+          <span>missing pass</span>
         </div>
 
-        <div className="h-3.5 w-px bg-stone-300/80 dark:bg-[#3A3835] hidden sm:block" />
+        <div className="h-3 w-px bg-stone-300 dark:bg-[#35332E] hidden sm:block" />
 
         <div className="flex items-center gap-1.5">
-          <span className="font-semibold text-stone-900 dark:text-[#F0EBE3] text-sm tracking-tight">
+          <span className="font-medium text-stone-800 dark:text-[#D5CFC5]">
             {summary.checkedIn}
           </span>
-          <span className="text-stone-600 dark:text-[#A8A095]">checked in</span>
+          <span>checked in</span>
         </div>
 
-        <div className="h-3.5 w-px bg-stone-300/80 dark:bg-[#3A3835] hidden sm:block" />
+        <div className="h-3 w-px bg-stone-300 dark:bg-[#35332E] hidden sm:block" />
 
         <div className="flex items-center gap-1.5">
-          <span className="font-semibold text-stone-900 dark:text-[#F0EBE3] text-sm tracking-tight">
+          <span className="font-medium text-stone-800 dark:text-[#D5CFC5]">
             {summary.inside}
           </span>
-          <span className="text-stone-600 dark:text-[#A8A095]">inside</span>
+          <span>inside</span>
         </div>
 
         {summary.pickedUp > 0 && (
           <>
-            <div className="h-3.5 w-px bg-stone-300/80 dark:bg-[#3A3835] hidden sm:block" />
+            <div className="h-3 w-px bg-stone-300 dark:bg-[#35332E] hidden sm:block" />
             <div className="flex items-center gap-1.5">
-              <span className="font-semibold text-stone-900 dark:text-[#F0EBE3] text-sm tracking-tight">
+              <span className="font-medium text-stone-800 dark:text-[#D5CFC5]">
                 {summary.pickedUp}
               </span>
-              <span className="text-stone-600 dark:text-[#A8A095]">picked up</span>
+              <span>picked up</span>
             </div>
           </>
         )}
+
+        {/* Selected-count context indicator */}
+        {hasActiveFilters && (
+          <div className="ml-auto text-[11px] text-[#C59B27] dark:text-amber-400 font-medium">
+            {getFilterContextSubtitle()}
+          </div>
+        )}
       </div>
 
-      {/* 3. PRIMARY REPORT NAVIGATION: FLAT AGE-GROUP BREAKDOWN TABLE (Requirements 2, 3, 6, 14) */}
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] font-medium text-stone-500 dark:text-[#7A7570] uppercase tracking-wider">
-            Age group breakdown
-          </span>
-          {ageGroupFilter !== 'all' && (
-            <button
-              type="button"
-              onClick={() => {
-                setAgeGroupFilter('all');
-                setPage(1);
-              }}
-              className="text-xs text-[#C59B27] dark:text-amber-400 hover:underline font-medium cursor-pointer"
-            >
-              Show all age groups
-            </button>
-          )}
-        </div>
-        <div className="bg-white dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] rounded-xl overflow-hidden shadow-2xs">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-stone-50/70 dark:bg-[#262520] border-b border-stone-200/80 dark:border-[#302E29] text-[11px] font-medium text-stone-500 dark:text-[#7A7570]">
-                <th className="py-2.5 px-4 font-medium">Age group</th>
-                <th className="py-2.5 px-3 font-medium text-right">Selected</th>
-                <th className="py-2.5 px-3 font-medium text-right">Pass ready</th>
-                <th className="py-2.5 px-3 font-medium text-right">Missing pass</th>
-                <th className="py-2.5 px-4 font-medium text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-100 dark:divide-[#2A2926] text-stone-700 dark:text-[#C5BFB5]">
-              {ageGroups.map((ag) => {
-                const isActive = ageGroupFilter === ag.ageGroup;
-                const passReadyCount = ag.passReady ?? 0;
-                const missingPassCount = ag.missingPass ?? 0;
+      {/* 3. PRIMARY REPORT NAVIGATION: COMPACT AGE-GROUP BREAKDOWN TABLE (Requirements 11, 12, 14) */}
+      <div className="border border-stone-200 dark:border-[#2C2A26] rounded bg-white dark:bg-[#1E1E1C] overflow-hidden">
+        <table className="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr className="bg-stone-50/70 dark:bg-[#242320] border-b border-stone-200 dark:border-[#2C2A26] text-[10px] font-semibold text-stone-500 dark:text-[#8A847A] uppercase tracking-wider">
+              <th className="py-2 px-3 font-semibold">Age group</th>
+              <th className="py-2 px-3 font-semibold text-right">Selected</th>
+              <th className="py-2 px-3 font-semibold text-right">Pass ready</th>
+              <th className="py-2 px-3 font-semibold text-right">Missing pass</th>
+              <th className="py-2 px-3 font-semibold text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-stone-100 dark:divide-[#262420] text-stone-700 dark:text-[#C5BFB5]">
+            {ageGroups.map((ag) => {
+              const isActive = ageGroupFilter === ag.ageGroup;
+              const passReadyCount = ag.passReady ?? 0;
+              const missingPassCount = ag.missingPass ?? 0;
 
-                return (
-                  <tr
-                    key={ag.ageGroup}
-                    onClick={() => {
-                      setAgeGroupFilter(isActive ? 'all' : ag.ageGroup);
-                      setPage(1);
-                    }}
-                    className={`transition-colors hover:bg-stone-50/70 dark:hover:bg-[#262520]/70 cursor-pointer ${
-                      isActive 
-                        ? 'bg-amber-50/60 dark:bg-amber-950/25 font-semibold text-stone-900 dark:text-[#F0EBE3]' 
-                        : ''
-                    }`}
-                  >
-                    <td className="py-2.5 px-4">
-                      <div className="flex items-center gap-2">
-                        {isActive && <div className="w-1.5 h-1.5 rounded-full bg-[#C59B27] dark:bg-amber-400 shrink-0" />}
-                        <span className={isActive ? 'text-[#C59B27] dark:text-amber-400 font-semibold' : 'text-stone-900 dark:text-[#F0EBE3] font-medium'}>
-                          Ages {ag.ageGroup}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-2.5 px-3 text-right font-medium text-stone-900 dark:text-[#F0EBE3]">
-                      {ag.selected}
-                    </td>
-                    <td className="py-2.5 px-3 text-right text-stone-600 dark:text-[#A8A095]">
-                      {passReadyCount}
-                    </td>
-                    <td className="py-2.5 px-3 text-right">
-                      <span className={missingPassCount > 0 ? 'text-amber-700 dark:text-amber-400 font-medium' : 'text-stone-400 dark:text-[#6A6560]'}>
-                        {missingPassCount}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-4 text-right">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setAgeGroupFilter(isActive ? 'all' : ag.ageGroup);
-                          setPage(1);
-                        }}
-                        className={`text-xs font-medium hover:underline cursor-pointer ${
-                          isActive 
-                            ? 'text-[#C59B27] dark:text-amber-400 font-semibold' 
-                            : 'text-stone-500 hover:text-stone-800 dark:text-[#7A7570] dark:hover:text-[#F0EBE3]'
-                        }`}
-                      >
-                        {isActive ? 'Active list' : 'View list'}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="bg-stone-50/50 dark:bg-[#262520]/50 border-t border-stone-200/80 dark:border-[#302E29] text-[11px] font-semibold text-stone-700 dark:text-[#D5CFC5]">
-                <td className="py-2.5 px-4">Total</td>
-                <td className="py-2.5 px-3 text-right text-stone-900 dark:text-[#F0EBE3]">{summary.totalSelected}</td>
-                <td className="py-2.5 px-3 text-right">{summary.passReady}</td>
-                <td className="py-2.5 px-3 text-right">
-                  <span className={summary.missingPass > 0 ? 'text-amber-700 dark:text-amber-400' : ''}>
-                    {summary.missingPass}
-                  </span>
-                </td>
-                <td className="py-2.5 px-4 text-right">
-                  {ageGroupFilter !== 'all' && (
+              return (
+                <tr
+                  key={ag.ageGroup}
+                  onClick={() => {
+                    setAgeGroupFilter(isActive ? 'all' : ag.ageGroup);
+                    setPage(1);
+                  }}
+                  className={`transition-colors hover:bg-stone-50/80 dark:hover:bg-[#252421] cursor-pointer ${
+                    isActive 
+                      ? 'border-l-2 border-[#C59B27] bg-stone-50/70 dark:bg-[#252420] text-stone-900 dark:text-[#F0EBE3] font-semibold' 
+                      : ''
+                  }`}
+                >
+                  <td className="py-2 px-3">
+                    <span className={isActive ? 'text-[#C59B27] dark:text-amber-400 font-semibold' : 'text-stone-800 dark:text-[#E0D8CC]'}>
+                      Ages {ag.ageGroup}
+                    </span>
+                  </td>
+                  <td className="py-2 px-3 text-right font-medium text-stone-900 dark:text-[#F0EBE3]">
+                    {ag.selected}
+                  </td>
+                  <td className="py-2 px-3 text-right text-stone-600 dark:text-[#A0988D]">
+                    {passReadyCount}
+                  </td>
+                  <td className="py-2 px-3 text-right">
+                    <span className={missingPassCount > 0 ? 'text-amber-700 dark:text-amber-400 font-medium' : 'text-stone-400 dark:text-[#656059]'}>
+                      {missingPassCount}
+                    </span>
+                  </td>
+                  <td className="py-2 px-3 text-right">
                     <button
                       type="button"
-                      onClick={() => {
-                        setAgeGroupFilter('all');
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAgeGroupFilter(isActive ? 'all' : ag.ageGroup);
                         setPage(1);
                       }}
-                      className="text-[11px] text-[#C59B27] dark:text-amber-400 hover:underline font-medium cursor-pointer"
+                      className={`text-xs cursor-pointer ${
+                        isActive 
+                          ? 'text-[#C59B27] dark:text-amber-400 font-semibold underline' 
+                          : 'text-[#C59B27] dark:text-amber-400/90 hover:underline'
+                      }`}
                     >
-                      View all
+                      {isActive ? 'Filtered' : 'View list'}
                     </button>
-                  )}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="bg-stone-50/40 dark:bg-[#22211E] border-t border-stone-200 dark:border-[#2C2A26] text-[11px] font-semibold text-stone-700 dark:text-[#D5CFC5]">
+              <td className="py-2 px-3">Total</td>
+              <td className="py-2 px-3 text-right text-stone-900 dark:text-[#F0EBE3]">{summary.totalSelected}</td>
+              <td className="py-2 px-3 text-right">{summary.passReady}</td>
+              <td className="py-2 px-3 text-right">
+                <span className={summary.missingPass > 0 ? 'text-amber-700 dark:text-amber-400' : ''}>
+                  {summary.missingPass}
+                </span>
+              </td>
+              <td className="py-2 px-3 text-right">
+                {ageGroupFilter !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAgeGroupFilter('all');
+                      setPage(1);
+                    }}
+                    className="text-[11px] text-[#C59B27] dark:text-amber-400 hover:underline font-medium cursor-pointer"
+                  >
+                    View all
+                  </button>
+                )}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
       </div>
 
-      {/* 4. COMPACT TOOLBAR (Requirement 8 & 12) */}
-      <div className="bg-white dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] rounded-xl p-3 flex flex-wrap items-center gap-3 shadow-2xs">
+      {/* 4. COMPACT FILTER BAR (Requirement 13) */}
+      <div className="border border-stone-200 dark:border-[#2C2A26] rounded p-2.5 bg-white dark:bg-[#1E1E1C] flex flex-wrap items-center gap-2.5 text-xs">
         {/* Search */}
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400 dark:text-[#7A7570]" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400 dark:text-[#706B62]" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search child, parent or phone"
-            className="w-full bg-[#FAF9F6] dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg pl-9 pr-7 py-1.5 text-xs text-stone-800 dark:text-[#F0EBE3] placeholder-stone-400 dark:placeholder-[#7A7570] focus:outline-hidden focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27] transition-all"
+            className="w-full bg-[#FAF9F6] dark:bg-[#262421] border border-stone-200 dark:border-[#35332E] rounded pl-8 pr-6 py-1 text-xs text-stone-800 dark:text-[#F0EBE3] placeholder-stone-400 dark:placeholder-[#706B62] focus:outline-hidden focus:border-[#C59B27]"
           />
           {search && (
             <button
@@ -553,11 +530,11 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
 
         {/* Age group filter */}
         <div className="flex items-center gap-1.5">
-          <label className="text-xs text-stone-500 dark:text-[#7A7570] font-medium hidden sm:inline">Age group:</label>
+          <label className="text-stone-500 dark:text-[#8A847A] font-medium hidden sm:inline">Age group:</label>
           <select
             value={ageGroupFilter}
             onChange={handleFilterChange(setAgeGroupFilter)}
-            className="bg-[#FAF9F6] dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg px-2.5 py-1.5 text-xs text-stone-800 dark:text-[#F0EBE3] focus:outline-hidden focus:border-[#C59B27] cursor-pointer font-medium"
+            className="bg-[#FAF9F6] dark:bg-[#262421] border border-stone-200 dark:border-[#35332E] rounded px-2 py-1 text-xs text-stone-800 dark:text-[#F0EBE3] focus:outline-hidden focus:border-[#C59B27] cursor-pointer"
           >
             <option value="all">All age groups</option>
             <option value="2–3">Ages 2–3</option>
@@ -568,13 +545,13 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
           </select>
         </div>
 
-        {/* Pass status filter */}
+        {/* Pass filter */}
         <div className="flex items-center gap-1.5">
-          <label className="text-xs text-stone-500 dark:text-[#7A7570] font-medium hidden sm:inline">Pass:</label>
+          <label className="text-stone-500 dark:text-[#8A847A] font-medium hidden sm:inline">Pass:</label>
           <select
             value={passStatusFilter}
             onChange={handleFilterChange(setPassStatusFilter)}
-            className="bg-[#FAF9F6] dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg px-2.5 py-1.5 text-xs text-stone-800 dark:text-[#F0EBE3] focus:outline-hidden focus:border-[#C59B27] cursor-pointer font-medium"
+            className="bg-[#FAF9F6] dark:bg-[#262421] border border-stone-200 dark:border-[#35332E] rounded px-2 py-1 text-xs text-stone-800 dark:text-[#F0EBE3] focus:outline-hidden focus:border-[#C59B27] cursor-pointer"
           >
             <option value="all">All</option>
             <option value="missing_pass">Missing pass</option>
@@ -582,13 +559,13 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
           </select>
         </div>
 
-        {/* Attendance status filter */}
+        {/* Attendance filter */}
         <div className="flex items-center gap-1.5">
-          <label className="text-xs text-stone-500 dark:text-[#7A7570] font-medium hidden sm:inline">Attendance:</label>
+          <label className="text-stone-500 dark:text-[#8A847A] font-medium hidden sm:inline">Attendance:</label>
           <select
             value={attendanceStatusFilter}
             onChange={handleFilterChange(setAttendanceStatusFilter)}
-            className="bg-[#FAF9F6] dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg px-2.5 py-1.5 text-xs text-stone-800 dark:text-[#F0EBE3] focus:outline-hidden focus:border-[#C59B27] cursor-pointer font-medium"
+            className="bg-[#FAF9F6] dark:bg-[#262421] border border-stone-200 dark:border-[#35332E] rounded px-2 py-1 text-xs text-stone-800 dark:text-[#F0EBE3] focus:outline-hidden focus:border-[#C59B27] cursor-pointer"
           >
             <option value="all">All</option>
             <option value="not_arrived">Not arrived</option>
@@ -600,11 +577,11 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
 
         {/* Gender filter */}
         <div className="flex items-center gap-1.5">
-          <label className="text-xs text-stone-500 dark:text-[#7A7570] font-medium hidden sm:inline">Gender:</label>
+          <label className="text-stone-500 dark:text-[#8A847A] font-medium hidden sm:inline">Gender:</label>
           <select
             value={genderFilter}
             onChange={handleFilterChange(setGenderFilter)}
-            className="bg-[#FAF9F6] dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-lg px-2.5 py-1.5 text-xs text-stone-800 dark:text-[#F0EBE3] focus:outline-hidden focus:border-[#C59B27] cursor-pointer font-medium"
+            className="bg-[#FAF9F6] dark:bg-[#262421] border border-stone-200 dark:border-[#35332E] rounded px-2 py-1 text-xs text-stone-800 dark:text-[#F0EBE3] focus:outline-hidden focus:border-[#C59B27] cursor-pointer"
           >
             <option value="all">All</option>
             <option value="male">Male</option>
@@ -617,97 +594,106 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
           <button
             type="button"
             onClick={handleResetFilters}
-            className="text-xs text-[#C59B27] dark:text-amber-400 hover:underline font-medium ml-auto"
+            className="text-xs text-[#C59B27] dark:text-amber-400 hover:underline font-medium ml-auto cursor-pointer"
           >
             Reset filters
           </button>
         )}
       </div>
 
-      {/* ACTIVE AGE FILTER BANNER (Requirement 14) */}
-      {ageGroupFilter !== 'all' && (
-        <div className="flex items-center justify-between px-3 py-1.5 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/40 rounded-lg text-xs text-stone-700 dark:text-[#E0D8CC]">
-          <span className="font-medium">
-            {totalRecords} selected children · Ages {ageGroupFilter}
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              setAgeGroupFilter('all');
-              setPage(1);
-            }}
-            className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 text-[11px] font-medium underline"
-          >
-            Show all age groups
-          </button>
-        </div>
-      )}
+      {/* 5. PRIMARY SCREEN CONTENT: CHILDREN TABLE (Requirements 14, 15, 16, 17, 18, 19, 20) */}
+      <div className="border border-stone-200 dark:border-[#2C2A26] rounded bg-white dark:bg-[#1E1E1C] overflow-hidden">
+        {/* Subtle loading indicator line during refresh (Requirement 20) */}
+        {refreshing && (
+          <div className="h-0.5 w-full bg-stone-100 dark:bg-[#262420] overflow-hidden">
+            <div className="h-full bg-[#C59B27] animate-pulse w-full" />
+          </div>
+        )}
 
-      {/* 5. TABLE / DATA AREA (Requirement 9 & 10) */}
-      <div className="bg-white dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] rounded-xl overflow-hidden shadow-2xs">
-        {loading ? (
-          <div className="py-16 text-center space-y-3">
-            <Loader2 className="w-6 h-6 animate-spin text-[#C59B27] mx-auto" />
-            <p className="text-xs text-stone-500 dark:text-[#7A7570] font-medium">Loading selected children…</p>
-          </div>
-        ) : error ? (
-          <div className="py-12 text-center space-y-3 px-4">
-            <AlertCircle className="w-8 h-8 text-rose-500 mx-auto" />
-            <p className="text-xs text-rose-700 dark:text-rose-400 font-medium">{error}</p>
-            <button
-              type="button"
-              onClick={() => fetchReport()}
-              className="text-xs px-3 py-1.5 border border-stone-200 rounded-lg hover:bg-stone-50 font-medium cursor-pointer"
-            >
-              Try again
-            </button>
-          </div>
-        ) : children.length === 0 ? (
-          <div className="py-16 text-center space-y-3 px-4">
-            <Users className="w-8 h-8 text-stone-300 dark:text-[#5A5550] mx-auto" />
-            <p className="text-xs text-stone-500 dark:text-[#7A7570] font-medium">
-              No selected children found matching the active filters.
-            </p>
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                className="text-xs px-3 py-1.5 border border-stone-200 dark:border-[#3A3835] rounded-lg hover:bg-stone-50 dark:hover:bg-[#262520] font-medium cursor-pointer"
-              >
-                Reset search filters
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-stone-50/70 dark:bg-[#262520] border-b border-stone-200/80 dark:border-[#302E29] text-[11px] font-medium text-stone-500 dark:text-[#7A7570]">
-                  <th className="py-3 px-4">Child</th>
-                  <th className="py-3 px-3">Age</th>
-                  <th className="py-3 px-3">Age group</th>
-                  <th className="py-3 px-3">Gender</th>
-                  <th className="py-3 px-4">Parent / Guardian</th>
-                  <th className="py-3 px-3">Parent phone</th>
-                  <th className="py-3 px-3">Pass status</th>
-                  <th className="py-3 px-3">Attendance</th>
-                  <th className="py-3 px-4 text-right">Action</th>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="bg-stone-50/70 dark:bg-[#242320] border-b border-stone-200 dark:border-[#2C2A26] text-[10px] font-semibold text-stone-500 dark:text-[#8A847A] uppercase tracking-wider">
+                <th className="py-2.5 px-3">Child</th>
+                <th className="py-2.5 px-3">Age</th>
+                <th className="py-2.5 px-3">Age group</th>
+                <th className="py-2.5 px-3">Gender</th>
+                <th className="py-2.5 px-3">Parent / Guardian</th>
+                <th className="py-2.5 px-3">Phone</th>
+                <th className="py-2.5 px-3">Pass</th>
+                <th className="py-2.5 px-3">Attendance</th>
+                <th className="py-2.5 px-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-100 dark:divide-[#262420] text-stone-700 dark:text-[#C5BFB5]">
+              {loading ? (
+                // Table skeleton rows (Requirement 20)
+                Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={`skel-${i}`} className="animate-pulse">
+                    <td className="py-3 px-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded bg-stone-200 dark:bg-[#2D2B27]" />
+                        <div className="h-3 bg-stone-200 dark:bg-[#2D2B27] rounded w-24" />
+                      </div>
+                    </td>
+                    <td className="py-3 px-3"><div className="h-3 bg-stone-200 dark:bg-[#2D2B27] rounded w-10" /></td>
+                    <td className="py-3 px-3"><div className="h-3 bg-stone-200 dark:bg-[#2D2B27] rounded w-12" /></td>
+                    <td className="py-3 px-3"><div className="h-3 bg-stone-200 dark:bg-[#2D2B27] rounded w-10" /></td>
+                    <td className="py-3 px-3"><div className="h-3 bg-stone-200 dark:bg-[#2D2B27] rounded w-24" /></td>
+                    <td className="py-3 px-3"><div className="h-3 bg-stone-200 dark:bg-[#2D2B27] rounded w-20" /></td>
+                    <td className="py-3 px-3"><div className="h-3 bg-stone-200 dark:bg-[#2D2B27] rounded w-16" /></td>
+                    <td className="py-3 px-3"><div className="h-3 bg-stone-200 dark:bg-[#2D2B27] rounded w-16" /></td>
+                    <td className="py-3 px-3 text-right"><div className="h-3 bg-stone-200 dark:bg-[#2D2B27] rounded w-12 ml-auto" /></td>
+                  </tr>
+                ))
+              ) : error ? (
+                // Compact inline error state within table body (Requirement 18)
+                <tr>
+                  <td colSpan={9} className="py-8 text-center px-4">
+                    <p className="text-xs text-stone-600 dark:text-[#A8A095] font-medium">
+                      We couldn't load selected children.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => fetchReport()}
+                      className="mt-2 text-xs text-[#C59B27] dark:text-amber-400 hover:underline font-medium cursor-pointer"
+                    >
+                      Try again
+                    </button>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100 dark:divide-[#2A2926] text-stone-700 dark:text-[#C5BFB5]">
-                {children.map((c) => {
+              ) : children.length === 0 ? (
+                // Simple table-body empty state (Requirement 19)
+                <tr>
+                  <td colSpan={9} className="py-10 text-center px-4">
+                    <p className="text-xs text-stone-500 dark:text-[#8A847A] font-medium">
+                      No selected children match these filters.
+                    </p>
+                    {hasActiveFilters && (
+                      <button
+                        type="button"
+                        onClick={handleResetFilters}
+                        className="mt-2 text-xs text-[#C59B27] dark:text-amber-400 hover:underline font-medium cursor-pointer"
+                      >
+                        Clear filters
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ) : (
+                children.map((c) => {
                   const isIssuing = issuingPassChildId === c.childId;
                   const isPassReady = c.passStatus === 'pass_ready';
 
                   return (
                     <tr 
                       key={c.eventEntryId || c.childId}
-                      className="hover:bg-stone-50/60 dark:hover:bg-[#262520]/60 transition-colors"
+                      className="hover:bg-stone-50/70 dark:hover:bg-[#252421] transition-colors h-[56px]"
                     >
-                      {/* Child */}
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded-lg overflow-hidden shrink-0 bg-stone-100 dark:bg-[#2A2926] border border-stone-200/60 dark:border-[#3A3835] flex items-center justify-center">
+                      {/* Child Identity (Requirement 15: small photo or neutral placeholder, full name) */}
+                      <td className="py-2.5 px-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded overflow-hidden shrink-0 bg-stone-100 dark:bg-[#262420] border border-stone-200/80 dark:border-[#35332E] flex items-center justify-center">
                             {c.photoUrl ? (
                               <img 
                                 src={c.photoUrl} 
@@ -716,55 +702,53 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                                 referrerPolicy="no-referrer"
                               />
                             ) : (
-                              <Users className="w-3.5 h-3.5 text-stone-400 dark:text-[#6A6560]" />
+                              <User className="w-3.5 h-3.5 text-stone-400 dark:text-[#605B52]" />
                             )}
                           </div>
-                          <div>
-                            <span 
-                              className="font-medium text-stone-900 dark:text-[#F0EBE3] hover:text-[#C59B27] cursor-pointer"
-                              onClick={() => {
-                                if (onViewChild) {
-                                  onViewChild(c.childId, c.eventEntryId);
-                                } else if (onNavigate) {
-                                  onNavigate(`/admin/children/${c.eventEntryId}`);
-                                }
-                              }}
-                            >
-                              {c.fullName}
-                            </span>
-                          </div>
+                          <span 
+                            className="font-medium text-stone-900 dark:text-[#F0EBE3] hover:text-[#C59B27] cursor-pointer"
+                            onClick={() => {
+                              if (onViewChild) {
+                                onViewChild(c.childId, c.eventEntryId);
+                              } else if (onNavigate) {
+                                onNavigate(`/admin/children/${c.eventEntryId}`);
+                              }
+                            }}
+                          >
+                            {c.fullName}
+                          </span>
                         </div>
                       </td>
 
                       {/* Age */}
-                      <td className="py-3 px-3 text-stone-600 dark:text-[#A8A095]">
+                      <td className="py-2.5 px-3 text-stone-600 dark:text-[#A0988D]">
                         {c.age} yrs
                       </td>
 
-                      {/* Age Group (Plain text, no badge per Requirement 9) */}
-                      <td className="py-3 px-3 text-stone-800 dark:text-[#D5CFC5] font-medium">
+                      {/* Age group */}
+                      <td className="py-2.5 px-3 text-stone-800 dark:text-[#D5CFC5]">
                         {c.ageGroup || '—'}
                       </td>
 
-                      {/* Gender (Plain text per Requirement 9) */}
-                      <td className="py-3 px-3 text-stone-600 dark:text-[#A8A095]">
+                      {/* Gender */}
+                      <td className="py-2.5 px-3 text-stone-600 dark:text-[#A0988D]">
                         {c.gender}
                       </td>
 
-                      {/* Parent / Guardian */}
-                      <td className="py-3 px-4 text-stone-800 dark:text-[#D5CFC5]">
+                      {/* Parent / Guardian (Requirement 16) */}
+                      <td className="py-2.5 px-3 text-stone-800 dark:text-[#D5CFC5]">
                         {c.parent?.fullName || '—'}
                       </td>
 
-                      {/* Phone */}
-                      <td className="py-3 px-3 text-stone-600 dark:text-[#A8A095] font-mono text-[11px]">
+                      {/* Phone (Requirement 16) */}
+                      <td className="py-2.5 px-3 text-stone-600 dark:text-[#A0988D] text-[11px]">
                         {c.parent?.phone || '—'}
                       </td>
 
-                      {/* Pass status (Possible: Pass ready, Missing pass) */}
-                      <td className="py-3 px-3">
+                      {/* Pass status (Requirement 14: plain text, missing pass in restrained amber) */}
+                      <td className="py-2.5 px-3">
                         {isPassReady ? (
-                          <span className="text-emerald-700 dark:text-emerald-400 font-medium">
+                          <span className="text-stone-800 dark:text-[#D5CFC5]">
                             Pass ready
                           </span>
                         ) : (
@@ -774,8 +758,8 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                         )}
                       </td>
 
-                      {/* Attendance (Possible: Not arrived, Checked in, Inside, Picked up) */}
-                      <td className="py-3 px-3 text-stone-700 dark:text-[#B8B0A5]">
+                      {/* Attendance (Requirement 14: plain text, no pills) */}
+                      <td className="py-2.5 px-3 text-stone-700 dark:text-[#B0A89C]">
                         {c.attendanceStatus === 'picked_up'
                           ? 'Picked up'
                           : c.attendanceStatus === 'inside'
@@ -785,15 +769,15 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                               : 'Not arrived'}
                       </td>
 
-                      {/* Action (Quiet text/icon actions, Issue pass for missing pass) */}
-                      <td className="py-3 px-4 text-right">
-                        <div className="inline-flex items-center justify-end gap-2">
+                      {/* Action (Requirement 17: quiet text action, Issue pass in gold for missing pass) */}
+                      <td className="py-2.5 px-3 text-right">
+                        <div className="inline-flex items-center justify-end gap-2.5">
                           {!isPassReady && (
                             <button
                               type="button"
                               onClick={() => handleIssuePass(c.childId, c.fullName)}
                               disabled={isIssuing}
-                              className="inline-flex items-center gap-1 text-[11px] font-medium text-[#C59B27] dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:underline cursor-pointer disabled:opacity-50"
+                              className="inline-flex items-center gap-1 text-[11px] font-medium text-[#C59B27] dark:text-amber-400 hover:underline cursor-pointer disabled:opacity-50"
                               title="Issue pass"
                             >
                               {isIssuing ? (
@@ -814,32 +798,30 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                                 onNavigate(`/admin/children/${c.eventEntryId}`);
                               }
                             }}
-                            className="inline-flex items-center gap-1 text-[11px] font-medium text-stone-500 hover:text-stone-800 dark:text-[#7A7570] dark:hover:text-[#F0EBE3] cursor-pointer"
-                            title="View child"
+                            className="text-[11px] text-stone-500 hover:text-stone-800 dark:text-[#8A847A] dark:hover:text-[#F0EBE3] hover:underline cursor-pointer"
                           >
-                            <Eye className="w-3 h-3" />
-                            View
+                            View child
                           </button>
                         </div>
                       </td>
                     </tr>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
 
-        {/* 6. SERVER-SIDE PAGINATION FOOTER (Requirement 11) */}
+        {/* 6. SERVER-SIDE PAGINATION FOOTER (Requirement 21) */}
         {!loading && children.length > 0 && (
-          <div className="border-t border-stone-200/80 dark:border-[#302E29] px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-stone-500 dark:text-[#7A7570]">
+          <div className="border-t border-stone-200 dark:border-[#2C2A26] px-3 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-stone-500 dark:text-[#8A847A]">
             <div>
               Showing {totalRecords === 0 ? 0 : Math.min((page - 1) * pageSize + 1, totalRecords)}–{Math.min(page * pageSize, totalRecords)} of {totalRecords} selected children{ageGroupFilter !== 'all' ? ` · Ages ${ageGroupFilter}` : ''}
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               {/* Page size select */}
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1">
                 <span className="text-[11px]">Rows:</span>
                 <select
                   value={pageSize}
@@ -847,7 +829,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                     setPageSize(Number(e.target.value));
                     setPage(1);
                   }}
-                  className="bg-[#FAF9F6] dark:bg-[#262520] border border-stone-200 dark:border-[#3A3835] rounded-md px-1.5 py-0.5 text-xs text-stone-800 dark:text-[#F0EBE3] cursor-pointer"
+                  className="bg-[#FAF9F6] dark:bg-[#262421] border border-stone-200 dark:border-[#35332E] rounded px-1.5 py-0.5 text-xs text-stone-800 dark:text-[#F0EBE3] cursor-pointer"
                 >
                   <option value={25}>25</option>
                   <option value={50}>50</option>
@@ -861,13 +843,13 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                   type="button"
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page <= 1}
-                  className="p-1 rounded-md border border-stone-200 dark:border-[#3A3835] text-stone-600 dark:text-[#A8A095] hover:bg-stone-50 dark:hover:bg-[#262520] disabled:opacity-40 cursor-pointer"
+                  className="p-1 rounded border border-stone-200 dark:border-[#35332E] text-stone-600 dark:text-[#A0988D] hover:bg-stone-50 dark:hover:bg-[#252421] disabled:opacity-30 cursor-pointer"
                   title="Previous page"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
 
-                <span className="px-2 font-medium text-stone-700 dark:text-[#D5CFC5]">
+                <span className="px-1.5 text-[11px] font-medium text-stone-700 dark:text-[#D5CFC5]">
                   {page} / {totalPages}
                 </span>
 
@@ -875,7 +857,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                   type="button"
                   onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                   disabled={page >= totalPages}
-                  className="p-1 rounded-md border border-stone-200 dark:border-[#3A3835] text-stone-600 dark:text-[#A8A095] hover:bg-stone-50 dark:hover:bg-[#262520] disabled:opacity-40 cursor-pointer"
+                  className="p-1 rounded border border-stone-200 dark:border-[#35332E] text-stone-600 dark:text-[#A0988D] hover:bg-stone-50 dark:hover:bg-[#252421] disabled:opacity-30 cursor-pointer"
                   title="Next page"
                 >
                   <ChevronRight className="w-3.5 h-3.5" />
