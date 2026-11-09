@@ -8,6 +8,11 @@ import { KoinoniaDatePicker } from '../components/common/KoinoniaDatePicker';
 import { Button } from '../components/common/Button';
 import { validateChildName, isValidUploadedPhoto } from '../utils/validation';
 import { checkChildEventEligibility } from '../utils/age';
+import {
+  PARENT_RELATIONSHIP_OPTIONS,
+  parseRelationshipValue,
+  getEffectiveRelationship
+} from '../utils/relationship';
 
 interface AddChildStep1ViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -33,9 +38,11 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
   const [dob, setDob] = useState<string>(
     initialDraft?.childDetails?.dateOfBirth || initialDraft?.dob || ''
   );
-  const [relationship, setRelationship] = useState<string>(
+  const initialRel = parseRelationshipValue(
     initialDraft?.childDetails?.relationshipToChild || initialDraft?.relationship || ''
   );
+  const [relationshipOption, setRelationshipOption] = useState<string>(initialRel.selectedOption);
+  const [customRelationship, setCustomRelationship] = useState<string>(initialRel.customValue);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -103,12 +110,14 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
     eligibility.isEligible
   );
 
+  const effectiveRelationship = getEffectiveRelationship(relationshipOption, customRelationship);
+
   const isStep1Complete = Boolean(
     photoUrl && photoUrl.trim() !== '' && isValidUploadedPhoto(photoUrl) &&
     fullName && fullName.trim() !== '' && !validateChildName(fullName.trim()) &&
     gender && (gender === 'Male' || gender === 'Female') &&
     isDobValid &&
-    relationship && relationship.trim() !== ''
+    effectiveRelationship && effectiveRelationship.trim() !== ''
   );
 
   const handleContinue = (e: React.FormEvent) => {
@@ -148,8 +157,11 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
       }
     }
 
-    if (!relationship) {
-      newErrors.relationship = 'Choose your relationship to the child.';
+    const currentEffectiveRel = getEffectiveRelationship(relationshipOption, customRelationship);
+    if (!currentEffectiveRel) {
+      newErrors.relationship = relationshipOption === 'Other'
+        ? 'Specify your relationship to the child.'
+        : 'Choose your relationship to the child.';
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -180,7 +192,7 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
       dob,
       age: ageData.ageYears,
       ageGroup: ageData.ageGroup || 'Not specified',
-      relationship,
+      relationship: currentEffectiveRel,
       needsReview: needsAgeReviewVal,
       childDetails: {
         photo: photoUrl,
@@ -189,7 +201,7 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
         dateOfBirth: dob,
         calculatedAge: ageData.ageYears,
         ageGroup: ageData.ageGroup || 'Not specified',
-        relationshipToChild: relationship,
+        relationshipToChild: currentEffectiveRel,
         needsAgeReview: needsAgeReviewVal
       }
     };
@@ -242,6 +254,7 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
     setIsSaving(true);
     try {
       const needsAgeReviewVal = ageData.ageYears !== null && ageData.ageYears < 1;
+      const currentEffectiveRel = getEffectiveRelationship(relationshipOption, customRelationship);
       const draftData: AddChildDraft = {
         ...initialDraft,
         id: initialDraft?.id || `child-${Date.now()}`,
@@ -251,7 +264,7 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
         dob: dob || '',
         age: ageData.ageYears !== null ? ageData.ageYears : null,
         ageGroup: ageData.ageGroup || 'Not specified',
-        relationship: relationship || 'Guardian',
+        relationship: currentEffectiveRel || 'Guardian',
         needsReview: needsAgeReviewVal,
         childDetails: {
           photo: photoUrl.trim() || '',
@@ -260,7 +273,7 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
           dateOfBirth: dob || '',
           calculatedAge: ageData.ageYears !== null ? ageData.ageYears : null,
           ageGroup: ageData.ageGroup || 'Not specified',
-          relationshipToChild: relationship || 'Guardian',
+          relationshipToChild: currentEffectiveRel || 'Guardian',
           needsAgeReview: needsAgeReviewVal
         }
       };
@@ -426,15 +439,31 @@ export const AddChildStep1View: React.FC<AddChildStep1ViewProps> = ({
             <PremiumSelect
               variant="underline"
               label="Relationship to child"
-              value={relationship}
+              value={relationshipOption}
               placeholder="Select relationship"
-              options={['Mother', 'Father', 'Guardian', 'Grandparent', 'Aunt', 'Uncle', 'Other']}
+              options={[...PARENT_RELATIONSHIP_OPTIONS]}
               error={errors.relationship}
               onChange={(val) => {
-                setRelationship(val);
+                setRelationshipOption(val);
                 if (errors.relationship) setErrors((prev) => ({ ...prev, relationship: undefined }));
               }}
             />
+            {relationshipOption === 'Other' && (
+              <div className="mt-2.5">
+                <input
+                  type="text"
+                  placeholder="Specify relationship (e.g. Family friend)"
+                  value={customRelationship}
+                  onChange={(e) => {
+                    setCustomRelationship(e.target.value);
+                    if (errors.relationship) setErrors((prev) => ({ ...prev, relationship: undefined }));
+                  }}
+                  className={`w-full py-2.5 px-3 bg-white dark:bg-[#21211E] border ${
+                    errors.relationship ? 'border-red-500' : 'border-[#EDE6D4] dark:border-[#302E29]'
+                  } rounded-lg text-sm text-[#18181B] dark:text-[#F0EBE3] placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#C59B27]`}
+                />
+              </div>
+            )}
           </div>
 
           {/* Actions */}

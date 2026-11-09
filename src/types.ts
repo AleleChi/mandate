@@ -114,6 +114,17 @@ export interface Announcement {
   target_volunteer_name?: string | null;
 }
 
+export {
+  PARENT_RELATIONSHIP_OPTIONS,
+  type ParentRelationshipOption,
+  PICKUP_MANAGEABLE_STATUSES,
+  type PickupManageableStatus,
+  normalizeChildStatus,
+  isChildPickupManageable,
+  isChildPickedUp,
+  parseRelationshipValue,
+  getEffectiveRelationship
+} from './utils/relationship';
 
 export interface ChildItem {
   id: string;

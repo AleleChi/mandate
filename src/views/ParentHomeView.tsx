@@ -26,6 +26,14 @@ import * as QRCodeLib from 'qrcode';
 import { isValidUploadedPhoto, validatePhoneNumber } from '../utils/validation';
 import { PhotoUploadBox } from '../components/common/PhotoUploadBox';
 import { InternationalPhoneField } from '../components/common/InternationalPhoneField';
+import { PremiumSelect } from '../components/common/PremiumSelect';
+import {
+  PARENT_RELATIONSHIP_OPTIONS,
+  parseRelationshipValue,
+  getEffectiveRelationship,
+  isChildPickupManageable,
+  isChildPickedUp
+} from '../utils/relationship';
 
 interface ParentHomeViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -605,40 +613,105 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
   const [showArrivalGuideModal, setShowArrivalGuideModal] = useState(false);
   const [selectedArrivalChild, setSelectedArrivalChild] = useState<ChildItem | null>(null);
-  const [showPickupDetailsModal, setShowPickupDetailsModal] = useState(false);
-  const [selectedPickupChild, setSelectedPickupChild] = useState<ChildItem | null>(null);
   const [pwaGuidePlatform, setPwaGuidePlatform] = useState<'ios' | 'browser' | null>(null);
 
-  // Dedicated Manage Pickup Person state
-  const [showManagePickupModal, setShowManagePickupModal] = useState(false);
-  const [pickupModalChild, setPickupModalChild] = useState<ChildItem | null>(null);
+  // Unified Family Pickup Plan & Manage Pickup Person state (Section 19: single sheet, no double modal)
+  interface PickupSheetState {
+    isOpen: boolean;
+    child: ChildItem | null;
+    mode: 'details' | 'edit';
+    openedFromDetails: boolean;
+  }
+
+  interface PickupBaseline {
+    pickupType: 'parent' | 'other_person';
+    fullName: string;
+    relOption: string;
+    relCustom: string;
+    phone: string;
+    whatsapp: string;
+    photoUrl: string;
+  }
+
+  const [pickupSheetState, setPickupSheetState] = useState<PickupSheetState>({
+    isOpen: false,
+    child: null,
+    mode: 'details',
+    openedFromDetails: false
+  });
+
   const [managePickupType, setManagePickupType] = useState<'parent' | 'other_person'>('parent');
   const [managePickupFullName, setManagePickupFullName] = useState<string>('');
-  const [managePickupRelationship, setManagePickupRelationship] = useState<string>('');
+  const [managePickupRelOption, setManagePickupRelOption] = useState<string>('');
+  const [managePickupRelCustom, setManagePickupRelCustom] = useState<string>('');
   const [managePickupPhone, setManagePickupPhone] = useState<string>('');
   const [managePickupCountryIso, setManagePickupCountryIso] = useState<string>('NG');
   const [managePickupWhatsApp, setManagePickupWhatsApp] = useState<string>('');
   const [managePickupPhotoUrl, setManagePickupPhotoUrl] = useState<string>('');
   const [managePickupErrors, setManagePickupErrors] = useState<Record<string, string>>({});
+  const [pickupBaseline, setPickupBaseline] = useState<PickupBaseline | null>(null);
   const [isSavingPickup, setIsSavingPickup] = useState(false);
   const [isUploadingPickupPhoto, setIsUploadingPickupPhoto] = useState(false);
   const [showPickupConfirmDialog, setShowPickupConfirmDialog] = useState(false);
 
-  const handleOpenManagePickup = (child: ChildItem) => {
+  const initManagePickupForm = (child: ChildItem) => {
     const currentPickup = child.draftData?.pickup;
     const isOther = currentPickup?.pickupType === 'other_person';
-    setPickupModalChild(child);
-    setManagePickupType(isOther ? 'other_person' : 'parent');
-    setManagePickupFullName(isOther ? (currentPickup?.pickupPersonFullName || '') : '');
-    setManagePickupRelationship(isOther ? (currentPickup?.pickupPersonRelationship || '') : '');
+    const parsedRel = parseRelationshipValue(isOther ? (currentPickup?.pickupPersonRelationship || '') : '');
     const rawPhone = isOther ? (currentPickup?.pickupPersonPhone || '') : '';
+    const rawWa = isOther ? (currentPickup?.pickupPersonWhatsApp || '') : '';
+    const photo = isOther ? (currentPickup?.pickupPersonPhoto || (currentPickup as any)?.pickupPersonPhotoUrl || '') : '';
+    const name = isOther ? (currentPickup?.pickupPersonFullName || '') : '';
+    const initialType = isOther ? 'other_person' : 'parent';
+
+    setManagePickupType(initialType);
+    setManagePickupFullName(name);
+    setManagePickupRelOption(parsedRel.selectedOption);
+    setManagePickupRelCustom(parsedRel.customValue);
     setManagePickupPhone(rawPhone);
     setManagePickupCountryIso(inferCountryIsoFromE164(rawPhone) || parentProfile.countryIso || 'NG');
-    setManagePickupWhatsApp(isOther ? (currentPickup?.pickupPersonWhatsApp || '') : '');
-    setManagePickupPhotoUrl(isOther ? (currentPickup?.pickupPersonPhoto || (currentPickup as any)?.pickupPersonPhotoUrl || '') : '');
+    setManagePickupWhatsApp(rawWa);
+    setManagePickupPhotoUrl(photo);
     setManagePickupErrors({});
     setShowPickupConfirmDialog(false);
-    setShowManagePickupModal(true);
+
+    setPickupBaseline({
+      pickupType: initialType,
+      fullName: name.trim(),
+      relOption: parsedRel.selectedOption,
+      relCustom: parsedRel.customValue.trim(),
+      phone: rawPhone.trim(),
+      whatsapp: rawWa.trim(),
+      photoUrl: photo.trim()
+    });
+  };
+
+  const handleOpenPickupDetails = (child: ChildItem) => {
+    setPickupSheetState({
+      isOpen: true,
+      child,
+      mode: 'details',
+      openedFromDetails: true
+    });
+  };
+
+  const handleOpenManagePickup = (child: ChildItem) => {
+    initManagePickupForm(child);
+    setPickupSheetState({
+      isOpen: true,
+      child,
+      mode: 'edit',
+      openedFromDetails: false
+    });
+  };
+
+  const handleCancelEdit = () => {
+    if (isSavingPickup) return;
+    if (pickupSheetState.openedFromDetails) {
+      setPickupSheetState((prev) => ({ ...prev, mode: 'details' }));
+    } else {
+      setPickupSheetState({ isOpen: false, child: null, mode: 'details', openedFromDetails: false });
+    }
   };
 
   const handleSavePickupClick = () => {
@@ -651,8 +724,11 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
     if (!managePickupFullName.trim()) {
       errors.fullName = 'Full name is required.';
     }
-    if (!managePickupRelationship.trim()) {
-      errors.relationship = 'Relationship to child is required.';
+    const currentEffectiveRel = getEffectiveRelationship(managePickupRelOption, managePickupRelCustom);
+    if (!currentEffectiveRel.trim()) {
+      errors.relationship = managePickupRelOption === 'Other'
+        ? 'Specify relationship to the child.'
+        : 'Choose relationship to the child.';
     }
     if (!managePickupPhone.trim()) {
       errors.phone = 'Phone number is required.';
@@ -676,9 +752,10 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
   };
 
   const executeSavePickup = async () => {
-    if (!pickupModalChild) return;
+    if (!pickupSheetState.child) return;
     setIsSavingPickup(true);
     try {
+      const currentEffectiveRel = getEffectiveRelationship(managePickupRelOption, managePickupRelCustom);
       const payload: any = {
         pickupType: managePickupType,
         approvedByParent: true
@@ -686,7 +763,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
       if (managePickupType === 'other_person') {
         payload.pickupPersonFullName = managePickupFullName.trim();
-        payload.pickupPersonRelationship = managePickupRelationship.trim();
+        payload.pickupPersonRelationship = currentEffectiveRel.trim();
         payload.pickupPersonPhone = managePickupPhone.trim();
         if (managePickupWhatsApp.trim()) {
           payload.pickupPersonWhatsApp = managePickupWhatsApp.trim();
@@ -694,7 +771,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         payload.pickupPersonPhotoFileId = managePickupPhotoUrl;
       }
 
-      const res = await api.parent.updateChildPickup(pickupModalChild.id, payload);
+      const res = await api.parent.updateChildPickup(pickupSheetState.child.id, payload);
 
       if (res && res.success && res.child) {
         showSuccess('Pickup person updated');
@@ -706,18 +783,28 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           onUpdateChild(updatedChild);
         }
 
-        // If Family Pickup Plan modal was viewing this child, update it immediately
-        if (selectedPickupChild && selectedPickupChild.id === updatedChild.id) {
-          setSelectedPickupChild(updatedChild);
-        }
-
         // If detail/pass modal was viewing this child, update it immediately
         if (selectedDetailChild && selectedDetailChild.id === updatedChild.id) {
           setSelectedDetailChild(updatedChild);
         }
 
-        setShowManagePickupModal(false);
         setShowPickupConfirmDialog(false);
+
+        // Section 19: Return to Family Pickup Plan displaying the updated person if opened from details
+        if (pickupSheetState.openedFromDetails) {
+          setPickupSheetState((prev) => ({
+            ...prev,
+            child: updatedChild,
+            mode: 'details'
+          }));
+        } else {
+          setPickupSheetState({
+            isOpen: false,
+            child: null,
+            mode: 'details',
+            openedFromDetails: false
+          });
+        }
       } else {
         showError(res?.message || 'Failed to update pickup person');
       }
@@ -1373,10 +1460,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                       ) : isPickedUp || isCheckedIn ? (
                         <button
                           type="button"
-                          onClick={() => {
-                            setSelectedPickupChild(child);
-                            setShowPickupDetailsModal(true);
-                          }}
+                          onClick={() => handleOpenPickupDetails(child)}
                           className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl flex items-center justify-between text-xs sm:text-sm font-semibold text-[#9A7326] dark:text-[#C59B27] hover:bg-[#FAF6EB] dark:hover:bg-[#262520] active:bg-[#F5F0E1] dark:active:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27]/40"
                         >
                           <span>View pickup details</span>
@@ -1418,7 +1502,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                               <ChevronRight className="w-4 h-4 text-[#C59B27] shrink-0" />
                             </button>
                           )}
-                          {(child.status === 'Selected' || child.status === 'Pass ready') && (
+                          {(child.status === 'Selected' || child.status === 'Pass ready') && isChildPickupManageable(child) && (
                             <button
                               type="button"
                               onClick={() => handleOpenManagePickup(child)}
@@ -3842,380 +3926,479 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         );
       })()}
 
-      {/* Family Pickup Plan Modal / Sheet */}
-      {showPickupDetailsModal && selectedPickupChild && (() => {
-        const isPickedUp = selectedPickupChild.status === 'Picked up' || selectedPickupChild.status === 'Checked out';
-        const isCheckedInChild = selectedPickupChild.status === 'Checked in' || selectedPickupChild.status === 'Inside';
-        const ageGrp = (selectedPickupChild.ageGroup || selectedPickupChild.draftData?.ageGroup || '').toLowerCase();
+      {/* Unified Pickup Plan & Manage Pickup Sheet (Section 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20) */}
+      {pickupSheetState.isOpen && pickupSheetState.child && (() => {
+        const child = pickupSheetState.child;
+        const isEditMode = pickupSheetState.mode === 'edit';
+        const isPickedUp = isChildPickedUp(child);
+        const isCheckedInChild = child.status === 'Checked in' || child.status === 'Inside';
+        const isManageable = isChildPickupManageable(child);
+
+        const ageGrp = (child.ageGroup || child.draftData?.ageGroup || '').toLowerCase();
         let pickupPoint = "Family Collection Desk B";
-        if (ageGrp.includes('0') || ageGrp.includes('1') || ageGrp.includes('2') || ageGrp.includes('3') || selectedPickupChild.age < 4) {
+        if (ageGrp.includes('0') || ageGrp.includes('1') || ageGrp.includes('2') || ageGrp.includes('3') || child.age < 4) {
           pickupPoint = "Family Collection Desk A";
-        } else if (ageGrp.includes('7') || ageGrp.includes('8') || ageGrp.includes('9') || (selectedPickupChild.age >= 7 && selectedPickupChild.age <= 9)) {
+        } else if (ageGrp.includes('7') || ageGrp.includes('8') || ageGrp.includes('9') || (child.age >= 7 && child.age <= 9)) {
           pickupPoint = "Family Collection Desk C";
-        } else if (ageGrp.includes('10') || ageGrp.includes('11') || ageGrp.includes('12') || (selectedPickupChild.age >= 10 && selectedPickupChild.age <= 12)) {
+        } else if (ageGrp.includes('10') || ageGrp.includes('11') || ageGrp.includes('12') || (child.age >= 10 && child.age <= 12)) {
           pickupPoint = "Family Collection Desk C";
-        } else if (selectedPickupChild.age >= 13) {
+        } else if (child.age >= 13) {
           pickupPoint = "Family Collection Desk D";
         }
 
-        const isOther = selectedPickupChild.draftData?.pickup?.pickupType === 'other_person';
+        const isOther = child.draftData?.pickup?.pickupType === 'other_person';
         const pickupName = isOther
-          ? (selectedPickupChild.draftData?.pickup?.pickupPersonFullName || 'Authorized Pickup')
+          ? (child.draftData?.pickup?.pickupPersonFullName || 'Authorized Pickup')
           : (parentProfile.fullName || 'Parent / Guardian');
         const pickupRel = isOther
-          ? (selectedPickupChild.draftData?.pickup?.pickupPersonRelationship || 'Authorized')
+          ? (child.draftData?.pickup?.pickupPersonRelationship || 'Authorized')
           : 'Primary parent';
+        const pickupPhone = isOther
+          ? (child.draftData?.pickup?.pickupPersonPhone || '')
+          : (parentProfile.phone || parentProfile.phoneNumber || '');
         const pickupPhoto = isOther
-          ? (selectedPickupChild.draftData?.pickup?.pickupPersonPhoto || (selectedPickupChild.draftData?.pickup as any)?.pickupPersonPhotoUrl)
+          ? (child.draftData?.pickup?.pickupPersonPhoto || (child.draftData?.pickup as any)?.pickupPersonPhotoUrl)
           : parentProfile.photoUrl;
+
+        // Change detection & validation for editor
+        const effectiveManageRel = getEffectiveRelationship(managePickupRelOption, managePickupRelCustom);
+        let hasPickupChanges = false;
+        if (pickupBaseline) {
+          if (managePickupType !== pickupBaseline.pickupType) {
+            hasPickupChanges = true;
+          } else if (managePickupType === 'other_person') {
+            const isNameChanged = managePickupFullName.trim() !== pickupBaseline.fullName;
+            const isRelOptionChanged = managePickupRelOption !== pickupBaseline.relOption;
+            const isRelCustomChanged = managePickupRelCustom.trim() !== pickupBaseline.relCustom;
+            const isPhoneChanged = managePickupPhone.trim() !== pickupBaseline.phone;
+            const isWaChanged = managePickupWhatsApp.trim() !== pickupBaseline.whatsapp;
+            const isPhotoChanged = managePickupPhotoUrl.trim() !== pickupBaseline.photoUrl;
+            hasPickupChanges = isNameChanged || isRelOptionChanged || isRelCustomChanged || isPhoneChanged || isWaChanged || isPhotoChanged;
+          }
+        }
+
+        let isPickupFormValid = false;
+        if (managePickupType === 'parent') {
+          isPickupFormValid = true;
+        } else {
+          const hasPhoto = Boolean(managePickupPhotoUrl && isValidUploadedPhoto(managePickupPhotoUrl));
+          const hasName = Boolean(managePickupFullName.trim().length > 0);
+          const hasRel = Boolean(effectiveManageRel.trim().length > 0);
+          const phoneErr = validatePhoneNumber(managePickupPhone, managePickupCountryIso);
+          const hasPhone = Boolean(managePickupPhone.trim().length > 0 && !phoneErr);
+          isPickupFormValid = hasPhoto && hasName && hasRel && hasPhone;
+        }
+
+        const canSavePickup = hasPickupChanges && isPickupFormValid && !isSavingPickup && !isUploadingPickupPhoto;
 
         return (
           <div 
             className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end sm:justify-center p-0 sm:p-4 animate-fade-in"
-            onClick={() => setShowPickupDetailsModal(false)}
+            onClick={() => !isSavingPickup && setPickupSheetState({ isOpen: false, child: null, mode: 'details', openedFromDetails: false })}
           >
             <div 
-              className="bg-white dark:bg-[#1C1B18] rounded-t-[28px] sm:rounded-2xl max-h-[90%] w-full max-w-md mx-auto overflow-hidden flex flex-col border border-[#EAE8E1] dark:border-[#302E29] shadow-2xl animate-in slide-in-from-bottom duration-300"
+              className="bg-[#FDFCF8] dark:bg-[#1C1B18] rounded-t-2xl sm:rounded-lg max-h-[92vh] sm:max-h-[85vh] w-full max-w-md mx-auto overflow-hidden flex flex-col border border-[#EDE6D4] dark:border-[#302E29] shadow-xl animate-in slide-in-from-bottom duration-300"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* Header */}
-              <div className="px-5 py-4 border-b border-[#EDE6D4] dark:border-[#302E29] flex items-center justify-between shrink-0 bg-[#FAF9F6] dark:bg-[#21211E]">
-                <div className="flex items-center space-x-3">
-                  <div className="p-2 bg-[#FAF6EB] dark:bg-[#262520] rounded-xl border border-[#E5D5AE] dark:border-[#3A3835] text-[#C59B27]">
-                    <ShieldCheck className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3]">
-                      Family pickup plan
+              {/* Header (Section 3 & 19: Clean text, no icon tile, back button if transitioned from details) */}
+              <div className="px-5 py-3.5 border-b border-[#EDE6D4] dark:border-[#302E29] flex items-center justify-between shrink-0 bg-[#FAF9F6] dark:bg-[#21211E]">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  {isEditMode && pickupSheetState.openedFromDetails && (
+                    <button
+                      type="button"
+                      onClick={() => setPickupSheetState((prev) => ({ ...prev, mode: 'details' }))}
+                      className="p-1 -ml-1 rounded-md text-[#71717A] hover:text-[#18181B] dark:hover:text-[#F0EBE3] transition-colors cursor-pointer"
+                      aria-label="Back to pickup details"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                    </button>
+                  )}
+                  <div className="min-w-0">
+                    <h3 className="text-base font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3] truncate">
+                      {isEditMode ? 'Authorised pickup' : 'Family pickup plan'}
                     </h3>
-                    <p className="text-xs text-[#71717A] dark:text-[#A1A1AA]">
-                      Pickup details for {selectedPickupChild.name}
+                    <p className="text-xs text-[#71717A] dark:text-[#A1A1AA] truncate">
+                      {isEditMode
+                        ? `Choose who is permitted to collect ${child.name.split(' ')[0] || child.name}.`
+                        : `Pickup details for ${child.name}`}
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setShowPickupDetailsModal(false)}
-                  className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Body: Clean separators instead of multiple cards (Section 21) */}
-              <div className="p-5 space-y-4 overflow-y-auto text-xs text-[#3F3F46] dark:text-[#B8B0A5]">
-                {/* Child */}
-                <div className="flex items-center justify-between pb-3.5 border-b border-[#EDE6D4] dark:border-[#302E29]">
-                  <div className="flex items-center space-x-3">
-                    <FallbackAvatar src={selectedPickupChild.photoUrl} name={selectedPickupChild.name} className="w-10 h-10 rounded-full shrink-0" />
-                    <div>
-                      <h4 className="font-bold text-sm text-[#18181B] dark:text-[#F0EBE3]">{selectedPickupChild.name}</h4>
-                      <p className="text-xs text-[#71717A] dark:text-[#A1A1AA]">{selectedPickupChild.name} · {selectedPickupChild.age} yrs</p>
-                    </div>
-                  </div>
-                  {isPickedUp ? (
-                    <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                      Pickup completed
-                    </span>
-                  ) : isCheckedInChild ? (
-                    <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
-                      Checked in
-                    </span>
-                  ) : null}
-                </div>
-
-                {/* Collection point */}
-                <div className="pb-3.5 border-b border-[#EDE6D4] dark:border-[#302E29] space-y-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326] dark:text-[#C59B27] block">
-                    Collection Point
-                  </span>
-                  <p className="text-sm font-bold text-[#18181B] dark:text-[#F0EBE3]">{pickupPoint}</p>
-                  <p className="text-xs text-[#71717A] dark:text-[#A1A1AA]">
-                    {isPickedUp ? 'Child was released at this collection point.' : `Please present your pickup pass or photo ID at ${pickupPoint}.`}
-                  </p>
-                </div>
-
-                {/* Authorised pickup */}
-                <div className="pb-3.5 border-b border-[#EDE6D4] dark:border-[#302E29] space-y-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326] dark:text-[#C59B27] block">
-                    {isPickedUp ? 'Collected By' : 'Authorised Pickup'}
-                  </span>
-                  <div className="flex items-center space-x-3">
-                    <FallbackAvatar src={pickupPhoto} name={pickupName} className="w-10 h-10 rounded-full shrink-0" />
-                    <div>
-                      <p className="text-sm font-bold text-[#18181B] dark:text-[#F0EBE3]">{pickupName}</p>
-                      <p className="text-xs text-[#71717A] dark:text-[#A1A1AA]">{pickupRel}</p>
-                    </div>
-                  </div>
-
-                  {/* Security notice for checked-in child (Section 22) */}
-                  {isCheckedInChild && !isPickedUp && (
-                    <p className="text-[11px] text-[#6B6860] dark:text-[#A1A1AA] leading-relaxed pt-1">
-                      The event team will see the updated pickup authorization immediately.
-                    </p>
-                  )}
-
-                  {/* Secondary action: Change pickup person (Section 5, 6) */}
-                  {!isPickedUp && (
-                    <div className="pt-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleOpenManagePickup(selectedPickupChild);
-                        }}
-                        className="text-xs font-semibold text-[#9A7326] dark:text-[#C59B27] hover:underline cursor-pointer flex items-center gap-1"
-                      >
-                        Change pickup person
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Show pickup pass */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowPickupDetailsModal(false);
-                    setSelectedPassChild(selectedPickupChild);
-                    handleTabChange('Passes');
-                  }}
-                  className="w-full py-3 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:scale-[0.99] text-[#18181B] font-semibold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer flex items-center justify-center space-x-2"
+                  onClick={() => !isSavingPickup && setPickupSheetState({ isOpen: false, child: null, mode: 'details', openedFromDetails: false })}
+                  className="p-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors cursor-pointer shrink-0"
+                  aria-label="Close"
                 >
-                  <QrCode className="w-4 h-4" />
-                  <span>Show pickup pass</span>
+                  <X className="w-4 h-4" />
                 </button>
               </div>
+
+              {/* View 1: Details Mode (Family pickup plan) */}
+              {!isEditMode && (
+                <div className="p-5 space-y-4 overflow-y-auto text-xs text-[#3F3F46] dark:text-[#B8B0A5]">
+                  {/* Child Identity Row (Section 4: flat identity row, no blue badge container) */}
+                  <div className="flex items-center space-x-3 pb-3.5 border-b border-[#EDE6D4] dark:border-[#302E29]">
+                    <FallbackAvatar src={child.photoUrl} name={child.name} className="w-10 h-10 rounded-full shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-semibold text-sm text-[#18181B] dark:text-[#F0EBE3] truncate">{child.name}</h4>
+                      <p className="text-xs text-[#71717A] dark:text-[#A1A1AA]">
+                        {child.age} years · {child.ageGroup || child.draftData?.ageGroup || 'General'}
+                      </p>
+                      {isPickedUp ? (
+                        <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium mt-0.5">
+                          Pickup completed
+                        </p>
+                      ) : isCheckedInChild ? (
+                        <p className="text-[11px] text-[#71717A] dark:text-[#A1A1AA] mt-0.5">
+                          Checked in
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {/* Collection Point (Section 5: simple section, no bordered card) */}
+                  <div className="pb-3.5 border-b border-[#EDE6D4] dark:border-[#302E29] space-y-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326] dark:text-[#C59B27] block">
+                      COLLECTION POINT
+                    </span>
+                    <p className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3]">{pickupPoint}</p>
+                    <p className="text-xs text-[#71717A] dark:text-[#A1A1AA] leading-relaxed">
+                      {isPickedUp ? 'Child was released at this collection point.' : `Please present your pickup pass or photo ID at ${pickupPoint}.`}
+                    </p>
+                  </div>
+
+                  {/* Authorised Pickup (Section 6: flat layout, no card around person) */}
+                  <div className="pb-3.5 border-b border-[#EDE6D4] dark:border-[#302E29] space-y-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326] dark:text-[#C59B27] block">
+                      {isPickedUp ? 'COLLECTED BY' : 'AUTHORISED PICKUP'}
+                    </span>
+                    <div className="flex items-center space-x-3">
+                      <FallbackAvatar src={pickupPhoto} name={pickupName} className="w-10 h-10 rounded-full shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-[#18181B] dark:text-[#F0EBE3] truncate">{pickupName}</p>
+                        <p className="text-xs text-[#71717A] dark:text-[#A1A1AA]">{pickupRel}</p>
+                        {pickupPhone && (
+                          <p className="text-[11px] text-[#71717A] dark:text-[#A1A1AA] mt-0.5">{pickupPhone}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Checked-in operational notice (Section 7: small inline info row) */}
+                    {isCheckedInChild && !isPickedUp && (
+                      <div className="flex items-center gap-1.5 pt-1 text-[11px] text-[#6B6860] dark:text-[#A1A1AA]">
+                        <Info className="w-3.5 h-3.5 shrink-0 text-[#9A7326] dark:text-[#C59B27]" />
+                        <span>The event team will see the updated pickup authorization immediately.</span>
+                      </div>
+                    )}
+
+                    {/* Change pickup person link (Section 6: quiet Koinonia gold text action) */}
+                    {!isPickedUp && isManageable && (
+                      <div className="pt-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            initManagePickupForm(child);
+                            setPickupSheetState((prev) => ({ ...prev, mode: 'edit' }));
+                          }}
+                          className="text-xs font-semibold text-[#9A7326] dark:text-[#C59B27] hover:underline cursor-pointer inline-flex items-center gap-1 focus:outline-none"
+                        >
+                          Change pickup person
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Show pickup pass button (Section 8: restrained 48px action, 8px radius) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPickupSheetState({ isOpen: false, child: null, mode: 'details', openedFromDetails: false });
+                      setSelectedPassChild(child);
+                      handleTabChange('Passes');
+                    }}
+                    className="w-full min-h-[48px] py-3 px-4 rounded-lg bg-[#C59B27] hover:bg-[#B58E33] active:scale-[0.99] text-[#18181B] font-semibold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer flex items-center justify-center space-x-2"
+                  >
+                    <QrCode className="w-4 h-4" />
+                    <span>Show pickup pass</span>
+                  </button>
+                </div>
+              )}
+
+              {/* View 2: Edit Mode (Authorised pickup editor) */}
+              {isEditMode && (
+                <div className="p-5 space-y-4 overflow-y-auto text-xs text-[#3F3F46] dark:text-[#B8B0A5]">
+                  {/* Checked-in operational notice (Section 7) */}
+                  {isCheckedInChild && !isPickedUp && (
+                    <div className="flex items-center gap-1.5 text-[11px] text-[#6B6860] dark:text-[#A1A1AA] pb-1">
+                      <Info className="w-3.5 h-3.5 shrink-0 text-[#9A7326] dark:text-[#C59B27]" />
+                      <span>The event team will see the updated pickup authorization immediately.</span>
+                    </div>
+                  )}
+
+                  {/* Who will collect? (Section 9: Simple radio rows) */}
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326] dark:text-[#C59B27] block">
+                      Who will collect?
+                    </span>
+                    <div className="divide-y divide-[#EDE6D4] dark:divide-[#302E29] border border-[#EDE6D4] dark:border-[#302E29] rounded-lg overflow-hidden bg-white dark:bg-[#21211E]">
+                      {/* Option 1: Primary parent */}
+                      <label
+                        onClick={() => setManagePickupType('parent')}
+                        className={`p-3 flex items-start gap-3 cursor-pointer transition-colors ${
+                          managePickupType === 'parent'
+                            ? 'bg-[#FAF6EB]/40 dark:bg-[#262520]/50'
+                            : 'hover:bg-zinc-50 dark:hover:bg-[#262520]/20'
+                        }`}
+                      >
+                        <div className="pt-0.5 shrink-0">
+                          <span
+                            className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
+                              managePickupType === 'parent'
+                                ? 'border-[#C59B27] bg-[#C59B27]'
+                                : 'border-[#D9D6CE] dark:border-[#4A4740]'
+                            }`}
+                          >
+                            {managePickupType === 'parent' && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                            )}
+                          </span>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            {parentProfile.photoUrl && (
+                              <FallbackAvatar
+                                src={parentProfile.photoUrl}
+                                name={parentProfile.fullName}
+                                className="w-6 h-6 rounded-full shrink-0"
+                              />
+                            )}
+                            <p className={`text-xs ${managePickupType === 'parent' ? 'font-semibold text-[#18181B] dark:text-[#F0EBE3]' : 'font-normal text-[#18181B] dark:text-[#F0EBE3]'}`}>
+                              Primary parent / guardian
+                            </p>
+                          </div>
+                          <p className="text-[11px] text-[#6B6860] dark:text-[#A1A1AA] mt-0.5">
+                            {parentProfile.fullName} · {parentProfile.phone}
+                          </p>
+                        </div>
+                      </label>
+
+                      {/* Option 2: Another authorised adult */}
+                      <label
+                        onClick={() => setManagePickupType('other_person')}
+                        className={`p-3 flex items-start gap-3 cursor-pointer transition-colors ${
+                          managePickupType === 'other_person'
+                            ? 'bg-[#FAF6EB]/40 dark:bg-[#262520]/50'
+                            : 'hover:bg-zinc-50 dark:hover:bg-[#262520]/20'
+                        }`}
+                      >
+                        <div className="pt-0.5 shrink-0">
+                          <span
+                            className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
+                              managePickupType === 'other_person'
+                                ? 'border-[#C59B27] bg-[#C59B27]'
+                                : 'border-[#D9D6CE] dark:border-[#4A4740]'
+                            }`}
+                          >
+                            {managePickupType === 'other_person' && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                            )}
+                          </span>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-xs ${managePickupType === 'other_person' ? 'font-semibold text-[#18181B] dark:text-[#F0EBE3]' : 'font-normal text-[#18181B] dark:text-[#F0EBE3]'}`}>
+                            Another authorised adult
+                          </p>
+                          <p className="text-[11px] text-[#6B6860] dark:text-[#A1A1AA] mt-0.5">
+                            Add the person's verified details.
+                          </p>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Another Authorised Adult Form (Section 11, 12, 13, 14, 16, 17) */}
+                  {managePickupType === 'other_person' && (
+                    <div className="space-y-3.5 pt-2 border-t border-[#EDE6D4] dark:border-[#302E29]">
+                      {/* 1. Photo (Section 12: compact layout) */}
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326] dark:text-[#C59B27] block mb-1.5">
+                          PHOTO *
+                        </label>
+                        <div className="flex items-center gap-3.5">
+                          <PhotoUploadBox
+                            value={managePickupPhotoUrl}
+                            onUploaded={(url) => {
+                              setManagePickupPhotoUrl(url);
+                              setManagePickupErrors((prev) => ({ ...prev, photo: '' }));
+                            }}
+                            purpose="pickup_person_photo"
+                            sizeVariant="w-24"
+                            error={managePickupErrors.photo}
+                            onUploadingStateChange={setIsUploadingPickupPhoto}
+                          />
+                          <div className="space-y-0.5">
+                            <p className="text-xs text-[#6B6860] dark:text-[#A1A1AA] leading-normal">
+                              Use a clear photo of the person's face.
+                            </p>
+                            {managePickupPhotoUrl && (
+                              <span className="text-[11px] font-semibold text-[#9A7326] dark:text-[#C59B27]">
+                                Photo selected
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {managePickupErrors.photo && (
+                          <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">{managePickupErrors.photo}</p>
+                        )}
+                      </div>
+
+                      {/* 2. Full Name (Section 17: 6-8px radius, clean neutral border) */}
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326] dark:text-[#C59B27] block mb-1">
+                          FULL NAME *
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Sarah Connor"
+                          value={managePickupFullName}
+                          onChange={(e) => {
+                            setManagePickupFullName(e.target.value);
+                            if (managePickupErrors.fullName) setManagePickupErrors((prev) => ({ ...prev, fullName: '' }));
+                          }}
+                          className={`w-full px-3.5 py-2.5 rounded-lg border bg-white dark:bg-[#21211E] text-xs text-[#18181B] dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27] ${
+                            managePickupErrors.fullName ? 'border-red-500' : 'border-[#EDE6D4] dark:border-[#302E29]'
+                          }`}
+                        />
+                        {managePickupErrors.fullName && (
+                          <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">{managePickupErrors.fullName}</p>
+                        )}
+                      </div>
+
+                      {/* 3. Relationship to child (Section 13, 14: Canonical PremiumSelect) */}
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326] dark:text-[#C59B27] block mb-1">
+                          RELATIONSHIP TO CHILD *
+                        </label>
+                        <PremiumSelect
+                          variant="bordered"
+                          value={managePickupRelOption}
+                          placeholder="Select relationship"
+                          options={[...PARENT_RELATIONSHIP_OPTIONS]}
+                          error={managePickupErrors.relationship}
+                          onChange={(val) => {
+                            setManagePickupRelOption(val);
+                            if (managePickupErrors.relationship) {
+                              setManagePickupErrors((prev) => ({ ...prev, relationship: '' }));
+                            }
+                          }}
+                        />
+                        {managePickupRelOption === 'Other' && (
+                          <div className="mt-2">
+                            <input
+                              type="text"
+                              placeholder="Specify relationship (e.g. Family friend)"
+                              value={managePickupRelCustom}
+                              onChange={(e) => {
+                                setManagePickupRelCustom(e.target.value);
+                                if (managePickupErrors.relationship) {
+                                  setManagePickupErrors((prev) => ({ ...prev, relationship: '' }));
+                                }
+                              }}
+                              className="w-full px-3.5 py-2.5 rounded-lg border border-[#EDE6D4] dark:border-[#302E29] bg-white dark:bg-[#21211E] text-xs text-[#18181B] dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27]"
+                            />
+                          </div>
+                        )}
+                        {managePickupErrors.relationship && (
+                          <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">{managePickupErrors.relationship}</p>
+                        )}
+                      </div>
+
+                      {/* 4. Phone number (Section 16: InternationalPhoneField) */}
+                      <div>
+                        <InternationalPhoneField
+                          label="PHONE NUMBER *"
+                          value={managePickupPhone}
+                          countryIso={managePickupCountryIso}
+                          onCountryChange={setManagePickupCountryIso}
+                          onChange={(val) => {
+                            setManagePickupPhone(val);
+                            if (managePickupErrors.phone) setManagePickupErrors((prev) => ({ ...prev, phone: '' }));
+                          }}
+                          error={managePickupErrors.phone}
+                        />
+                      </div>
+
+                      {/* 5. WhatsApp (Section 16: optional with Same as phone link) */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326] dark:text-[#C59B27] block">
+                            WHATSAPP NUMBER <span className="font-normal lowercase text-[#8B867D] dark:text-[#7A7570]">(optional)</span>
+                          </label>
+                          {managePickupPhone.trim() && (
+                            <button
+                              type="button"
+                              onClick={() => setManagePickupWhatsApp(managePickupPhone)}
+                              className="text-[11px] text-[#9A7326] dark:text-[#C59B27] hover:underline cursor-pointer"
+                            >
+                              Same as phone
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="tel"
+                          placeholder="e.g. +234..."
+                          value={managePickupWhatsApp}
+                          onChange={(e) => setManagePickupWhatsApp(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-lg border border-[#EDE6D4] dark:border-[#302E29] bg-white dark:bg-[#21211E] text-xs text-[#18181B] dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27]"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Save Footer (Section 18: Cancel + Save pickup person) */}
+                  <div className="pt-3 border-t border-[#EDE6D4] dark:border-[#302E29] flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={handleCancelEdit}
+                      disabled={isSavingPickup}
+                      className="py-2.5 px-3 text-xs font-medium text-[#71717A] dark:text-[#A1A1AA] hover:text-[#18181B] dark:hover:text-[#F0EBE3] transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canSavePickup}
+                      onClick={handleSavePickupClick}
+                      className="py-2.5 px-5 rounded-lg bg-[#C59B27] hover:bg-[#B58E33] active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed text-[#18181B] font-semibold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      {isSavingPickup ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Saving...</span>
+                        </>
+                      ) : (
+                        <span>Save pickup person</span>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         );
       })()}
 
-      {/* Focused Edit Pickup Sheet / Modal (Section 10, 11, 20) */}
-      {showManagePickupModal && pickupModalChild && (
-        <div
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end sm:justify-center p-0 sm:p-4 animate-fade-in"
-          onClick={() => !isSavingPickup && setShowManagePickupModal(false)}
-        >
-          <div
-            className="bg-[#FDFCF8] dark:bg-[#1C1B18] rounded-t-[28px] sm:rounded-2xl max-h-[90%] w-full max-w-md mx-auto overflow-hidden flex flex-col border border-[#EDE6D4] dark:border-[#302E29] shadow-2xl animate-in slide-in-from-bottom duration-300"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="px-5 py-4 border-b border-[#EDE6D4] dark:border-[#302E29] flex items-center justify-between shrink-0 bg-[#FAF9F6] dark:bg-[#21211E]">
-              <div>
-                <h3 className="text-base font-serif-koinonia font-bold text-[#18181B] dark:text-[#F0EBE3]">
-                  Authorised pickup
-                </h3>
-                <p className="text-xs text-[#6B6860] dark:text-[#A1A1AA] mt-0.5">
-                  Choose who is permitted to collect {pickupModalChild.name.split(' ')[0] || pickupModalChild.name}.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => !isSavingPickup && setShowManagePickupModal(false)}
-                className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Content */}
-            <div className="p-5 space-y-4 overflow-y-auto text-xs text-[#3F3F46] dark:text-[#B8B0A5]">
-              {/* Notice for checked-in child (Section 22) */}
-              {(pickupModalChild.status === 'Checked in' || pickupModalChild.status === 'Inside') && (
-                <div className="p-3 bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] rounded-xl text-xs text-[#8C6D23] dark:text-[#C59B27] flex items-start gap-2">
-                  <Info className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>The event team will see the updated pickup authorization immediately.</span>
-                </div>
-              )}
-
-              {/* Option 1: Primary parent / guardian (Section 10) */}
-              <div
-                onClick={() => setManagePickupType('parent')}
-                className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
-                  managePickupType === 'parent'
-                    ? 'bg-[#FAF6EB]/60 dark:bg-[#262520] border-[#C59B27]'
-                    : 'bg-white dark:bg-[#21211E] border-[#EDE6D4] dark:border-[#302E29] hover:border-[#D5CBB5]'
-                }`}
-              >
-                <div className="flex items-start space-x-3">
-                  <FallbackAvatar
-                    src={parentProfile.photoUrl}
-                    name={parentProfile.fullName}
-                    className="w-10 h-10 rounded-full shrink-0"
-                  />
-                  <div className="space-y-0.5">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326] dark:text-[#C59B27] block">
-                      Primary parent / guardian
-                    </span>
-                    <p className="text-sm font-bold text-[#18181B] dark:text-[#F0EBE3]">{parentProfile.fullName}</p>
-                    <p className="text-xs text-[#6B6860] dark:text-[#A1A1AA]">{parentProfile.phone}</p>
-                  </div>
-                </div>
-                <div className="shrink-0 pt-0.5">
-                  {managePickupType === 'parent' ? (
-                    <div className="w-5 h-5 rounded-full bg-[#C59B27] text-white flex items-center justify-center">
-                      <Check className="w-3.5 h-3.5 stroke-[3]" />
-                    </div>
-                  ) : (
-                    <div className="w-5 h-5 rounded-full border border-[#D9D6CE] dark:border-[#4A4740]" />
-                  )}
-                </div>
-              </div>
-
-              {/* Option 2: Someone else (Section 11) */}
-              <div
-                onClick={() => setManagePickupType('other_person')}
-                className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
-                  managePickupType === 'other_person'
-                    ? 'bg-[#FAF6EB]/60 dark:bg-[#262520] border-[#C59B27]'
-                    : 'bg-white dark:bg-[#21211E] border-[#EDE6D4] dark:border-[#302E29] hover:border-[#D5CBB5]'
-                }`}
-              >
-                <div className="space-y-0.5">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326] dark:text-[#C59B27] block">
-                    Someone else
-                  </span>
-                  <p className="text-sm font-bold text-[#18181B] dark:text-[#F0EBE3]">Authorise another adult to collect</p>
-                  <p className="text-xs text-[#6B6860] dark:text-[#A1A1AA]">Requires photo, full name, phone number & relationship.</p>
-                </div>
-                <div className="shrink-0 pt-0.5">
-                  {managePickupType === 'other_person' ? (
-                    <div className="w-5 h-5 rounded-full bg-[#C59B27] text-white flex items-center justify-center">
-                      <Check className="w-3.5 h-3.5 stroke-[3]" />
-                    </div>
-                  ) : (
-                    <div className="w-5 h-5 rounded-full border border-[#D9D6CE] dark:border-[#4A4740]" />
-                  )}
-                </div>
-              </div>
-
-              {/* Other Person Fields */}
-              {managePickupType === 'other_person' && (
-                <div className="space-y-4 pt-2 border-t border-[#EDE6D4] dark:border-[#302E29] animate-fadeIn">
-                  {/* Photo upload */}
-                  <div className="flex flex-col items-center py-1">
-                    <PhotoUploadBox
-                      value={managePickupPhotoUrl}
-                      onUploaded={(url) => {
-                        setManagePickupPhotoUrl(url);
-                        setManagePickupErrors((prev) => ({ ...prev, photo: '' }));
-                      }}
-                      label="Add pickup person photo"
-                      helperText="Use a clear photo of the person’s face"
-                      purpose="pickup_person_photo"
-                      error={managePickupErrors.photo}
-                      onUploadingStateChange={setIsUploadingPickupPhoto}
-                    />
-                  </div>
-
-                  {/* Full Name */}
-                  <div>
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326] dark:text-[#C59B27] block mb-1">
-                      Full Name *
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Sarah Connor"
-                      value={managePickupFullName}
-                      onChange={(e) => {
-                        setManagePickupFullName(e.target.value);
-                        if (managePickupErrors.fullName) setManagePickupErrors((prev) => ({ ...prev, fullName: '' }));
-                      }}
-                      className={`w-full px-3.5 py-2.5 rounded-xl border bg-white dark:bg-[#21211E] text-xs text-[#18181B] dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] ${
-                        managePickupErrors.fullName ? 'border-red-500' : 'border-[#EDE6D4] dark:border-[#302E29]'
-                      }`}
-                    />
-                    {managePickupErrors.fullName && (
-                      <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">{managePickupErrors.fullName}</p>
-                    )}
-                  </div>
-
-                  {/* Relationship */}
-                  <div>
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326] dark:text-[#C59B27] block mb-1">
-                      Relationship to child *
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Aunt, Uncle, Family Friend"
-                      value={managePickupRelationship}
-                      onChange={(e) => {
-                        setManagePickupRelationship(e.target.value);
-                        if (managePickupErrors.relationship) setManagePickupErrors((prev) => ({ ...prev, relationship: '' }));
-                      }}
-                      className={`w-full px-3.5 py-2.5 rounded-xl border bg-white dark:bg-[#21211E] text-xs text-[#18181B] dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27] ${
-                        managePickupErrors.relationship ? 'border-red-500' : 'border-[#EDE6D4] dark:border-[#302E29]'
-                      }`}
-                    />
-                    {managePickupErrors.relationship && (
-                      <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">{managePickupErrors.relationship}</p>
-                    )}
-                  </div>
-
-                  {/* Phone */}
-                  <div>
-                    <InternationalPhoneField
-                      label="Phone number *"
-                      value={managePickupPhone}
-                      countryIso={managePickupCountryIso}
-                      onCountryChange={setManagePickupCountryIso}
-                      onChange={(val) => {
-                        setManagePickupPhone(val);
-                        if (managePickupErrors.phone) setManagePickupErrors((prev) => ({ ...prev, phone: '' }));
-                      }}
-                      error={managePickupErrors.phone}
-                    />
-                  </div>
-
-                  {/* WhatsApp (Optional) */}
-                  <div>
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-[#9A7326] dark:text-[#C59B27] block mb-1">
-                      WhatsApp number <span className="font-normal lowercase text-[#8B867D] dark:text-[#7A7570]">(optional)</span>
-                    </label>
-                    <input
-                      type="tel"
-                      placeholder="e.g. +234..."
-                      value={managePickupWhatsApp}
-                      onChange={(e) => setManagePickupWhatsApp(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EDE6D4] dark:border-[#302E29] bg-white dark:bg-[#21211E] text-xs text-[#18181B] dark:text-[#F0EBE3] focus:outline-none focus:ring-1 focus:ring-[#C59B27]"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Save button */}
-              <div className="pt-2">
-                <button
-                  type="button"
-                  disabled={isSavingPickup || isUploadingPickupPhoto}
-                  onClick={handleSavePickupClick}
-                  className="w-full py-3 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:scale-[0.99] disabled:opacity-50 text-[#18181B] font-semibold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer flex items-center justify-center space-x-2"
-                >
-                  {isSavingPickup ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Saving pickup person...</span>
-                    </>
-                  ) : (
-                    <span>Save pickup person</span>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Confirmation Dialog before saving other_person (Section 18) */}
-      {showPickupConfirmDialog && (
+      {showPickupConfirmDialog && pickupSheetState.child && (
         <div className="fixed inset-0 z-60 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-[#FDFCF8] dark:bg-[#1E1D19] border border-[#EDE6D4] dark:border-[#302E29] rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-xl">
+          <div className="bg-[#FDFCF8] dark:bg-[#1C1B18] border border-[#EDE6D4] dark:border-[#302E29] rounded-lg max-w-sm w-full p-5 space-y-4 shadow-xl">
             <div className="space-y-1.5">
-              <h4 className="font-serif-koinonia text-lg font-bold text-[#18181B] dark:text-[#F0EBE3]">
+              <h4 className="font-serif-koinonia text-base font-bold text-[#18181B] dark:text-[#F0EBE3]">
                 Confirm pickup person
               </h4>
               <p className="text-xs text-[#52525B] dark:text-[#B8B0A5] leading-relaxed">
-                Only this person and the primary parent/guardian will be authorised to collect {pickupModalChild?.name.split(' ')[0] || 'your child'}.
+                Only this person and the primary parent/guardian will be authorised to collect {pickupSheetState.child.name.split(' ')[0] || pickupSheetState.child.name}.
               </p>
             </div>
 
@@ -4224,7 +4407,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 type="button"
                 onClick={() => setShowPickupConfirmDialog(false)}
                 disabled={isSavingPickup}
-                className="px-4 py-2 text-xs font-semibold text-[#52525B] dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] transition-colors cursor-pointer"
+                className="px-3.5 py-2 text-xs font-medium text-[#71717A] dark:text-[#A1A1AA] hover:text-[#18181B] dark:hover:text-[#F0EBE3] transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -4232,7 +4415,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                 type="button"
                 onClick={executeSavePickup}
                 disabled={isSavingPickup}
-                className="px-4 py-2 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:scale-[0.99] text-[#18181B] font-semibold text-xs transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
+                className="px-4 py-2 rounded-lg bg-[#C59B27] hover:bg-[#B58E33] active:scale-[0.99] text-[#18181B] font-semibold text-xs transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
               >
                 {isSavingPickup ? (
                   <>

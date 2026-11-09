@@ -7,6 +7,12 @@ import { Button } from '../components/common/Button';
 import { validateFullName, validatePhoneNumber, normalizePhone, isValidUploadedPhoto } from '../utils/validation';
 import { inferCountryIsoFromE164 } from '../utils/countries';
 import { InternationalPhoneField } from '../components/common/InternationalPhoneField';
+import { PremiumSelect } from '../components/common/PremiumSelect';
+import {
+  PARENT_RELATIONSHIP_OPTIONS,
+  parseRelationshipValue,
+  getEffectiveRelationship
+} from '../utils/relationship';
 
 interface AddChildStep4ViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -31,9 +37,11 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
   const [pickupPersonFullName, setPickupPersonFullName] = useState<string>(
     draft?.pickup?.pickupPersonFullName || draft?.pickupPersonFullName || ''
   );
-  const [pickupPersonRelationship, setPickupPersonRelationship] = useState<string>(
+  const initialRel = parseRelationshipValue(
     draft?.pickup?.pickupPersonRelationship || draft?.pickupPersonRelationship || ''
   );
+  const [pickupPersonRelOption, setPickupPersonRelOption] = useState<string>(initialRel.selectedOption);
+  const [pickupPersonRelCustom, setPickupPersonRelCustom] = useState<string>(initialRel.customValue);
   const [pickupPersonPhone, setPickupPersonPhone] = useState<string>(
     draft?.pickup?.pickupPersonPhone || draft?.pickupPersonPhone || ''
   );
@@ -108,6 +116,8 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
     (parentProfile as any)?.full_name?.trim()
   );
 
+  const pickupPersonRelationship = getEffectiveRelationship(pickupPersonRelOption, pickupPersonRelCustom);
+
   const isParentPickupComplete = Boolean(
     pickupType === 'parent' && parentHasName && parentHasPhone && parentHasPhoto
   );
@@ -138,8 +148,11 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
       if (nameErr) {
         newErrors.pickupPersonFullName = nameErr;
       }
-      if (!pickupPersonRelationship.trim()) {
-        newErrors.pickupPersonRelationship = 'Add the person’s relationship to the child.';
+      const effectiveRel = getEffectiveRelationship(pickupPersonRelOption, pickupPersonRelCustom);
+      if (!effectiveRel.trim()) {
+        newErrors.pickupPersonRelationship = pickupPersonRelOption === 'Other'
+          ? 'Specify relationship to the child.'
+          : 'Choose the person’s relationship to the child.';
       }
       if (!pickupPersonPhone.trim()) {
         newErrors.pickupPersonPhone = 'Enter a valid phone number.';
@@ -509,20 +522,37 @@ export const AddChildStep4View: React.FC<AddChildStep4ViewProps> = ({
                   <label className="text-[11px] font-bold tracking-wider uppercase text-[#715D3A] block mb-1.5">
                     RELATIONSHIP TO CHILD
                   </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Uncle"
-                    value={pickupPersonRelationship}
-                    onChange={(e) => {
-                      setPickupPersonRelationship(e.target.value);
+                  <PremiumSelect
+                    variant="bordered"
+                    value={pickupPersonRelOption}
+                    placeholder="Select relationship"
+                    options={[...PARENT_RELATIONSHIP_OPTIONS]}
+                    error={errors.pickupPersonRelationship}
+                    onChange={(val) => {
+                      setPickupPersonRelOption(val);
                       if (errors.pickupPersonRelationship) {
                         setErrors((prev) => ({ ...prev, pickupPersonRelationship: undefined }));
                       }
                     }}
-                    className={`w-full py-3 px-3.5 bg-white border ${
-                      errors.pickupPersonRelationship ? 'border-red-500' : 'border-[#D9D6CE]'
-                    } rounded-xl text-sm text-[#18181B] placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#C59B27] shadow-2xs transition-colors`}
                   />
+                  {pickupPersonRelOption === 'Other' && (
+                    <div className="mt-2">
+                      <input
+                        type="text"
+                        placeholder="Specify relationship (e.g. Family friend)"
+                        value={pickupPersonRelCustom}
+                        onChange={(e) => {
+                          setPickupPersonRelCustom(e.target.value);
+                          if (errors.pickupPersonRelationship) {
+                            setErrors((prev) => ({ ...prev, pickupPersonRelationship: undefined }));
+                          }
+                        }}
+                        className={`w-full py-2.5 px-3.5 bg-white border ${
+                          errors.pickupPersonRelationship ? 'border-red-500' : 'border-[#D9D6CE]'
+                        } rounded-lg text-sm text-[#18181B] placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#C59B27]`}
+                      />
+                    </div>
+                  )}
                   {errors.pickupPersonRelationship && (
                     <p className="text-xs text-red-600 font-medium mt-1">
                       {errors.pickupPersonRelationship}
