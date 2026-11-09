@@ -1043,6 +1043,298 @@ router.post('/children/draft', saveDraftHelper);
 
 router.put('/children/:childId/draft', saveDraftHelper);
 
+const PICKUP_EDITABLE_STATUSES = [
+  'selected',
+  'pass_ready',
+  'checked_in',
+  'inside'
+];
+
+router.patch('/children/:childId/pickup', async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.parentProfile) {
+    return res.status(404).json({ error: 'Parent profile not found' });
+  }
+  const { childId } = req.params;
+
+  try {
+    // 1. Resolve and verify child ownership
+    const child = await queryOne('SELECT * FROM children WHERE id = ?', [childId]);
+    if (!child) {
+      return res.status(404).json({ error: 'Child not found' });
+    }
+    if (child.parent_profile_id !== req.parentProfile.id) {
+      return res.status(403).json({ error: 'You do not have authorization to modify this child' });
+    }
+
+    // 2. Resolve current event and child entry
+    const currentEvent = await getCurrentEvent();
+    if (!currentEvent) {
+      return res.status(400).json({ error: 'No active event found', code: 'NO_CURRENT_EVENT' });
+    }
+
+    const entry = await queryOne(
+      'SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?',
+      [child.id, currentEvent.id]
+    );
+    if (!entry) {
+      return res.status(404).json({ error: 'Child registration not found for the current event' });
+    }
+
+    // 3. Status validation (concurrency-safe re-reading from database)
+    const isPickedUp = entry.status === 'picked_up' || entry.status === 'checked_out' || Boolean(entry.picked_up_at);
+    if (isPickedUp) {
+      return res.status(400).json({
+        success: false,
+        code: 'PICKUP_ALREADY_COMPLETED',
+        message: 'Pickup details can no longer be changed because this child has already been released.'
+      });
+    }
+
+    if (!PICKUP_EDITABLE_STATUSES.includes(entry.status)) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_STATUS_FOR_PICKUP_EDIT',
+        message: `Pickup details cannot be modified while child status is '${entry.status}'.`
+      });
+    }
+
+    // 4. Payload validation
+    const {
+      pickupType,
+      pickupPersonFullName,
+      pickupPersonRelationship,
+      pickupPersonPhone,
+      pickupPersonWhatsApp,
+      pickupPersonPhotoFileId,
+      approvedByParent
+    } = req.body || {};
+
+    if (approvedByParent !== true && approvedByParent !== 1 && approvedByParent !== 'true') {
+      return res.status(400).json({
+        success: false,
+        code: 'PARENT_APPROVAL_REQUIRED',
+        message: 'Parent approval is required to update pickup authorization.'
+      });
+    }
+
+    if (pickupType !== 'parent' && pickupType !== 'other_person') {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_PICKUP_TYPE',
+        message: 'Pickup type must be either "parent" or "other_person".'
+      });
+    }
+
+    let finalFullName = '';
+    let finalRelationship = '';
+    let finalPhone = '';
+    let finalWhatsApp = '';
+    let finalPhotoId = '';
+
+    if (pickupType === 'parent') {
+      finalFullName = (req.parentProfile.full_name || '').trim();
+      finalRelationship = (child.relationship_to_child || 'Parent').trim();
+      finalPhone = (req.parentProfile.phone_number || '').trim();
+      finalWhatsApp = (req.parentProfile.whatsapp_number || req.parentProfile.phone_number || '').trim();
+      finalPhotoId = req.parentProfile.photo_file_id || '';
+
+      if (!finalFullName) {
+        return res.status(400).json({
+          success: false,
+          code: 'MISSING_PARENT_NAME',
+          message: 'Primary parent profile name is missing.'
+        });
+      }
+    } else {
+      // other_person
+      const rawFullName = typeof pickupPersonFullName === 'string' ? pickupPersonFullName.trim() : '';
+      const rawRelationship = typeof pickupPersonRelationship === 'string' ? pickupPersonRelationship.trim() : '';
+      const rawPhone = typeof pickupPersonPhone === 'string' ? pickupPersonPhone.trim() : '';
+      const rawWhatsApp = typeof pickupPersonWhatsApp === 'string' ? pickupPersonWhatsApp.trim() : '';
+      const rawPhoto = typeof pickupPersonPhotoFileId === 'string' ? pickupPersonPhotoFileId.trim() : '';
+
+      if (!rawFullName || rawFullName.length < 2) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_FULL_NAME',
+          message: 'A valid full name is required for the authorised pickup person.'
+        });
+      }
+
+      if (!rawRelationship) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_RELATIONSHIP',
+          message: 'Relationship to child is required.'
+        });
+      }
+
+      if (!rawPhone) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_PHONE_NUMBER',
+          message: 'A phone number is required for the authorised pickup person.'
+        });
+      }
+
+      const countryIso = inferCountryIsoFromE164(rawPhone) || req.parentProfile.country_iso || 'NG';
+      const normalizedPhone = normalizePhoneNumberToE164(rawPhone, countryIso);
+      if (!normalizedPhone) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_PHONE_NUMBER',
+          message: 'Please provide a valid phone number with country code.'
+        });
+      }
+
+      let normalizedWa = '';
+      if (rawWhatsApp) {
+        const waIso = inferCountryIsoFromE164(rawWhatsApp) || countryIso;
+        normalizedWa = normalizePhoneNumberToE164(rawWhatsApp, waIso) || rawWhatsApp;
+      }
+
+      if (!rawPhoto || !isValidUploadedPhoto(rawPhoto)) {
+        return res.status(400).json({
+          success: false,
+          code: 'PHOTO_REQUIRED',
+          message: 'A clear photograph of the authorised pickup person is required for security verification.'
+        });
+      }
+
+      const resolvedPhotoId = await resolveToMediaFileId(rawPhoto);
+      if (!resolvedPhotoId) {
+        return res.status(400).json({
+          success: false,
+          code: 'PHOTO_RESOLUTION_FAILED',
+          message: 'Unable to resolve the uploaded pickup person photograph.'
+        });
+      }
+
+      finalFullName = rawFullName;
+      finalRelationship = rawRelationship;
+      finalPhone = normalizedPhone;
+      finalWhatsApp = normalizedWa;
+      finalPhotoId = resolvedPhotoId;
+    }
+
+    // 5. Query previous pickup for audit log
+    const existingPickup = await queryOne(
+      'SELECT * FROM pickup_people WHERE child_event_entry_id = ?',
+      [entry.id]
+    );
+    const previousPickupType = existingPickup?.pickup_type || null;
+    const previousPickupPersonName = existingPickup?.full_name || null;
+
+    const now = new Date().toISOString();
+    let updatedPickupId = existingPickup?.id;
+
+    if (existingPickup) {
+      await execute(`
+        UPDATE pickup_people SET
+          pickup_type = ?,
+          full_name = ?,
+          relationship_to_child = ?,
+          phone_number = ?,
+          whatsapp_number = ?,
+          photo_file_id = ?,
+          approved_by_parent = 1,
+          updated_at = ?
+        WHERE id = ?
+      `, [
+        pickupType,
+        finalFullName,
+        finalRelationship,
+        finalPhone,
+        finalWhatsApp,
+        finalPhotoId,
+        now,
+        existingPickup.id
+      ]);
+    } else {
+      updatedPickupId = crypto.randomUUID();
+      await execute(`
+        INSERT INTO pickup_people (
+          id, child_event_entry_id, pickup_type, full_name, relationship_to_child,
+          phone_number, whatsapp_number, photo_file_id, approved_by_parent, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      `, [
+        updatedPickupId,
+        entry.id,
+        pickupType,
+        finalFullName,
+        finalRelationship,
+        finalPhone,
+        finalWhatsApp,
+        finalPhotoId,
+        now,
+        now
+      ]);
+    }
+
+    // 6. Record immutable audit log
+    const auditId = `audit-${crypto.randomUUID()}`;
+    try {
+      await execute(`
+        INSERT INTO audit_logs (
+          id, user_id, user_role, action, target_type, target_id, details, timestamp
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        auditId,
+        req.user?.id || req.parentProfile.user_id,
+        'parent',
+        'parent_pickup_authorization_updated',
+        'child_event_entry',
+        entry.id,
+        JSON.stringify({
+          eventId: currentEvent.id,
+          childId: child.id,
+          childEventEntryId: entry.id,
+          parentId: req.parentProfile.id,
+          previousPickupType,
+          previousPickupPersonName,
+          newPickupType: pickupType,
+          newPickupPersonName: finalFullName,
+          changedAt: now
+        }),
+        now
+      ]);
+    } catch (auditErr) {
+      console.error('[AuditLog] Failed to record pickup update audit log:', auditErr);
+    }
+
+    // 7. Resolve updated child and return
+    const updatedChild = await queryOne('SELECT * FROM children WHERE id = ?', [child.id]);
+    const updatedEntry = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [entry.id]);
+    const updatedPickup = await queryOne('SELECT * FROM pickup_people WHERE id = ?', [updatedPickupId]);
+
+    const mappedChild = await mapChildToFrontend(
+      updatedChild,
+      updatedEntry,
+      updatedPickup,
+      req.parentProfile.id,
+      false,
+      currentEvent.id
+    );
+
+    return res.json({
+      success: true,
+      message: 'Pickup person updated successfully.',
+      child: mappedChild,
+      pickup: {
+        pickupType,
+        fullName: finalFullName,
+        relationship: finalRelationship,
+        phone: finalPhone,
+        whatsapp: finalWhatsApp,
+        photoFileId: finalPhotoId
+      }
+    });
+  } catch (err: any) {
+    console.error('Update pickup error:', err);
+    res.status(500).json({ error: 'Failed to update pickup person' });
+  }
+});
+
 router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: Response) => {
   if (!req.parentProfile) return res.status(404).json({ error: 'Parent profile not found' });
   const { childId } = req.params;
