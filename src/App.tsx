@@ -584,6 +584,10 @@ export default function App() {
     setChildrenList((prev) => [newChild, ...prev]);
   };
 
+  const handleUpdateChild = (updatedChild: ChildItem) => {
+    setChildrenList((prev) => prev.map((c) => (c.id === updatedChild.id ? updatedChild : c)));
+  };
+
   const handleSignOut = async () => {
     try {
       await api.auth.signOut();
@@ -1163,6 +1167,7 @@ export default function App() {
             volunteerProfile={volunteerProfile}
             activeEvent={activeEvent}
             onUpdateProfile={(updated) => setParentProfile(normalizeParentProfile(updated))}
+            onUpdateChild={handleUpdateChild}
           />
         </ProtectedRoute>
       );
@@ -1422,6 +1427,7 @@ export default function App() {
               onSwitchExperience={handleSwitchExperience}
               isSwitchingExperience={isSwitchingExperience}
               onUpdateProfile={(updated) => setParentProfile(normalizeParentProfile(updated))}
+              onUpdateChild={handleUpdateChild}
             />
           </ProtectedRoute>
         );
@@ -1443,6 +1449,7 @@ export default function App() {
               onSwitchExperience={handleSwitchExperience}
               isSwitchingExperience={isSwitchingExperience}
               onUpdateProfile={(updated) => setParentProfile(normalizeParentProfile(updated))}
+              onUpdateChild={handleUpdateChild}
             />
           </ProtectedRoute>
         );
@@ -1464,6 +1471,7 @@ export default function App() {
               onSwitchExperience={handleSwitchExperience}
               isSwitchingExperience={isSwitchingExperience}
               onUpdateProfile={(updated) => setParentProfile(normalizeParentProfile(updated))}
+              onUpdateChild={handleUpdateChild}
             />
           </ProtectedRoute>
         );
@@ -1549,6 +1557,7 @@ export default function App() {
               onSwitchExperience={handleSwitchExperience}
               isSwitchingExperience={isSwitchingExperience}
               onUpdateProfile={(updated) => setParentProfile(normalizeParentProfile(updated))}
+              onUpdateChild={handleUpdateChild}
             />
           </ProtectedRoute>
         );

@@ -530,6 +530,25 @@ export const api = {
     async getChildStatus(childId: string) {
       return api.request<any>(`/api/parent/children/${childId}/status`);
     },
+    async updateChildPickup(childId: string, payload: {
+      pickupType: 'parent' | 'other_person';
+      pickupPersonFullName?: string;
+      pickupPersonRelationship?: string;
+      pickupPersonPhone?: string;
+      pickupPersonWhatsApp?: string;
+      pickupPersonPhotoFileId?: string;
+      approvedByParent: boolean;
+    }) {
+      return api.request<{
+        success: boolean;
+        message: string;
+        child: any;
+        pickup: any;
+      }>(`/api/parent/children/${childId}/pickup`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      });
+    },
     async getChildPass(childId: string, passToken?: string) {
       const headers: Record<string, string> = {};
       const isBio = typeof window !== 'undefined' && localStorage.getItem('koinonia_pass_biometric_unlock') === 'true';
