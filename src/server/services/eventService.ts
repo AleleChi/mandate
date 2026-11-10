@@ -139,3 +139,87 @@ export async function setCurrentEvent(targetEventId: string): Promise<SetCurrent
     };
   });
 }
+
+/**
+ * Determines whether PUBLIC (unauthenticated) parent account creation / registration is currently open.
+ * Evaluates:
+ * 1. Global toggle (admin_general_settings.parent_registration_enabled if provided).
+ * 2. Event existence and active status.
+ * 3. Event parent account creation setting (parents_can_create_account).
+ * 4. Event registration window (parent_access_opens_at and parent_access_closes_at).
+ */
+export function isPublicParentRegistrationOpen(
+  event: EventRow | null | undefined,
+  options?: {
+    now?: Date | string;
+    globalParentRegistrationEnabled?: boolean | number | string;
+  }
+): {
+  isOpen: boolean;
+  state: 'open' | 'not_open_yet' | 'closed' | 'disabled';
+  reason?: string;
+} {
+  const globalEnabled = options?.globalParentRegistrationEnabled !== undefined
+    ? (options.globalParentRegistrationEnabled === 1 || options.globalParentRegistrationEnabled === true || String(options.globalParentRegistrationEnabled) === 'true')
+    : true;
+
+  if (!globalEnabled) {
+    return { isOpen: false, state: 'disabled', reason: 'New parent account registration is currently disabled.' };
+  }
+
+  if (!event) {
+    return { isOpen: false, state: 'closed', reason: 'No active event found.' };
+  }
+
+  if (event.status === 'archived' || event.status === 'cancelled') {
+    return { isOpen: false, state: 'closed', reason: 'Event is archived or cancelled.' };
+  }
+
+  if (event.parents_can_create_account === 0 || event.parents_can_create_account === false) {
+    return { isOpen: false, state: 'disabled', reason: 'New parent account registration is not permitted for this event.' };
+  }
+
+  const nowIso = options?.now ? new Date(options.now).toISOString() : new Date().toISOString();
+
+  if (event.parent_access_opens_at && nowIso < event.parent_access_opens_at) {
+    return { isOpen: false, state: 'not_open_yet', reason: 'Registration for this event is not open yet.' };
+  }
+
+  if (event.parent_access_closes_at && nowIso > event.parent_access_closes_at) {
+    return { isOpen: false, state: 'closed', reason: 'Registration for this event has closed.' };
+  }
+
+  return { isOpen: true, state: 'open' };
+}
+
+/**
+ * Determines whether an AUTHENTICATED parent is permitted to add a child, save a draft,
+ * or submit a child registration for the specified event.
+ * Authenticated parents (including those invited or existing before closure) can register children
+ * even after the public registration deadline has passed, provided the event exists and is not archived/cancelled.
+ */
+export function canAuthenticatedParentRegisterChild(
+  event: EventRow | null | undefined
+): {
+  allowed: boolean;
+  code?: 'NO_CURRENT_EVENT' | 'EVENT_NOT_ACTIVE';
+  reason?: string;
+} {
+  if (!event) {
+    return {
+      allowed: false,
+      code: 'NO_CURRENT_EVENT',
+      reason: 'No active event found for registration.'
+    };
+  }
+
+  if (event.status === 'archived' || event.status === 'cancelled') {
+    return {
+      allowed: false,
+      code: 'EVENT_NOT_ACTIVE',
+      reason: 'The event is no longer active for registrations.'
+    };
+  }
+
+  return { allowed: true };
+}

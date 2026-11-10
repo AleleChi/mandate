@@ -9,7 +9,7 @@ import { resolveCountryIso, resolveWhatsAppCountryIso, getCountryByIso, inferCou
 import { normalizePhoneNumberToE164 } from '../utils/phone';
 import { buildParentStatusUrl } from '../utils/urlHelper';
 import { getPassesForParent, issuePassForChild, isChildPassAuthorized } from '../services/passService';
-import { getCurrentEvent, getCurrentEventId, getEventById } from '../services/eventService';
+import { getCurrentEvent, getCurrentEventId, getEventById, canAuthenticatedParentRegisterChild } from '../services/eventService';
 import { checkEventEligibility, resolveCanonicalAgeGroup, CANONICAL_GA_EVENT_DATE } from '../services/eligibilityService';
 import { QUALIFYING_CHILD_STATUSES } from '../services/selectedParentsChannelService';
 import { extractFirstName, formatSelectedChildNames } from '../services/whatsapp/personalization';
@@ -798,18 +798,25 @@ async function performSaveDraftInternal(req: AuthenticatedRequest, draft: any, c
     const entryId = crypto.randomUUID();
     const existingEntry = await queryOne('SELECT id FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, currentEventId]);
     if (!existingEntry) {
-      const nowIso = new Date().toISOString();
-      if (currentEvent.parent_access_opens_at && nowIso < currentEvent.parent_access_opens_at) {
-        const err: any = new Error('Registration for this event is not open yet.');
+      const authAllowed = canAuthenticatedParentRegisterChild(currentEvent);
+      if (!authAllowed.allowed) {
+        const err: any = new Error(authAllowed.reason || 'Registration is not available.');
         err.statusCode = 403;
-        err.code = 'REGISTRATION_NOT_OPEN';
+        err.code = authAllowed.code || 'REGISTRATION_NOT_AVAILABLE';
         throw err;
       }
-      if (currentEvent.parent_access_closes_at && nowIso > currentEvent.parent_access_closes_at) {
-        const err: any = new Error('Registration for this event has closed.');
-        err.statusCode = 403;
-        err.code = 'REGISTRATION_CLOSED';
-        throw err;
+      if (currentEvent.capacity && Number(currentEvent.capacity) > 0) {
+        const activeEntriesCount = await queryOne<{ count: number }>(`
+          SELECT COUNT(*) as count
+          FROM child_event_entries
+          WHERE event_id = ? AND (is_deleted IS NULL OR is_deleted = 0)
+        `, [currentEventId]);
+        if (Number(activeEntriesCount?.count || 0) >= Number(currentEvent.capacity)) {
+          const err: any = new Error('This event has reached its registration capacity.');
+          err.statusCode = 403;
+          err.code = 'CAPACITY_FULL';
+          throw err;
+        }
       }
       if (currentEvent.allow_multiple_children === 0 || currentEvent.allow_multiple_children === false) {
         const existingParentChildrenCount = await queryOne(`
@@ -1474,22 +1481,27 @@ router.post('/children/:childId/submit', async (req: AuthenticatedRequest, res: 
     });
   }
 
-  if (entry.status === 'draft') {
-    const nowIso = new Date().toISOString();
-    if (currentEvent.parent_access_opens_at && nowIso < currentEvent.parent_access_opens_at) {
+  const authAllowed = canAuthenticatedParentRegisterChild(currentEvent);
+  if (!authAllowed.allowed) {
+    return res.status(403).json({
+      success: false,
+      code: authAllowed.code || 'REGISTRATION_NOT_AVAILABLE',
+      message: authAllowed.reason || 'Registration for this event is not available.',
+      error: authAllowed.reason || 'Registration for this event is not available.'
+    });
+  }
+  if (currentEvent.capacity && Number(currentEvent.capacity) > 0) {
+    const activeEntriesCount = await queryOne<{ count: number }>(`
+      SELECT COUNT(*) as count
+      FROM child_event_entries
+      WHERE event_id = ? AND id != ? AND (is_deleted IS NULL OR is_deleted = 0)
+    `, [currentEvent.id, entry.id]);
+    if (Number(activeEntriesCount?.count || 0) >= Number(currentEvent.capacity)) {
       return res.status(403).json({
         success: false,
-        code: 'REGISTRATION_NOT_OPEN',
-        message: 'Registration for this event is not open yet.',
-        error: 'Registration for this event is not open yet.'
-      });
-    }
-    if (currentEvent.parent_access_closes_at && nowIso > currentEvent.parent_access_closes_at) {
-      return res.status(403).json({
-        success: false,
-        code: 'REGISTRATION_CLOSED',
-        message: 'Registration for this event has closed.',
-        error: 'Registration for this event has closed.'
+        code: 'CAPACITY_FULL',
+        message: 'This event has reached its registration capacity.',
+        error: 'This event has reached its registration capacity.'
       });
     }
   }

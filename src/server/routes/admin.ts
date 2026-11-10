@@ -1207,31 +1207,48 @@ router.post('/invites/resend', authMiddleware, async (req: AuthenticatedRequest,
         INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
         VALUES (?, ?, ?, 'admin_invite', ?, ?)
       `, [tokenId, targetUser.id, tokenHash, expiresAt, nowStr]);
-
-      // Audit log inside transaction
-      await execute(`
-        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        crypto.randomUUID(), req.user.id, req.user.role || 'admin', 'RESEND_INVITATION', 'user', targetUser.id,
-        JSON.stringify({ email: cleanEmail, role: targetUser.role, expiresAt }), nowStr
-      ]);
     });
 
     const inviteLink = buildPublicAppUrl(`/admin/accept-invite?token=${rawToken}`);
 
-    const emailResult = await sendInvitationEmail({
-      recipientEmail: cleanEmail,
-      recipientName: recipientName || undefined,
-      role: targetUser.role,
-      inviteLink,
-      expiresAt
-    }).catch(err => {
+    let emailResult: any = null;
+    let emailDeliveryError: string | null = null;
+    try {
+      emailResult = await sendInvitationEmail({
+        recipientEmail: cleanEmail,
+        recipientName: recipientName || undefined,
+        role: targetUser.role,
+        inviteLink,
+        expiresAt
+      });
+    } catch (err: any) {
       console.error('Error sending resend invitation email:', err);
-      return { success: false, error: err?.message || 'Email delivery failed' };
-    });
+      emailDeliveryError = err?.message || 'Email delivery failed';
+    }
 
-    if (!emailResult || !emailResult.success) {
+    const emailDelivered = Boolean(emailResult && emailResult.success);
+    const finalError = emailDelivered ? null : (emailResult?.error || emailDeliveryError || 'Email delivery failed');
+
+    // Audit log with delivery result
+    try {
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, 'RESEND_INVITATION', 'user', ?, ?, ?)
+      `, [
+        crypto.randomUUID(), req.user.id, req.user.role || 'admin', targetUser.id,
+        JSON.stringify({
+          email: cleanEmail,
+          role: targetUser.role,
+          expiresAt,
+          status: emailDelivered ? 'sent' : 'failed',
+          providerMessageId: emailResult?.id || null,
+          error: finalError,
+          attemptedAt: nowStr
+        }), nowStr
+      ]);
+    } catch (e) {}
+
+    if (!emailDelivered) {
       return res.status(200).json({
         success: false,
         code: 'EMAIL_DELIVERY_FAILED',
@@ -1492,17 +1509,57 @@ router.post('/parents', authMiddleware, async (req: AuthenticatedRequest, res: R
     // 6. Send Invitation Email if requested
     if (sendInvitation && inviteTokenRaw) {
       const inviteLink = buildPublicAppUrl(`/admin/accept-invite?token=${inviteTokenRaw}`);
-      await sendInvitationEmail({
-        recipientEmail: cleanEmail,
-        recipientName: fullName,
-        preferredName,
-        firstName,
-        role: 'parent',
-        inviteLink,
-        expiresAt: inviteExpiresAt
-      }).catch(err => {
+      let emailResult: any = null;
+      let emailError: string | null = null;
+      try {
+        emailResult = await sendInvitationEmail({
+          recipientEmail: cleanEmail,
+          recipientName: fullName,
+          preferredName,
+          firstName,
+          role: 'parent',
+          inviteLink,
+          expiresAt: inviteExpiresAt
+        });
+      } catch (err: any) {
         console.error('Error sending parent invitation email:', err);
-      });
+        emailError = err?.message || 'Email delivery failed';
+      }
+
+      const emailDelivered = Boolean(emailResult && emailResult.success);
+      const deliveryStatus = emailDelivered ? 'sent' : 'failed';
+      const finalError = emailDelivered ? null : (emailResult?.error || emailError || 'Email delivery failed');
+
+      // Audit Log for SEND_INVITATION
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+          VALUES (?, ?, ?, 'SEND_INVITATION', 'user', ?, ?, ?)
+        `, [
+          crypto.randomUUID(), req.user.id, req.user.role || 'admin', parentUserId,
+          JSON.stringify({
+            email: cleanEmail,
+            role: 'parent',
+            status: deliveryStatus,
+            providerMessageId: emailResult?.id || null,
+            error: finalError,
+            attemptedAt: nowStr
+          }), nowStr
+        ]);
+      } catch (e) {}
+
+      if (!emailDelivered) {
+        return res.status(200).json({
+          success: false,
+          code: 'EMAIL_DELIVERY_FAILED',
+          parentCreated: true,
+          invitationCreated: true,
+          emailDelivered: false,
+          message: 'Parent was created, but the invitation email could not be delivered. You can resend the invitation.',
+          parentId: parentProfileId,
+          userId: parentUserId
+        });
+      }
     }
 
     return res.json({
@@ -11201,6 +11258,7 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
         p.*,
         u.email as user_email,
         u.role as user_role,
+        u.password_hash as user_password_hash,
         m.secure_url as photo_url,
         (SELECT COUNT(*) FROM children c WHERE c.parent_profile_id = p.id AND (c.is_deleted = 0 OR c.is_deleted IS NULL)) as children_count,
         (SELECT email FROM users WHERE id = p.deleted_by) as deleted_by_email,
@@ -11405,37 +11463,97 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
       `)
     ]);
 
-    const formatted = rows.map((p: any) => ({
-      id: p.id,
-      userId: p.user_id,
-      fullName: p.full_name,
-      phone: p.phone_number,
-      whatsapp: p.whatsapp_number,
-      whatsappConsentStatus: p.whatsapp_consent_status || 'unknown',
-      email: p.email || p.user_email,
-      homeAddress: p.home_address,
-      preferredContact: p.preferred_contact,
-      isKoinoniaWorker: p.is_koinonia_worker === 1,
-      department: p.department,
-      photoFileId: p.photo_file_id,
-      photoUrl: p.photo_url || (p.photo_file_id ? (String(p.photo_file_id).startsWith('http') || String(p.photo_file_id).startsWith('/') ? String(p.photo_file_id) : `/api/media/files/${p.photo_file_id}`) : ''),
-      country: p.country,
-      stateRegion: p.state_region,
-      city: p.city,
-      createdAt: p.created_at,
-      updatedAt: p.updated_at,
-      userRole: p.user_role,
-      childrenCount: Number(p.children_count || 0),
-      children: childrenByParentId[p.id] || [],
-      isDeleted: p.is_deleted === 1,
-      deletedAt: p.deleted_at,
-      deletedBy: p.deleted_by,
-      deletedByEmail: p.deleted_by_email,
-      deleteReason: p.delete_reason,
-      restoredAt: p.restored_at,
-      restoredBy: p.restored_by,
-      restoredByEmail: p.restored_by_email
-    }));
+    const pendingUserIds = rows
+      .filter((r: any) => r.user_password_hash === 'invited_pending')
+      .map((r: any) => r.user_id)
+      .filter(Boolean);
+
+    let latestInviteLogByUserId: Record<string, { status: string; timestamp: string }> = {};
+
+    if (pendingUserIds.length > 0) {
+      const placeholders = pendingUserIds.map(() => '?').join(',');
+      const inviteLogs = await query(`
+        SELECT target_id, details, timestamp
+        FROM audit_logs
+        WHERE action IN ('SEND_INVITATION', 'RESEND_INVITATION')
+          AND target_id IN (${placeholders})
+        ORDER BY timestamp DESC
+      `, pendingUserIds);
+
+      for (const log of inviteLogs) {
+        if (!latestInviteLogByUserId[log.target_id]) {
+          let parsedStatus = 'sent';
+          try {
+            const d = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
+            if (d && d.status === 'failed') parsedStatus = 'failed';
+          } catch (e) {}
+          latestInviteLogByUserId[log.target_id] = {
+            status: parsedStatus,
+            timestamp: log.timestamp
+          };
+        }
+      }
+    }
+
+    const formatted = rows.map((p: any) => {
+      let accountStatus: 'active' | 'invitation_pending' | 'email_delivery_failed' | 'no_account' = 'active';
+      let invitationSentAt: string | null = null;
+      let canResendInvitation = false;
+
+      if (p.user_password_hash === 'invited_pending') {
+        canResendInvitation = true;
+        const log = latestInviteLogByUserId[p.user_id];
+        if (log && log.status === 'failed') {
+          accountStatus = 'email_delivery_failed';
+        } else {
+          accountStatus = 'invitation_pending';
+        }
+        invitationSentAt = log?.timestamp || p.created_at || null;
+      } else if (p.user_password_hash === 'profile_no_account') {
+        accountStatus = 'no_account';
+        canResendInvitation = false;
+        invitationSentAt = null;
+      } else {
+        accountStatus = 'active';
+        canResendInvitation = false;
+        invitationSentAt = null;
+      }
+
+      return {
+        id: p.id,
+        userId: p.user_id,
+        fullName: p.full_name,
+        phone: p.phone_number,
+        whatsapp: p.whatsapp_number,
+        whatsappConsentStatus: p.whatsapp_consent_status || 'unknown',
+        email: p.email || p.user_email,
+        homeAddress: p.home_address,
+        preferredContact: p.preferred_contact,
+        isKoinoniaWorker: p.is_koinonia_worker === 1,
+        department: p.department,
+        photoFileId: p.photo_file_id,
+        photoUrl: p.photo_url || (p.photo_file_id ? (String(p.photo_file_id).startsWith('http') || String(p.photo_file_id).startsWith('/') ? String(p.photo_file_id) : `/api/media/files/${p.photo_file_id}`) : ''),
+        country: p.country,
+        stateRegion: p.state_region,
+        city: p.city,
+        createdAt: p.created_at,
+        updatedAt: p.updated_at,
+        userRole: p.user_role,
+        accountStatus,
+        invitationSentAt,
+        canResendInvitation,
+        childrenCount: Number(p.children_count || 0),
+        children: childrenByParentId[p.id] || [],
+        isDeleted: p.is_deleted === 1,
+        deletedAt: p.deleted_at,
+        deletedBy: p.deleted_by,
+        deletedByEmail: p.deleted_by_email,
+        deleteReason: p.delete_reason,
+        restoredAt: p.restored_at,
+        restoredBy: p.restored_by,
+        restoredByEmail: p.restored_by_email
+      };
+    });
 
     return res.json({ 
       success: true, 
@@ -11647,6 +11765,7 @@ router.get('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
         p.*,
         u.email as user_email,
         u.role as user_role,
+        u.password_hash as user_password_hash,
         u.email_verified as user_email_verified,
         m.secure_url as photo_url,
         (SELECT email FROM users WHERE id = p.deleted_by) as deleted_by_email,
@@ -11775,6 +11894,45 @@ router.get('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
     if (p.state_region) locationParts.push(p.state_region);
     if (p.country) locationParts.push(p.country);
 
+    let accountStatus: 'active' | 'invitation_pending' | 'email_delivery_failed' | 'no_account' = 'active';
+    let invitationSentAt: string | null = null;
+    let canResendInvitation = false;
+
+    if (p.user_password_hash === 'invited_pending') {
+      canResendInvitation = true;
+      const latestInviteLog = await queryOne<{ details: string; timestamp: string }>(`
+        SELECT details, timestamp
+        FROM audit_logs
+        WHERE action IN ('SEND_INVITATION', 'RESEND_INVITATION')
+          AND target_id = ?
+        ORDER BY timestamp DESC
+        LIMIT 1
+      `, [p.user_id]);
+
+      let parsedStatus = 'sent';
+      if (latestInviteLog) {
+        try {
+          const d = typeof latestInviteLog.details === 'string' ? JSON.parse(latestInviteLog.details) : latestInviteLog.details;
+          if (d && d.status === 'failed') parsedStatus = 'failed';
+        } catch (e) {}
+      }
+
+      if (parsedStatus === 'failed') {
+        accountStatus = 'email_delivery_failed';
+      } else {
+        accountStatus = 'invitation_pending';
+      }
+      invitationSentAt = latestInviteLog?.timestamp || p.created_at || null;
+    } else if (p.user_password_hash === 'profile_no_account') {
+      accountStatus = 'no_account';
+      canResendInvitation = false;
+      invitationSentAt = null;
+    } else {
+      accountStatus = 'active';
+      canResendInvitation = false;
+      invitationSentAt = null;
+    }
+
     const formattedParent = {
       id: p.id,
       userId: p.user_id,
@@ -11790,7 +11948,9 @@ router.get('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
       photoUrl: p.photo_url || (p.photo_file_id ? (String(p.photo_file_id).startsWith('http') || String(p.photo_file_id).startsWith('/') ? String(p.photo_file_id) : `/api/media/files/${p.photo_file_id}`) : null),
       photoFileId: p.photo_file_id || null,
       emailVerified: p.user_email_verified === 1,
-      accountStatus: p.user_email_verified === 1 ? 'verified' : 'pending',
+      accountStatus,
+      invitationSentAt,
+      canResendInvitation,
       createdAt: p.created_at,
       isDeleted: p.is_deleted === 1,
       deletedAt: p.deleted_at,

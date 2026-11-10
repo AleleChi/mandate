@@ -7,7 +7,7 @@ import { validateEmailAddress, validatePhoneNumber, validateName } from '../util
 import { buildPublicAppUrl, TRUSTED_FRONTEND_ORIGINS } from '../utils/urlHelper';
 import { authorizeChildPass, revokeChildPassAuthorizations, isChildPassAuthorized } from '../services/passService';
 import { enqueueWhatsAppJob } from '../services/whatsapp/queue';
-import { getCurrentEventId, getEventById } from '../services/eventService';
+import { getCurrentEventId, getEventById, isPublicParentRegistrationOpen } from '../services/eventService';
 
 const router = Router();
 
@@ -51,44 +51,17 @@ router.post(['/create-account', '/register'], async (req: AuthenticatedRequest, 
       `);
     } catch (e) {}
 
-    if (genSettings && (genSettings.parent_registration_enabled === 0 || genSettings.parent_registration_enabled === false)) {
+    const publicReg = isPublicParentRegistrationOpen(targetEvent, {
+      globalParentRegistrationEnabled: genSettings ? genSettings.parent_registration_enabled : true
+    });
+    if (!publicReg.isOpen) {
+      const code = publicReg.state === 'not_open_yet' ? 'REGISTRATION_NOT_OPEN' : 'REGISTRATION_CLOSED';
       return res.status(403).json({
         success: false,
-        code: 'REGISTRATION_CLOSED',
-        message: 'New parent account registration is currently disabled.',
-        error: 'New parent account registration is currently disabled.'
+        code,
+        message: publicReg.reason || (publicReg.state === 'not_open_yet' ? 'Registration for this event is not open yet.' : 'Registration for this event has closed.'),
+        error: publicReg.reason || (publicReg.state === 'not_open_yet' ? 'Registration for this event is not open yet.' : 'Registration for this event has closed.')
       });
-    }
-
-    if (targetEvent) {
-      if (targetEvent.parents_can_create_account === 0 || targetEvent.parents_can_create_account === false) {
-        return res.status(403).json({
-          success: false,
-          code: 'REGISTRATION_CLOSED',
-          message: 'New parent account registration is not permitted for this event.',
-          error: 'New parent account registration is not permitted for this event.'
-        });
-      }
-
-      const nowIso = new Date().toISOString();
-      if (targetEvent.parent_access_opens_at && nowIso < targetEvent.parent_access_opens_at) {
-        return res.status(403).json({
-          success: false,
-          code: 'REGISTRATION_NOT_OPEN',
-          message: 'Registration for this event is not open yet.',
-          error: 'Registration for this event is not open yet.'
-        });
-      }
-
-      if (targetEvent.parent_access_closes_at && nowIso > targetEvent.parent_access_closes_at) {
-        return res.status(403).json({
-          success: false,
-          code: 'REGISTRATION_CLOSED',
-          message: 'Registration for this event has closed.',
-          error: 'Registration for this event has closed.'
-        });
-      }
-
     }
 
     // Validate Full Name
@@ -1277,17 +1250,12 @@ router.get('/registration-status', async (req: AuthenticatedRequest, res: Respon
 
     const nowIso = new Date().toISOString();
 
-    // Parent status
-    let parentState: 'open' | 'not_open_yet' | 'closed' | 'disabled' = 'open';
-    if (!parentToggleEnabled || targetEvent.parents_can_create_account === 0 || targetEvent.parents_can_create_account === false) {
-      parentState = 'disabled';
-    } else if (targetEvent.parent_access_opens_at && nowIso < targetEvent.parent_access_opens_at) {
-      parentState = 'not_open_yet';
-    }
-    // Deadline ALWAYS overrides Parent enabled state
-    if (targetEvent.parent_access_closes_at && nowIso > targetEvent.parent_access_closes_at) {
-      parentState = 'closed';
-    }
+    // Parent status - Governed by shared public registration window logic
+    const publicParentReg = isPublicParentRegistrationOpen(targetEvent, {
+      globalParentRegistrationEnabled: parentToggleEnabled,
+      now: nowIso
+    });
+    const parentState = publicParentReg.state;
 
     // Volunteer status - Governed by volunteerRegistrationEnabled and volunteer-specific window
     let volunteerState: 'open' | 'not_open_yet' | 'closed' | 'disabled' = 'open';
