@@ -2816,6 +2816,7 @@ router.get('/attendance', async (req: AuthenticatedRequest, res: Response) => {
 // GET a single child application detail by ID
 router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response) => {
   try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     const { id } = req.params;
     const targetEventId = await resolveAdminEventId((req.query.eventId || req.headers['x-event-id']) as string);
 
@@ -3060,15 +3061,23 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
       return res.status(404).json({ success: false, error: 'Application entry not found.' });
     }
 
-    // Query pickup people for this specific entry
-    const pickups = await query(`
-      SELECT p.*, m.secure_url as photo_url
-      FROM pickup_people p
-      LEFT JOIN media_files m ON m.id = p.photo_file_id
-      WHERE p.child_event_entry_id = ?
-    `, [id]);
+    const resolvedEntryId = app.entry_id || null;
+    const resolvedChildId = app.child_id || null;
 
-    const formattedPickups = pickups.map((p: any) => ({
+    // Query pickup people for this specific entry using the resolved entry ID
+    const pickups = resolvedEntryId
+      ? await query(`
+          SELECT
+            p.*,
+            COALESCE(m.optimized_url, m.secure_url, m.file_url) as photo_url
+          FROM pickup_people p
+          LEFT JOIN media_files m ON m.id = p.photo_file_id
+          WHERE p.child_event_entry_id = ?
+          ORDER BY p.updated_at DESC, p.created_at DESC
+        `, [resolvedEntryId])
+      : [];
+
+    const formattedPickups = (pickups || []).map((p: any) => ({
       id: p.id,
       pickupType: p.pickup_type || 'parent',
       pickup_type: p.pickup_type || 'parent',
@@ -3089,12 +3098,15 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
       approved: p.approved_by_parent === 1 || p.pickup_type === 'parent'
     }));
 
-    const auditEvents = await query(`
-      SELECT action, user_role, details, timestamp
-      FROM audit_logs
-      WHERE target_id IN (?, ?)
-      ORDER BY timestamp DESC
-    `, [id, app.child_id]);
+    const auditTargets = Array.from(new Set([resolvedEntryId, resolvedChildId, id].filter(Boolean)));
+    const auditEvents = auditTargets.length > 0
+      ? await query(`
+          SELECT action, user_role, details, timestamp
+          FROM audit_logs
+          WHERE target_id IN (${auditTargets.map(() => '?').join(', ')})
+          ORDER BY timestamp DESC
+        `, auditTargets)
+      : [];
 
     const history: any[] = [];
     if (auditEvents && auditEvents.length > 0) {
@@ -3131,7 +3143,9 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
       }
     }
 
-    const pass = await queryOne('SELECT pass_reference, status, issued_at, revoked_at FROM event_passes WHERE child_event_entry_id = ? ORDER BY created_at DESC LIMIT 1', [id]);
+    const pass = resolvedEntryId
+      ? await queryOne('SELECT pass_reference, status, issued_at, revoked_at FROM event_passes WHERE child_event_entry_id = ? ORDER BY created_at DESC LIMIT 1', [resolvedEntryId])
+      : null;
     const passReference = pass ? pass.pass_reference : undefined;
 
     const childAge = getChildAge(app, CANONICAL_GA_EVENT_DATE);
@@ -3147,39 +3161,45 @@ router.get('/applications/:id', async (req: AuthenticatedRequest, res: Response)
     }
 
     const attnResult = evaluateApplicationNeedsAttention(app, formattedPickups, CANONICAL_GA_EVENT_DATE);
-    const lastReminder = await queryOne(`
-      SELECT m.created_at, m.message_type
-      FROM messages m
-      JOIN message_threads t ON t.id = m.thread_id
-      WHERE t.linked_entry_id = ?
-        AND m.message_type IN ('application_completion_reminder', 'application_correction_required')
-      ORDER BY m.created_at DESC
-      LIMIT 1
-    `, [id]);
-    const lastWhatsApp = await queryOne(`
-      SELECT COALESCE(sent_at, created_at) as sent_at
-      FROM whatsapp_delivery_logs
-      WHERE child_event_entry_id = ?
-        AND status IN ('sent', 'delivered', 'read')
-      ORDER BY COALESCE(sent_at, created_at) DESC
-      LIMIT 1
-    `, [id]);
-    const reminderCounts = await queryOne(`
-      SELECT 
-        (
-          SELECT COUNT(*)
+    const lastReminder = resolvedEntryId
+      ? await queryOne(`
+          SELECT m.created_at, m.message_type
           FROM messages m
           JOIN message_threads t ON t.id = m.thread_id
           WHERE t.linked_entry_id = ?
             AND m.message_type IN ('application_completion_reminder', 'application_correction_required')
-        ) as portal_count,
-        (
-          SELECT COUNT(*)
-          FROM whatsapp_delivery_logs l
-          WHERE l.child_event_entry_id = ?
-            AND l.status IN ('sent', 'delivered', 'read')
-        ) as whatsapp_count
-    `, [id, id]);
+          ORDER BY m.created_at DESC
+          LIMIT 1
+        `, [resolvedEntryId])
+      : null;
+    const lastWhatsApp = resolvedEntryId
+      ? await queryOne(`
+          SELECT COALESCE(sent_at, created_at) as sent_at
+          FROM whatsapp_delivery_logs
+          WHERE child_event_entry_id = ?
+            AND status IN ('sent', 'delivered', 'read')
+          ORDER BY COALESCE(sent_at, created_at) DESC
+          LIMIT 1
+        `, [resolvedEntryId])
+      : null;
+    const reminderCounts = resolvedEntryId
+      ? await queryOne(`
+          SELECT 
+            (
+              SELECT COUNT(*)
+              FROM messages m
+              JOIN message_threads t ON t.id = m.thread_id
+              WHERE t.linked_entry_id = ?
+                AND m.message_type IN ('application_completion_reminder', 'application_correction_required')
+            ) as portal_count,
+            (
+              SELECT COUNT(*)
+              FROM whatsapp_delivery_logs l
+              WHERE l.child_event_entry_id = ?
+                AND l.status IN ('sent', 'delivered', 'read')
+            ) as whatsapp_count
+        `, [resolvedEntryId, resolvedEntryId])
+      : null;
 
     const portalRemCount = Number(reminderCounts?.portal_count) || 0;
     const waRemCount = Number(reminderCounts?.whatsapp_count) || 0;
