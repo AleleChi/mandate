@@ -165,6 +165,11 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
         resetForm();
         onSuccess(res.parentId);
         onClose();
+      } else if (res.code === 'EMAIL_DELIVERY_FAILED' || res.parentCreated) {
+        showError('Invitation email not delivered', res.message || 'Parent was created, but the invitation email could not be delivered. You can resend the invitation.');
+        resetForm();
+        onSuccess(res.parentId);
+        onClose();
       }
     } catch (err: any) {
       const parsed = extractApiError(err);

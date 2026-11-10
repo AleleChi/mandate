@@ -25,7 +25,8 @@ import {
   HeartHandshake,
   Loader2,
   Phone,
-  ArrowRight
+  ArrowRight,
+  Mail
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -414,6 +415,10 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
   const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
   const [submittingDelete, setSubmittingDelete] = useState(false);
 
+  // Resend invitation modal state
+  const [parentToResendInvite, setParentToResendInvite] = useState<any | null>(null);
+  const [resendingInvite, setResendingInvite] = useState(false);
+
   // Add parent modal
   const [showAddParentModal, setShowAddParentModal] = useState(false);
 
@@ -709,6 +714,36 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       showError('Restore Failed', parsed.message || 'Could not restore child.');
     } finally {
       setRestoringModalChild(false);
+    }
+  };
+
+  const handleResendInviteConfirm = async () => {
+    if (!parentToResendInvite) return;
+    setResendingInvite(true);
+    try {
+      const res = await api.admin.resendInvite({
+        userId: parentToResendInvite.userId,
+        email: parentToResendInvite.email
+      });
+      if (res.success) {
+        showSuccess('Invitation resent', `Invitation successfully resent to ${parentToResendInvite.email}.`);
+        setParentToResendInvite(null);
+        if (quickViewParent && (quickViewParent.id === parentToResendInvite.id || quickViewParent.userId === parentToResendInvite.userId)) {
+          setQuickViewParent({
+            ...quickViewParent,
+            accountStatus: 'invitation_pending',
+            invitationSentAt: new Date().toISOString()
+          });
+        }
+        await fetchParents();
+      } else {
+        showError('Resend failed', res.message || res.error || 'Failed to resend invitation.');
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Resend failed', parsed.message || 'Failed to resend invitation.');
+    } finally {
+      setResendingInvite(false);
     }
   };
 
@@ -1159,6 +1194,16 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">
                 {quickViewParent.email || 'No email registered'}
               </p>
+              {quickViewParent.accountStatus === 'invitation_pending' && (
+                <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">
+                  Invitation pending{quickViewParent.invitationSentAt ? ` · Last sent: ${new Date(quickViewParent.invitationSentAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
+                </p>
+              )}
+              {quickViewParent.accountStatus === 'email_delivery_failed' && (
+                <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-0.5 truncate font-medium">
+                  Invitation email not delivered
+                </p>
+              )}
               {quickViewParent.isKoinoniaWorker ? (
                 <p className="text-xs text-neutral-600 dark:text-neutral-300 mt-1 flex items-center gap-1.5 font-normal">
                   <Briefcase className="w-3.5 h-3.5 text-[#C59B27] shrink-0" />
@@ -1401,18 +1446,30 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
 
         {/* Modal Footer */}
         <div className="px-6 py-3.5 bg-[#FAF9F6] dark:bg-[#1A1916] border-t border-[#EAE8E1] dark:border-[#2A2926] flex items-center justify-between shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              const pid = quickViewParent.id;
-              setQuickViewParent(null);
-              onNavigate(`/admin/parents/${pid}` as AppRoute);
-            }}
-            className="text-xs font-medium text-[#C59B27] hover:text-[#B08921] transition-colors flex items-center gap-1.5 cursor-pointer"
-          >
-            <span>View full profile</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={() => {
+                const pid = quickViewParent.id;
+                setQuickViewParent(null);
+                onNavigate(`/admin/parents/${pid}` as AppRoute);
+              }}
+              className="text-xs font-medium text-[#C59B27] hover:text-[#B08921] transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>View full profile</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+            {quickViewParent.canResendInvitation && (
+              <button
+                type="button"
+                onClick={() => setParentToResendInvite(quickViewParent)}
+                className="text-xs font-medium text-[#C59B27] hover:text-[#B08921] transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                <span>Resend invitation</span>
+              </button>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => setQuickViewParent(null)}
@@ -1840,6 +1897,52 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     document.body
   ) : null;
 
+  const resendInviteModal = (parentToResendInvite && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+      <div
+        onClick={() => !resendingInvite && setParentToResendInvite(null)}
+        className="fixed inset-0 bg-black/50 transition-opacity backdrop-blur-2xs"
+      />
+      <div className="relative bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-lg w-full max-w-md shadow-xl p-6 text-neutral-900 dark:text-neutral-100 text-left space-y-4">
+        <div>
+          <h3 className="font-semibold text-base text-neutral-900 dark:text-neutral-100">
+            Resend invitation to {parentToResendInvite.email}?
+          </h3>
+          <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-2 leading-relaxed">
+            A new invitation link will be created and the previous unused link will stop working.
+          </p>
+        </div>
+
+        <div className="flex justify-end gap-3 pt-2">
+          <button
+            type="button"
+            onClick={() => setParentToResendInvite(null)}
+            disabled={resendingInvite}
+            className="px-3.5 py-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#262520] rounded-[4px] transition-colors cursor-pointer disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleResendInviteConfirm}
+            disabled={resendingInvite}
+            className="px-3.5 py-1.5 text-xs font-medium bg-[#C59B27] hover:bg-[#B08921] text-white rounded-[4px] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+          >
+            {resendingInvite ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Resending...</span>
+              </>
+            ) : (
+              <span>Resend invitation</span>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
   return (
     <div
       className="space-y-6"
@@ -1856,6 +1959,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       {customAmountModal}
       {confirmSelectAllModal}
       {quickViewModal}
+      {resendInviteModal}
       {reviewingChild && (
         <ChildReviewModal
           isOpen={Boolean(reviewingChild)}
@@ -2584,6 +2688,16 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                             <span className="text-[11px] text-neutral-500 dark:text-neutral-400 block truncate mt-0.5">
                               {p.email || 'No email registered'}
                             </span>
+                            {p.accountStatus === 'invitation_pending' && (
+                              <span className="text-[10px] text-neutral-500 dark:text-neutral-400 block truncate">
+                                Invitation pending{p.invitationSentAt ? ` · Last sent: ${new Date(p.invitationSentAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
+                              </span>
+                            )}
+                            {p.accountStatus === 'email_delivery_failed' && (
+                              <span className="text-[10px] text-rose-600 dark:text-rose-400 block truncate font-medium">
+                                Invitation email not delivered
+                              </span>
+                            )}
                             {p.phone && (
                               <span className="text-[10px] text-neutral-400 dark:text-neutral-500 block truncate">
                                 📞 {p.phone}
@@ -2720,6 +2834,19 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                                   <Users className="w-3.5 h-3.5 text-neutral-400" />
                                   <span>View full details</span>
                                 </button>
+
+                                {p.canResendInvitation && (
+                                  <button
+                                    onClick={() => {
+                                      setOpenActionMenuId(null);
+                                      setParentToResendInvite(p);
+                                    }}
+                                    className="w-full text-left px-3 py-1.5 text-xs text-[#C59B27] hover:bg-[#C59B27]/10 flex items-center gap-2 transition-colors cursor-pointer"
+                                  >
+                                    <Mail className="w-3.5 h-3.5 text-[#C59B27]" />
+                                    <span>Resend invitation</span>
+                                  </button>
+                                )}
 
                                 <div className="h-px bg-[#EAE8E1] dark:bg-[#2A2926] my-1" />
 
