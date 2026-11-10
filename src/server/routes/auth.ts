@@ -8,6 +8,7 @@ import { buildPublicAppUrl, TRUSTED_FRONTEND_ORIGINS } from '../utils/urlHelper'
 import { authorizeChildPass, revokeChildPassAuthorizations, isChildPassAuthorized } from '../services/passService';
 import { enqueueWhatsAppJob } from '../services/whatsapp/queue';
 import { getCurrentEventId, getEventById, isPublicParentRegistrationOpen } from '../services/eventService';
+import { normalizeEmail, resolveAccountByEmail } from '../services/accountLifecycleService';
 
 const router = Router();
 
@@ -132,14 +133,14 @@ router.post(['/create-account', '/register'], async (req: AuthenticatedRequest, 
     const cleanPhone = phoneVal.normalizedPhone!;
     const cleanWhatsapp = whatsapp ? validatePhoneNumber(whatsapp, 'NG').normalizedPhone! : cleanPhone;
 
-    const existing = await queryOne('SELECT id FROM users WHERE email = ?', [cleanEmail]);
-    if (existing) {
+    const lifecycle = await resolveAccountByEmail(cleanEmail, 'parent');
+    if (lifecycle.state !== 'available') {
       return res.status(400).json({
         success: false,
-        code: 'EMAIL_ALREADY_EXISTS',
+        code: lifecycle.code || 'EMAIL_ALREADY_EXISTS',
         field: 'email',
-        message: 'Account with this email already exists',
-        error: 'Account with this email already exists'
+        message: lifecycle.message || 'Account with this email already exists',
+        error: lifecycle.message || 'Account with this email already exists'
       });
     }
 
@@ -544,11 +545,20 @@ router.post(['/sign-in', '/login'], async (req: AuthenticatedRequest, res: Respo
       });
     }
 
-    if (user.status === 'suspended' || user.status === 'revoked') {
+    if (user.status === 'suspended' || user.status === 'revoked' || user.status === 'deleted' || String(user.email).endsWith('@deleted.invalid')) {
       return res.status(403).json({
         success: false,
         code: 'ACCOUNT_BLOCKED',
-        message: 'Your account has been suspended or revoked. Please contact event administration.'
+        message: 'Your account has been deactivated or deleted. Please contact event administration.'
+      });
+    }
+
+    const parentProfileRow = await queryOne<any>('SELECT id, is_deleted, permanently_deleted_at FROM parent_profiles WHERE user_id = ?', [user.id]);
+    if (parentProfileRow && (parentProfileRow.is_deleted === 1 || parentProfileRow.permanently_deleted_at)) {
+      return res.status(403).json({
+        success: false,
+        code: 'ACCOUNT_BLOCKED',
+        message: 'Your parent profile has been removed. Please contact event administration.'
       });
     }
 

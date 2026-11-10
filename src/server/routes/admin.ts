@@ -68,6 +68,13 @@ import {
   getSelectedParentsAudience,
   sendSelectedParentsChannelInvitations
 } from '../services/selectedParentsChannelService';
+import {
+  normalizeEmail,
+  resolveAccountByEmail,
+  restoreAccount,
+  permanentlyDeleteAccount,
+  revokeUserAuth
+} from '../services/accountLifecycleService';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -338,8 +345,8 @@ router.post(['/sign-in', '/login'], async (req, res) => {
       return res.status(400).json({ success: false, error: 'Email and password are required.' });
     }
 
-    const cleanEmail = String(email).trim().toLowerCase();
-    const user = await queryOne('SELECT * FROM users WHERE email = ?', [cleanEmail]);
+    const cleanEmail = normalizeEmail(email);
+    const user = await queryOne('SELECT * FROM users WHERE LOWER(email) = ?', [cleanEmail]);
 
     if (!user || !user.password_hash || !verifyPassword(password, user.password_hash)) {
       return res.status(401).json({
@@ -349,7 +356,7 @@ router.post(['/sign-in', '/login'], async (req, res) => {
       });
     }
 
-    if (user.status === 'suspended' || user.status === 'revoked' || user.status === 'disabled') {
+    if (user.status === 'suspended' || user.status === 'revoked' || user.status === 'disabled' || user.status === 'deleted' || String(user.email).endsWith('@deleted.invalid')) {
       return res.status(403).json({
         success: false,
         code: 'ACCOUNT_BLOCKED',
@@ -1007,46 +1014,43 @@ router.post('/invites', async (req: AuthenticatedRequest, res: Response) => {
 
     const nameForRecipient = recipientName || fullName || (firstName && lastName ? `${firstName} ${lastName}` : '') || 'Invited User';
 
-    // Check existing user
-    let existingUser = await queryOne('SELECT * FROM users WHERE LOWER(email) = ?', [cleanEmail]);
-    let invitedUserId = '';
-    const nowStr = new Date().toISOString();
-
-    if (existingUser) {
-      if (existingUser.role === 'admin' || existingUser.role === 'super_admin' || existingUser.role === 'team') {
-        if (existingUser.password_hash !== 'invited_pending') {
-          return res.status(400).json({
-            success: false,
-            code: 'ALREADY_ACTIVE_ADMIN',
-            error: 'This email already belongs to an active team member.'
-          });
-        }
-
-        // Check if there is an active pending unexpired invitation token
-        const activePendingToken = await queryOne(
-          "SELECT id FROM auth_tokens WHERE user_id = ? AND token_type = 'admin_invite' AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ?",
-          [existingUser.id, nowStr]
-        );
-        if (activePendingToken) {
-          return res.status(400).json({
-            success: false,
-            code: 'INVITATION_ALREADY_PENDING',
-            error: 'An invitation is already pending for this email.'
-          });
-        }
-
-        // If user exists and is pending with expired/revoked/missing token, reuse user ID
-        invitedUserId = existingUser.id;
-      } else {
-        return res.status(400).json({
-          success: false,
-          code: 'ACCOUNT_EXISTS_CONFIRM_UPGRADE_REQUIRED',
-          error: 'This account already exists as a parent or volunteer. You can update their role from Event Team Access.'
-        });
-      }
-    } else {
-      invitedUserId = crypto.randomUUID();
+    // Lifecycle check before issuing invitation
+    const lifecycle = await resolveAccountByEmail(cleanEmail, 'admin');
+    if (lifecycle.state === 'active') {
+      return res.status(400).json({
+        success: false,
+        code: 'ALREADY_ACTIVE_ADMIN',
+        error: 'This email already belongs to an active team member.'
+      });
     }
+    if (lifecycle.state === 'removed') {
+      return res.status(400).json({
+        success: false,
+        code: 'REMOVED_ACCOUNT_EXISTS',
+        userId: lifecycle.userId,
+        role: lifecycle.role || 'admin',
+        error: 'A removed admin account already uses this email. You can restore the existing account.',
+        message: 'A removed admin account already uses this email. You can restore the existing account.'
+      });
+    }
+    if (lifecycle.state === 'role_conflict') {
+      return res.status(400).json({
+        success: false,
+        code: 'ACCOUNT_EXISTS_CONFIRM_UPGRADE_REQUIRED',
+        error: lifecycle.message || 'This account already exists as a parent or volunteer. You can update their role from Event Team Access.'
+      });
+    }
+    if (lifecycle.state === 'invitation_pending') {
+      return res.status(400).json({
+        success: false,
+        code: 'INVITATION_ALREADY_PENDING',
+        error: 'An invitation is already pending for this email. You can resend the invitation.'
+      });
+    }
+
+    let existingUser = await queryOne('SELECT * FROM users WHERE LOWER(email) = ?', [cleanEmail]);
+    let invitedUserId = existingUser ? existingUser.id : crypto.randomUUID();
+    const nowStr = new Date().toISOString();
 
     // Generate secure 72-hour invite token
     const rawToken = crypto.randomBytes(32).toString('hex');
@@ -1278,29 +1282,32 @@ router.post('/check-duplicate', authMiddleware, async (req: AuthenticatedRequest
     const { type, email, phone, firstName, lastName, parentId } = req.body;
 
     if (type === 'parent' || type === 'user') {
-      const cleanEmail = email ? String(email).trim().toLowerCase() : '';
+      const cleanEmail = normalizeEmail(email);
       const cleanPhone = phone ? String(phone).trim() : '';
 
       if (cleanEmail) {
-        const existingByEmail = await queryOne('SELECT p.*, u.role FROM parent_profiles p JOIN users u ON p.user_id = u.id WHERE LOWER(p.email) = ? OR LOWER(u.email) = ?', [cleanEmail, cleanEmail]);
-        if (existingByEmail) {
+        const lifecycle = await resolveAccountByEmail(cleanEmail, 'parent');
+        if (lifecycle.state !== 'available') {
           return res.json({
             duplicateFound: true,
+            lifecycleState: lifecycle.state,
+            code: lifecycle.code,
             matchField: 'email',
+            role: lifecycle.role,
+            canRestore: lifecycle.canRestore,
+            canResendInvite: lifecycle.canResendInvite,
             existingRecord: {
-              id: existingByEmail.id,
-              userId: existingByEmail.user_id,
-              fullName: existingByEmail.full_name,
-              email: existingByEmail.email,
-              phone: existingByEmail.phone_number
+              id: lifecycle.profileId,
+              userId: lifecycle.userId,
+              email: cleanEmail
             },
-            message: `A parent record already exists with email "${cleanEmail}".`
+            message: lifecycle.message
           });
         }
       }
 
       if (cleanPhone) {
-        const existingByPhone = await queryOne('SELECT * FROM parent_profiles WHERE phone_number = ?', [cleanPhone]);
+        const existingByPhone = await queryOne('SELECT * FROM parent_profiles WHERE phone_number = ? AND (is_deleted = 0 OR is_deleted IS NULL)', [cleanPhone]);
         if (existingByPhone) {
           return res.json({
             duplicateFound: true,
@@ -1337,20 +1344,24 @@ router.post('/check-duplicate', authMiddleware, async (req: AuthenticatedRequest
     }
 
     if (type === 'volunteer') {
-      const cleanEmail = email ? String(email).trim().toLowerCase() : '';
+      const cleanEmail = normalizeEmail(email);
       if (cleanEmail) {
-        const existingVol = await queryOne('SELECT v.*, u.role FROM volunteer_profiles v JOIN users u ON v.user_id = u.id WHERE LOWER(v.email) = ? OR LOWER(u.email) = ?', [cleanEmail, cleanEmail]);
-        if (existingVol) {
+        const lifecycle = await resolveAccountByEmail(cleanEmail, 'volunteer');
+        if (lifecycle.state !== 'available') {
           return res.json({
             duplicateFound: true,
+            lifecycleState: lifecycle.state,
+            code: lifecycle.code,
             matchField: 'email',
+            role: lifecycle.role,
+            canRestore: lifecycle.canRestore,
+            canResendInvite: lifecycle.canResendInvite,
             existingRecord: {
-              id: existingVol.id,
-              userId: existingVol.user_id,
-              fullName: existingVol.full_name,
-              email: existingVol.email
+              id: lifecycle.profileId,
+              userId: lifecycle.userId,
+              email: cleanEmail
             },
-            message: `A volunteer profile already exists with email "${cleanEmail}".`
+            message: lifecycle.message
           });
         }
       }
@@ -1396,7 +1407,7 @@ router.post('/parents', authMiddleware, async (req: AuthenticatedRequest, res: R
       return res.status(400).json({ success: false, error: 'First name, last name, and email are required.' });
     }
 
-    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanEmail = normalizeEmail(email);
     const cleanPhone = phone ? String(phone).trim() : '';
     const fullName = `${firstName.trim()} ${lastName.trim()}`;
     const nowStr = new Date().toISOString();
@@ -1407,13 +1418,41 @@ router.post('/parents', authMiddleware, async (req: AuthenticatedRequest, res: R
     }
 
     if (!overrideDuplicate) {
-      const existingUser = await queryOne('SELECT * FROM users WHERE LOWER(email) = ?', [cleanEmail]);
-      if (existingUser) {
+      const lifecycle = await resolveAccountByEmail(cleanEmail, 'parent');
+      if (lifecycle.state === 'active') {
         return res.status(409).json({
           success: false,
-          code: 'DUPLICATE_RECORD',
-          message: `A user record with email "${cleanEmail}" already exists.`,
-          existingUserId: existingUser.id
+          code: 'ACTIVE_ACCOUNT_EXISTS',
+          message: 'An active account already exists with this email.',
+          existingUserId: lifecycle.userId
+        });
+      }
+      if (lifecycle.state === 'removed') {
+        return res.status(409).json({
+          success: false,
+          code: 'REMOVED_ACCOUNT_EXISTS',
+          userId: lifecycle.userId,
+          profileId: lifecycle.profileId,
+          role: 'parent',
+          message: 'A removed parent account already uses this email.'
+        });
+      }
+      if (lifecycle.state === 'role_conflict') {
+        return res.status(409).json({
+          success: false,
+          code: 'ROLE_CONFLICT',
+          role: lifecycle.role,
+          message: lifecycle.message
+        });
+      }
+      if (lifecycle.state === 'invitation_pending') {
+        return res.status(409).json({
+          success: false,
+          code: 'INVITATION_PENDING',
+          userId: lifecycle.userId,
+          profileId: lifecycle.profileId,
+          role: 'parent',
+          message: 'An invitation is already pending for this parent. You can resend the invitation.'
         });
       }
     }
@@ -1730,7 +1769,7 @@ router.post('/volunteers', authMiddleware, async (req: AuthenticatedRequest, res
       return res.status(400).json({ success: false, error: 'First name, last name, and email are required.' });
     }
 
-    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanEmail = normalizeEmail(email);
     const cleanPhone = phone ? String(phone).trim() : '';
     const fullName = `${firstName.trim()} ${lastName.trim()}`;
     const nowStr = new Date().toISOString();
@@ -1738,13 +1777,41 @@ router.post('/volunteers', authMiddleware, async (req: AuthenticatedRequest, res
     const targetEventId = await resolveAdminEventId(req.body.eventId);
 
     if (!overrideDuplicate) {
-      const existingUser = await queryOne('SELECT * FROM users WHERE LOWER(email) = ?', [cleanEmail]);
-      if (existingUser) {
+      const lifecycle = await resolveAccountByEmail(cleanEmail, 'volunteer');
+      if (lifecycle.state === 'active') {
         return res.status(409).json({
           success: false,
-          code: 'DUPLICATE_RECORD',
-          message: `A user account with email "${cleanEmail}" already exists.`,
-          existingUserId: existingUser.id
+          code: 'ACTIVE_ACCOUNT_EXISTS',
+          message: 'An active account already exists with this email.',
+          existingUserId: lifecycle.userId
+        });
+      }
+      if (lifecycle.state === 'removed') {
+        return res.status(409).json({
+          success: false,
+          code: 'REMOVED_ACCOUNT_EXISTS',
+          userId: lifecycle.userId,
+          profileId: lifecycle.profileId,
+          role: 'volunteer',
+          message: 'A removed volunteer account already uses this email.'
+        });
+      }
+      if (lifecycle.state === 'role_conflict') {
+        return res.status(409).json({
+          success: false,
+          code: 'ROLE_CONFLICT',
+          role: lifecycle.role,
+          message: lifecycle.message
+        });
+      }
+      if (lifecycle.state === 'invitation_pending') {
+        return res.status(409).json({
+          success: false,
+          code: 'INVITATION_PENDING',
+          userId: lifecycle.userId,
+          profileId: lifecycle.profileId,
+          role: 'volunteer',
+          message: 'An invitation is already pending for this volunteer.'
         });
       }
     }
@@ -1765,16 +1832,16 @@ router.post('/volunteers', authMiddleware, async (req: AuthenticatedRequest, res
       `, [volUserId, cleanEmail, initialPwdHash, nowStr, nowStr]);
 
       // 2. Create Volunteer Profile
+      const volunteerNote = [skillsExperience, availabilityNotes, emergencyContactName ? `Emergency: ${emergencyContactName} (${emergencyContactPhone || 'N/A'})` : ''].filter(Boolean).join(' | ');
+
       await execute(`
         INSERT INTO volunteer_profiles (
-          id, user_id, full_name, preferred_name, first_name, last_name, email, phone_number,
-          emergency_contact_name, emergency_contact_phone, preferred_team, skills_experience,
-          availability_notes, approval_status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)
+          id, user_id, full_name, phone, whatsapp, preferred_team,
+          note, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)
       `, [
-        volProfileId, volUserId, fullName, preferredName || null, firstName.trim(), lastName.trim(),
-        cleanEmail, cleanPhone || null, emergencyContactName || null, emergencyContactPhone || null,
-        preferredTeam || 'General Assistance', skillsExperience || null, availabilityNotes || null,
+        volProfileId, volUserId, fullName, cleanPhone || '', cleanPhone || '',
+        preferredTeam || 'General Assistance', volunteerNote || null,
         nowStr, nowStr
       ]);
 
@@ -8988,6 +9055,60 @@ router.post('/team/remove-access', authMiddleware, handleRemoveTeamAccess);
 // DELETE remove team member access
 router.delete('/team-members/:userId', authMiddleware, handleRemoveTeamAccess);
 
+// POST restore team member access (Super Admin only)
+router.post(['/team/:userId/restore', '/team/restore'], authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: 'Only Super Administrators can restore team member access.' });
+    }
+    const targetUserId = req.params.userId || req.body?.userId;
+    if (!targetUserId) {
+      return res.status(400).json({ success: false, error: 'User ID is required.' });
+    }
+    const result = await restoreAccount({
+      type: 'admin',
+      id: targetUserId,
+      adminUserId: req.user.id,
+      adminRole: req.user.role
+    });
+    if (!result.success) {
+      return res.status(result.code === 'NOT_FOUND' ? 404 : 400).json(result);
+    }
+    return res.json(result);
+  } catch (err: any) {
+    console.error('Error restoring team member access:', err);
+    return res.status(500).json({ success: false, error: 'Failed to restore team member access.' });
+  }
+});
+
+// POST permanently delete team member (Super Admin only, requires DELETE confirmation)
+router.post(['/team/:userId/permanent-delete', '/team-members/:userId/permanent-delete'], authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ success: false, error: 'Only Super Administrators can permanently delete accounts.' });
+    }
+    const targetUserId = req.params.userId || req.body?.userId;
+    const { confirmation, reason } = req.body;
+    if (confirmation !== 'DELETE') {
+      return res.status(400).json({ success: false, error: 'Typed confirmation of DELETE is required' });
+    }
+    const result = await permanentlyDeleteAccount({
+      type: 'admin',
+      id: targetUserId,
+      adminUserId: req.user.id,
+      adminRole: req.user.role,
+      reason
+    });
+    if (!result.success) {
+      return res.status(result.code === 'NOT_FOUND' ? 404 : 400).json({ success: false, error: result.message });
+    }
+    return res.json(result);
+  } catch (err: any) {
+    console.error('Error permanently deleting team member:', err);
+    return res.status(500).json({ success: false, error: 'Failed to permanently delete team member.' });
+  }
+});
+
 /**
  * Determines whether a message type requires child-specific registration context.
  * Classified into:
@@ -10574,9 +10695,9 @@ router.post('/volunteers/:id/remove', async (req: AuthenticatedRequest, res: Res
 
     const result = await execute(`
       UPDATE volunteer_profiles
-      SET status = 'removed', updated_at = ?
+      SET status = 'removed', is_deleted = 1, deleted_at = ?, deleted_by = ?, updated_at = ?
       WHERE id = ? AND status != 'removed'
-    `, [now, volunteerId]);
+    `, [now, req.user.id, now, volunteerId]);
 
     // Verify the row was actually changed — protect against false success
     const updated = (result as any)?.rowCount ?? (result as any)?.changes ?? 1;
@@ -10613,42 +10734,16 @@ router.post('/volunteers/:id/restore', async (req: AuthenticatedRequest, res: Re
       return res.status(403).json({ success: false, error: 'Admin access required' });
     }
     const volunteerId = req.params.id;
-    const now = new Date().toISOString();
-
-    const volunteer = await queryOne('SELECT id, status FROM volunteer_profiles WHERE id = ?', [volunteerId]);
-    if (!volunteer) {
-      return res.status(404).json({ success: false, error: 'Volunteer profile not found' });
+    const result = await restoreAccount({
+      type: 'volunteer',
+      id: volunteerId,
+      adminUserId: req.user.id,
+      adminRole: req.user.role
+    });
+    if (!result.success) {
+      return res.status(result.code === 'NOT_FOUND' ? 404 : 400).json(result);
     }
-    if (volunteer.status !== 'removed') {
-      return res.status(400).json({ success: false, error: 'Only removed volunteers can be restored.' });
-    }
-
-    const result = await execute(`
-      UPDATE volunteer_profiles
-      SET status = 'pending_review', updated_at = ?
-      WHERE id = ? AND status = 'removed'
-    `, [now, volunteerId]);
-
-    const updated = (result as any)?.rowCount ?? (result as any)?.changes ?? 1;
-    if (Number(updated) === 0) {
-      return res.status(400).json({
-        success: false,
-        error: "We couldn't restore this volunteer. Please refresh and try again."
-      });
-    }
-
-    try {
-      await execute(`
-        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        crypto.randomUUID(), req.user.id, req.user.role,
-        'Restore Volunteer', 'volunteer_profile', volunteerId,
-        JSON.stringify({ restoredToStatus: 'pending_review' }), now
-      ]);
-    } catch (_) {}
-
-    return res.json({ success: true, message: 'Volunteer restored successfully' });
+    return res.json(result);
   } catch (err: any) {
     console.error('Error restoring volunteer:', err);
     return res.status(500).json({ success: false, error: 'We could not restore this volunteer. Please try again.' });
@@ -11099,9 +11194,9 @@ router.post('/volunteers/bulk-remove', authMiddleware, async (req: Authenticated
 
         const result = await execute(`
           UPDATE volunteer_profiles
-          SET status = 'removed', updated_at = ?
+          SET status = 'removed', is_deleted = 1, deleted_at = ?, deleted_by = ?, delete_reason = ?, updated_at = ?
           WHERE id = ? AND status != 'removed'
-        `, [nowStr, id]);
+        `, [nowStr, req.user.id, reason || 'Bulk removal', nowStr, id]);
 
         const updated = Number((result as any)?.rowCount ?? (result as any)?.changes ?? 1);
         if (updated === 0) {
@@ -11171,41 +11266,17 @@ router.post('/volunteers/bulk-restore', authMiddleware, async (req: Authenticate
 
     for (const id of volunteerIds) {
       try {
-        const v = await queryOne('SELECT id, status FROM volunteer_profiles WHERE id = ?', [id]);
-        if (!v) {
-          failures.push({ id, reason: 'Profile not found' });
-          continue;
+        const res = await restoreAccount({
+          type: 'volunteer',
+          id,
+          adminUserId: req.user.id,
+          adminRole: req.user.role
+        });
+        if (res.success) {
+          restoredCount++;
+        } else {
+          failures.push({ id, reason: res.message });
         }
-        if (v.status !== 'removed') {
-          failures.push({ id, reason: 'Not in removed state' });
-          continue;
-        }
-
-        const result = await execute(`
-          UPDATE volunteer_profiles
-          SET status = 'pending_review', updated_at = ?
-          WHERE id = ? AND status = 'removed'
-        `, [nowStr, id]);
-
-        const updated = Number((result as any)?.rowCount ?? (result as any)?.changes ?? 1);
-        if (updated === 0) {
-          failures.push({ id, reason: 'No rows updated' });
-          continue;
-        }
-
-        try {
-          await execute(`
-            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          `, [
-            crypto.randomUUID(), req.user.id, req.user.role,
-            'Bulk Restore Volunteer', 'volunteer_profile', id,
-            JSON.stringify({ restoredToStatus: 'pending_review', restoredAt: nowStr }),
-            nowStr
-          ]);
-        } catch (_) {}
-
-        restoredCount++;
       } catch (err: any) {
         failures.push({ id, reason: 'Restoration failed' });
       }
@@ -11606,20 +11677,16 @@ router.post('/parents/:id/restore', async (req: AuthenticatedRequest, res: Respo
       return res.status(403).json({ success: false, error: 'Admin access required' });
     }
     const parentId = req.params.id;
-    const now = new Date().toISOString();
-
-    const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [parentId]);
-    if (!parent) {
-      return res.status(404).json({ success: false, error: 'Parent profile not found' });
+    const result = await restoreAccount({
+      type: 'parent',
+      id: parentId,
+      adminUserId: req.user.id,
+      adminRole: req.user.role
+    });
+    if (!result.success) {
+      return res.status(result.code === 'NOT_FOUND' ? 404 : 400).json(result);
     }
-
-    await execute(`
-      UPDATE parent_profiles 
-      SET is_deleted = 0, restored_at = ?, restored_by = ?
-      WHERE id = ?
-    `, [now, req.user.id, parentId]);
-
-    return res.json({ success: true, message: 'Parent restored successfully' });
+    return res.json(result);
   } catch (err: any) {
     console.error('Error restoring parent:', err);
     return res.status(500).json({ success: false, error: 'Failed to restore parent' });
@@ -11707,35 +11774,17 @@ router.post('/parents/bulk-restore', authMiddleware, async (req: AuthenticatedRe
 
     for (const id of parentIds) {
       try {
-        const p = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [id]);
-        if (!p) {
-          failures.push({ id, reason: 'Profile not found' });
-          continue;
+        const res = await restoreAccount({
+          type: 'parent',
+          id,
+          adminUserId: req.user.id,
+          adminRole: req.user.role
+        });
+        if (res.success) {
+          restoredCount++;
+        } else {
+          failures.push({ id, reason: res.message });
         }
-
-        await execute(`
-          UPDATE parent_profiles 
-          SET is_deleted = 0, restored_at = ?, restored_by = ?
-          WHERE id = ?
-        `, [nowStr, req.user.id, id]);
-
-        try {
-          await execute(`
-            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          `, [
-            crypto.randomUUID(),
-            req.user.id,
-            req.user.role,
-            'Bulk Restore Parent',
-            'parent_profile',
-            id,
-            JSON.stringify({ restored_at: nowStr }),
-            nowStr
-          ]);
-        } catch (aErr) {}
-
-        restoredCount++;
       } catch (err: any) {
         failures.push({ id, reason: err.message || 'Restoration failed' });
       }
@@ -13662,91 +13711,25 @@ router.post('/parents/bulk-permanent-delete', authMiddleware, async (req: Authen
       return res.status(400).json({ success: false, error: 'Confirmation text must be DELETE' });
     }
 
-    const nowStr = new Date().toISOString();
     let deletedCount = 0;
     const failures: { id: string; reason: string }[] = [];
 
     for (const id of parentIds) {
       try {
-        const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [id]);
-        if (!parent) {
-          failures.push({ id, reason: 'Parent profile not found' });
-          continue;
-        }
-        if (parent.is_deleted !== 1) {
-          failures.push({ id, reason: 'Only removed parents can be permanently deleted. Remove this parent first.' });
-          continue;
-        }
-
-        // Check if any linked children are currently checked in or inside
-        const activeAttendance = await query(`
-          SELECT COUNT(*) as count 
-          FROM child_event_entries e 
-          JOIN children c ON c.id = e.child_id 
-          WHERE c.parent_profile_id = ? AND e.status IN ('checked_in', 'inside')
-        `, [id]);
-        if (activeAttendance[0]?.count > 0) {
-          failures.push({ id, reason: 'Cannot permanently delete this parent because one or more of their children are currently checked in or attending an event.' });
-          continue;
-        }
-
-        await transaction(async () => {
-          // 1. Audit log before deletion
-          try {
-            await execute(`
-              INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            `, [
-              crypto.randomUUID(),
-              req.user.id,
-              req.user.role,
-              'Parent permanently deleted by Super Admin',
-              'parent_profile',
-              id,
-              JSON.stringify({ reason: reason || 'Bulk permanent deletion' }),
-              nowStr
-            ]);
-          } catch (aErr) {}
-
-          // 2. Clean up child records belonging to this parent
-          const childRows = await query('SELECT id FROM children WHERE parent_profile_id = ?', [id]);
-          for (const ch of childRows) {
-            const entryRows = await query('SELECT id FROM child_event_entries WHERE child_id = ?', [ch.id]);
-            for (const ent of entryRows) {
-              await execute('DELETE FROM pickup_people WHERE child_event_entry_id = ?', [ent.id]);
-              await execute('DELETE FROM event_passes WHERE child_event_entry_id = ?', [ent.id]);
-              try {
-                await execute('UPDATE whatsapp_delivery_logs SET child_event_entry_id = NULL WHERE child_event_entry_id = ?', [ent.id]);
-              } catch (wErr) {}
-            }
-            await execute('DELETE FROM child_attention_items WHERE child_id = ?', [ch.id]);
-            await execute('DELETE FROM child_event_entries WHERE child_id = ?', [ch.id]);
-            await execute('UPDATE event_safety_alerts SET child_id = NULL, child_event_entry_id = NULL WHERE child_id = ?', [ch.id]);
-            await execute('UPDATE notifications SET child_id = NULL WHERE child_id = ?', [ch.id]);
-            await execute('UPDATE notification_jobs SET child_id = NULL WHERE child_id = ?', [ch.id]);
-            await execute('UPDATE parent_notifications SET child_id = NULL WHERE child_id = ?', [ch.id]);
-            await execute('DELETE FROM children WHERE id = ?', [ch.id]);
-          }
-
-          // 3. Clean up parent records
-          try {
-            await execute('UPDATE whatsapp_delivery_logs SET parent_profile_id = NULL, user_id = NULL WHERE parent_profile_id = ?', [id]);
-          } catch (wErr) {}
-          await execute('UPDATE notifications SET parent_id = NULL WHERE parent_id = ?', [id]);
-          await execute('DELETE FROM notification_jobs WHERE parent_id = ?', [id]);
-          await execute('DELETE FROM parent_notifications WHERE parent_id = ?', [id]);
-          await execute('DELETE FROM admin_parent_notes WHERE parent_id = ?', [id]);
-          await execute('DELETE FROM parent_profiles WHERE id = ?', [id]);
-          if (parent.user_id) {
-            await execute('DELETE FROM auth_tokens WHERE user_id = ?', [parent.user_id]);
-            await execute('DELETE FROM users WHERE id = ?', [parent.user_id]);
-          }
+        const result = await permanentlyDeleteAccount({
+          type: 'parent',
+          id,
+          adminUserId: req.user.id,
+          adminRole: req.user.role,
+          reason
         });
-
-        deletedCount++;
+        if (result.success) {
+          deletedCount++;
+        } else {
+          failures.push({ id, reason: result.message });
+        }
       } catch (itemErr: any) {
-        console.error('Error permanently deleting parent:', itemErr);
-        failures.push({ id, reason: "We couldn't permanently delete this parent. Nothing was changed." });
+        failures.push({ id, reason: itemErr.message || "Failed to permanently delete parent." });
       }
     }
 
@@ -13764,7 +13747,7 @@ router.post('/parents/bulk-permanent-delete', authMiddleware, async (req: Authen
   }
 });
 
-// POST /api/admin/parents/:id/permanent-delete - Permanently delete parent (Admin and Super Admin)
+// POST /api/admin/parents/:id/permanent-delete - Permanently delete parent (Super Admin only)
 router.post('/parents/:id/permanent-delete', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user || req.user.role !== 'super_admin') {
@@ -13777,83 +13760,19 @@ router.post('/parents/:id/permanent-delete', authMiddleware, async (req: Authent
       return res.status(400).json({ success: false, error: 'Typed confirmation of DELETE is required' });
     }
 
-    const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [parentId]);
-    if (!parent) {
-      return res.status(404).json({ success: false, error: 'Parent profile not found' });
-    }
-
-    if (parent.is_deleted !== 1) {
-      return res.status(400).json({ success: false, error: 'Only removed parents can be permanently deleted. Remove this parent first.' });
-    }
-
-    // Check if any linked children are currently checked in or inside
-    const activeAttendance = await query(`
-      SELECT COUNT(*) as count 
-      FROM child_event_entries e 
-      JOIN children c ON c.id = e.child_id 
-      WHERE c.parent_profile_id = ? AND e.status IN ('checked_in', 'inside')
-    `, [parentId]);
-    if (activeAttendance[0]?.count > 0) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Cannot permanently delete this parent because one or more of their children are currently checked in or attending an event.' 
-      });
-    }
-
-    const now = new Date().toISOString();
-    const adminId = req.user.id;
-
-    await transaction(async () => {
-      try {
-        await execute(`
-          INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
-          crypto.randomUUID(),
-          adminId,
-          req.user.role,
-          'Parent permanently deleted by Super Admin',
-          'parent_profile',
-          parentId,
-          JSON.stringify({ reason: reason || 'Single permanent deletion' }),
-          now
-        ]);
-      } catch (auditErr) {}
-
-      const childRows = await query('SELECT id FROM children WHERE parent_profile_id = ?', [parentId]);
-      for (const ch of childRows) {
-        const entryRows = await query('SELECT id FROM child_event_entries WHERE child_id = ?', [ch.id]);
-        for (const ent of entryRows) {
-          await execute('DELETE FROM pickup_people WHERE child_event_entry_id = ?', [ent.id]);
-          await execute('DELETE FROM event_passes WHERE child_event_entry_id = ?', [ent.id]);
-          try {
-            await execute('UPDATE whatsapp_delivery_logs SET child_event_entry_id = NULL WHERE child_event_entry_id = ?', [ent.id]);
-          } catch (wErr) {}
-        }
-        await execute('DELETE FROM child_attention_items WHERE child_id = ?', [ch.id]);
-        await execute('DELETE FROM child_event_entries WHERE child_id = ?', [ch.id]);
-        await execute('UPDATE event_safety_alerts SET child_id = NULL, child_event_entry_id = NULL WHERE child_id = ?', [ch.id]);
-        await execute('UPDATE notifications SET child_id = NULL WHERE child_id = ?', [ch.id]);
-        await execute('UPDATE notification_jobs SET child_id = NULL WHERE child_id = ?', [ch.id]);
-        await execute('UPDATE parent_notifications SET child_id = NULL WHERE child_id = ?', [ch.id]);
-        await execute('DELETE FROM children WHERE id = ?', [ch.id]);
-      }
-
-      try {
-        await execute('UPDATE whatsapp_delivery_logs SET parent_profile_id = NULL, user_id = NULL WHERE parent_profile_id = ?', [parentId]);
-      } catch (wErr) {}
-      await execute('UPDATE notifications SET parent_id = NULL WHERE parent_id = ?', [parentId]);
-      await execute('DELETE FROM notification_jobs WHERE parent_id = ?', [parentId]);
-      await execute('DELETE FROM parent_notifications WHERE parent_id = ?', [parentId]);
-      await execute('DELETE FROM admin_parent_notes WHERE parent_id = ?', [parentId]);
-      await execute('DELETE FROM parent_profiles WHERE id = ?', [parentId]);
-      if (parent.user_id) {
-        await execute('DELETE FROM auth_tokens WHERE user_id = ?', [parent.user_id]);
-        await execute('DELETE FROM users WHERE id = ?', [parent.user_id]);
-      }
+    const result = await permanentlyDeleteAccount({
+      type: 'parent',
+      id: parentId,
+      adminUserId: req.user.id,
+      adminRole: req.user.role,
+      reason
     });
 
-    return res.json({ success: true, message: 'Parent profile permanently deleted successfully.' });
+    if (!result.success) {
+      return res.status(result.code === 'NOT_FOUND' ? 404 : 400).json({ success: false, error: result.message });
+    }
+
+    return res.json({ success: true, message: result.message });
   } catch (err: any) {
     console.error('Error in permanent parent delete:', err);
     return res.status(500).json({ success: false, error: "We couldn't permanently delete this parent. Nothing was changed." });
@@ -13880,52 +13799,20 @@ router.post('/volunteers/bulk-permanent-delete', authMiddleware, async (req: Aut
 
     for (const id of volunteerIds) {
       try {
-        const volunteer = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [id]);
-        if (!volunteer) {
-          failures.push({ id, reason: 'Volunteer profile not found' });
-          continue;
-        }
-        if (volunteer.is_deleted !== 1) {
-          failures.push({ id, reason: 'Only removed volunteers can be permanently deleted. Remove this volunteer first.' });
-          continue;
-        }
-
-        await transaction(async () => {
-          // 1. Audit log before deletion
-          try {
-            await execute(`
-              INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            `, [
-              crypto.randomUUID(),
-              req.user.id,
-              req.user.role,
-              'Volunteer permanently deleted by Super Admin',
-              'volunteer_profile',
-              id,
-              JSON.stringify({ reason: reason || 'Bulk permanent deletion' }),
-              nowStr
-            ]);
-          } catch (aErr) {}
-
-          // 2. Clean up volunteer assignments and operational data
-          if (volunteer.user_id) {
-            await execute('DELETE FROM event_duty_assignments WHERE user_id = ?', [volunteer.user_id]);
-            await execute('DELETE FROM event_duty_devices WHERE user_id = ?', [volunteer.user_id]);
-            await execute('DELETE FROM device_readiness_logs WHERE user_id = ?', [volunteer.user_id]);
-            await execute('DELETE FROM user_duty_status WHERE user_id = ?', [volunteer.user_id]);
-            await execute('DELETE FROM safety_alert_recipients WHERE recipient_user_id = ?', [volunteer.user_id]);
-            await execute('DELETE FROM auth_tokens WHERE user_id = ?', [volunteer.user_id]);
-            await execute('DELETE FROM users WHERE id = ?', [volunteer.user_id]);
-          }
-          await execute('DELETE FROM volunteer_event_reports WHERE volunteer_profile_id = ?', [id]);
-          await execute('DELETE FROM volunteer_profiles WHERE id = ?', [id]);
+        const result = await permanentlyDeleteAccount({
+          type: 'volunteer',
+          id,
+          adminUserId: req.user.id,
+          adminRole: req.user.role,
+          reason
         });
-
-        deletedCount++;
+        if (result.success) {
+          deletedCount++;
+        } else {
+          failures.push({ id, reason: result.message });
+        }
       } catch (itemErr: any) {
-        console.error('Error permanently deleting volunteer:', itemErr);
-        failures.push({ id, reason: "We couldn't permanently delete this volunteer. Nothing was changed." });
+        failures.push({ id, reason: itemErr.message || "Failed to permanently delete volunteer." });
       }
     }
 
@@ -13954,49 +13841,19 @@ router.post('/volunteers/:id/permanent-delete', authMiddleware, async (req: Auth
       return res.status(400).json({ success: false, error: 'Typed confirmation of DELETE is required' });
     }
 
-    const volunteer = await queryOne('SELECT * FROM volunteer_profiles WHERE id = ?', [volunteerId]);
-    if (!volunteer) {
-      return res.status(404).json({ success: false, error: 'Volunteer profile not found' });
-    }
-
-    if (volunteer.is_deleted !== 1) {
-      return res.status(400).json({ success: false, error: 'Only removed volunteers can be permanently deleted. Remove this volunteer first.' });
-    }
-
-    const now = new Date().toISOString();
-    const adminId = req.user.id;
-
-    await transaction(async () => {
-      try {
-        await execute(`
-          INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
-          crypto.randomUUID(),
-          adminId,
-          req.user.role,
-          'Volunteer permanently deleted by Super Admin',
-          'volunteer_profile',
-          volunteerId,
-          JSON.stringify({ reason: reason || 'Single permanent deletion' }),
-          now
-        ]);
-      } catch (aErr) {}
-
-      if (volunteer.user_id) {
-        await execute('DELETE FROM event_duty_assignments WHERE user_id = ?', [volunteer.user_id]);
-        await execute('DELETE FROM event_duty_devices WHERE user_id = ?', [volunteer.user_id]);
-        await execute('DELETE FROM device_readiness_logs WHERE user_id = ?', [volunteer.user_id]);
-        await execute('DELETE FROM user_duty_status WHERE user_id = ?', [volunteer.user_id]);
-        await execute('DELETE FROM safety_alert_recipients WHERE recipient_user_id = ?', [volunteer.user_id]);
-        await execute('DELETE FROM auth_tokens WHERE user_id = ?', [volunteer.user_id]);
-        await execute('DELETE FROM users WHERE id = ?', [volunteer.user_id]);
-      }
-      await execute('DELETE FROM volunteer_event_reports WHERE volunteer_profile_id = ?', [volunteerId]);
-      await execute('DELETE FROM volunteer_profiles WHERE id = ?', [volunteerId]);
+    const result = await permanentlyDeleteAccount({
+      type: 'volunteer',
+      id: volunteerId,
+      adminUserId: req.user.id,
+      adminRole: req.user.role,
+      reason
     });
 
-    return res.json({ success: true, message: 'Volunteer profile permanently deleted successfully.' });
+    if (!result.success) {
+      return res.status(result.code === 'NOT_FOUND' ? 404 : 400).json({ success: false, error: result.message });
+    }
+
+    return res.json({ success: true, message: result.message });
   } catch (err: any) {
     console.error('Error in permanent volunteer delete:', err);
     return res.status(500).json({ success: false, error: "We couldn't permanently delete this volunteer. Nothing was changed." });

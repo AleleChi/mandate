@@ -707,7 +707,7 @@ router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
     console.log(`Volunteer sign-in started { maskedEmail: "${maskedEmail}" }`);
 
     // 2. Look up user by email.
-    const user = await queryOne('SELECT id, email, password_hash, role, email_verified FROM users WHERE email = ?', [cleanEmail]);
+    const user = await queryOne('SELECT id, email, password_hash, role, status, email_verified FROM users WHERE LOWER(email) = ?', [cleanEmail]);
 
     if (!user) {
       // 2. Volunteer sign-in user lookup fields:
@@ -718,6 +718,14 @@ router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
         success: false,
         code: 'INVALID_CREDENTIALS',
         message: 'Email or password is incorrect.'
+      });
+    }
+
+    if (user.status === 'suspended' || user.status === 'revoked' || user.status === 'deleted' || String(user.email).endsWith('@deleted.invalid')) {
+      return res.status(403).json({
+        success: false,
+        code: 'ACCOUNT_BLOCKED',
+        message: 'Your account has been deactivated or removed. Please contact event administration.'
       });
     }
 
@@ -749,13 +757,13 @@ router.post('/sign-in', async (req: AuthenticatedRequest, res: Response) => {
     // 3. Volunteer sign-in profile lookup fields:
     console.log(`Volunteer sign-in profile lookup { hasVolunteerProfile: ${hasVolunteerProfile}, volunteerStatus: "${volunteerStatus}" }`);
 
-    if (!profile) {
+    if (!profile || profile.is_deleted === 1 || profile.status === 'removed' || profile.permanently_deleted_at) {
       // 5. Volunteer sign-in final result fields:
       console.log(`Volunteer sign-in final result { outcome: "no_volunteer_access" }`);
       return res.status(403).json({
         success: false,
         code: 'NO_VOLUNTEER_ACCESS',
-        message: 'Volunteer Access has not been requested for this email.'
+        message: 'Volunteer Access has not been requested or has been removed for this email.'
       });
     }
 
