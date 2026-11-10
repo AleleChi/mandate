@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Heart, Mail, Phone, Shield, AlertTriangle } from 'lucide-react';
+import { X, Heart, Mail, Phone, Shield, AlertTriangle, RotateCcw, Loader2 } from 'lucide-react';
 import { api, extractApiError } from '../../../services/api';
 import { useNotification } from '../../../context/NotificationContext';
 import { Button } from '../../common/Button';
@@ -33,6 +33,32 @@ export const AddVolunteerModal: React.FC<AddVolunteerModalProps> = ({ isOpen, on
   const [duplicateMatch, setDuplicateMatch] = useState<any | null>(null);
   const [overrideDuplicate, setOverrideDuplicate] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [restoringAccount, setRestoringAccount] = useState(false);
+
+  const handleRestoreVolunteer = async () => {
+    const profileId = duplicateMatch?.profileId || duplicateMatch?.existingRecord?.id;
+    if (!profileId) {
+      showError('Restoration failed', 'No volunteer profile ID found to restore.');
+      return;
+    }
+    setRestoringAccount(true);
+    try {
+      const res = await api.admin.restoreVolunteer(profileId);
+      if (res.success) {
+        showSuccess('Volunteer restored', 'The existing volunteer account has been successfully restored.');
+        resetForm();
+        onSuccess(profileId);
+        onClose();
+      } else {
+        showError('Restoration failed', res.message || 'Failed to restore volunteer account.');
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Restoration failed', parsed.message || 'Failed to restore volunteer account.');
+    } finally {
+      setRestoringAccount(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -104,8 +130,36 @@ export const AddVolunteerModal: React.FC<AddVolunteerModalProps> = ({ isOpen, on
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
-      if (parsed.code === 'DUPLICATE_RECORD') {
-        setDuplicateMatch({ duplicateFound: true, message: parsed.message });
+      if (parsed.code === 'REMOVED_ACCOUNT_EXISTS') {
+        setDuplicateMatch({
+          duplicateFound: true,
+          lifecycleState: 'removed',
+          code: 'REMOVED_ACCOUNT_EXISTS',
+          profileId: parsed.profileId,
+          userId: parsed.userId,
+          message: parsed.message || 'A removed volunteer account already uses this email.'
+        });
+      } else if (parsed.code === 'ACTIVE_ACCOUNT_EXISTS' || parsed.code === 'DUPLICATE_RECORD') {
+        setDuplicateMatch({
+          duplicateFound: true,
+          lifecycleState: 'active',
+          code: 'ACTIVE_ACCOUNT_EXISTS',
+          message: parsed.message || 'An active account already exists with this email.'
+        });
+      } else if (parsed.code === 'ROLE_CONFLICT') {
+        setDuplicateMatch({
+          duplicateFound: true,
+          lifecycleState: 'role_conflict',
+          code: 'ROLE_CONFLICT',
+          message: parsed.message || `This email already belongs to an active ${parsed.role || 'different'} account.`
+        });
+      } else if (parsed.code === 'INVITATION_PENDING') {
+        setDuplicateMatch({
+          duplicateFound: true,
+          lifecycleState: 'invitation_pending',
+          code: 'INVITATION_PENDING',
+          message: parsed.message || 'An invitation is already pending for this email.'
+        });
       }
       showError('Creation Failed', parsed.message || 'Could not save volunteer record.');
     } finally {
@@ -346,22 +400,67 @@ export const AddVolunteerModal: React.FC<AddVolunteerModalProps> = ({ isOpen, on
             </div>
           </div>
 
-          {/* Duplicate Match Warning */}
-          {duplicateMatch && (
+          {/* Duplicate Match / Lifecycle Warning */}
+          {duplicateMatch && duplicateMatch.lifecycleState === 'removed' ? (
+            <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 space-y-3 text-xs">
+              <div className="flex items-start space-x-2.5">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <span className="font-semibold text-amber-950 block">
+                    A removed volunteer account already uses this email.
+                  </span>
+                  <p className="text-zinc-600 text-[11px] leading-relaxed">
+                    Restore the existing volunteer record instead of creating a duplicate.
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-amber-200/70 flex items-center justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => { resetForm(); onClose(); }}
+                  className="px-3 py-1.5 text-xs text-zinc-600 hover:bg-black/5 rounded-lg transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={restoringAccount}
+                  onClick={handleRestoreVolunteer}
+                  className="px-3.5 py-1.5 text-xs font-medium bg-[#C59B27] hover:bg-[#B08921] text-white rounded-lg transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {restoringAccount ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                  <span>Restore volunteer</span>
+                </button>
+              </div>
+            </div>
+          ) : duplicateMatch && (
             <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 space-y-2 text-xs">
               <div className="flex items-start space-x-2">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <span>{duplicateMatch.message}</span>
+                <div className="space-y-0.5">
+                  <span className="font-semibold text-amber-950 block">
+                    {duplicateMatch.lifecycleState === 'active' || duplicateMatch.code === 'ACTIVE_ACCOUNT_EXISTS'
+                      ? 'Account already exists'
+                      : duplicateMatch.lifecycleState === 'role_conflict' || duplicateMatch.code === 'ROLE_CONFLICT'
+                      ? 'Role conflict detected'
+                      : 'Possible duplicate record detected'}
+                  </span>
+                  <p className="text-zinc-600 text-[11px]">{duplicateMatch.message}</p>
+                </div>
               </div>
-              <label className="flex items-center space-x-2 font-semibold text-amber-950 cursor-pointer pt-1">
-                <input
-                  type="checkbox"
-                  checked={overrideDuplicate}
-                  onChange={(e) => setOverrideDuplicate(e.target.checked)}
-                  className="text-amber-700 rounded"
-                />
-                <span>Override and create volunteer anyway</span>
-              </label>
+
+              {duplicateMatch.lifecycleState !== 'active' && duplicateMatch.code !== 'ACTIVE_ACCOUNT_EXISTS' && duplicateMatch.lifecycleState !== 'role_conflict' && duplicateMatch.code !== 'ROLE_CONFLICT' && (
+                <label className="flex items-center space-x-2 font-semibold text-amber-950 cursor-pointer pt-1">
+                  <input
+                    type="checkbox"
+                    checked={overrideDuplicate}
+                    onChange={(e) => setOverrideDuplicate(e.target.checked)}
+                    className="text-amber-700 rounded"
+                  />
+                  <span>Override and create volunteer anyway</span>
+                </label>
+              )}
             </div>
           )}
 

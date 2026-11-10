@@ -137,21 +137,41 @@ export interface SelectedParentsSendResponse {
   error?: string;
 }
 
-export function extractApiError(err: any): { message: string; description: string; code?: string; status?: number } {
+export function extractApiError(err: any): { 
+  message: string; 
+  description: string; 
+  code?: string; 
+  status?: number;
+  profileId?: string;
+  userId?: string;
+  role?: string;
+  [key: string]: any;
+} {
   console.error('[extractApiError - Caught Source Error]:', err);
   if (err instanceof ParentApiError) {
-    return { message: err.message, description: err.description, code: err.code, status: err.status };
+    const extra = err.data && typeof err.data === 'object' ? err.data : {};
+    return {
+      message: err.message,
+      description: err.description,
+      code: err.code || extra.code,
+      status: err.status,
+      profileId: extra.profileId,
+      userId: extra.userId,
+      role: extra.role,
+      ...extra
+    };
   }
+  const extra = err && typeof err === 'object' ? err : {};
   const raw = (typeof err === 'string' ? err : err?.message || '').trim();
   if (!raw || raw.includes('Failed to fetch') || raw.includes('NetworkError') || raw.includes('Load failed') || raw.includes('Connection problem')) {
-    return { message: 'Connection problem', description: 'Please check your internet and try again.' };
+    return { message: 'Connection problem', description: 'Please check your internet and try again.', ...extra };
   }
   const lower = raw.toLowerCase();
   const isInternalStack = lower.includes('at ') || lower.includes('node_modules') || lower.includes('syntax error');
   if (isInternalStack || raw.includes('Request failed (5')) {
-    return { message: 'Something went wrong', description: 'Please try again.', code: err?.code };
+    return { message: 'Something went wrong', description: 'Please try again.', code: err?.code, ...extra };
   }
-  return { message: raw, description: 'Please try again.', code: err?.code };
+  return { message: raw, description: 'Please try again.', code: err?.code, ...extra };
 }
 
 export const api = {
@@ -2464,6 +2484,17 @@ export const api = {
     async deleteTeamMember(userId: string) {
       return api.request<{ success: boolean; message: string }>(`/api/admin/team-members/${userId}`, {
         method: 'DELETE'
+      });
+    },
+    async restoreTeamMember(userId: string) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/team/${userId}/restore`, {
+        method: 'POST'
+      });
+    },
+    async permanentlyDeleteTeamMember(userId: string, payload?: { confirmation?: string; reason?: string }) {
+      return api.request<{ success: boolean; message: string }>(`/api/admin/team/${userId}/permanent-delete`, {
+        method: 'POST',
+        body: JSON.stringify({ confirmation: payload?.confirmation || 'DELETE', reason: payload?.reason })
       });
     },
     async getVolunteers(params?: { q?: string; status?: string; team?: string; page?: number; limit?: number }) {

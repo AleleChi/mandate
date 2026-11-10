@@ -28,10 +28,12 @@ import {
   Activity,
   TrendingUp,
   Play,
-  FileText
+  FileText,
+  RotateCcw,
+  AlertTriangle
 } from 'lucide-react';
 import { Button } from '../../components/common/Button';
-import { api } from '../../services/api';
+import { api, extractApiError } from '../../services/api';
 import { updateDocumentFavicon } from '../../utils/faviconHelper';
 import { AdminLandingView } from './AdminLandingView';
 import { SafeImage } from '../../components/common/SafeImage';
@@ -304,6 +306,11 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
   const [inviteSuccessMsg, setInviteSuccessMsg] = useState('');
   const [inviteErrorMsg, setInviteErrorMsg] = useState('');
   const [resendingInviteId, setResendingInviteId] = useState<string | null>(null);
+  const [removedAdminToRestore, setRemovedAdminToRestore] = useState<{ userId: string; email: string } | null>(null);
+  const [restoringAdminId, setRestoringAdminId] = useState<string | null>(null);
+  const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<any | null>(null);
+  const [permanentDeleteConfirmText, setPermanentDeleteConfirmText] = useState('');
+  const [isPermanentlyDeleting, setIsPermanentlyDeleting] = useState(false);
 
   // Editing Team Member state
   const [editRoleValue, setEditRoleValue] = useState<string>('');
@@ -722,6 +729,7 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
     setSendingInvite(true);
     setInviteSuccessMsg('');
     setInviteErrorMsg('');
+    setRemovedAdminToRestore(null);
 
     try {
       const res = await api.admin.inviteAdmin({
@@ -732,16 +740,80 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
       if (res.success) {
         setInviteSuccessMsg(`Onboarding link sent successfully to ${inviteEmail}.`);
         setInviteEmail('');
+        setRemovedAdminToRestore(null);
         fetchTeamDirectory();
       } else {
+        if ((res as any).code === 'REMOVED_ACCOUNT_EXISTS' || (res as any).userId) {
+          setRemovedAdminToRestore({ userId: (res as any).userId, email: inviteEmail });
+        }
         setInviteErrorMsg(res.message || res.error || 'Failed to send team invitation.');
         fetchTeamDirectory();
       }
     } catch (err: any) {
       console.error('Invite Team Member Error:', err);
-      setInviteErrorMsg(err?.message || 'An error occurred during onboarding setup.');
+      const parsed = extractApiError(err);
+      if (parsed.code === 'REMOVED_ACCOUNT_EXISTS' || parsed.userId) {
+        setRemovedAdminToRestore({ userId: parsed.userId, email: inviteEmail });
+      }
+      setInviteErrorMsg(parsed.message || 'An error occurred during onboarding setup.');
     } finally {
       setSendingInvite(false);
+    }
+  };
+
+  // Restore Team Member Access (Super Admin only)
+  const handleRestoreAdmin = async (userId: string) => {
+    setRestoringAdminId(userId);
+    try {
+      const res = await api.admin.restoreTeamMember(userId);
+      if (res.success) {
+        showFeedback(res.message || 'Team member access restored successfully.');
+        setRemovedAdminToRestore(null);
+        setInviteErrorMsg('');
+        if (selectedMember && selectedMember.id === userId) {
+          setSelectedMember({ ...selectedMember, status: 'active' });
+        }
+        await fetchTeamDirectory();
+      } else {
+        showFeedback(res.message || 'Failed to restore team member access.', 'error');
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showFeedback(parsed.message || 'Failed to restore team member access.', 'error');
+    } finally {
+      setRestoringAdminId(null);
+    }
+  };
+
+  // Permanently Delete Team Member (Super Admin only)
+  const handlePermanentDeleteAdminSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!permanentDeleteTarget) return;
+    if (permanentDeleteConfirmText.trim() !== 'DELETE') {
+      showFeedback('Type DELETE to confirm permanent deletion.', 'error');
+      return;
+    }
+    setIsPermanentlyDeleting(true);
+    try {
+      const res = await api.admin.permanentlyDeleteTeamMember(permanentDeleteTarget.id, {
+        confirmation: 'DELETE'
+      });
+      if (res.success) {
+        showFeedback('Account permanently deleted. Email address released for reuse.');
+        setPermanentDeleteTarget(null);
+        setPermanentDeleteConfirmText('');
+        if (selectedMember && selectedMember.id === permanentDeleteTarget.id) {
+          setSelectedMember(null);
+        }
+        await fetchTeamDirectory();
+      } else {
+        showFeedback(res.message || 'Failed to permanently delete account.', 'error');
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showFeedback(parsed.message || 'Failed to permanently delete account.', 'error');
+    } finally {
+      setIsPermanentlyDeleting(false);
     }
   };
 
@@ -1405,19 +1477,53 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                                     >
                                       <Edit2 className="w-3.5 h-3.5" />
                                     </button>
-                                    {isSuperAdmin && member.status !== 'revoked' && (
-                                      <button
-                                        type="button"
-                                        title="Remove team member"
-                                        disabled={isRemovingAccess}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setRemovingMember(member);
-                                        }}
-                                        className="text-zinc-400 dark:text-[#7A7570] hover:text-red-600 dark:hover:text-red-400 p-1 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors inline-flex cursor-pointer"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
+                                    {isSuperAdmin && (
+                                      member.status === 'revoked' ? (
+                                        <div className="flex items-center space-x-1">
+                                          <button
+                                            type="button"
+                                            title="Restore access"
+                                            disabled={restoringAdminId === member.id}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleRestoreAdmin(member.id);
+                                            }}
+                                            className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 px-2 py-1 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-800/40 rounded-lg transition-colors inline-flex items-center space-x-1 text-[11px] font-medium cursor-pointer"
+                                          >
+                                            {restoringAdminId === member.id ? (
+                                              <Loader2 className="w-3 h-3 animate-spin" />
+                                            ) : (
+                                              <RotateCcw className="w-3 h-3" />
+                                            )}
+                                            <span>Restore access</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            title="Permanently delete account"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setPermanentDeleteTarget(member);
+                                              setPermanentDeleteConfirmText('');
+                                            }}
+                                            className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 p-1 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors inline-flex cursor-pointer"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          title="Remove team member"
+                                          disabled={isRemovingAccess}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setRemovingMember(member);
+                                          }}
+                                          className="text-zinc-400 dark:text-[#7A7570] hover:text-red-600 dark:hover:text-red-400 p-1 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors inline-flex cursor-pointer"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      )
                                     )}
                                   </div>
                                 </td>
@@ -1454,6 +1560,36 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                           {inviteErrorMsg && (
                             <div className="bg-red-50 dark:bg-red-950/20 text-red-800 dark:text-red-300 text-[11px] p-2.5 rounded-xl border border-red-100 dark:border-red-900/40 font-medium">
                               {inviteErrorMsg}
+                            </div>
+                          )}
+
+                          {removedAdminToRestore && (
+                            <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-900/40 text-amber-900 dark:text-amber-200 space-y-2 text-xs">
+                              <div className="flex items-start space-x-2">
+                                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                                <div>
+                                  <span className="font-semibold block">A removed admin account already uses this email.</span>
+                                  <span className="text-[11px] text-zinc-600 dark:text-[#B8B0A5]">Restore this existing account instead of creating a duplicate.</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-end space-x-2 pt-1 border-t border-amber-200/60 dark:border-amber-900/40">
+                                <button
+                                  type="button"
+                                  onClick={() => setRemovedAdminToRestore(null)}
+                                  className="px-2.5 py-1 text-xs text-zinc-600 dark:text-[#B8B0A5] hover:bg-black/5 rounded-lg cursor-pointer"
+                                >
+                                  Dismiss
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={restoringAdminId === removedAdminToRestore.userId}
+                                  onClick={() => handleRestoreAdmin(removedAdminToRestore.userId)}
+                                  className="px-3 py-1 text-xs font-medium bg-[#C59B27] hover:bg-[#B08921] text-white rounded-lg inline-flex items-center space-x-1 cursor-pointer disabled:opacity-50"
+                                >
+                                  {restoringAdminId === removedAdminToRestore.userId ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                                  <span>Restore account</span>
+                                </button>
+                              </div>
                             </div>
                           )}
 
@@ -1596,39 +1732,64 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
 
                               {isSuperAdmin && (
                                 <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-100 dark:border-[#302E29]">
-                                  {selectedMember.status !== 'suspended' && selectedMember.status !== 'revoked' ? (
-                                    <button
-                                      type="button"
-                                      disabled={savingRole}
-                                      onClick={() => handleSaveMemberStatus('suspended')}
-                                      className="flex-1 min-w-[100px] text-center px-3 py-1.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-200 dark:border-amber-900/40 rounded-lg transition-colors cursor-pointer"
-                                    >
-                                      Suspend Account
-                                    </button>
+                                  {selectedMember.status === 'revoked' ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        disabled={restoringAdminId === selectedMember.id}
+                                        onClick={() => handleRestoreAdmin(selectedMember.id)}
+                                        className="flex-1 min-w-[100px] text-center px-3 py-1.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-900/40 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center space-x-1"
+                                      >
+                                        {restoringAdminId === selectedMember.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                                        <span>Restore Access</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setPermanentDeleteTarget(selectedMember);
+                                          setPermanentDeleteConfirmText('');
+                                        }}
+                                        className="flex-1 min-w-[100px] text-center px-3 py-1.5 text-[10px] font-semibold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-200 dark:border-red-900/40 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center space-x-1"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                        <span>Permanently Delete</span>
+                                      </button>
+                                    </>
                                   ) : (
-                                    <button
-                                      type="button"
-                                      disabled={savingRole}
-                                      onClick={() => handleSaveMemberStatus('active')}
-                                      className="flex-1 min-w-[100px] text-center px-3 py-1.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-900/40 rounded-lg transition-colors cursor-pointer"
-                                    >
-                                      Reactivate Account
-                                    </button>
-                                  )}
+                                    <>
+                                      {selectedMember.status !== 'suspended' ? (
+                                        <button
+                                          type="button"
+                                          disabled={savingRole}
+                                          onClick={() => handleSaveMemberStatus('suspended')}
+                                          className="flex-1 min-w-[100px] text-center px-3 py-1.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-200 dark:border-amber-900/40 rounded-lg transition-colors cursor-pointer"
+                                        >
+                                          Suspend Account
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          disabled={savingRole}
+                                          onClick={() => handleSaveMemberStatus('active')}
+                                          className="flex-1 min-w-[100px] text-center px-3 py-1.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-900/40 rounded-lg transition-colors cursor-pointer"
+                                        >
+                                          Reactivate Account
+                                        </button>
+                                      )}
 
-                                  {selectedMember.status !== 'revoked' && (
-                                    <button
-                                      type="button"
-                                      disabled={savingRole}
-                                      onClick={() => {
-                                        if (confirm(`Are you absolutely sure you want to REVOKE admin access for ${selectedMember.fullName}? This cannot be undone.`)) {
-                                          handleSaveMemberStatus('revoked');
-                                        }
-                                      }}
-                                      className="flex-1 min-w-[100px] text-center px-3 py-1.5 text-[10px] font-semibold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-200 dark:border-red-900/40 rounded-lg transition-colors cursor-pointer"
-                                    >
-                                      Revoke Access
-                                    </button>
+                                      <button
+                                        type="button"
+                                        disabled={savingRole}
+                                        onClick={() => {
+                                          if (confirm(`Are you absolutely sure you want to REVOKE admin access for ${selectedMember.fullName}? This cannot be undone.`)) {
+                                            handleSaveMemberStatus('revoked');
+                                          }
+                                        }}
+                                        className="flex-1 min-w-[100px] text-center px-3 py-1.5 text-[10px] font-semibold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-200 dark:border-red-900/40 rounded-lg transition-colors cursor-pointer"
+                                      >
+                                        Revoke Access
+                                      </button>
+                                    </>
                                   )}
                                 </div>
                               )}
@@ -1790,6 +1951,65 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                           </button>
                         )}
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Permanent Delete Confirmation Modal */}
+                {permanentDeleteTarget && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 dark:bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+                    <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl max-w-sm w-full p-6 shadow-xl border border-red-200 dark:border-red-900/40 space-y-4 animate-in zoom-in-95 duration-150 font-sans">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+                          <Trash2 className="w-5 h-5 shrink-0" />
+                          <h3 className="text-base font-semibold text-stone-900 dark:text-[#F0EBE3]">
+                            Permanently delete account?
+                          </h3>
+                        </div>
+                        <p className="text-xs text-stone-600 dark:text-[#B8B0A5] leading-relaxed">
+                          Permanently delete this account? This will revoke access and release the email address so it may be used for another account. This action cannot be undone.
+                        </p>
+                        <p className="text-xs font-semibold text-stone-900 dark:text-[#F0EBE3] pt-1">
+                          {permanentDeleteTarget.fullName || 'Admin'} ({permanentDeleteTarget.email})
+                        </p>
+                      </div>
+
+                      <form onSubmit={handlePermanentDeleteAdminSubmit} className="space-y-3.5">
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-stone-600 dark:text-[#B8B0A5] block">
+                            Type <span className="font-mono font-bold text-red-600">DELETE</span> to confirm
+                          </label>
+                          <input
+                            type="text"
+                            value={permanentDeleteConfirmText}
+                            onChange={(e) => setPermanentDeleteConfirmText(e.target.value)}
+                            placeholder="DELETE"
+                            className="w-full px-3 py-2 text-xs rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50/30 dark:bg-red-950/20 text-stone-900 dark:text-[#F0EBE3] focus:outline-none focus:border-red-500 font-mono"
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+                          <button
+                            type="button"
+                            disabled={isPermanentlyDeleting}
+                            onClick={() => {
+                              setPermanentDeleteTarget(null);
+                              setPermanentDeleteConfirmText('');
+                            }}
+                            className="px-3.5 py-2 text-xs font-medium rounded-lg text-stone-700 dark:text-[#B8B0A5] hover:bg-stone-100 dark:hover:bg-[#262520] transition-colors cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={isPermanentlyDeleting || permanentDeleteConfirmText.trim() !== 'DELETE'}
+                            className="px-3.5 py-2 text-xs font-medium rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isPermanentlyDeleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                            <span>Delete permanently</span>
+                          </button>
+                        </div>
+                      </form>
                     </div>
                   </div>
                 )}

@@ -1633,7 +1633,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
           </h3>
         </div>
         <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
-          This cannot be undone. The selected parent record will be permanently removed.
+          Permanently delete this account? This will revoke access and release the email address so it may be used for another account. This action cannot be undone.
         </p>
         <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#2A2926]">
           <Button

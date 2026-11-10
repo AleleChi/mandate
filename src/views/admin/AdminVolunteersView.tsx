@@ -1229,7 +1229,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
           </h3>
         </div>
         <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] leading-relaxed">
-          Their profile and associated personal information will be permanently removed and cannot be restored.
+          Permanently delete this account? This will revoke access and release the email address so it may be used for another account. This action cannot be undone.
         </p>
         <form onSubmit={handlePermanentDeleteSubmit} className="space-y-4">
           <div className="space-y-1.5">
