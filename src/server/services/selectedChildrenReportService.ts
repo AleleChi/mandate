@@ -5,10 +5,12 @@ import { AuthenticatedRequest } from '../auth';
 import {
   calculateAgeOnDate,
   CANONICAL_GA_EVENT_DATE,
+  CANONICAL_PROGRAMME_AGE_GROUPS,
   resolveCanonicalAgeGroup
 } from './eligibilityService';
 import { getCurrentEvent, getEventById, EventRow } from './eventService';
 import { normalizeAgeGroupLabelToRange } from '../routes/admin';
+import { getValidatedBrandLogo } from './reportService';
 
 async function resolveAdminEvent(explicitEventId?: string | null): Promise<EventRow | null> {
   if (explicitEventId && typeof explicitEventId === 'string' && explicitEventId.trim()) {
@@ -82,6 +84,21 @@ export interface SelectedChildRecord {
   passReference: string | null;
 }
 
+export interface ExactAgeCount {
+  age: number;
+  selected: number;
+  passReady: number;
+  missingPass: number;
+}
+
+export interface AgeGroupBreakdownItem {
+  ageGroup: string;
+  selected: number;
+  passReady: number;
+  missingPass: number;
+  ages: ExactAgeCount[];
+}
+
 export interface SelectedChildrenReportData {
   event: {
     id: string;
@@ -102,6 +119,7 @@ export interface SelectedChildrenReportData {
     passReady: number;
     missingPass: number;
   }>;
+  ageBreakdown: AgeGroupBreakdownItem[];
   filtered: SelectedChildRecord[];
   pagination: {
     page: number;
@@ -113,6 +131,7 @@ export interface SelectedChildrenReportData {
   filters: {
     search: string;
     ageGroup: string;
+    exactAge: number | null;
     passStatus: string;
     attendanceStatus: string;
     gender: string;
@@ -128,6 +147,7 @@ export async function getSelectedChildrenReportData(params: {
   pageSize?: number;
   search?: string;
   ageGroup?: string;
+  exactAge?: number | string;
   passStatus?: string;
   attendanceStatus?: string;
   gender?: string;
@@ -147,6 +167,21 @@ export async function getSelectedChildrenReportData(params: {
   const pageSize = Math.max(1, params.pageSize || 25);
   const search = typeof params.search === 'string' ? params.search.trim() : '';
   const ageGroupFilter = typeof params.ageGroup === 'string' ? params.ageGroup.trim() : '';
+  let exactAgeFilter: number | null = null;
+  if (
+    params.exactAge !== undefined &&
+    params.exactAge !== null &&
+    String(params.exactAge).trim() !== '' &&
+    String(params.exactAge).trim().toLowerCase() !== 'all'
+  ) {
+    const parsedExact = Number(String(params.exactAge).trim());
+    if (!Number.isInteger(parsedExact) || parsedExact < 0 || parsedExact > 120) {
+      const err: any = new Error(`Invalid exactAge filter: ${params.exactAge}`);
+      err.statusCode = 400;
+      throw err;
+    }
+    exactAgeFilter = parsedExact;
+  }
   const passStatusFilter = typeof params.passStatus === 'string' ? params.passStatus.trim() : '';
   const attendanceStatusFilter = typeof params.attendanceStatus === 'string' ? params.attendanceStatus.trim() : '';
   const genderFilter = typeof params.gender === 'string' ? params.gender.trim() : '';
@@ -230,6 +265,9 @@ export async function getSelectedChildrenReportData(params: {
     };
   });
 
+  // Sort deterministically alphabetically by child name (case-insensitive)
+  allMapped.sort((a, b) => a.fullName.localeCompare(b.fullName, 'en', { sensitivity: 'base' }));
+
   // Overall event summary
   const summary = {
     totalSelected: allMapped.length,
@@ -240,27 +278,56 @@ export async function getSelectedChildrenReportData(params: {
     pickedUp: allMapped.filter((c) => c.attendanceStatus === 'picked_up').length
   };
 
-  // Canonical age group breakdown (2–3, 4–6, 7–9, 10–12, 13–14 + optional Age review needed)
-  const canonicalBuckets = ['2–3', '4–6', '7–9', '10–12', '13–14'];
-  const ageGroups = canonicalBuckets.map((bucket) => {
-    const inBucket = allMapped.filter((c) => c.ageGroup === bucket || normalizeAgeGroupLabelToRange(c.ageGroup) === bucket);
+  // Canonical age group & exact-age breakdown dynamically derived from CANONICAL_PROGRAMME_AGE_GROUPS
+  const ageBreakdown: AgeGroupBreakdownItem[] = CANONICAL_PROGRAMME_AGE_GROUPS.map((group) => {
+    const inBucket = allMapped.filter(
+      (c) => c.ageGroup === group.key || normalizeAgeGroupLabelToRange(c.ageGroup) === group.key
+    );
+    const ages: ExactAgeCount[] = [];
+    for (let ageVal = group.minAge; ageVal <= group.maxAge; ageVal++) {
+      const ofExactAge = inBucket.filter((c) => c.age === ageVal);
+      ages.push({
+        age: ageVal,
+        selected: ofExactAge.length,
+        passReady: ofExactAge.filter((c) => c.passStatus === 'pass_ready').length,
+        missingPass: ofExactAge.filter((c) => c.passStatus === 'missing_pass').length
+      });
+    }
     return {
-      ageGroup: bucket,
+      ageGroup: group.key,
       selected: inBucket.length,
       passReady: inBucket.filter((c) => c.passStatus === 'pass_ready').length,
-      missingPass: inBucket.filter((c) => c.passStatus === 'missing_pass').length
+      missingPass: inBucket.filter((c) => c.passStatus === 'missing_pass').length,
+      ages
     };
   });
 
   const inReview = allMapped.filter((c) => c.ageGroup === 'Age review needed');
   if (inReview.length > 0) {
-    ageGroups.push({
+    const distinctReviewAges = Array.from(new Set(inReview.map((c) => c.age))).sort((a, b) => a - b);
+    ageBreakdown.push({
       ageGroup: 'Age review needed',
       selected: inReview.length,
       passReady: inReview.filter((c) => c.passStatus === 'pass_ready').length,
-      missingPass: inReview.filter((c) => c.passStatus === 'missing_pass').length
+      missingPass: inReview.filter((c) => c.passStatus === 'missing_pass').length,
+      ages: distinctReviewAges.map((ageVal) => {
+        const ofExactAge = inReview.filter((c) => c.age === ageVal);
+        return {
+          age: ageVal,
+          selected: ofExactAge.length,
+          passReady: ofExactAge.filter((c) => c.passStatus === 'pass_ready').length,
+          missingPass: ofExactAge.filter((c) => c.passStatus === 'missing_pass').length
+        };
+      })
     });
   }
+
+  const ageGroups = ageBreakdown.map((g) => ({
+    ageGroup: g.ageGroup,
+    selected: g.selected,
+    passReady: g.passReady,
+    missingPass: g.missingPass
+  }));
 
   // Filter children
   let filtered = allMapped;
@@ -283,6 +350,10 @@ export async function getSelectedChildrenReportData(params: {
       }
       return c.ageGroup === normFilter || normalizeAgeGroupLabelToRange(c.ageGroup) === normFilter;
     });
+  }
+
+  if (exactAgeFilter !== null) {
+    filtered = filtered.filter((c) => c.age === exactAgeFilter);
   }
 
   if (passStatusFilter && passStatusFilter.toLowerCase() !== 'all') {
@@ -311,6 +382,7 @@ export async function getSelectedChildrenReportData(params: {
     },
     summary,
     ageGroups,
+    ageBreakdown,
     filtered,
     pagination: {
       page,
@@ -322,6 +394,7 @@ export async function getSelectedChildrenReportData(params: {
     filters: {
       search,
       ageGroup: ageGroupFilter,
+      exactAge: exactAgeFilter,
       passStatus: passStatusFilter,
       attendanceStatus: attendanceStatusFilter,
       gender: genderFilter
@@ -365,13 +438,21 @@ export function renderSelectedChildrenCsv(filtered: SelectedChildRecord[]): stri
   return csvContent;
 }
 
-export function getSelectedChildrenPdfFilename(eventTitle: string, ageGroupFilter?: string): string {
+export function getSelectedChildrenPdfFilename(
+  eventTitle: string,
+  ageGroupFilter?: string,
+  exactAgeFilter?: number | null
+): string {
   let eventSlug = 'GA-2026';
   if (eventTitle && eventTitle.toLowerCase().includes('general assembly')) {
     const yearMatch = eventTitle.match(/\d{4}/);
     eventSlug = `GA-${yearMatch ? yearMatch[0] : '2026'}`;
   } else if (eventTitle) {
     eventSlug = eventTitle.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+
+  if (exactAgeFilter !== undefined && exactAgeFilter !== null) {
+    return `Koinonia-${eventSlug}-Selected-Children-Age-${exactAgeFilter}.pdf`;
   }
 
   const normAge = normalizeAgeGroupLabelToRange(ageGroupFilter);
@@ -392,10 +473,9 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
     format: 'a4'
   });
 
-  const pageWidth = 297;
-  const pageHeight = 210;
   const marginLeft = 17.5;
   const tableWidth = 262;
+  const isExactAge = data.filters.exactAge !== null && data.filters.exactAge !== undefined;
 
   // Format generation timestamp
   const now = new Date();
@@ -403,22 +483,45 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
   const generatedTimestamp = `${dateStr} · ${timeStr}`;
 
-  // Age group display string
+  // Attempt to load official Koinonia logo cleanly (fails safely in isolated offline tests)
+  let brandLogoBase64: string | null = null;
+  try {
+    const logoInfo = await getValidatedBrandLogo();
+    if (logoInfo.available && logoInfo.pdfData) {
+      brandLogoBase64 = logoInfo.pdfData;
+    }
+  } catch {
+    brandLogoBase64 = null;
+  }
+
+  // Age scope display string
   const activeAgeGroup = data.filters.ageGroup && data.filters.ageGroup.toLowerCase() !== 'all'
     ? (data.filters.ageGroup.startsWith('Ages') ? data.filters.ageGroup : `Ages ${data.filters.ageGroup}`)
     : 'All Age Groups';
+  const scopeLabel = isExactAge ? `Age ${data.filters.exactAge}` : activeAgeGroup;
 
-  // Table columns layout
-  const cols = [
-    { header: 'No.', width: 12, align: 'center' },
-    { header: 'Child Name', width: 58, align: 'left' },
-    { header: 'Age', width: 14, align: 'center' },
-    { header: 'Gender', width: 18, align: 'center' },
-    { header: 'Parent / Guardian', width: 56, align: 'left' },
-    { header: 'Parent Phone', width: 36, align: 'left' },
-    { header: 'Pass Status', width: 34, align: 'left' },
-    { header: 'Attendance', width: 34, align: 'left' }
-  ];
+  // Table columns layout: Exact Age operational register omits redundant Age column
+  type ColKey = 'index' | 'name' | 'age' | 'gender' | 'parent' | 'phone' | 'pass' | 'attendance';
+  const cols: Array<{ key: ColKey; header: string; width: number; align: 'left' | 'center'; maxW?: number }> = isExactAge
+    ? [
+        { key: 'index', header: '#', width: 12, align: 'center' },
+        { key: 'name', header: 'Child Name', width: 64, align: 'left', maxW: 60 },
+        { key: 'gender', header: 'Gender', width: 20, align: 'center' },
+        { key: 'parent', header: 'Parent / Guardian', width: 60, align: 'left', maxW: 56 },
+        { key: 'phone', header: 'Phone', width: 38, align: 'left', maxW: 34 },
+        { key: 'pass', header: 'Pass Status', width: 34, align: 'left' },
+        { key: 'attendance', header: 'Attendance', width: 34, align: 'left' }
+      ]
+    : [
+        { key: 'index', header: 'No.', width: 12, align: 'center' },
+        { key: 'name', header: 'Child Name', width: 58, align: 'left', maxW: 54 },
+        { key: 'age', header: 'Age', width: 14, align: 'center' },
+        { key: 'gender', header: 'Gender', width: 18, align: 'center' },
+        { key: 'parent', header: 'Parent / Guardian', width: 56, align: 'left', maxW: 52 },
+        { key: 'phone', header: 'Parent Phone', width: 36, align: 'left', maxW: 32 },
+        { key: 'pass', header: 'Pass Status', width: 34, align: 'left' },
+        { key: 'attendance', header: 'Attendance', width: 34, align: 'left' }
+      ];
 
   const drawTableHeader = (y: number) => {
     doc.setFillColor(244, 244, 245);
@@ -444,37 +547,72 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
   };
 
   // =================== PAGE 1 HEADER ===================
-  // Top brand label
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(197, 155, 39); // Koinonia Gold
-  doc.text('KOINONIA GLOBAL', marginLeft, 14);
+  if (brandLogoBase64) {
+    try {
+      const imgProps = doc.getImageProperties(brandLogoBase64);
+      const ratio = (imgProps.width || 1) / (imgProps.height || 1);
+      const maxH = 10;
+      const logoH = maxH;
+      const logoW = Math.min(28, logoH * ratio);
+      const adjH = logoW / ratio;
+      doc.addImage(
+        brandLogoBase64,
+        imgProps.fileType || 'PNG',
+        marginLeft + tableWidth - logoW,
+        10 + (maxH - adjH) / 2,
+        logoW,
+        adjH
+      );
+    } catch {
+      // Ignore invalid/unsupported image format gracefully
+    }
+  }
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.setTextColor(113, 113, 122);
-  doc.text('Children & Teens Ministry', marginLeft + 38, 14);
+  if (isExactAge) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(197, 155, 39); // Restrained Koinonia Gold
+    doc.text('KOINONIA CHILDREN & TEENS', marginLeft, 13.5);
 
-  // Title
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.setTextColor(24, 24, 27);
-  doc.text('Selected Children Report', marginLeft, 22);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(82, 82, 91);
+    doc.text((data.event.title || 'THE GENERAL ASSEMBLY 2026').toUpperCase(), marginLeft, 19.5);
 
-  // Metadata line
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.setTextColor(63, 63, 70);
-  doc.text(`Event: ${data.event.title || 'The General Assembly'}`, marginLeft, 28);
-  doc.text(`Age Group: ${activeAgeGroup}`, marginLeft + 85, 28);
-  doc.text(`Generated: ${generatedTimestamp}`, marginLeft + 160, 28);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(15);
+    doc.setTextColor(24, 24, 27);
+    doc.text(`SELECTED CHILDREN — AGE ${data.filters.exactAge}`, marginLeft, 26.5);
+  } else {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(197, 155, 39); // Restrained Koinonia Gold
+    doc.text('KOINONIA GLOBAL', marginLeft, 14);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(113, 113, 122);
+    doc.text('Children & Teens Ministry', marginLeft + 38, 14);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(24, 24, 27);
+    doc.text('Selected Children Report', marginLeft, 22);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(63, 63, 70);
+    doc.text(`Event: ${data.event.title || 'The General Assembly'}`, marginLeft, 28);
+    doc.text(`Age Group: ${activeAgeGroup}`, marginLeft + 85, 28);
+    doc.text(`Generated: ${generatedTimestamp}`, marginLeft + 160, 28);
+  }
 
   // Summary strip
   doc.setDrawColor(228, 228, 231);
   doc.setLineWidth(0.3);
   doc.line(marginLeft, 32, marginLeft + tableWidth, 32);
 
-  doc.setFillColor(250, 249, 245); // Warm ivory background
+  doc.setFillColor(250, 249, 245); // Warm ivory operational tint
   doc.rect(marginLeft, 33, tableWidth, 9, 'F');
 
   doc.setFont('helvetica', 'bold');
@@ -488,21 +626,41 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
   const filteredInside = data.filtered.filter(c => c.attendanceStatus === 'inside').length;
   const filteredPickedUp = data.filtered.filter(c => c.attendanceStatus === 'picked_up').length;
 
-  doc.text(`Selected Children: ${filteredCount}`, marginLeft + 4, 38.8);
-  doc.text(`Pass Ready: ${filteredPassReady}`, marginLeft + 52, 38.8);
+  if (isExactAge) {
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(63, 63, 70);
+    doc.text(`Generated: ${generatedTimestamp}`, marginLeft + 4, 38.8);
 
-  if (filteredMissingPass > 0) {
-    doc.setTextColor(180, 83, 9); // Amber
-  } else {
+    doc.setFont('helvetica', 'bold');
     doc.setTextColor(24, 24, 27);
-  }
-  doc.text(`Missing Pass: ${filteredMissingPass}`, marginLeft + 98, 38.8);
+    doc.text(`Selected children: ${filteredCount}`, marginLeft + 68, 38.8);
+    doc.text(`Pass ready: ${filteredPassReady}`, marginLeft + 118, 38.8);
 
-  doc.setTextColor(24, 24, 27);
-  doc.text(`Checked In: ${filteredCheckedIn}`, marginLeft + 148, 38.8);
-  doc.text(`Inside: ${filteredInside}`, marginLeft + 192, 38.8);
-  if (filteredPickedUp > 0) {
-    doc.text(`Picked Up: ${filteredPickedUp}`, marginLeft + 228, 38.8);
+    if (filteredMissingPass > 0) {
+      doc.setTextColor(180, 83, 9);
+    }
+    doc.text(`Missing pass: ${filteredMissingPass}`, marginLeft + 158, 38.8);
+
+    doc.setTextColor(24, 24, 27);
+    doc.text(`Checked in: ${filteredCheckedIn}`, marginLeft + 200, 38.8);
+    doc.text(`Inside: ${filteredInside}`, marginLeft + 236, 38.8);
+  } else {
+    doc.text(`Selected Children: ${filteredCount}`, marginLeft + 4, 38.8);
+    doc.text(`Pass Ready: ${filteredPassReady}`, marginLeft + 52, 38.8);
+
+    if (filteredMissingPass > 0) {
+      doc.setTextColor(180, 83, 9); // Amber
+    } else {
+      doc.setTextColor(24, 24, 27);
+    }
+    doc.text(`Missing Pass: ${filteredMissingPass}`, marginLeft + 98, 38.8);
+
+    doc.setTextColor(24, 24, 27);
+    doc.text(`Checked In: ${filteredCheckedIn}`, marginLeft + 148, 38.8);
+    doc.text(`Inside: ${filteredInside}`, marginLeft + 192, 38.8);
+    if (filteredPickedUp > 0) {
+      doc.text(`Picked Up: ${filteredPickedUp}`, marginLeft + 228, 38.8);
+    }
   }
 
   doc.setDrawColor(228, 228, 231);
@@ -524,20 +682,26 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
     return `${t}…`;
   };
 
+  const runningTitle = isExactAge
+    ? `Koinonia Children & Teens · Selected Children — Age ${data.filters.exactAge} · ${data.event.title || 'The General Assembly 2026'}`
+    : `Koinonia Children & Teens · Selected Children Report · ${data.event.title || 'The General Assembly'} (${scopeLabel})`;
+
   if (data.filtered.length === 0) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(113, 113, 122);
-    doc.text('No selected children match the specified filters.', marginLeft + tableWidth / 2, currentY + 12, { align: 'center' });
+    const emptyMsg = isExactAge
+      ? `No selected children aged ${data.filters.exactAge}.`
+      : 'No selected children match the specified filters.';
+    doc.text(emptyMsg, marginLeft + tableWidth / 2, currentY + 12, { align: 'center' });
   } else {
     data.filtered.forEach((c, idx) => {
       if (currentY + rowHeight > maxY) {
         doc.addPage();
-        // Running header
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8);
         doc.setTextColor(113, 113, 122);
-        doc.text(`Koinonia Children & Teens · Selected Children Report · ${data.event.title || 'The General Assembly'} (${activeAgeGroup})`, marginLeft, 12);
+        doc.text(runningTitle, marginLeft, 12);
         currentY = drawTableHeader(16);
       }
 
@@ -547,62 +711,63 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
       doc.line(marginLeft, currentY + rowHeight, marginLeft + tableWidth, currentY + rowHeight);
 
       let colX = marginLeft;
-
-      // 1. No.
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(113, 113, 122);
-      doc.text(String(idx + 1), colX + 6, currentY + 4.8, { align: 'center' });
-      colX += cols[0].width;
-
-      // 2. Child Name
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.setTextColor(24, 24, 27);
-      doc.text(truncateText(c.fullName, 54), colX + 2, currentY + 4.8);
-      colX += cols[1].width;
-
-      // 3. Age
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(63, 63, 70);
-      doc.text(`${c.age} yrs`, colX + cols[2].width / 2, currentY + 4.8, { align: 'center' });
-      colX += cols[2].width;
-
-      // 4. Gender
-      doc.text(c.gender || '—', colX + cols[3].width / 2, currentY + 4.8, { align: 'center' });
-      colX += cols[3].width;
-
-      // 5. Parent / Guardian
-      doc.setTextColor(24, 24, 27);
-      doc.text(truncateText(c.parent?.fullName || '—', 52), colX + 2, currentY + 4.8);
-      colX += cols[4].width;
-
-      // 6. Parent Phone
-      doc.setTextColor(63, 63, 70);
-      doc.text(truncateText(c.parent?.phone || '—', 32), colX + 2, currentY + 4.8);
-      colX += cols[5].width;
-
-      // 7. Pass Status
-      if (c.passStatus === 'pass_ready') {
-        doc.setTextColor(21, 128, 61); // Emerald
-        doc.text('Pass ready', colX + 2, currentY + 4.8);
-      } else {
-        doc.setTextColor(180, 83, 9); // Amber
-        doc.text('Missing pass', colX + 2, currentY + 4.8);
+      for (const col of cols) {
+        const textY = currentY + 4.8;
+        if (col.key === 'index') {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.5);
+          doc.setTextColor(113, 113, 122);
+          doc.text(String(idx + 1), colX + col.width / 2, textY, { align: 'center' });
+        } else if (col.key === 'name') {
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8);
+          doc.setTextColor(24, 24, 27);
+          doc.text(truncateText(c.fullName, col.maxW || 54), colX + 2, textY);
+        } else if (col.key === 'age') {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          doc.setTextColor(63, 63, 70);
+          doc.text(`${c.age} yrs`, colX + col.width / 2, textY, { align: 'center' });
+        } else if (col.key === 'gender') {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          doc.setTextColor(63, 63, 70);
+          doc.text(c.gender || '—', colX + col.width / 2, textY, { align: 'center' });
+        } else if (col.key === 'parent') {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          doc.setTextColor(24, 24, 27);
+          doc.text(truncateText(c.parent?.fullName || '—', col.maxW || 52), colX + 2, textY);
+        } else if (col.key === 'phone') {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          doc.setTextColor(63, 63, 70);
+          doc.text(truncateText(c.parent?.phone || '—', col.maxW || 32), colX + 2, textY);
+        } else if (col.key === 'pass') {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          if (c.passStatus === 'pass_ready') {
+            doc.setTextColor(21, 128, 61);
+            doc.text('Pass ready', colX + 2, textY);
+          } else {
+            doc.setTextColor(180, 83, 9);
+            doc.text('Missing pass', colX + 2, textY);
+          }
+        } else if (col.key === 'attendance') {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          doc.setTextColor(63, 63, 70);
+          const attText = c.attendanceStatus === 'picked_up'
+            ? 'Picked up'
+            : c.attendanceStatus === 'inside'
+              ? 'Inside'
+              : c.attendanceStatus === 'checked_in'
+                ? 'Checked in'
+                : 'Not arrived';
+          doc.text(attText, colX + 2, textY);
+        }
+        colX += col.width;
       }
-      colX += cols[6].width;
-
-      // 8. Attendance
-      doc.setTextColor(63, 63, 70);
-      const attText = c.attendanceStatus === 'picked_up'
-        ? 'Picked up'
-        : c.attendanceStatus === 'inside'
-          ? 'Inside'
-          : c.attendanceStatus === 'checked_in'
-            ? 'Checked in'
-            : 'Not arrived';
-      doc.text(attText, colX + 2, currentY + 4.8);
 
       currentY += rowHeight;
     });
@@ -619,7 +784,7 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.setTextColor(113, 113, 122);
-    doc.text(`Koinonia Children & Teens · Selected Children Report · ${data.event.title || 'The General Assembly 2026'}`, marginLeft, 203);
+    doc.text(runningTitle, marginLeft, 203);
     doc.text(`Page ${p} of ${pageCount}`, marginLeft + tableWidth, 203, { align: 'right' });
   }
 
@@ -651,6 +816,7 @@ export async function handleSelectedChildrenReport(
     const pageSize = Math.max(1, parseInt((req.query.pageSize || req.query.limit) as string, 10) || 25);
     const search = typeof req.query.search === 'string' ? req.query.search.trim() : (typeof req.query.q === 'string' ? req.query.q.trim() : '');
     const ageGroup = typeof req.query.ageGroup === 'string' ? req.query.ageGroup.trim() : '';
+    const exactAge = req.query.exactAge !== undefined ? String(req.query.exactAge).trim() : '';
     const passStatus = typeof req.query.passStatus === 'string' ? req.query.passStatus.trim() : '';
     const attendanceStatus = typeof req.query.attendanceStatus === 'string' ? req.query.attendanceStatus.trim() : '';
     const gender = typeof req.query.gender === 'string' ? req.query.gender.trim() : '';
@@ -661,6 +827,7 @@ export async function handleSelectedChildrenReport(
       pageSize,
       search,
       ageGroup,
+      exactAge,
       passStatus,
       attendanceStatus,
       gender
@@ -669,7 +836,7 @@ export async function handleSelectedChildrenReport(
     // 1. PDF Export
     if (requestedFormat === 'pdf') {
       const pdfBuffer = await renderSelectedChildrenPdf(reportData);
-      const filename = getSelectedChildrenPdfFilename(reportData.event.title, ageGroup);
+      const filename = getSelectedChildrenPdfFilename(reportData.event.title, ageGroup, reportData.filters.exactAge);
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -680,8 +847,11 @@ export async function handleSelectedChildrenReport(
     // 2. CSV Export
     if (requestedFormat === 'csv') {
       const csvContent = renderSelectedChildrenCsv(reportData.filtered);
+      const csvFilename = reportData.filters.exactAge !== null
+        ? `selected-children-age-${reportData.filters.exactAge}.csv`
+        : 'selected-children-report.csv';
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      res.setHeader('Content-Disposition', 'attachment; filename="selected-children-report.csv"');
+      res.setHeader('Content-Disposition', `attachment; filename="${csvFilename}"`);
       return res.status(200).send(csvContent);
     }
 
@@ -694,6 +864,7 @@ export async function handleSelectedChildrenReport(
       },
       summary: reportData.summary,
       ageGroups: reportData.ageGroups,
+      ageBreakdown: reportData.ageBreakdown,
       children: reportData.pagination.paginatedChildren,
       pagination: {
         page: reportData.pagination.page,
