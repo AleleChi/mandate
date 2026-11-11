@@ -1603,6 +1603,7 @@ export const api = {
       pageSize?: number;
       search?: string;
       ageGroup?: string;
+      exactAge?: string | number;
       passStatus?: string;
       attendanceStatus?: string;
       gender?: string;
@@ -1613,6 +1614,9 @@ export const api = {
       if (params?.pageSize) queryParams.append('pageSize', params.pageSize.toString());
       if (params?.search) queryParams.append('search', params.search);
       if (params?.ageGroup && params.ageGroup !== 'all' && params.ageGroup !== 'All age groups') queryParams.append('ageGroup', params.ageGroup);
+      if (params?.exactAge !== undefined && params.exactAge !== null && String(params.exactAge).trim() !== '' && String(params.exactAge).trim().toLowerCase() !== 'all') {
+        queryParams.append('exactAge', String(params.exactAge).trim());
+      }
       if (params?.passStatus && params.passStatus !== 'all') queryParams.append('passStatus', params.passStatus);
       if (params?.attendanceStatus && params.attendanceStatus !== 'all') queryParams.append('attendanceStatus', params.attendanceStatus);
       if (params?.gender && params.gender !== 'all') queryParams.append('gender', params.gender);
@@ -1637,6 +1641,18 @@ export const api = {
           selected: number;
           passReady?: number;
           missingPass?: number;
+        }>;
+        ageBreakdown?: Array<{
+          ageGroup: string;
+          selected: number;
+          passReady: number;
+          missingPass: number;
+          ages: Array<{
+            age: number;
+            selected: number;
+            passReady: number;
+            missingPass: number;
+          }>;
         }>;
         children: Array<{
           childId: string;

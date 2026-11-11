@@ -35,6 +35,31 @@ interface SelectedChildRecord {
   passReference?: string | null;
 }
 
+interface ExactAgeCount {
+  age: number;
+  selected: number;
+  passReady: number;
+  missingPass: number;
+}
+
+interface AgeGroupBreakdownItem {
+  ageGroup: string;
+  selected: number;
+  passReady: number;
+  missingPass: number;
+  ages: ExactAgeCount[];
+}
+
+const CANONICAL_AGE_GROUP_RANGES: Array<{ key: string; minAge: number; maxAge: number }> = [
+  { key: '2–3', minAge: 2, maxAge: 3 },
+  { key: '4–6', minAge: 4, maxAge: 6 },
+  { key: '7–9', minAge: 7, maxAge: 9 },
+  { key: '10–12', minAge: 10, maxAge: 12 },
+  { key: '13–14', minAge: 13, maxAge: 14 }
+];
+
+const ALL_EXACT_AGES = Array.from({ length: 13 }, (_, idx) => idx + 2); // 2..14
+
 interface SelectedChildrenReportViewProps {
   eventId?: string;
   onNavigate?: (route: string) => void;
@@ -74,6 +99,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
     { ageGroup: '10–12', selected: 0, passReady: 0, missingPass: 0 },
     { ageGroup: '13–14', selected: 0, passReady: 0, missingPass: 0 }
   ]);
+  const [ageBreakdown, setAgeBreakdown] = useState<AgeGroupBreakdownItem[]>([]);
 
   const [children, setChildren] = useState<SelectedChildRecord[]>([]);
 
@@ -81,6 +107,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [ageGroupFilter, setAgeGroupFilter] = useState('all');
+  const [exactAgeFilter, setExactAgeFilter] = useState('all');
   const [passStatusFilter, setPassStatusFilter] = useState('all');
   const [attendanceStatusFilter, setAttendanceStatusFilter] = useState('all');
   const [genderFilter, setGenderFilter] = useState('all');
@@ -112,11 +139,62 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
     };
   }, [downloadMenuOpen]);
 
-  // Selected-count context helper (Requirement 7 & 12)
+  // Contextual exact age options for Age dropdown (no contradictory combinations)
+  const getContextualAgeOptions = (): number[] => {
+    if (ageGroupFilter === 'all') {
+      return ALL_EXACT_AGES;
+    }
+    const range = CANONICAL_AGE_GROUP_RANGES.find(r => r.key === ageGroupFilter);
+    if (range) {
+      const opts: number[] = [];
+      for (let a = range.minAge; a <= range.maxAge; a++) opts.push(a);
+      return opts;
+    }
+    const matched = ageBreakdown.find(g => g.ageGroup === ageGroupFilter);
+    return matched ? matched.ages.map(a => a.age) : [];
+  };
+
+  // Switch age group cleanly and reset incompatible exact age filter
+  const handleSelectAgeGroup = (nextGroup: string) => {
+    setAgeGroupFilter(nextGroup);
+    if (nextGroup === 'all') {
+      setExactAgeFilter('all');
+    } else {
+      const range = CANONICAL_AGE_GROUP_RANGES.find(r => r.key === nextGroup);
+      if (range && exactAgeFilter !== 'all') {
+        const curAge = Number(exactAgeFilter);
+        if (isNaN(curAge) || curAge < range.minAge || curAge > range.maxAge) {
+          setExactAgeFilter('all');
+        }
+      } else if (!range) {
+        setExactAgeFilter('all');
+      }
+    }
+    setPage(1);
+  };
+
+  // Resolve exact-age breakdown for the currently active age group drill-down
+  const activeGroupBreakdown: AgeGroupBreakdownItem | null = ageGroupFilter !== 'all'
+    ? (() => {
+        const fromApi = ageBreakdown.find((g) => g.ageGroup === ageGroupFilter);
+        if (fromApi) return fromApi;
+        const range = CANONICAL_AGE_GROUP_RANGES.find((r) => r.key === ageGroupFilter);
+        if (!range) return null;
+        const ages: ExactAgeCount[] = [];
+        for (let a = range.minAge; a <= range.maxAge; a++) {
+          ages.push({ age: a, selected: 0, passReady: 0, missingPass: 0 });
+        }
+        return { ageGroup: ageGroupFilter, selected: 0, passReady: 0, missingPass: 0, ages };
+      })()
+    : null;
+
+  // Selected-count context helper
   const getFilterContextSubtitle = () => {
     const parts: string[] = [];
     parts.push(`${totalRecords} selected children`);
-    if (ageGroupFilter !== 'all') {
+    if (exactAgeFilter !== 'all') {
+      parts.push(`Age ${exactAgeFilter}`);
+    } else if (ageGroupFilter !== 'all') {
       parts.push(`Ages ${ageGroupFilter}`);
     }
     if (passStatusFilter === 'missing_pass') {
@@ -175,6 +253,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
         pageSize,
         search: debouncedSearch,
         ageGroup: ageGroupFilter,
+        exactAge: exactAgeFilter,
         passStatus: passStatusFilter,
         attendanceStatus: attendanceStatusFilter,
         gender: genderFilter
@@ -189,6 +268,9 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
         }
         if (res.ageGroups) {
           setAgeGroups(res.ageGroups);
+        }
+        if (res.ageBreakdown) {
+          setAgeBreakdown(res.ageBreakdown);
         }
         setChildren(res.children || []);
         if (res.pagination) {
@@ -205,7 +287,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
       setLoading(false);
       setRefreshing(false);
     }
-  }, [eventId, page, pageSize, debouncedSearch, ageGroupFilter, passStatusFilter, attendanceStatusFilter, genderFilter]);
+  }, [eventId, page, pageSize, debouncedSearch, ageGroupFilter, exactAgeFilter, passStatusFilter, attendanceStatusFilter, genderFilter]);
 
   useEffect(() => {
     fetchReport();
@@ -243,27 +325,38 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
     }
   };
 
-  // Download PDF Report (Requirements 7, 8, 14, 16, 18)
-  const handleDownloadPdf = async (targetAgeGroup?: string) => {
+  // Shared query param builder for CSV and PDF exports
+  const buildExportQueryParams = (overrideAgeGroup?: string, overrideExactAge?: string) => {
+    const queryParams = new URLSearchParams();
+    if (eventId) queryParams.append('eventId', eventId);
+    if (debouncedSearch) queryParams.append('search', debouncedSearch);
+
+    const effectiveAgeGroup = overrideAgeGroup !== undefined
+      ? overrideAgeGroup
+      : (ageGroupFilter !== 'all' ? ageGroupFilter : '');
+    const effectiveExactAge = overrideExactAge !== undefined
+      ? overrideExactAge
+      : (exactAgeFilter !== 'all' ? exactAgeFilter : '');
+
+    if (effectiveAgeGroup && effectiveAgeGroup !== 'all') {
+      queryParams.append('ageGroup', effectiveAgeGroup);
+    }
+    if (effectiveExactAge && effectiveExactAge !== 'all') {
+      queryParams.append('exactAge', effectiveExactAge);
+    }
+    if (passStatusFilter && passStatusFilter !== 'all') queryParams.append('passStatus', passStatusFilter);
+    if (attendanceStatusFilter && attendanceStatusFilter !== 'all') queryParams.append('attendanceStatus', attendanceStatusFilter);
+    if (genderFilter && genderFilter !== 'all') queryParams.append('gender', genderFilter);
+    return { queryParams, effectiveAgeGroup, effectiveExactAge };
+  };
+
+  // Download PDF Report
+  const handleDownloadPdf = async (targetAgeGroup?: string, targetExactAge?: string) => {
     try {
       setDownloadingPdf(true);
       setDownloadMenuOpen(false);
 
-      const queryParams = new URLSearchParams();
-      if (eventId) queryParams.append('eventId', eventId);
-      if (debouncedSearch) queryParams.append('search', debouncedSearch);
-
-      const effectiveAgeGroup = targetAgeGroup !== undefined
-        ? targetAgeGroup
-        : (ageGroupFilter !== 'all' ? ageGroupFilter : '');
-
-      if (effectiveAgeGroup && effectiveAgeGroup !== 'all') {
-        queryParams.append('ageGroup', effectiveAgeGroup);
-      }
-      if (passStatusFilter && passStatusFilter !== 'all') queryParams.append('passStatus', passStatusFilter);
-      if (attendanceStatusFilter && attendanceStatusFilter !== 'all') queryParams.append('attendanceStatus', attendanceStatusFilter);
-      if (genderFilter && genderFilter !== 'all') queryParams.append('gender', genderFilter);
-
+      const { queryParams, effectiveAgeGroup, effectiveExactAge } = buildExportQueryParams(targetAgeGroup, targetExactAge);
       const downloadUrl = buildApiUrl(`/api/admin/reports/selected-children/export-pdf?${queryParams.toString()}`);
       const token = api.getToken();
 
@@ -287,7 +380,9 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
       }
 
       if (!filename) {
-        if (effectiveAgeGroup && effectiveAgeGroup !== 'all') {
+        if (effectiveExactAge && effectiveExactAge !== 'all') {
+          filename = `Koinonia-GA-2026-Selected-Children-Age-${effectiveExactAge}.pdf`;
+        } else if (effectiveAgeGroup && effectiveAgeGroup !== 'all') {
           filename = `Koinonia-GA-2026-Selected-Children-Ages-${effectiveAgeGroup.replace(/[\s–—]+/g, '-')}.pdf`;
         } else {
           filename = `Koinonia-GA-2026-All-Selected-Children.pdf`;
@@ -307,7 +402,10 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
         document.body.removeChild(a);
       }, 200);
 
-      showSuccess('Report Downloaded', `Selected children PDF (${effectiveAgeGroup ? `Ages ${effectiveAgeGroup}` : 'All'}) ready.`);
+      const label = effectiveExactAge && effectiveExactAge !== 'all'
+        ? `Age ${effectiveExactAge}`
+        : (effectiveAgeGroup && effectiveAgeGroup !== 'all' ? `Ages ${effectiveAgeGroup}` : 'All');
+      showSuccess('Report Downloaded', `Selected children PDF (${label}) ready.`);
     } catch (err: any) {
       console.error(err);
       showError('Download Failed', err?.message || 'Could not download PDF report.');
@@ -316,20 +414,13 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
     }
   };
 
-  // Export CSV (Requirements 8, 9, 22)
+  // Export CSV
   const handleExportCsv = () => {
     try {
       setExportingCsv(true);
-      const queryParams = new URLSearchParams();
-      if (eventId) queryParams.append('eventId', eventId);
-      if (debouncedSearch) queryParams.append('search', debouncedSearch);
-      if (ageGroupFilter && ageGroupFilter !== 'all') queryParams.append('ageGroup', ageGroupFilter);
-      if (passStatusFilter && passStatusFilter !== 'all') queryParams.append('passStatus', passStatusFilter);
-      if (attendanceStatusFilter && attendanceStatusFilter !== 'all') queryParams.append('attendanceStatus', attendanceStatusFilter);
-      if (genderFilter && genderFilter !== 'all') queryParams.append('gender', genderFilter);
-
+      const { queryParams, effectiveAgeGroup, effectiveExactAge } = buildExportQueryParams();
       const downloadUrl = buildApiUrl(`/api/admin/reports/selected-children/export-csv?${queryParams.toString()}`);
-      
+
       const token = api.getToken();
       fetch(downloadUrl, {
         headers: {
@@ -345,7 +436,9 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
-        a.download = `selected-children-${ageGroupFilter !== 'all' ? ageGroupFilter : 'all'}.csv`;
+        a.download = effectiveExactAge && effectiveExactAge !== 'all'
+          ? `selected-children-age-${effectiveExactAge}.csv`
+          : `selected-children-${effectiveAgeGroup && effectiveAgeGroup !== 'all' ? effectiveAgeGroup : 'all'}.csv`;
         document.body.appendChild(a);
         a.click();
         setTimeout(() => {
@@ -370,6 +463,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
   const handleResetFilters = () => {
     setSearch('');
     setAgeGroupFilter('all');
+    setExactAgeFilter('all');
     setPassStatusFilter('all');
     setAttendanceStatusFilter('all');
     setGenderFilter('all');
@@ -379,6 +473,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
   const hasActiveFilters = Boolean(
     debouncedSearch || 
     ageGroupFilter !== 'all' || 
+    exactAgeFilter !== 'all' || 
     passStatusFilter !== 'all' || 
     attendanceStatusFilter !== 'all' || 
     genderFilter !== 'all'
@@ -401,14 +496,16 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
         </div>
 
         <div className="flex items-center gap-2 self-start md:self-auto">
-          {/* Download report (Primary Koinonia gold per Requirements 7, 16) */}
+          {/* Download report (Primary Koinonia gold) */}
           <div className="relative inline-block" ref={downloadMenuRef}>
             <div className="inline-flex rounded shadow-xs">
               <button
                 type="button"
                 onClick={() => {
-                  if (ageGroupFilter !== 'all') {
-                    handleDownloadPdf(ageGroupFilter);
+                  if (exactAgeFilter !== 'all') {
+                    handleDownloadPdf(ageGroupFilter !== 'all' ? ageGroupFilter : '', exactAgeFilter);
+                  } else if (ageGroupFilter !== 'all') {
+                    handleDownloadPdf(ageGroupFilter, '');
                   } else {
                     setDownloadMenuOpen(prev => !prev);
                   }
@@ -422,7 +519,11 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                 ) : (
                   <Download className="w-3.5 h-3.5" />
                 )}
-                {ageGroupFilter !== 'all' ? `Download Ages ${ageGroupFilter} report` : 'Download report'}
+                {exactAgeFilter !== 'all'
+                  ? `Download Age ${exactAgeFilter} report`
+                  : ageGroupFilter !== 'all'
+                    ? `Download Ages ${ageGroupFilter} report`
+                    : 'Download report'}
               </button>
 
               <button
@@ -440,55 +541,79 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
               </button>
             </div>
 
-            {/* Small restrained dropdown menu per Requirement 7 */}
+            {/* Restrained compact dropdown with age-group & 2-column exact-age sections */}
             {downloadMenuOpen && (
               <div 
-                className="absolute right-0 mt-1 w-52 bg-white dark:bg-[#1E1E1C] border border-stone-200 dark:border-[#33312B] rounded shadow-lg z-50 py-1 text-xs"
+                className="absolute right-0 mt-1 w-60 max-h-[75vh] overflow-y-auto bg-white dark:bg-[#1E1E1C] border border-stone-200 dark:border-[#33312B] rounded shadow-lg z-50 py-1 text-xs"
                 role="menu"
               >
-                {ageGroupFilter !== 'all' ? (
+                {exactAgeFilter !== 'all' && (
                   <>
                     <button
                       type="button"
-                      onClick={() => handleDownloadPdf(ageGroupFilter)}
-                      className="w-full text-left px-3 py-2 hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-900 dark:text-[#F0EBE3] font-medium flex items-center justify-between cursor-pointer"
+                      onClick={() => handleDownloadPdf(ageGroupFilter !== 'all' ? ageGroupFilter : '', exactAgeFilter)}
+                      className="w-full text-left px-3 py-1.5 hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-900 dark:text-[#F0EBE3] font-medium flex items-center justify-between cursor-pointer"
+                    >
+                      <span>Download Age {exactAgeFilter} report</span>
+                      <span className="text-[10px] text-stone-400">Current</span>
+                    </button>
+                    <div className="border-t border-stone-100 dark:border-[#2C2A26] my-1" />
+                  </>
+                )}
+
+                {ageGroupFilter !== 'all' && exactAgeFilter === 'all' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadPdf(ageGroupFilter, '')}
+                      className="w-full text-left px-3 py-1.5 hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-900 dark:text-[#F0EBE3] font-medium flex items-center justify-between cursor-pointer"
                     >
                       <span>Download Ages {ageGroupFilter} report</span>
                       <span className="text-[10px] text-stone-400">Current</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDownloadPdf('')}
-                      className="w-full text-left px-3 py-2 hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-700 dark:text-[#C5BFB5] cursor-pointer"
-                    >
-                      Download all selected children
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => handleDownloadPdf('')}
-                      className="w-full text-left px-3 py-2 hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-900 dark:text-[#F0EBE3] font-medium cursor-pointer"
-                    >
-                      All selected children
-                    </button>
                     <div className="border-t border-stone-100 dark:border-[#2C2A26] my-1" />
-                    <div className="px-3 py-1 text-[10px] font-semibold text-stone-400 uppercase tracking-wider">
-                      By Age Group
-                    </div>
-                    {['2–3', '4–6', '7–9', '10–12', '13–14'].map((g) => (
-                      <button
-                        key={g}
-                        type="button"
-                        onClick={() => handleDownloadPdf(g)}
-                        className="w-full text-left px-3 py-1.5 hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-700 dark:text-[#C5BFB5] cursor-pointer"
-                      >
-                        Ages {g}
-                      </button>
-                    ))}
                   </>
                 )}
+
+                <button
+                  type="button"
+                  onClick={() => handleDownloadPdf('', '')}
+                  className="w-full text-left px-3 py-1.5 hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-900 dark:text-[#F0EBE3] font-medium cursor-pointer"
+                >
+                  All selected children
+                </button>
+
+                <div className="border-t border-stone-100 dark:border-[#2C2A26] my-1" />
+                <div className="px-3 py-1 text-[10px] font-semibold text-stone-400 uppercase tracking-wider">
+                  By Age Group
+                </div>
+                {CANONICAL_AGE_GROUP_RANGES.map((g) => (
+                  <button
+                    key={g.key}
+                    type="button"
+                    onClick={() => handleDownloadPdf(g.key, '')}
+                    className="w-full text-left px-3 py-1 hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-700 dark:text-[#C5BFB5] cursor-pointer"
+                  >
+                    Ages {g.key}
+                  </button>
+                ))}
+
+                <div className="border-t border-stone-100 dark:border-[#2C2A26] my-1" />
+                <div className="px-3 py-1 text-[10px] font-semibold text-stone-400 uppercase tracking-wider">
+                  By Exact Age
+                </div>
+                <div className="grid grid-cols-2 px-1 pb-1">
+                  {ALL_EXACT_AGES.map((a) => (
+                    <button
+                      key={a}
+                      type="button"
+                      onClick={() => handleDownloadPdf('', String(a))}
+                      className="text-left px-2 py-1 rounded-xs hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-700 dark:text-[#C5BFB5] cursor-pointer"
+                    >
+                      Age {a}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -612,10 +737,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
               return (
                 <tr
                   key={ag.ageGroup}
-                  onClick={() => {
-                    setAgeGroupFilter(isActive ? 'all' : ag.ageGroup);
-                    setPage(1);
-                  }}
+                  onClick={() => handleSelectAgeGroup(isActive ? 'all' : ag.ageGroup)}
                   className={`transition-colors hover:bg-stone-50/80 dark:hover:bg-[#252421] cursor-pointer ${
                     isActive 
                       ? 'border-l-2 border-[#C59B27] bg-stone-50/70 dark:bg-[#252420] text-stone-900 dark:text-[#F0EBE3] font-semibold' 
@@ -624,7 +746,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                 >
                   <td className="py-2 px-3">
                     <span className={isActive ? 'text-[#C59B27] dark:text-amber-400 font-semibold' : 'text-stone-800 dark:text-[#E0D8CC]'}>
-                      Ages {ag.ageGroup}
+                      {ag.ageGroup === 'Age review needed' ? 'Age review needed' : `Ages ${ag.ageGroup}`}
                     </span>
                   </td>
                   <td className="py-2 px-3 text-right font-medium text-stone-900 dark:text-[#F0EBE3]">
@@ -644,8 +766,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setAgeGroupFilter(isActive ? 'all' : ag.ageGroup);
-                          setPage(1);
+                          handleSelectAgeGroup(isActive ? 'all' : ag.ageGroup);
                         }}
                         className={`text-xs cursor-pointer ${
                           isActive 
@@ -655,18 +776,20 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                       >
                         {isActive ? 'Filtered' : 'View list'}
                       </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDownloadPdf(ag.ageGroup);
-                        }}
-                        disabled={downloadingPdf}
-                        className="text-xs text-stone-500 hover:text-stone-900 dark:text-stone-400 dark:hover:text-[#F0EBE3] hover:underline cursor-pointer disabled:opacity-50"
-                        title={`Download Ages ${ag.ageGroup} PDF`}
-                      >
-                        Download
-                      </button>
+                      {ag.selected > 0 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownloadPdf(ag.ageGroup, '');
+                          }}
+                          disabled={downloadingPdf}
+                          className="text-xs text-stone-500 hover:text-stone-900 dark:text-stone-400 dark:hover:text-[#F0EBE3] hover:underline cursor-pointer disabled:opacity-50"
+                          title={`Download Ages ${ag.ageGroup} PDF`}
+                        >
+                          Download
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -687,10 +810,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                 {ageGroupFilter !== 'all' && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setAgeGroupFilter('all');
-                      setPage(1);
-                    }}
+                    onClick={() => handleSelectAgeGroup('all')}
                     className="text-[11px] text-[#C59B27] dark:text-amber-400 hover:underline font-medium cursor-pointer"
                   >
                     View all
@@ -702,7 +822,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
         </table>
       </div>
 
-      {/* 4. COMPACT FILTER BAR (Requirement 13) */}
+      {/* 4. COMPACT FILTER BAR */}
       <div className="border border-stone-200 dark:border-[#2C2A26] rounded p-2.5 bg-white dark:bg-[#1E1E1C] flex flex-wrap items-center gap-2.5 text-xs">
         {/* Search */}
         <div className="relative flex-1 min-w-[200px]">
@@ -730,7 +850,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
           <label className="text-stone-500 dark:text-[#8A847A] font-medium hidden sm:inline">Age group:</label>
           <select
             value={ageGroupFilter}
-            onChange={handleFilterChange(setAgeGroupFilter)}
+            onChange={(e) => handleSelectAgeGroup(e.target.value)}
             className="bg-[#FAF9F6] dark:bg-[#262421] border border-stone-200 dark:border-[#35332E] rounded px-2 py-1 text-xs text-stone-800 dark:text-[#F0EBE3] focus:outline-hidden focus:border-[#C59B27] cursor-pointer"
           >
             <option value="all">All age groups</option>
@@ -739,6 +859,22 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
             <option value="7–9">Ages 7–9</option>
             <option value="10–12">Ages 10–12</option>
             <option value="13–14">Ages 13–14</option>
+          </select>
+        </div>
+
+        {/* Exact age filter (contextual) */}
+        <div className="flex items-center gap-1.5">
+          <label className="text-stone-500 dark:text-[#8A847A] font-medium hidden sm:inline">Age:</label>
+          <select
+            value={exactAgeFilter}
+            onChange={handleFilterChange(setExactAgeFilter)}
+            aria-label="Filter by exact age"
+            className="bg-[#FAF9F6] dark:bg-[#262421] border border-stone-200 dark:border-[#35332E] rounded px-2 py-1 text-xs text-stone-800 dark:text-[#F0EBE3] focus:outline-hidden focus:border-[#C59B27] cursor-pointer"
+          >
+            <option value="all">All ages</option>
+            {getContextualAgeOptions().map((a) => (
+              <option key={a} value={String(a)}>Age {a}</option>
+            ))}
           </select>
         </div>
 
@@ -797,6 +933,104 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
           </button>
         )}
       </div>
+
+      {/* 4.5. AGE-GROUP EXACT AGE DRILL-DOWN (shown directly above child table when an age group is active) */}
+      {activeGroupBreakdown && activeGroupBreakdown.ages.length > 0 && (
+        <div
+          className="border border-stone-200 dark:border-[#2C2A26] rounded bg-white dark:bg-[#1E1E1C] overflow-hidden"
+          data-testid="exact-age-drilldown"
+        >
+          <div className="px-3 py-2 border-b border-stone-200 dark:border-[#2C2A26] bg-stone-50/50 dark:bg-[#242320] flex items-center justify-between text-xs">
+            <span className="font-semibold text-stone-800 dark:text-[#E0D8CC]">
+              {activeGroupBreakdown.ageGroup === 'Age review needed' ? 'Age review needed' : `Ages ${activeGroupBreakdown.ageGroup}`}
+            </span>
+            {exactAgeFilter !== 'all' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setExactAgeFilter('all');
+                  setPage(1);
+                }}
+                className="text-[11px] text-[#C59B27] dark:text-amber-400 hover:underline font-medium cursor-pointer"
+              >
+                All in group
+              </button>
+            )}
+          </div>
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="bg-stone-50/40 dark:bg-[#22211E] border-b border-stone-200 dark:border-[#2C2A26] text-[10px] font-semibold text-stone-500 dark:text-[#8A847A] uppercase tracking-wider">
+                <th className="py-1.5 px-3 font-semibold">Age</th>
+                <th className="py-1.5 px-3 font-semibold text-right">Selected</th>
+                <th className="py-1.5 px-3 font-semibold text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-100 dark:divide-[#262420] text-stone-700 dark:text-[#C5BFB5]">
+              {activeGroupBreakdown.ages.map((ageRow) => {
+                const isExactActive = exactAgeFilter === String(ageRow.age);
+                return (
+                  <tr
+                    key={ageRow.age}
+                    onClick={() => {
+                      setAgeGroupFilter(activeGroupBreakdown.ageGroup);
+                      setExactAgeFilter(isExactActive ? 'all' : String(ageRow.age));
+                      setPage(1);
+                    }}
+                    className={`transition-colors hover:bg-stone-50/80 dark:hover:bg-[#252421] cursor-pointer ${
+                      isExactActive
+                        ? 'border-l-2 border-[#C59B27] bg-stone-50/70 dark:bg-[#252420] text-stone-900 dark:text-[#F0EBE3] font-semibold'
+                        : ''
+                    }`}
+                  >
+                    <td className="py-1.5 px-3">
+                      <span className={isExactActive ? 'text-[#C59B27] dark:text-amber-400 font-semibold' : 'text-stone-800 dark:text-[#E0D8CC]'}>
+                        Age {ageRow.age}
+                      </span>
+                    </td>
+                    <td className="py-1.5 px-3 text-right font-medium text-stone-900 dark:text-[#F0EBE3]">
+                      {ageRow.selected}
+                    </td>
+                    <td className="py-1.5 px-3 text-right">
+                      <div className="inline-flex items-center justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setAgeGroupFilter(activeGroupBreakdown.ageGroup);
+                            setExactAgeFilter(isExactActive ? 'all' : String(ageRow.age));
+                            setPage(1);
+                          }}
+                          className={`text-xs cursor-pointer ${
+                            isExactActive
+                              ? 'text-[#C59B27] dark:text-amber-400 font-semibold underline'
+                              : 'text-[#C59B27] dark:text-amber-400/90 hover:underline'
+                          }`}
+                        >
+                          {isExactActive ? 'Viewing' : 'View'}
+                        </button>
+                        {ageRow.selected > 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownloadPdf(activeGroupBreakdown.ageGroup, String(ageRow.age));
+                            }}
+                            disabled={downloadingPdf}
+                            className="text-xs text-stone-500 hover:text-stone-900 dark:text-stone-400 dark:hover:text-[#F0EBE3] hover:underline cursor-pointer disabled:opacity-50"
+                            title={`Download Age ${ageRow.age} PDF`}
+                          >
+                            Download
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* 5. PRIMARY SCREEN CONTENT: CHILDREN TABLE (Requirements 14, 15, 16, 17, 18, 19, 20) */}
       <div className="border border-stone-200 dark:border-[#2C2A26] rounded bg-white dark:bg-[#1E1E1C] overflow-hidden">
@@ -864,7 +1098,9 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                 <tr>
                   <td colSpan={9} className="py-10 text-center px-4">
                     <p className="text-xs text-stone-500 dark:text-[#8A847A] font-medium">
-                      No selected children match these filters.
+                      {exactAgeFilter !== 'all' && !debouncedSearch && passStatusFilter === 'all' && attendanceStatusFilter === 'all' && genderFilter === 'all'
+                        ? `No selected children aged ${exactAgeFilter}.`
+                        : 'No selected children match these filters.'}
                     </p>
                     {hasActiveFilters && (
                       <button
@@ -1013,7 +1249,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
         {!loading && children.length > 0 && (
           <div className="border-t border-stone-200 dark:border-[#2C2A26] px-3 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-stone-500 dark:text-[#8A847A]">
             <div>
-              Showing {totalRecords === 0 ? 0 : Math.min((page - 1) * pageSize + 1, totalRecords)}–{Math.min(page * pageSize, totalRecords)} of {totalRecords} selected children{ageGroupFilter !== 'all' ? ` · Ages ${ageGroupFilter}` : ''}
+              Showing {totalRecords === 0 ? 0 : Math.min((page - 1) * pageSize + 1, totalRecords)}–{Math.min(page * pageSize, totalRecords)} of {totalRecords} selected children{exactAgeFilter !== 'all' ? ` · Age ${exactAgeFilter}` : ageGroupFilter !== 'all' ? ` · Ages ${ageGroupFilter}` : ''}
             </div>
 
             <div className="flex items-center gap-3">
