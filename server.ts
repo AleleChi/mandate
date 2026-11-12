@@ -26,6 +26,7 @@ import incidentRoutes from './src/server/routes/incidents';
 import escalationRoutes from './src/server/routes/escalations';
 import trainingRoutes from './src/server/routes/training';
 import reportsRoutes from './src/server/routes/reports';
+import eventAnalyticsRoutes from './src/server/routes/eventAnalytics';
 import { publicGalleryRouter, adminGalleryRouter } from './src/server/routes/gallery';
 import { initReportSchema, processQueuedReportJobs } from './src/server/services/reportService';
 import { seedDefaultEscalationPolicies, runEscalationScheduler } from './src/server/services/escalationService';
@@ -238,6 +239,7 @@ async function startServer() {
   app.use('/api/public/gallery', publicGalleryRouter);
   app.use('/api/admin/gallery', adminGalleryRouter);
   app.use('/api/admin/reports', reportsRoutes);
+  app.use('/api/admin/event-analytics', eventAnalyticsRoutes);
   app.use('/api/admin/duty', adminDutyRouter);
   app.use('/api/admin/escalation', escalationRoutes);
   app.use('/api/admin/automations', automationsRouter);

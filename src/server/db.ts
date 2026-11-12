@@ -1564,6 +1564,19 @@ function initSqliteSchema(db: Database.Database) {
     `);
   } catch (e) {}
 
+  // Event Analytics composite read indexes (SQLite, non-destructive)
+  try {
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_entries_event_status ON child_event_entries(event_id, status);
+      CREATE INDEX IF NOT EXISTS idx_entries_event_checked_in_at ON child_event_entries(event_id, checked_in_at);
+      CREATE INDEX IF NOT EXISTS idx_entries_event_picked_up_at ON child_event_entries(event_id, picked_up_at);
+      CREATE INDEX IF NOT EXISTS idx_entries_event_checked_in_by ON child_event_entries(event_id, checked_in_by);
+      CREATE INDEX IF NOT EXISTS idx_entries_event_picked_up_by ON child_event_entries(event_id, picked_up_by);
+      CREATE INDEX IF NOT EXISTS idx_attendance_entry_action ON attendance_records(child_event_entry_id, action_type);
+      CREATE INDEX IF NOT EXISTS idx_attendance_staff_time ON attendance_records(staff_user_id, action_time);
+    `);
+  } catch (e) {}
+
   // Phase 6 Event Locations (SQLite)
   try {
     db.exec(`
@@ -3499,6 +3512,19 @@ async function initPostgresSchema(pool: any) {
         CREATE INDEX IF NOT EXISTS idx_attendance_action_time ON attendance_records(action_time);
         CREATE INDEX IF NOT EXISTS idx_offline_sync_event ON offline_sync_records(event_id);
         CREATE INDEX IF NOT EXISTS idx_offline_sync_status ON offline_sync_records(status);
+      `);
+    } catch (e) {}
+
+    // Event Analytics composite read indexes (PostgreSQL, non-destructive)
+    try {
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_entries_event_status ON child_event_entries(event_id, status);
+        CREATE INDEX IF NOT EXISTS idx_entries_event_checked_in_at ON child_event_entries(event_id, checked_in_at);
+        CREATE INDEX IF NOT EXISTS idx_entries_event_picked_up_at ON child_event_entries(event_id, picked_up_at);
+        CREATE INDEX IF NOT EXISTS idx_entries_event_checked_in_by ON child_event_entries(event_id, checked_in_by);
+        CREATE INDEX IF NOT EXISTS idx_entries_event_picked_up_by ON child_event_entries(event_id, picked_up_by);
+        CREATE INDEX IF NOT EXISTS idx_attendance_entry_action ON attendance_records(child_event_entry_id, action_type);
+        CREATE INDEX IF NOT EXISTS idx_attendance_staff_time ON attendance_records(staff_user_id, action_time);
       `);
     } catch (e) {}
 
