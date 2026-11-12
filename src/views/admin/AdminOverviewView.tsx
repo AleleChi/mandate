@@ -3727,9 +3727,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             <AdminEscalationsView />
           )}
 
-          {/* EVENT ANALYTICS VIEW (READ-ONLY) */}
           {activeTab === 'event_analytics' && (
-            <EventAnalyticsView onBackToOverview={() => handleTabChange('overview')} />
+            <EventAnalyticsView
+              onBackToOverview={() => handleTabChange('overview')}
+              onNavigate={onNavigate}
+            />
           )}
 
           {/* LIVE EVENT OPERATIONS DASHBOARD */}

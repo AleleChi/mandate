@@ -27,11 +27,44 @@ interface EventOption {
 }
 
 export function AdminDutyDevicesView() {
-  const [activeTab, setActiveTab] = useState<DutyTabType>('event_locations');
+  const [activeTab, setActiveTab] = useState<DutyTabType>(() => {
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      const t = sp.get('tab');
+      if (t === 'team' || t === 'event_team') return 'event_team';
+      if (t === 'coverage' || t === 'response_coverage') return 'response_coverage';
+      if (t === 'devices' || t === 'devices_readiness') return 'devices_readiness';
+      if (t === 'alerts' || t === 'alert_routing') return 'alert_routing';
+    }
+    return 'event_locations';
+  });
   const [events, setEvents] = useState<EventOption[]>([]);
-  const [selectedEventId, setSelectedEventId] = useState<string>('event-ga-2026');
+  const [selectedEventId, setSelectedEventId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const ev = new URLSearchParams(window.location.search).get('eventId');
+      if (ev) return ev;
+    }
+    return 'event-ga-2026';
+  });
+  const [focusedAssignmentId, setFocusedAssignmentId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return new URLSearchParams(window.location.search).get('assignment') || '';
+    }
+    return '';
+  });
   const [triggerCreateLocation, setTriggerCreateLocation] = useState(0);
   const [triggerPrintAllCodes, setTriggerPrintAllCodes] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const sp = new URLSearchParams(window.location.search);
+    const t = sp.get('tab');
+    const ev = sp.get('eventId');
+    const assign = sp.get('assignment') || '';
+    if (t === 'team' || t === 'event_team') setActiveTab('event_team');
+    if (ev) setSelectedEventId(ev);
+    setFocusedAssignmentId(assign);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -52,7 +85,12 @@ export function AdminDutyDevicesView() {
             setEvents(list);
             const currentEv = list.find((e) => e.status === 'current' || e.status === 'open') || list[0];
             if (currentEv?.id) {
-              setSelectedEventId(currentEv.id);
+              setSelectedEventId((prev) => {
+                if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('eventId') && prev) {
+                  return prev;
+                }
+                return currentEv.id;
+              });
             }
           }
         }
@@ -232,7 +270,7 @@ export function AdminDutyDevicesView() {
             fallbackDescription="We couldn't open this section right now. Refresh the page and try again."
           >
             <Suspense fallback={<TabLoading />}>
-              <EventTeamTab eventId={selectedEventId} />
+              <EventTeamTab eventId={selectedEventId} focusedAssignmentId={focusedAssignmentId} />
             </Suspense>
           </ErrorBoundary>
         )}

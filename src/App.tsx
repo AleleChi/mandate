@@ -1286,7 +1286,7 @@ export default function App() {
                                   ? 'parents'
                                   : cleanRoute === '/admin/events'
                                     ? 'events'
-                                    : cleanRoute === '/admin/duty-devices'
+                                    : cleanRoute === '/admin/duty-devices' || cleanRoute === '/admin/event-duty'
                                       ? 'duty_devices'
                                       : cleanRoute === '/admin/incidents'
                                         ? 'incidents'

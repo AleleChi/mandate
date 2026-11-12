@@ -19,17 +19,17 @@ function runTest(name: string, fn: () => void) {
 const MOCK_SNAPSHOT: EventAnalyticsSnapshot = {
   event: {
     id: 'ev-live-2026',
-    title: 'GA 2026 Live',
+    title: 'The General Assembly',
     status: 'current',
     startsAt: '2026-11-21T08:00:00Z',
-    endsAt: '2026-11-21T18:00:00Z',
+    endsAt: '2026-11-22T18:00:00Z',
     location: 'Main Hall',
-    timezone: 'Europe/London'
+    timezone: 'Africa/Lagos'
   },
   availableEvents: [
     {
       id: 'ev-live-2026',
-      title: 'GA 2026 Live',
+      title: 'The General Assembly',
       status: 'current',
       startsAt: '2026-11-21T08:00:00Z',
       location: 'Main Hall'
@@ -53,33 +53,53 @@ const MOCK_SNAPSHOT: EventAnalyticsSnapshot = {
   volunteers: [
     {
       volunteerId: 'v-a',
-      name: 'Grace Daniels',
+      name: 'Grace Emmanuel',
+      email: 'grace@koinonia.org',
       role: 'volunteer',
-      dutyRole: 'Check In · Welcome Team',
+      dutyRole: 'Gate / Check-in Lead',
       teamKey: 'welcome_team',
-      assignedAgeGroups: 'Ages 2-14',
+      assignedAgeGroups: 'Ages 7–9',
+      assignmentId: 'assign-1',
+      assignmentLocation: "Children's Entrance A",
+      assignmentStartsAt: '2026-11-21T07:00:00Z',
+      assignmentEndsAt: '2026-11-21T13:00:00Z',
+      hasUser: true,
+      hasVolunteerProfile: true,
+      hasDutyAssignment: true,
+      hasActivity: true,
+      profileState: 'complete',
       checkIns: 25,
       pickups: 5,
       totalActions: 30,
       lastActivityAt: '2026-11-21T13:15:00Z'
     },
     {
-      volunteerId: 'v-b',
-      name: 'Samuel Okoye',
-      role: 'volunteer',
-      dutyRole: 'Check In · Door Team',
-      teamKey: 'door_team',
-      assignedAgeGroups: 'Ages 4-6',
-      checkIns: 18,
+      volunteerId: 'v-missing',
+      name: 'admin_95865@koinonia.org',
+      email: 'admin_95865@koinonia.org',
+      role: 'admin',
+      dutyRole: 'Safety Marshal',
+      teamKey: 'safeguarding',
+      assignedAgeGroups: null,
+      assignmentId: 'assign-missing-1',
+      assignmentLocation: null,
+      assignmentStartsAt: '2026-11-21T07:00:00Z',
+      assignmentEndsAt: '2026-11-21T13:00:00Z',
+      hasUser: true,
+      hasVolunteerProfile: false,
+      hasDutyAssignment: true,
+      hasActivity: false,
+      profileState: 'profile_missing',
+      checkIns: 0,
       pickups: 0,
-      totalActions: 18,
-      lastActivityAt: '2026-11-21T09:40:00Z'
+      totalActions: 0,
+      lastActivityAt: null
     }
   ],
   timeline: [
-    { bucketStartIso: '2026-11-21T08:00:00Z', label: '08:00', checkIns: 35, pickups: 0, cumulativeCheckIns: 35, cumulativePickups: 0 },
-    { bucketStartIso: '2026-11-21T08:15:00Z', label: '08:15', checkIns: 25, pickups: 0, cumulativeCheckIns: 60, cumulativePickups: 0 },
-    { bucketStartIso: '2026-11-21T13:15:00Z', label: '13:15', checkIns: 0, pickups: 10, cumulativeCheckIns: 60, cumulativePickups: 10 }
+    { bucketStartIso: '2026-11-21T08:00:00Z', label: '09:00', checkIns: 35, pickups: 0, cumulativeCheckIns: 35, cumulativePickups: 0 },
+    { bucketStartIso: '2026-11-21T08:15:00Z', label: '09:15', checkIns: 25, pickups: 0, cumulativeCheckIns: 60, cumulativePickups: 0 },
+    { bucketStartIso: '2026-11-21T13:15:00Z', label: '14:15', checkIns: 0, pickups: 10, cumulativeCheckIns: 60, cumulativePickups: 10 }
   ],
   recentActivity: [
     {
@@ -91,7 +111,7 @@ const MOCK_SNAPSHOT: EventAnalyticsSnapshot = {
       age: 5,
       ageGroup: '4–6',
       volunteerId: 'v-a',
-      volunteerName: 'Grace Daniels',
+      volunteerName: 'Grace Emmanuel',
       location: 'North Gate'
     }
   ],
@@ -106,29 +126,37 @@ const MOCK_SNAPSHOT: EventAnalyticsSnapshot = {
     volunteerId: '',
     action: 'all'
   },
-  updatedAt: '2026-11-21T13:15:00Z',
+  updatedAt: '2026-11-21T16:10:00Z',
   version: 'v1'
 };
 
 console.log('\n=== EVENT ANALYTICS FRONTEND UI & LIVE SYNC SUITE ===\n');
 
-runTest('1. Renders EventAnalyticsView metrics, age groups, volunteers & quiet operational copy', () => {
+runTest('1. Renders refined Event Analytics UI, profile-missing state & zero forbidden technical copy', () => {
   const html = renderToString(React.createElement(EventAnalyticsView, { initialSnapshot: MOCK_SNAPSHOT }));
   assert.ok(html.includes('Event Analytics'));
-  assert.ok(html.includes('Read-Only'));
-  assert.ok(html.includes('100'));
+  assert.ok(html.includes('The General Assembly'));
+  assert.ok(html.includes('Updated 5:10 PM'));
+  assert.ok(html.includes('Attendance by age group'));
+  assert.ok(html.includes('Event activity'));
+  assert.ok(html.includes('Volunteer activity'));
+  assert.ok(html.includes('Recent activity'));
   assert.ok(html.includes('60.0%'));
   assert.ok(html.includes('Ages 2–3'));
-  assert.ok(html.includes('Ages 4–6'));
-  assert.ok(html.includes('Ages 13–14'));
-  assert.ok(html.includes('Grace Daniels'));
-  assert.ok(html.includes('Samuel Okoye'));
-  assert.ok(html.includes('Daniel Okafor'));
-  assert.ok(html.includes('North Gate'));
-  assert.equal(html.includes('ONLINE'), false, 'Should not render noisy ONLINE badge');
+  assert.ok(html.includes('Grace Emmanuel'));
+  assert.ok(html.includes('admin_95865@koinonia.org'));
+  assert.ok(html.includes('Profile details unavailable'));
+  assert.ok(html.includes('Search volunteer'));
+  assert.ok(html.includes('Most active'));
+  assert.ok(html.includes('Picked up'));
+
+  const forbidden = ['READ-ONLY', 'Read-Only', 'Auto-refresh', 'ONLINE', 'analytics_update', 'SSE', 'monitoring engine', 'Smart analytics'];
+  for (const term of forbidden) {
+    assert.equal(html.includes(term), false, `Forbidden visible UI term found: ${term}`);
+  }
 });
 
-runTest('2. Renders clean empty state when no active event is available', () => {
+runTest('2. Renders clean empty state when no events are available', () => {
   const emptySnapshot: EventAnalyticsSnapshot = {
     ...MOCK_SNAPSHOT,
     event: null,
@@ -139,7 +167,7 @@ runTest('2. Renders clean empty state when no active event is available', () => 
     recentActivity: []
   };
   const html = renderToString(React.createElement(EventAnalyticsView, { initialSnapshot: emptySnapshot }));
-  assert.ok(html.includes('No active event available'));
+  assert.ok(html.includes('No events available.'));
 });
 
 runTest('3. SSE live sync starts 5s fallback polling ONLY while disconnected and clears on reconnect/stop', () => {
@@ -190,18 +218,14 @@ runTest('3. SSE live sync starts 5s fallback polling ONLY while disconnected and
   assert.equal(controller.isPollingActive(), false);
   assert.equal(activeIntervals.size, 0);
 
-  // Connected via SSE -> zero polling timers
   listeners.get('connected')?.forEach((fn) => fn());
   assert.equal(controller.getState(), 'connected');
   assert.equal(controller.isPollingActive(), false);
-  assert.equal(activeIntervals.size, 0);
 
-  // SSE update emits refresh without enabling polling
   listeners.get('analytics_update')?.forEach((fn) => fn());
   assert.equal(refreshCount, 1);
   assert.equal(activeIntervals.size, 0);
 
-  // Disconnect triggers single 5s fallback polling interval (repeated onerror never duplicates)
   mockEs.onerror?.();
   mockEs.onerror?.();
   assert.equal(controller.getState(), 'reconnecting');
@@ -210,17 +234,14 @@ runTest('3. SSE live sync starts 5s fallback polling ONLY while disconnected and
   const pollEntry = Array.from(activeIntervals.values())[0];
   assert.equal(pollEntry.ms, 5000);
 
-  // Simulate fallback poll firing
   pollEntry.fn();
   assert.equal(refreshCount, 2);
 
-  // Reconnect stops fallback polling immediately
   mockEs.onopen?.();
   assert.equal(controller.getState(), 'connected');
   assert.equal(controller.isPollingActive(), false);
   assert.equal(activeIntervals.size, 0);
 
-  // Disconnect again then unmount cleans up SSE + timer
   mockEs.onerror?.();
   assert.equal(activeIntervals.size, 1);
   controller.stop();
@@ -231,4 +252,3 @@ runTest('3. SSE live sync starts 5s fallback polling ONLY while disconnected and
 if (!process.exitCode) {
   console.log('\nAll frontend UI & live sync tests passed.');
 }
-

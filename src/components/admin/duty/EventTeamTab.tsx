@@ -40,6 +40,7 @@ interface Pagination {
 
 interface EventTeamTabProps {
   eventId?: string;
+  focusedAssignmentId?: string;
 }
 
 function getInitials(name?: string): string {
@@ -71,7 +72,7 @@ function formatDutyStatus(status?: string): { label: string; textClass: string; 
   }
 }
 
-export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTabProps) {
+export default function EventTeamTab({ eventId = 'event-ga-2026', focusedAssignmentId }: EventTeamTabProps) {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -698,7 +699,15 @@ export default function EventTeamTab({ eventId = 'event-ga-2026' }: EventTeamTab
                   const areaName = as.assigned_location_name || 'Central Command';
 
                   return (
-                    <tr key={as.id} className="hover:bg-zinc-50/60 dark:hover:bg-[#21211E]/60 transition-colors">
+                    <tr
+                      key={as.id}
+                      id={`duty-assignment-${as.id}`}
+                      className={`transition-colors ${
+                        focusedAssignmentId && focusedAssignmentId === as.id
+                          ? 'bg-[#FAF5E6] dark:bg-[#2A261A] ring-1 ring-inset ring-[#C59B27]/50'
+                          : 'hover:bg-zinc-50/60 dark:hover:bg-[#21211E]/60'
+                      }`}
+                    >
                       {/* Team Member */}
                       <td className="p-3.5 pl-4">
                         <div className="flex items-center space-x-3">

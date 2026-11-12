@@ -24,12 +24,12 @@ export const RecentActivityTable: React.FC<RecentActivityTableProps> = ({
   timeZone
 }) => {
   return (
-    <section className="bg-white border border-zinc-200 rounded-md overflow-hidden">
-      <div className="px-4 py-3 border-b border-zinc-200 flex flex-wrap items-center justify-between gap-2">
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <h2 className="text-sm font-semibold text-zinc-900">Recent Attendance Operations</h2>
-          <p className="text-xs text-zinc-500">
-            Showing {items.length} of {pagination.totalRecords} completed operations (newest first).
+          <h2 className="text-base font-semibold text-zinc-900">Recent activity</h2>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            Showing {items.length} of {pagination.totalRecords.toLocaleString()} completed operations.
           </p>
         </div>
 
@@ -37,23 +37,23 @@ export const RecentActivityTable: React.FC<RecentActivityTableProps> = ({
           <button
             type="button"
             onClick={onToggleViewAll}
-            className="text-xs font-medium px-2.5 py-1 border border-zinc-200 rounded bg-[#FAF9F5] hover:border-[#C59B27] text-zinc-800"
+            className="text-xs font-medium text-[#9A7616] hover:text-zinc-900 underline underline-offset-2 cursor-pointer"
           >
             {viewAll ? 'Show latest 20' : 'View all activity'}
           </button>
         )}
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto bg-white border-y border-zinc-200">
         <table className="w-full text-left border-collapse text-sm">
           <thead>
-            <tr className="border-b border-zinc-200 bg-[#FAF9F5] text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-              <th className="py-2.5 px-4">Time</th>
-              <th className="py-2.5 px-3">Action</th>
-              <th className="py-2.5 px-3">Child</th>
-              <th className="py-2.5 px-3">Age group</th>
-              <th className="py-2.5 px-3">Volunteer</th>
-              <th className="py-2.5 px-4">Location / Gate</th>
+            <tr className="border-b border-zinc-200 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+              <th className="py-3 pr-4 pl-2">Time</th>
+              <th className="py-3 px-3">Action</th>
+              <th className="py-3 px-3">Child</th>
+              <th className="py-3 px-3">Age group</th>
+              <th className="py-3 px-3">Volunteer</th>
+              <th className="py-3 pl-3 pr-2">Location</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
@@ -65,19 +65,13 @@ export const RecentActivityTable: React.FC<RecentActivityTableProps> = ({
               </tr>
             ) : (
               items.map((item) => (
-                <tr key={item.id} className="hover:bg-zinc-50">
-                  <td className="py-2.5 px-4 tabular-nums text-xs text-zinc-600 whitespace-nowrap">
+                <tr key={item.id} className="hover:bg-zinc-50/70">
+                  <td className="py-2.5 pr-4 pl-2 tabular-nums text-xs text-zinc-600 whitespace-nowrap">
                     {formatAnalyticsTime(item.time, timeZone)}
                   </td>
-                  <td className="py-2.5 px-3 whitespace-nowrap">
-                    <span
-                      className={`inline-block px-2 py-0.5 text-xs font-medium rounded-sm border ${
-                        item.action === 'check_in'
-                          ? 'bg-zinc-50 border-zinc-200 text-zinc-900'
-                          : 'bg-[#FAF5E6] border-[#C59B27]/40 text-[#9A7616]'
-                      }`}
-                    >
-                      {item.action === 'check_in' ? 'Checked In' : 'Picked Up'}
+                  <td className="py-2.5 px-3 whitespace-nowrap text-xs font-medium">
+                    <span className={item.action === 'pickup' ? 'text-[#9A7616]' : 'text-zinc-900'}>
+                      {item.action === 'check_in' ? 'Checked in' : 'Picked up'}
                     </span>
                   </td>
                   <td className="py-2.5 px-3 font-medium text-zinc-900">{item.childName}</td>
@@ -85,7 +79,7 @@ export const RecentActivityTable: React.FC<RecentActivityTableProps> = ({
                     {item.ageGroup === 'Other' ? 'Other' : `Ages ${item.ageGroup}`}
                   </td>
                   <td className="py-2.5 px-3 text-xs text-zinc-800">{item.volunteerName}</td>
-                  <td className="py-2.5 px-4 text-xs text-zinc-500">{item.location || '—'}</td>
+                  <td className="py-2.5 pl-3 pr-2 text-xs text-zinc-500">{item.location || '—'}</td>
                 </tr>
               ))
             )}
@@ -94,16 +88,16 @@ export const RecentActivityTable: React.FC<RecentActivityTableProps> = ({
       </div>
 
       {pagination.totalPages > 1 && (
-        <div className="px-4 py-2.5 border-t border-zinc-200 bg-[#FAF9F5] flex items-center justify-between text-xs text-zinc-600">
+        <div className="pt-1 flex items-center justify-between text-xs text-zinc-600">
           <span>
             Page {pagination.page} of {pagination.totalPages}
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <button
               type="button"
               disabled={pagination.page <= 1}
               onClick={() => onPageChange(pagination.page - 1)}
-              className="px-2.5 py-1 border border-zinc-200 rounded bg-white disabled:opacity-40 hover:border-zinc-400"
+              className="px-2.5 py-1 border border-zinc-200 bg-white disabled:opacity-40 hover:border-zinc-400 cursor-pointer disabled:cursor-default"
             >
               Previous
             </button>
@@ -111,7 +105,7 @@ export const RecentActivityTable: React.FC<RecentActivityTableProps> = ({
               type="button"
               disabled={pagination.page >= pagination.totalPages}
               onClick={() => onPageChange(pagination.page + 1)}
-              className="px-2.5 py-1 border border-zinc-200 rounded bg-white disabled:opacity-40 hover:border-zinc-400"
+              className="px-2.5 py-1 border border-zinc-200 bg-white disabled:opacity-40 hover:border-zinc-400 cursor-pointer disabled:cursor-default"
             >
               Next
             </button>
@@ -121,4 +115,3 @@ export const RecentActivityTable: React.FC<RecentActivityTableProps> = ({
     </section>
   );
 };
-
