@@ -99,6 +99,60 @@ export interface AgeGroupBreakdownItem {
   ages: ExactAgeCount[];
 }
 
+export type SelectedChildrenSortOption = 'name_asc' | 'name_desc' | 'age_asc' | 'age_desc';
+
+const VALID_SORT_OPTIONS = new Set<SelectedChildrenSortOption>([
+  'name_asc',
+  'name_desc',
+  'age_asc',
+  'age_desc'
+]);
+
+function parseCustomAgeBound(raw: unknown, label: string): number | null {
+  if (raw === undefined || raw === null) return null;
+  const trimmed = String(raw).trim();
+  if (trimmed === '' || trimmed.toLowerCase() === 'all') return null;
+  const num = Number(trimmed);
+  if (!Number.isInteger(num) || num < 2 || num > 14) {
+    const err: any = new Error(`Invalid ${label} parameter: ${raw}. Must be an integer between 2 and 14.`);
+    err.statusCode = 400;
+    throw err;
+  }
+  return num;
+}
+
+export function sortSelectedChildren(
+  records: SelectedChildRecord[],
+  sortOption: SelectedChildrenSortOption
+): SelectedChildRecord[] {
+  const compareNameAsc = (a: SelectedChildRecord, b: SelectedChildRecord): number => {
+    const nameA = (a.fullName || '').trim().toLowerCase();
+    const nameB = (b.fullName || '').trim().toLowerCase();
+    const cmp = nameA.localeCompare(nameB, 'en', { sensitivity: 'base' });
+    if (cmp !== 0) return cmp;
+    return a.childId.localeCompare(b.childId);
+  };
+
+  return [...records].sort((a, b) => {
+    switch (sortOption) {
+      case 'name_desc': {
+        const nameA = (a.fullName || '').trim().toLowerCase();
+        const nameB = (b.fullName || '').trim().toLowerCase();
+        const cmp = nameB.localeCompare(nameA, 'en', { sensitivity: 'base' });
+        if (cmp !== 0) return cmp;
+        return a.childId.localeCompare(b.childId);
+      }
+      case 'age_asc':
+        return a.age !== b.age ? a.age - b.age : compareNameAsc(a, b);
+      case 'age_desc':
+        return a.age !== b.age ? b.age - a.age : compareNameAsc(a, b);
+      case 'name_asc':
+      default:
+        return compareNameAsc(a, b);
+    }
+  });
+}
+
 export interface SelectedChildrenReportData {
   event: {
     id: string;
@@ -132,6 +186,9 @@ export interface SelectedChildrenReportData {
     search: string;
     ageGroup: string;
     exactAge: number | null;
+    minAge: number | null;
+    maxAge: number | null;
+    sort: SelectedChildrenSortOption;
     passStatus: string;
     attendanceStatus: string;
     gender: string;
@@ -148,6 +205,9 @@ export async function getSelectedChildrenReportData(params: {
   search?: string;
   ageGroup?: string;
   exactAge?: number | string;
+  minAge?: number | string;
+  maxAge?: number | string;
+  sort?: string;
   passStatus?: string;
   attendanceStatus?: string;
   gender?: string;
@@ -186,6 +246,29 @@ export async function getSelectedChildrenReportData(params: {
   const attendanceStatusFilter = typeof params.attendanceStatus === 'string' ? params.attendanceStatus.trim() : '';
   const genderFilter = typeof params.gender === 'string' ? params.gender.trim() : '';
 
+  let minAgeFilter = parseCustomAgeBound(params.minAge, 'minAge');
+  let maxAgeFilter = parseCustomAgeBound(params.maxAge, 'maxAge');
+  if (minAgeFilter !== null && maxAgeFilter === null) {
+    maxAgeFilter = 14;
+  } else if (minAgeFilter === null && maxAgeFilter !== null) {
+    minAgeFilter = 2;
+  }
+  if (minAgeFilter !== null && maxAgeFilter !== null && minAgeFilter > maxAgeFilter) {
+    const err: any = new Error(`Invalid age range: minAge (${minAgeFilter}) cannot exceed maxAge (${maxAgeFilter}).`);
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const rawSort = typeof params.sort === 'string' && params.sort.trim() !== ''
+    ? params.sort.trim()
+    : 'name_asc';
+  if (!VALID_SORT_OPTIONS.has(rawSort as SelectedChildrenSortOption)) {
+    const err: any = new Error(`Invalid sort parameter: ${params.sort}`);
+    err.statusCode = 400;
+    throw err;
+  }
+  const sortOption = rawSort as SelectedChildrenSortOption;
+
   // Query all active selected entries for this event with parent & pass information
   const rows = await query(`
     SELECT 
@@ -216,7 +299,7 @@ export async function getSelectedChildrenReportData(params: {
       AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
       AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
       AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up')
-    ORDER BY c.full_name ASC
+    ORDER BY LOWER(TRIM(c.full_name)) ASC, c.id ASC
   `, [eventId]);
 
   // Map each child strictly to canonical report age group
@@ -356,6 +439,10 @@ export async function getSelectedChildrenReportData(params: {
     filtered = filtered.filter((c) => c.age === exactAgeFilter);
   }
 
+  if (minAgeFilter !== null && maxAgeFilter !== null) {
+    filtered = filtered.filter((c) => c.age >= minAgeFilter! && c.age <= maxAgeFilter!);
+  }
+
   if (passStatusFilter && passStatusFilter.toLowerCase() !== 'all') {
     filtered = filtered.filter((c) => c.passStatus === passStatusFilter);
   }
@@ -368,6 +455,9 @@ export async function getSelectedChildrenReportData(params: {
     const targetG = genderFilter.toLowerCase();
     filtered = filtered.filter((c) => c.gender.toLowerCase() === targetG);
   }
+
+  // Sort globally across the COMPLETE matching population BEFORE pagination
+  filtered = sortSelectedChildren(filtered, sortOption);
 
   const totalRecords = filtered.length;
   const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
@@ -395,6 +485,9 @@ export async function getSelectedChildrenReportData(params: {
       search,
       ageGroup: ageGroupFilter,
       exactAge: exactAgeFilter,
+      minAge: minAgeFilter,
+      maxAge: maxAgeFilter,
+      sort: sortOption,
       passStatus: passStatusFilter,
       attendanceStatus: attendanceStatusFilter,
       gender: genderFilter
@@ -412,8 +505,8 @@ export function renderSelectedChildrenCsv(filtered: SelectedChildRecord[]): stri
     return `"${str}"`;
   };
 
-  let csvContent = 'Child Name,Age,Age Group,Gender,Parent / Guardian,Parent Phone,Parent Email,Pass Status,Attendance Status\n';
-  for (const c of filtered) {
+  let csvContent = 'No.,Child Name,Age,Age Group,Gender,Parent / Guardian,Parent Phone,Pass Status,Attendance\n';
+  filtered.forEach((c, idx) => {
     const passText = c.passStatus === 'pass_ready' ? 'Pass ready' : 'Missing pass';
     const attendanceText = c.attendanceStatus === 'picked_up'
       ? 'Picked up'
@@ -424,24 +517,27 @@ export function renderSelectedChildrenCsv(filtered: SelectedChildRecord[]): stri
           : 'Not arrived';
 
     csvContent += [
+      escapeCSVField(idx + 1),
       escapeCSVField(c.fullName),
       escapeCSVField(`${c.age} yrs`),
       escapeCSVField(c.ageGroup),
       escapeCSVField(c.gender),
       escapeCSVField(c.parent.fullName),
       escapeCSVField(c.parent.phone || ''),
-      escapeCSVField(c.parent.email || ''),
       escapeCSVField(passText),
       escapeCSVField(attendanceText)
     ].join(',') + '\n';
-  }
+  });
   return csvContent;
 }
 
 export function getSelectedChildrenPdfFilename(
   eventTitle: string,
   ageGroupFilter?: string,
-  exactAgeFilter?: number | null
+  exactAgeFilter?: number | null,
+  minAgeFilter?: number | null,
+  maxAgeFilter?: number | null,
+  variant: 'standard' | 'name_list' = 'standard'
 ): string {
   let eventSlug = 'GA-2026';
   if (eventTitle && eventTitle.toLowerCase().includes('general assembly')) {
@@ -451,16 +547,49 @@ export function getSelectedChildrenPdfFilename(
     eventSlug = eventTitle.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   }
 
+  const suffix = variant === 'name_list' ? '-Name-List' : '';
+
   if (exactAgeFilter !== undefined && exactAgeFilter !== null) {
-    return `Koinonia-${eventSlug}-Selected-Children-Age-${exactAgeFilter}.pdf`;
+    return `Koinonia-${eventSlug}-Selected-Children-Age-${exactAgeFilter}${suffix}.pdf`;
+  }
+
+  if (minAgeFilter !== undefined && minAgeFilter !== null && maxAgeFilter !== undefined && maxAgeFilter !== null) {
+    return `Koinonia-${eventSlug}-Selected-Children-Ages-${minAgeFilter}-${maxAgeFilter}${suffix}.pdf`;
   }
 
   const normAge = normalizeAgeGroupLabelToRange(ageGroupFilter);
   if (normAge && normAge.toLowerCase() !== 'all' && normAge.toLowerCase() !== 'all age groups') {
     const cleanTag = normAge.replace(/[\u2013–—]/g, '-');
-    return `Koinonia-${eventSlug}-Selected-Children-Ages-${cleanTag}.pdf`;
+    return `Koinonia-${eventSlug}-Selected-Children-Ages-${cleanTag}${suffix}.pdf`;
   }
-  return `Koinonia-${eventSlug}-All-Selected-Children.pdf`;
+  return `Koinonia-${eventSlug}-All-Selected-Children${suffix}.pdf`;
+}
+
+function getSortDisplayLabel(sortOption: SelectedChildrenSortOption): string {
+  switch (sortOption) {
+    case 'name_desc':
+      return 'Reverse Alphabetical Register (Z-A)';
+    case 'age_asc':
+      return 'Age Order (Youngest First)';
+    case 'age_desc':
+      return 'Age Order (Oldest First)';
+    case 'name_asc':
+    default:
+      return 'Alphabetical Register';
+  }
+}
+
+function getScopeDisplayLabel(data: SelectedChildrenReportData): string {
+  if (data.filters.exactAge !== null && data.filters.exactAge !== undefined) {
+    return `Age ${data.filters.exactAge}`;
+  }
+  if (data.filters.minAge !== null && data.filters.maxAge !== null) {
+    return `Ages ${data.filters.minAge}–${data.filters.maxAge}`;
+  }
+  if (data.filters.ageGroup && data.filters.ageGroup.toLowerCase() !== 'all') {
+    return data.filters.ageGroup.startsWith('Ages') ? data.filters.ageGroup : `Ages ${data.filters.ageGroup}`;
+  }
+  return 'All Ages';
 }
 
 /**
@@ -476,6 +605,7 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
   const marginLeft = 17.5;
   const tableWidth = 262;
   const isExactAge = data.filters.exactAge !== null && data.filters.exactAge !== undefined;
+  const isCustomRange = !isExactAge && data.filters.minAge !== null && data.filters.maxAge !== null;
 
   // Format generation timestamp
   const now = new Date();
@@ -495,13 +625,11 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
   }
 
   // Age scope display string
-  const activeAgeGroup = data.filters.ageGroup && data.filters.ageGroup.toLowerCase() !== 'all'
-    ? (data.filters.ageGroup.startsWith('Ages') ? data.filters.ageGroup : `Ages ${data.filters.ageGroup}`)
-    : 'All Age Groups';
-  const scopeLabel = isExactAge ? `Age ${data.filters.exactAge}` : activeAgeGroup;
+  const scopeLabel = getScopeDisplayLabel(data);
+  const sortLabel = getSortDisplayLabel(data.filters.sort);
 
-  // Table columns layout: Exact Age operational register omits redundant Age column
-  type ColKey = 'index' | 'name' | 'age' | 'gender' | 'parent' | 'phone' | 'pass' | 'attendance';
+  // Table columns layout: Exact Age operational register omits redundant Age/Age Group columns
+  type ColKey = 'index' | 'name' | 'age' | 'ageGroup' | 'gender' | 'parent' | 'phone' | 'pass' | 'attendance';
   const cols: Array<{ key: ColKey; header: string; width: number; align: 'left' | 'center'; maxW?: number }> = isExactAge
     ? [
         { key: 'index', header: '#', width: 12, align: 'center' },
@@ -513,12 +641,13 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
         { key: 'attendance', header: 'Attendance', width: 34, align: 'left' }
       ]
     : [
-        { key: 'index', header: 'No.', width: 12, align: 'center' },
-        { key: 'name', header: 'Child Name', width: 58, align: 'left', maxW: 54 },
+        { key: 'index', header: '#', width: 10, align: 'center' },
+        { key: 'name', header: 'Child Name', width: 52, align: 'left', maxW: 48 },
         { key: 'age', header: 'Age', width: 14, align: 'center' },
-        { key: 'gender', header: 'Gender', width: 18, align: 'center' },
-        { key: 'parent', header: 'Parent / Guardian', width: 56, align: 'left', maxW: 52 },
-        { key: 'phone', header: 'Parent Phone', width: 36, align: 'left', maxW: 32 },
+        { key: 'ageGroup', header: 'Age Group', width: 20, align: 'center' },
+        { key: 'gender', header: 'Gender', width: 16, align: 'center' },
+        { key: 'parent', header: 'Parent / Guardian', width: 48, align: 'left', maxW: 44 },
+        { key: 'phone', header: 'Phone', width: 34, align: 'left', maxW: 30 },
         { key: 'pass', header: 'Pass Status', width: 34, align: 'left' },
         { key: 'attendance', header: 'Attendance', width: 34, align: 'left' }
       ];
@@ -583,6 +712,26 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
     doc.setFontSize(15);
     doc.setTextColor(24, 24, 27);
     doc.text(`SELECTED CHILDREN — AGE ${data.filters.exactAge}`, marginLeft, 26.5);
+  } else if (isCustomRange) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(197, 155, 39); // Restrained Koinonia Gold
+    doc.text('KOINONIA CHILDREN & TEENS', marginLeft, 13.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(82, 82, 91);
+    doc.text((data.event.title || 'THE GENERAL ASSEMBLY 2026').toUpperCase(), marginLeft, 19);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14.5);
+    doc.setTextColor(24, 24, 27);
+    doc.text(`SELECTED CHILDREN — AGES ${data.filters.minAge}–${data.filters.maxAge}`, marginLeft, 25.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(82, 82, 91);
+    doc.text(sortLabel, marginLeft, 30);
   } else {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
@@ -603,8 +752,8 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
     doc.setFontSize(8.5);
     doc.setTextColor(63, 63, 70);
     doc.text(`Event: ${data.event.title || 'The General Assembly'}`, marginLeft, 28);
-    doc.text(`Age Group: ${activeAgeGroup}`, marginLeft + 85, 28);
-    doc.text(`Generated: ${generatedTimestamp}`, marginLeft + 160, 28);
+    doc.text(`Scope: ${scopeLabel} · ${sortLabel}`, marginLeft + 75, 28);
+    doc.text(`Generated: ${generatedTimestamp}`, marginLeft + 178, 28);
   }
 
   // Summary strip
@@ -626,14 +775,14 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
   const filteredInside = data.filtered.filter(c => c.attendanceStatus === 'inside').length;
   const filteredPickedUp = data.filtered.filter(c => c.attendanceStatus === 'picked_up').length;
 
-  if (isExactAge) {
+  if (isExactAge || isCustomRange) {
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(63, 63, 70);
     doc.text(`Generated: ${generatedTimestamp}`, marginLeft + 4, 38.8);
 
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(24, 24, 27);
-    doc.text(`Selected children: ${filteredCount}`, marginLeft + 68, 38.8);
+    doc.text(`Total selected children: ${filteredCount}`, marginLeft + 62, 38.8);
     doc.text(`Pass ready: ${filteredPassReady}`, marginLeft + 118, 38.8);
 
     if (filteredMissingPass > 0) {
@@ -645,19 +794,19 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
     doc.text(`Checked in: ${filteredCheckedIn}`, marginLeft + 200, 38.8);
     doc.text(`Inside: ${filteredInside}`, marginLeft + 236, 38.8);
   } else {
-    doc.text(`Selected Children: ${filteredCount}`, marginLeft + 4, 38.8);
-    doc.text(`Pass Ready: ${filteredPassReady}`, marginLeft + 52, 38.8);
+    doc.text(`Total selected children: ${filteredCount}`, marginLeft + 4, 38.8);
+    doc.text(`Pass Ready: ${filteredPassReady}`, marginLeft + 56, 38.8);
 
     if (filteredMissingPass > 0) {
       doc.setTextColor(180, 83, 9); // Amber
     } else {
       doc.setTextColor(24, 24, 27);
     }
-    doc.text(`Missing Pass: ${filteredMissingPass}`, marginLeft + 98, 38.8);
+    doc.text(`Missing Pass: ${filteredMissingPass}`, marginLeft + 102, 38.8);
 
     doc.setTextColor(24, 24, 27);
-    doc.text(`Checked In: ${filteredCheckedIn}`, marginLeft + 148, 38.8);
-    doc.text(`Inside: ${filteredInside}`, marginLeft + 192, 38.8);
+    doc.text(`Checked In: ${filteredCheckedIn}`, marginLeft + 150, 38.8);
+    doc.text(`Inside: ${filteredInside}`, marginLeft + 194, 38.8);
     if (filteredPickedUp > 0) {
       doc.text(`Picked Up: ${filteredPickedUp}`, marginLeft + 228, 38.8);
     }
@@ -684,7 +833,9 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
 
   const runningTitle = isExactAge
     ? `Koinonia Children & Teens · Selected Children — Age ${data.filters.exactAge} · ${data.event.title || 'The General Assembly 2026'}`
-    : `Koinonia Children & Teens · Selected Children Report · ${data.event.title || 'The General Assembly'} (${scopeLabel})`;
+    : isCustomRange
+      ? `Koinonia Children & Teens · Selected Children — Ages ${data.filters.minAge}–${data.filters.maxAge} · ${data.event.title || 'The General Assembly 2026'}`
+      : `Koinonia Children & Teens · Selected Children Report · ${data.event.title || 'The General Assembly'} (${scopeLabel})`;
 
   if (data.filtered.length === 0) {
     doc.setFont('helvetica', 'normal');
@@ -722,12 +873,18 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
           doc.setFont('helvetica', 'bold');
           doc.setFontSize(8);
           doc.setTextColor(24, 24, 27);
-          doc.text(truncateText(c.fullName, col.maxW || 54), colX + 2, textY);
+          doc.text(truncateText(c.fullName, col.maxW || 48), colX + 2, textY);
         } else if (col.key === 'age') {
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(8);
           doc.setTextColor(63, 63, 70);
           doc.text(`${c.age} yrs`, colX + col.width / 2, textY, { align: 'center' });
+        } else if (col.key === 'ageGroup') {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.8);
+          doc.setTextColor(63, 63, 70);
+          const agText = c.ageGroup === 'Age review needed' ? 'Review' : `Ages ${c.ageGroup}`;
+          doc.text(agText, colX + col.width / 2, textY, { align: 'center' });
         } else if (col.key === 'gender') {
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(8);
@@ -737,12 +894,12 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(8);
           doc.setTextColor(24, 24, 27);
-          doc.text(truncateText(c.parent?.fullName || '—', col.maxW || 52), colX + 2, textY);
+          doc.text(truncateText(c.parent?.fullName || '—', col.maxW || 44), colX + 2, textY);
         } else if (col.key === 'phone') {
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(8);
           doc.setTextColor(63, 63, 70);
-          doc.text(truncateText(c.parent?.phone || '—', col.maxW || 32), colX + 2, textY);
+          doc.text(truncateText(c.parent?.phone || '—', col.maxW || 30), colX + 2, textY);
         } else if (col.key === 'pass') {
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(8);
@@ -793,6 +950,156 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
 }
 
 /**
+ * Generate simplified printable Alphabetical Name List PDF (Portrait A4).
+ * Includes child name, exact age, and age group only — excludes sensitive parent/medical details.
+ */
+export async function renderSelectedChildrenNameListPdf(data: SelectedChildrenReportData): Promise<Buffer> {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  const marginLeft = 16;
+  const contentWidth = 178;
+  const scopeUpper = getScopeDisplayLabel(data).toUpperCase();
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const generatedTimestamp = `${dateStr} · ${timeStr}`;
+
+  let brandLogoBase64: string | null = null;
+  try {
+    const logoInfo = await getValidatedBrandLogo();
+    if (logoInfo.available && logoInfo.pdfData) {
+      brandLogoBase64 = logoInfo.pdfData;
+    }
+  } catch {
+    brandLogoBase64 = null;
+  }
+
+  if (brandLogoBase64) {
+    try {
+      const imgProps = doc.getImageProperties(brandLogoBase64);
+      const ratio = (imgProps.width || 1) / (imgProps.height || 1);
+      const maxH = 9;
+      const logoW = Math.min(24, maxH * ratio);
+      const adjH = logoW / ratio;
+      doc.addImage(
+        brandLogoBase64,
+        imgProps.fileType || 'PNG',
+        marginLeft + contentWidth - logoW,
+        12 + (maxH - adjH) / 2,
+        logoW,
+        adjH
+      );
+    } catch {
+      // Ignore invalid/unsupported logo gracefully
+    }
+  }
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(197, 155, 39);
+  doc.text('KOINONIA CHILDREN & TEENS', marginLeft, 15);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(82, 82, 91);
+  doc.text((data.event.title || 'THE GENERAL ASSEMBLY 2026').toUpperCase(), marginLeft, 20.5);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(24, 24, 27);
+  doc.text(`SELECTED CHILDREN — ${scopeUpper}`, marginLeft, 27.5);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(63, 63, 70);
+  doc.text('ALPHABETICAL NAME LIST', marginLeft, 33);
+
+  doc.setDrawColor(228, 228, 231);
+  doc.setLineWidth(0.3);
+  doc.line(marginLeft, 36.5, marginLeft + contentWidth, 36.5);
+
+  doc.setFillColor(250, 249, 245);
+  doc.rect(marginLeft, 37.5, contentWidth, 8, 'F');
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(63, 63, 70);
+  doc.text(`Total selected children: ${data.filtered.length}`, marginLeft + 3, 42.6);
+  doc.text(`Generated: ${generatedTimestamp}`, marginLeft + contentWidth - 3, 42.6, { align: 'right' });
+
+  doc.line(marginLeft, 46, marginLeft + contentWidth, 46);
+
+  const alphabeticalRecords = sortSelectedChildren(data.filtered, 'name_asc');
+  let currentY = 53;
+  const rowHeight = 6.2;
+  const maxY = 278;
+
+  const truncateLine = (text: string, maxWidth: number): string => {
+    if (!text || doc.getTextWidth(text) <= maxWidth) return text;
+    let t = text;
+    while (t.length > 0 && doc.getTextWidth(`${t}…`) > maxWidth) {
+      t = t.slice(0, -1);
+    }
+    return `${t}…`;
+  };
+
+  if (alphabeticalRecords.length === 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(113, 113, 122);
+    doc.text('No selected children match the specified filters.', marginLeft + contentWidth / 2, currentY + 10, { align: 'center' });
+  } else {
+    alphabeticalRecords.forEach((c, idx) => {
+      if (currentY + rowHeight > maxY) {
+        doc.addPage();
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(113, 113, 122);
+        doc.text(`SELECTED CHILDREN — ${scopeUpper} · ALPHABETICAL NAME LIST`, marginLeft, 12);
+        doc.setDrawColor(228, 228, 231);
+        doc.line(marginLeft, 14.5, marginLeft + contentWidth, 14.5);
+        currentY = 21;
+      }
+
+      const ageGroupText = c.ageGroup === 'Age review needed' ? 'Age review needed' : `Ages ${c.ageGroup}`;
+      const lineText = `${idx + 1}. ${c.fullName} — ${c.age} yrs — ${ageGroupText}`;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(24, 24, 27);
+      doc.text(truncateLine(lineText, contentWidth - 2), marginLeft + 1, currentY + 4.1);
+
+      doc.setDrawColor(244, 244, 245);
+      doc.setLineWidth(0.2);
+      doc.line(marginLeft, currentY + rowHeight, marginLeft + contentWidth, currentY + rowHeight);
+
+      currentY += rowHeight;
+    });
+  }
+
+  const pageCount = doc.getNumberOfPages();
+  for (let p = 1; p <= pageCount; p++) {
+    doc.setPage(p);
+    doc.setDrawColor(228, 228, 231);
+    doc.setLineWidth(0.3);
+    doc.line(marginLeft, 283, marginLeft + contentWidth, 283);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(113, 113, 122);
+    doc.text(`${data.event.title || 'The General Assembly 2026'} · Selected Children — ${scopeUpper} · Alphabetical Name List`, marginLeft, 288);
+    doc.text(`Page ${p} of ${pageCount}`, marginLeft + contentWidth, 288, { align: 'right' });
+  }
+
+  const arrayBuffer = doc.output('arraybuffer');
+  return Buffer.from(arrayBuffer);
+}
+
+/**
  * Main Controller Handler for Selected Children Report (JSON, CSV, and PDF)
  */
 export async function handleSelectedChildrenReport(
@@ -817,9 +1124,13 @@ export async function handleSelectedChildrenReport(
     const search = typeof req.query.search === 'string' ? req.query.search.trim() : (typeof req.query.q === 'string' ? req.query.q.trim() : '');
     const ageGroup = typeof req.query.ageGroup === 'string' ? req.query.ageGroup.trim() : '';
     const exactAge = req.query.exactAge !== undefined ? String(req.query.exactAge).trim() : '';
+    const minAge = req.query.minAge !== undefined ? String(req.query.minAge).trim() : '';
+    const maxAge = req.query.maxAge !== undefined ? String(req.query.maxAge).trim() : '';
+    const sort = typeof req.query.sort === 'string' ? req.query.sort.trim() : '';
     const passStatus = typeof req.query.passStatus === 'string' ? req.query.passStatus.trim() : '';
     const attendanceStatus = typeof req.query.attendanceStatus === 'string' ? req.query.attendanceStatus.trim() : '';
     const gender = typeof req.query.gender === 'string' ? req.query.gender.trim() : '';
+    const variant = req.query.variant === 'name_list' || req.query.listMode === 'name_list' ? 'name_list' : 'standard';
 
     const reportData = await getSelectedChildrenReportData({
       eventId: req.query.eventId as string,
@@ -828,6 +1139,9 @@ export async function handleSelectedChildrenReport(
       search,
       ageGroup,
       exactAge,
+      minAge,
+      maxAge,
+      sort,
       passStatus,
       attendanceStatus,
       gender
@@ -835,8 +1149,17 @@ export async function handleSelectedChildrenReport(
 
     // 1. PDF Export
     if (requestedFormat === 'pdf') {
-      const pdfBuffer = await renderSelectedChildrenPdf(reportData);
-      const filename = getSelectedChildrenPdfFilename(reportData.event.title, ageGroup, reportData.filters.exactAge);
+      const pdfBuffer = variant === 'name_list'
+        ? await renderSelectedChildrenNameListPdf(reportData)
+        : await renderSelectedChildrenPdf(reportData);
+      const filename = getSelectedChildrenPdfFilename(
+        reportData.event.title,
+        ageGroup,
+        reportData.filters.exactAge,
+        reportData.filters.minAge,
+        reportData.filters.maxAge,
+        variant
+      );
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -849,7 +1172,9 @@ export async function handleSelectedChildrenReport(
       const csvContent = renderSelectedChildrenCsv(reportData.filtered);
       const csvFilename = reportData.filters.exactAge !== null
         ? `selected-children-age-${reportData.filters.exactAge}.csv`
-        : 'selected-children-report.csv';
+        : (reportData.filters.minAge !== null && reportData.filters.maxAge !== null)
+          ? `selected-children-ages-${reportData.filters.minAge}-${reportData.filters.maxAge}.csv`
+          : 'selected-children-report.csv';
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="${csvFilename}"`);
       return res.status(200).send(csvContent);
@@ -871,6 +1196,11 @@ export async function handleSelectedChildrenReport(
         pageSize: reportData.pagination.pageSize,
         totalRecords: reportData.pagination.totalRecords,
         totalPages: reportData.pagination.totalPages
+      },
+      filters: {
+        minAge: reportData.filters.minAge,
+        maxAge: reportData.filters.maxAge,
+        sort: reportData.filters.sort
       }
     });
   } catch (err: any) {
