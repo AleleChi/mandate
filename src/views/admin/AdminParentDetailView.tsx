@@ -64,6 +64,7 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
   const [savingNote, setSavingNote] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [resendingInvite, setResendingInvite] = useState(false);
+  const [sendingRegAccess, setSendingRegAccess] = useState(false);
 
   // Child Action States
   const [submittingChildActionId, setSubmittingChildActionId] = useState<string | null>(null);
@@ -288,12 +289,39 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
       });
       if (res.success) {
         showSuccess('Invitation sent', res.message || 'An invitation link has been resent.');
+        await fetchParentDetails();
+      } else {
+        showError('Email not delivered', res.error || res.message || 'Email could not be delivered. Try again.');
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
       showError('Failed to send invitation', parsed.message || 'Could not resend invitation email.');
     } finally {
       setResendingInvite(false);
+    }
+  };
+
+  const handleSendRegistrationAccess = async () => {
+    if (!parent?.id) return;
+    setSendingRegAccess(true);
+    try {
+      const res = await api.admin.sendParentRegistrationAccessEmail(parent.id);
+      if (res.success) {
+        const title = res.action === 'invitation_sent'
+          ? 'Registration invitation sent'
+          : res.action === 'invitation_resent'
+            ? 'Registration invitation resent'
+            : 'Registration reminder sent';
+        showSuccess(title, `Email delivered to ${parent.email}.`);
+      } else {
+        showError('Email not delivered', res.error || res.message || 'Email could not be delivered. Try again.');
+      }
+      await fetchParentDetails();
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Email not delivered', parsed.message || 'Email could not be delivered. Try again.');
+    } finally {
+      setSendingRegAccess(false);
     }
   };
 
@@ -643,6 +671,17 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
                 />
               </div>
 
+              <div className="sm:col-span-2">
+                <label className="text-zinc-500 dark:text-[#7A7570] font-medium block mb-1">Country (optional)</label>
+                <input
+                  type="text"
+                  value={editForm.country}
+                  onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
+                  placeholder="Leave blank if not provided"
+                  className="w-full px-3.5 py-2 border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] rounded-xl focus:outline-none focus:border-[#C59B27] transition-colors"
+                />
+              </div>
+
               <div>
                 <label className="text-zinc-500 dark:text-[#7A7570] font-medium block mb-1">Preferred contact mode</label>
                 <select
@@ -781,8 +820,45 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
                   </div>
                 )}
 
-                {/* Resend Invite Option if Account is Unverified */}
-                {!parent.emailVerified && !parent.isDeleted && parent.email && (
+                {/* Registration Access Email (for 0-child parents) or Resend Invite fallback */}
+                {!parent.isDeleted && parent.email && Number(parent.childrenCount ?? linkedChildren.length) === 0 ? (
+                  <div className="w-full mt-3 pt-3 border-t border-[#EAE8E1] dark:border-[#302E29] text-left space-y-2">
+                    <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-400 dark:text-[#7A7570] block">
+                      Registration access
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleSendRegistrationAccess}
+                      disabled={sendingRegAccess}
+                      className="w-full py-1.5 px-3 text-xs font-medium text-amber-800 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 bg-amber-50/50 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/40 rounded-xl transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      id="parent-detail-reg-access-btn"
+                    >
+                      <Send className="w-3 h-3 text-[#C59B27]" />
+                      <span>
+                        {sendingRegAccess
+                          ? 'Sending...'
+                          : parent.accountStatus === 'no_account'
+                            ? 'Send registration invitation'
+                            : (parent.accountStatus === 'invitation_pending' || parent.accountStatus === 'email_delivery_failed')
+                              ? 'Resend registration invitation'
+                              : 'Send registration reminder'}
+                      </span>
+                    </button>
+                    {parent.lastRegistrationEmailStatus === 'failed' ? (
+                      <p className="text-[11px] text-rose-600 dark:text-rose-400">
+                        Email could not be delivered. Try again.
+                      </p>
+                    ) : Number(parent.registrationEmailCount || 0) > 1 && parent.registrationEmailLastSentAt ? (
+                      <p className="text-[11px] text-zinc-500 dark:text-[#8A847A]">
+                        Sent {parent.registrationEmailCount} times · Last sent {new Date(parent.registrationEmailLastSentAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </p>
+                    ) : Number(parent.registrationEmailCount || 0) === 1 && parent.registrationEmailLastSentAt ? (
+                      <p className="text-[11px] text-zinc-500 dark:text-[#8A847A]">
+                        Registration email sent · {new Date(parent.registrationEmailLastSentAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (!parent.emailVerified && !parent.isDeleted && parent.email && parent.accountStatus !== 'no_account') ? (
                   <div className="w-full mt-3">
                     <button
                       onClick={handleResendInvite}
@@ -793,7 +869,7 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
                       <span>{resendingInvite ? 'Sending invitation...' : 'Resend invitation'}</span>
                     </button>
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
 
@@ -822,7 +898,7 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
                 <div>
                   <span className="text-[10px] text-zinc-400 dark:text-[#5A5550] block mb-0.5">Address</span>
                   <span className="font-medium text-zinc-700 dark:text-[#F0EBE3] block leading-relaxed">
-                    {fullAddress || 'Not provided'}
+                    {fullAddress || 'Location not provided'}
                   </span>
                 </div>
 

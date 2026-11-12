@@ -73,6 +73,30 @@ const formatChildrenCount = (count: number): string => {
   return `${count} children`;
 };
 
+export const formatParentLocationDisplay = (p: any): string | null => {
+  const locality = [p?.city, p?.stateRegion].filter((v) => typeof v === 'string' && v.trim() !== '').map((v) => v.trim()).join(' · ');
+  const country = typeof p?.country === 'string' && p.country.trim() !== '' ? p.country.trim() : '';
+  const combined = [locality, country].filter(Boolean).join(', ');
+  if (combined) return combined;
+  if (typeof p?.homeAddress === 'string' && p.homeAddress.trim() !== '') return p.homeAddress.trim();
+  return null;
+};
+
+export const getZeroChildRegistrationActionLabel = (accountStatus?: string): string => {
+  if (accountStatus === 'no_account') return 'Send registration invitation';
+  if (accountStatus === 'invitation_pending' || accountStatus === 'email_delivery_failed') {
+    return 'Resend registration invitation';
+  }
+  return 'Send registration reminder';
+};
+
+const formatRegEmailDate = (iso?: string | null): string => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
 export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, adminUser, currentEvent }) => {
   const isSuperAdmin = adminUser?.role === 'super_admin';
   const { showError, showSuccess } = useNotification();
@@ -419,6 +443,12 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
   const [parentToResendInvite, setParentToResendInvite] = useState<any | null>(null);
   const [resendingInvite, setResendingInvite] = useState(false);
 
+  // Zero-child registration access email modals (single & bulk)
+  const [parentForRegEmail, setParentForRegEmail] = useState<any | null>(null);
+  const [sendingSingleRegEmail, setSendingSingleRegEmail] = useState(false);
+  const [showBulkRegEmailModal, setShowBulkRegEmailModal] = useState(false);
+  const [submittingBulkRegEmail, setSubmittingBulkRegEmail] = useState(false);
+
   // Add parent modal
   const [showAddParentModal, setShowAddParentModal] = useState(false);
 
@@ -714,6 +744,96 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       showError('Restore Failed', parsed.message || 'Could not restore child.');
     } finally {
       setRestoringModalChild(false);
+    }
+  };
+
+  const bulkRegistrationSummary = useMemo(() => {
+    let noAccountCount = 0;
+    let pendingResendCount = 0;
+    let activeReminderCount = 0;
+    let skippedCount = 0;
+    const eligibleIds: string[] = [];
+
+    for (const p of selectedParentsList) {
+      const hasKids = Number(p.childrenCount || 0) > 0;
+      const hasEmail = Boolean(p.email && String(p.email).trim());
+      if (p.isDeleted || !hasEmail || hasKids) {
+        skippedCount += 1;
+        continue;
+      }
+      eligibleIds.push(String(p.id));
+      if (p.accountStatus === 'no_account') {
+        noAccountCount += 1;
+      } else if (p.accountStatus === 'invitation_pending' || p.accountStatus === 'email_delivery_failed') {
+        pendingResendCount += 1;
+      } else {
+        activeReminderCount += 1;
+      }
+    }
+
+    return {
+      totalSelected: selectedParentsList.length,
+      noAccountCount,
+      pendingResendCount,
+      activeReminderCount,
+      skippedCount,
+      eligibleIds
+    };
+  }, [selectedParentsList]);
+
+  const handleSingleRegEmailConfirm = async () => {
+    if (!parentForRegEmail) return;
+    setSendingSingleRegEmail(true);
+    try {
+      const res = await api.admin.sendParentRegistrationAccessEmail(parentForRegEmail.id);
+      if (res.success) {
+        const title = res.action === 'invitation_sent'
+          ? 'Registration invitation sent'
+          : res.action === 'invitation_resent'
+            ? 'Registration invitation resent'
+            : 'Registration reminder sent';
+        showSuccess(title, `Email sent to ${parentForRegEmail.email}.`);
+        setParentForRegEmail(null);
+      } else {
+        showError('Email not delivered', res.error || res.message || 'Email could not be delivered. Try again.');
+      }
+      await fetchParents();
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Email not delivered', parsed.message || 'Email could not be delivered. Try again.');
+    } finally {
+      setSendingSingleRegEmail(false);
+    }
+  };
+
+  const handleBulkRegEmailConfirm = async () => {
+    if (selectedParentIds.length === 0) return;
+    setSubmittingBulkRegEmail(true);
+    try {
+      const res = await api.admin.bulkSendParentRegistrationAccessEmail(selectedParentIds);
+      if (res.sent > 0 && res.failed === 0) {
+        showSuccess(
+          'Registration emails sent',
+          `${res.sent} email(s) sent${res.skipped > 0 ? `, ${res.skipped} skipped` : ''}.`
+        );
+      } else if (res.sent > 0 && res.failed > 0) {
+        showError(
+          'Partially delivered',
+          `${res.sent} sent, ${res.failed} failed${res.skipped > 0 ? `, ${res.skipped} skipped` : ''}.`
+        );
+      } else if (res.failed > 0) {
+        showError('Email delivery failed', `${res.failed} failed to deliver${res.skipped > 0 ? `, ${res.skipped} skipped` : ''}.`);
+      } else {
+        showError('No eligible parents', `${res.skipped} skipped (must have 0 children and an email).`);
+      }
+      setShowBulkRegEmailModal(false);
+      setSelectedParentIds([]);
+      await fetchParents();
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Bulk email failed', parsed.message || 'Could not process registration access emails.');
+    } finally {
+      setSubmittingBulkRegEmail(false);
     }
   };
 
@@ -1297,7 +1417,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
               <div>
                 <span className="text-xs text-neutral-500 dark:text-neutral-400 block">Country</span>
                 <span className="text-xs font-medium text-neutral-900 dark:text-neutral-100 mt-0.5 block">
-                  {quickViewParent.country || 'Nigeria'}
+                  {quickViewParent.country || 'Not provided'}
                 </span>
               </div>
             </div>
@@ -1459,7 +1579,16 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
               <span>View full profile</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
-            {quickViewParent.canResendInvitation && (
+            {!quickViewParent.isDeleted && quickViewParent.email && Number(quickViewParent.childrenCount || 0) === 0 ? (
+              <button
+                type="button"
+                onClick={() => setParentForRegEmail(quickViewParent)}
+                className="text-xs font-medium text-[#C59B27] hover:text-[#B08921] transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                <span>{getZeroChildRegistrationActionLabel(quickViewParent.accountStatus)}</span>
+              </button>
+            ) : quickViewParent.canResendInvitation ? (
               <button
                 type="button"
                 onClick={() => setParentToResendInvite(quickViewParent)}
@@ -1468,7 +1597,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                 <Mail className="w-3.5 h-3.5" />
                 <span>Resend invitation</span>
               </button>
-            )}
+            ) : null}
           </div>
           <button
             type="button"
@@ -1943,6 +2072,131 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
     document.body
   ) : null;
 
+  const singleRegEmailModal = (parentForRegEmail && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+      <div
+        onClick={() => !sendingSingleRegEmail && setParentForRegEmail(null)}
+        className="fixed inset-0 bg-black/50 transition-opacity backdrop-blur-2xs"
+      />
+      <div className="relative bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-lg w-full max-w-md shadow-xl p-6 text-neutral-900 dark:text-neutral-100 text-left space-y-4">
+        <div>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 block">
+            Registration access
+          </span>
+          <h3 className="font-semibold text-base text-neutral-900 dark:text-neutral-100 mt-0.5">
+            {getZeroChildRegistrationActionLabel(parentForRegEmail.accountStatus)}
+          </h3>
+          <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-2 leading-relaxed">
+            {parentForRegEmail.accountStatus === 'no_account'
+              ? `Send a secure account setup invitation to ${parentForRegEmail.email} so they can set their own password and register their child/children.`
+              : (parentForRegEmail.accountStatus === 'invitation_pending' || parentForRegEmail.accountStatus === 'email_delivery_failed')
+                ? `Generate a fresh invitation link and email ${parentForRegEmail.email}. Any previous unused invitation link will stop working.`
+                : `Send a sign-in reminder to ${parentForRegEmail.email} prompting them to sign in to their existing Parent account and add their child/children. No password will be changed.`}
+          </p>
+        </div>
+
+        <div className="flex justify-end gap-3 pt-2">
+          <button
+            type="button"
+            onClick={() => setParentForRegEmail(null)}
+            disabled={sendingSingleRegEmail}
+            className="px-3.5 py-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#262520] rounded-[4px] transition-colors cursor-pointer disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSingleRegEmailConfirm}
+            disabled={sendingSingleRegEmail}
+            className="px-3.5 py-1.5 text-xs font-medium bg-[#C59B27] hover:bg-[#B08921] text-white rounded-[4px] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            id="confirm-single-reg-email-btn"
+          >
+            {sendingSingleRegEmail ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Sending...</span>
+              </>
+            ) : (
+              <span>{getZeroChildRegistrationActionLabel(parentForRegEmail.accountStatus)}</span>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  const bulkRegEmailModal = (showBulkRegEmailModal && isDomReady) ? createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+      <div
+        onClick={() => !submittingBulkRegEmail && setShowBulkRegEmailModal(false)}
+        className="fixed inset-0 bg-black/50 transition-opacity backdrop-blur-2xs"
+      />
+      <div
+        className="relative bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-lg w-full max-w-md shadow-xl p-6 text-neutral-900 dark:text-neutral-100 text-left space-y-4"
+        data-testid="bulk-reg-email-modal"
+      >
+        <div>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 block">
+            Send registration access email
+          </span>
+          <h3 className="font-semibold text-base text-neutral-900 dark:text-neutral-100 mt-0.5">
+            {bulkRegistrationSummary.totalSelected} {bulkRegistrationSummary.totalSelected === 1 ? 'parent selected' : 'parents selected'}
+          </h3>
+          <div className="mt-3 border-t border-b border-[#EAE8E1] dark:border-[#2A2926] py-2.5 space-y-1.5 text-xs text-neutral-700 dark:text-neutral-300">
+            <div className="flex items-center justify-between">
+              <span>Account invitations</span>
+              <span className="font-semibold">{bulkRegistrationSummary.noAccountCount}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Invitation resends</span>
+              <span className="font-semibold">{bulkRegistrationSummary.pendingResendCount}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Registration reminders</span>
+              <span className="font-semibold">{bulkRegistrationSummary.activeReminderCount}</span>
+            </div>
+            <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400">
+              <span>Skipped (has children / missing email)</span>
+              <span className="font-semibold">{bulkRegistrationSummary.skippedCount}</span>
+            </div>
+          </div>
+          <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-2 leading-relaxed">
+            Each parent receives only the email appropriate for their account state. Passwords are never emailed.
+          </p>
+        </div>
+
+        <div className="flex justify-end gap-3 pt-1">
+          <button
+            type="button"
+            onClick={() => setShowBulkRegEmailModal(false)}
+            disabled={submittingBulkRegEmail}
+            className="px-3.5 py-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#262520] rounded-[4px] transition-colors cursor-pointer disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleBulkRegEmailConfirm}
+            disabled={submittingBulkRegEmail || bulkRegistrationSummary.eligibleIds.length === 0}
+            className="px-3.5 py-1.5 text-xs font-medium bg-[#C59B27] hover:bg-[#B08921] text-white rounded-[4px] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-40"
+            id="confirm-bulk-reg-email-btn"
+          >
+            {submittingBulkRegEmail ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Sending emails...</span>
+              </>
+            ) : (
+              <span>Send emails</span>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
   return (
     <div
       className="space-y-6"
@@ -1960,6 +2214,8 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       {confirmSelectAllModal}
       {quickViewModal}
       {resendInviteModal}
+      {singleRegEmailModal}
+      {bulkRegEmailModal}
       {reviewingChild && (
         <ChildReviewModal
           isOpen={Boolean(reviewingChild)}
@@ -2313,9 +2569,9 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
               onChange={(e) => setHasChildrenFilter(e.target.value as ChildrenFilterType)}
               className="w-full h-8 px-2 text-xs rounded-md border border-[#EAE8E1] dark:border-[#2A2926] bg-[#FAF9F6]/40 dark:bg-[#20201E] text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-[#C59B27] cursor-pointer"
             >
-              <option value="all">All Parents</option>
-              <option value="has_children">Has Children Linked</option>
-              <option value="no_children">No Children Linked</option>
+              <option value="all">All parents</option>
+              <option value="has_children">Has children</option>
+              <option value="no_children">No children</option>
             </select>
           </div>
 
@@ -2523,6 +2779,20 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
               </div>
             )}
 
+            {/* Zero-child bulk registration access email trigger */}
+            {activeTab === 'active' && (hasChildrenFilter === 'no_children' || bulkRegistrationSummary.eligibleIds.length > 0) && (
+              <button
+                type="button"
+                id="parents-bulk-registration-email-btn"
+                disabled={bulkRegistrationSummary.eligibleIds.length === 0}
+                onClick={() => setShowBulkRegEmailModal(true)}
+                className="px-3 py-1.5 text-xs font-medium text-neutral-800 dark:text-neutral-200 bg-white dark:bg-[#282724] hover:bg-neutral-50 dark:hover:bg-[#302E2A] border border-[#EAE8E1] dark:border-[#383632] rounded transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Mail className="w-3.5 h-3.5 text-[#C59B27]" />
+                <span>Send registration access email</span>
+              </button>
+            )}
+
             {/* Parent account management remains separate */}
             {activeTab === 'active' ? (
               <button
@@ -2637,7 +2907,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                   const isRemoved = p.isDeleted || activeTab === 'removed';
                   const isSelected = selectedParentIds.includes(String(p.id));
 
-                  const hasLocationData = Boolean(p.city || p.stateRegion || p.country || p.homeAddress);
+                  const displayLocation = formatParentLocationDisplay(p);
 
                   return (
                     <tr
@@ -2690,14 +2960,23 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                             </span>
                             {p.accountStatus === 'invitation_pending' && (
                               <span className="text-[10px] text-neutral-500 dark:text-neutral-400 block truncate">
-                                Invitation pending{p.invitationSentAt ? ` · Last sent: ${new Date(p.invitationSentAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
+                                Invitation pending{p.invitationSentAt ? ` · Last sent ${formatRegEmailDate(p.invitationSentAt)}` : ''}
                               </span>
                             )}
-                            {p.accountStatus === 'email_delivery_failed' && (
+                            {(p.accountStatus === 'email_delivery_failed' || p.lastRegistrationEmailStatus === 'failed') && (
                               <span className="text-[10px] text-rose-600 dark:text-rose-400 block truncate font-medium">
-                                Invitation email not delivered
+                                Email could not be delivered. Try again.
                               </span>
                             )}
+                            {Number(p.registrationEmailCount || 0) > 1 && p.registrationEmailLastSentAt ? (
+                              <span className="text-[10px] text-neutral-500 dark:text-neutral-400 block truncate">
+                                Sent {p.registrationEmailCount} times · Last sent {formatRegEmailDate(p.registrationEmailLastSentAt)}
+                              </span>
+                            ) : Number(p.registrationEmailCount || 0) === 1 && p.registrationEmailLastSentAt && p.accountStatus !== 'invitation_pending' ? (
+                              <span className="text-[10px] text-neutral-500 dark:text-neutral-400 block truncate">
+                                Registration email sent · {formatRegEmailDate(p.registrationEmailLastSentAt)}
+                              </span>
+                            ) : null}
                             {p.phone && (
                               <span className="text-[10px] text-neutral-400 dark:text-neutral-500 block truncate">
                                 📞 {p.phone}
@@ -2730,14 +3009,12 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
 
                       {/* Geographic Origin & Residence */}
                       <td className="py-3 px-4 max-w-xs">
-                        {hasLocationData ? (
+                        {displayLocation ? (
                           <div className="space-y-0.5">
                             <div className="text-xs font-semibold text-neutral-900 dark:text-neutral-100">
-                              {p.city ? p.city : (p.stateRegion || 'Nigeria')}
-                              {p.stateRegion && p.city ? ` · ${p.stateRegion}` : ''}
-                              {p.country ? `, ${p.country}` : ''}
+                              {displayLocation}
                             </div>
-                            {p.homeAddress && (
+                            {p.homeAddress && displayLocation !== p.homeAddress.trim() && (
                               <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate flex items-center gap-1" title={p.homeAddress}>
                                 <Home className="w-3 h-3 text-neutral-400 shrink-0" />
                                 <span className="truncate">{p.homeAddress}</span>
@@ -2812,7 +3089,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                             </button>
 
                             {openActionMenuId === p.id && (
-                              <div className="absolute right-0 mt-1 w-44 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-md shadow-lg py-1 z-30 text-left">
+                              <div className="absolute right-0 mt-1 w-56 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-md shadow-lg py-1 z-30 text-left">
                                 <button
                                   onClick={() => {
                                     setOpenActionMenuId(null);
@@ -2835,7 +3112,24 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                                   <span>View full details</span>
                                 </button>
 
-                                {p.canResendInvitation && (
+                                {!isRemoved && p.email && Number(p.childrenCount || 0) === 0 ? (
+                                  <>
+                                    <div className="h-px bg-[#EAE8E1] dark:bg-[#2A2926] my-1" />
+                                    <div className="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+                                      Registration access
+                                    </div>
+                                    <button
+                                      onClick={() => {
+                                        setOpenActionMenuId(null);
+                                        setParentForRegEmail(p);
+                                      }}
+                                      className="w-full text-left px-3 py-1.5 text-xs text-[#C59B27] hover:bg-[#C59B27]/10 flex items-center gap-2 transition-colors cursor-pointer"
+                                    >
+                                      <Mail className="w-3.5 h-3.5 text-[#C59B27] shrink-0" />
+                                      <span>{getZeroChildRegistrationActionLabel(p.accountStatus)}</span>
+                                    </button>
+                                  </>
+                                ) : p.canResendInvitation ? (
                                   <button
                                     onClick={() => {
                                       setOpenActionMenuId(null);
@@ -2846,7 +3140,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                                     <Mail className="w-3.5 h-3.5 text-[#C59B27]" />
                                     <span>Resend invitation</span>
                                   </button>
-                                )}
+                                ) : null}
 
                                 <div className="h-px bg-[#EAE8E1] dark:bg-[#2A2926] my-1" />
 

@@ -2702,6 +2702,37 @@ export const api = {
         body: JSON.stringify(payload)
       });
     },
+    async sendParentRegistrationAccessEmail(id: string) {
+      return api.request<{
+        success: boolean;
+        action?: 'invitation_sent' | 'invitation_resent' | 'registration_reminder_sent';
+        code?: string;
+        error?: string;
+        message?: string;
+      }>(`/api/admin/parents/${id}/registration-access-email`, {
+        method: 'POST'
+      });
+    },
+    async bulkSendParentRegistrationAccessEmail(parentIds: string[]) {
+      return api.request<{
+        success: boolean;
+        requested: number;
+        sent: number;
+        failed: number;
+        skipped: number;
+        results: Array<{
+          parentId: string;
+          success: boolean;
+          status: 'sent' | 'failed' | 'skipped';
+          action?: string;
+          code?: string;
+          error?: string;
+        }>;
+      }>('/api/admin/parents/registration-access-email/bulk', {
+        method: 'POST',
+        body: JSON.stringify({ parentIds })
+      });
+    },
     async permanentlyDeleteParent(id: string, payload: { reason: string; confirmation: string }) {
       return api.request<{ success: boolean; message: string }>(`/api/admin/parents/${id}/permanent-delete`, {
         method: 'POST',

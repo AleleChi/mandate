@@ -24,7 +24,7 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
   const [city, setCity] = useState('');
   const [stateProvince, setStateProvince] = useState('');
   const [postalCode, setPostalCode] = useState('');
-  const [country, setCountry] = useState('United Kingdom');
+  const [country, setCountry] = useState('');
   const [preferredContactMethod, setPreferredContactMethod] = useState<'email' | 'phone' | 'whatsapp'>('email');
   
   const [emergencyContactName, setEmergencyContactName] = useState('');
@@ -95,7 +95,7 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
     setCity('');
     setStateProvince('');
     setPostalCode('');
-    setCountry('United Kingdom');
+    setCountry('');
     setPreferredContactMethod('email');
     setEmergencyContactName('');
     setEmergencyContactPhone('');
@@ -157,11 +157,11 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
         email,
         phone,
         whatsappPhone,
-        homeAddress,
-        city,
-        stateProvince,
-        postalCode,
-        country,
+        homeAddress: homeAddress.trim() || null,
+        city: city.trim() || null,
+        stateProvince: stateProvince.trim() || null,
+        postalCode: postalCode.trim() || null,
+        country: country.trim() || null,
         preferredContactMethod,
         emergencyContactName,
         emergencyContactPhone,
@@ -375,7 +375,7 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="sm:col-span-2">
                 <label className="text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] block mb-1">Home address</label>
                 <input
@@ -394,6 +394,28 @@ export const AddParentModal: React.FC<AddParentModalProps> = ({ isOpen, onClose,
                   value={city}
                   onChange={(e) => setCity(e.target.value)}
                   placeholder="City"
+                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] focus:bg-white dark:focus:bg-[#262520] focus:border-[#C59B27] transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] block mb-1">State / Region</label>
+                <input
+                  type="text"
+                  value={stateProvince}
+                  onChange={(e) => setStateProvince(e.target.value)}
+                  placeholder="Optional"
+                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] focus:bg-white dark:focus:bg-[#262520] focus:border-[#C59B27] transition-all"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="text-xs font-medium text-zinc-700 dark:text-[#B8B0A5] block mb-1">Country (optional)</label>
+                <input
+                  type="text"
+                  value={country}
+                  onChange={(e) => setCountry(e.target.value)}
+                  placeholder="Leave blank if unknown"
                   className="w-full px-3.5 py-2 text-xs rounded-xl border border-[#EAE8E1] dark:border-[#3A3835] bg-zinc-50 dark:bg-[#262520] text-zinc-800 dark:text-[#F0EBE3] focus:bg-white dark:focus:bg-[#262520] focus:border-[#C59B27] transition-all"
                 />
               </div>
