@@ -251,9 +251,100 @@ const completeValid = {
 };
 assert('Complete and valid form is valid', validateOtherPersonForm(completeValid));
 
+// ----------------------------------------------------------------
+// Section K: Case-insensitive status normalization
+// ----------------------------------------------------------------
+console.log('\nTest K: Case-insensitive status normalization');
+const statusVariants = [
+  { raw: 'Selected', expectedManageable: true, expectedPickedUp: false },
+  { raw: 'selected', expectedManageable: true, expectedPickedUp: false },
+  { raw: 'Pass ready', expectedManageable: true, expectedPickedUp: false },
+  { raw: 'pass_ready', expectedManageable: true, expectedPickedUp: false },
+  { raw: 'Checked in', expectedManageable: true, expectedPickedUp: false },
+  { raw: 'checked_in', expectedManageable: true, expectedPickedUp: false },
+  { raw: 'Inside', expectedManageable: true, expectedPickedUp: false },
+  { raw: 'inside', expectedManageable: true, expectedPickedUp: false },
+  { raw: 'Picked up', expectedManageable: false, expectedPickedUp: true },
+  { raw: 'picked_up', expectedManageable: false, expectedPickedUp: true },
+  { raw: 'Checked out', expectedManageable: false, expectedPickedUp: true },
+  { raw: 'checked_out', expectedManageable: false, expectedPickedUp: true },
+  { raw: 'Under review', expectedManageable: false, expectedPickedUp: false },
+  { raw: 'Draft', expectedManageable: false, expectedPickedUp: false }
+];
+
+for (const variant of statusVariants) {
+  const norm = normalizeChildStatus(variant.raw);
+  const manageable = isChildPickupManageable(variant.raw);
+  const pickedUp = isChildPickedUp(variant.raw);
+  assert(
+    `Status '${variant.raw}' -> norm='${norm}', manageable=${manageable}, pickedUp=${pickedUp}`,
+    manageable === variant.expectedManageable && pickedUp === variant.expectedPickedUp
+  );
+}
+
+// ----------------------------------------------------------------
+// Section L: Selected & Pass-ready show Manage pickup person on Home card
+// ----------------------------------------------------------------
+console.log('\nTest L: Selected & Pass ready card visibility');
+function shouldShowManagePickupButtonOnCard(child: { status: string }): boolean {
+  const isPickedUp = isChildPickedUp(child);
+  const normStatus = normalizeChildStatus(child.status);
+  const isSelectedOrPassReady = (normStatus === 'selected' || normStatus === 'pass_ready') && !isPickedUp;
+  return isSelectedOrPassReady && isChildPickupManageable(child);
+}
+
+assert('Selected child shows Manage pickup person', shouldShowManagePickupButtonOnCard({ status: 'Selected' }));
+assert('selected (lowercase) child shows Manage pickup person', shouldShowManagePickupButtonOnCard({ status: 'selected' }));
+assert('Pass ready child shows Manage pickup person', shouldShowManagePickupButtonOnCard({ status: 'Pass ready' }));
+assert('pass_ready (lowercase) child shows Manage pickup person', shouldShowManagePickupButtonOnCard({ status: 'pass_ready' }));
+assert('Draft child does NOT show button', !shouldShowManagePickupButtonOnCard({ status: 'Draft' }));
+assert('Under review child does NOT show button', !shouldShowManagePickupButtonOnCard({ status: 'Under review' }));
+assert('Picked up child does NOT show button', !shouldShowManagePickupButtonOnCard({ status: 'Picked up' }));
+
+// ----------------------------------------------------------------
+// Section M: Checked-in notice guard
+// ----------------------------------------------------------------
+console.log('\nTest M: Checked-in notice only shown when checked in / inside');
+function shouldShowCheckedInNotice(child: { status: string }): boolean {
+  const isPickedUp = isChildPickedUp(child);
+  const normalizedSheetStatus = normalizeChildStatus(child.status);
+  return (normalizedSheetStatus === 'checked_in' || normalizedSheetStatus === 'inside') && !isPickedUp;
+}
+
+assert('Selected child does NOT show checked-in operational notice', !shouldShowCheckedInNotice({ status: 'Selected' }));
+assert('Pass ready child does NOT show checked-in operational notice', !shouldShowCheckedInNotice({ status: 'Pass ready' }));
+assert('Checked in child DOES show operational notice', shouldShowCheckedInNotice({ status: 'Checked in' }));
+assert('Inside child DOES show operational notice', shouldShowCheckedInNotice({ status: 'Inside' }));
+assert('Picked up child does NOT show operational notice', !shouldShowCheckedInNotice({ status: 'Picked up' }));
+
+// ----------------------------------------------------------------
+// Section N: Multiple children independent authorization
+// ----------------------------------------------------------------
+console.log('\nTest N: Multiple children separate authorization');
+const familyChildren = [
+  { id: 'c-mary', name: 'Mary', status: 'Selected', draftData: { pickup: { pickupType: 'parent', pickupPersonFullName: 'Bethertrade Test' } } },
+  { id: 'c-daniel', name: 'Daniel', status: 'Pass ready', draftData: { pickup: { pickupType: 'parent', pickupPersonFullName: 'Bethertrade Test' } } }
+];
+
+// Update Mary only
+const updatedMary = {
+  ...familyChildren[0],
+  draftData: {
+    pickup: {
+      pickupType: 'other_person',
+      pickupPersonFullName: 'Uncle Bob',
+      pickupPersonRelationship: 'Uncle',
+      pickupPersonPhone: '+2348033333333'
+    }
+  }
+};
+const updatedFamily = familyChildren.map(c => c.id === updatedMary.id ? updatedMary : c);
+assert('Mary updated to Uncle Bob', updatedFamily[0].draftData.pickup.pickupPersonFullName === 'Uncle Bob');
+assert('Daniel remains unchanged with parent', updatedFamily[1].draftData.pickup.pickupPersonFullName === 'Bethertrade Test');
+
 console.log('\n================================================================');
 if (allPassed) {
-  console.log('SUMMARY: ALL TESTS PASSED (10/10)');
+  console.log('SUMMARY: ALL TESTS PASSED (14/14)');
 } else {
   console.error('SUMMARY: SOME TESTS FAILED');
   process.exit(1);

@@ -32,7 +32,8 @@ import {
   parseRelationshipValue,
   getEffectiveRelationship,
   isChildPickupManageable,
-  isChildPickedUp
+  isChildPickedUp,
+  normalizeChildStatus
 } from '../utils/relationship';
 
 interface ParentHomeViewProps {
@@ -790,21 +791,13 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
         setShowPickupConfirmDialog(false);
 
-        // Section 19: Return to Family Pickup Plan displaying the updated person if opened from details
-        if (pickupSheetState.openedFromDetails) {
-          setPickupSheetState((prev) => ({
-            ...prev,
-            child: updatedChild,
-            mode: 'details'
-          }));
-        } else {
-          setPickupSheetState({
-            isOpen: false,
-            child: null,
-            mode: 'details',
-            openedFromDetails: false
-          });
-        }
+        // Section 19: Return to Family Pickup Plan displaying the updated person
+        setPickupSheetState({
+          isOpen: true,
+          child: updatedChild,
+          mode: 'details',
+          openedFromDetails: pickupSheetState.openedFromDetails
+        });
       } else {
         showError(res?.message || 'Failed to update pickup person');
       }
@@ -1276,8 +1269,10 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
           ) : (
             <div className="space-y-3">
               {childrenList.map((child) => {
-                const isPickedUp = child.status === 'Picked up' || child.status === 'Checked out';
-                const isCheckedIn = (child.status === 'Checked in' || child.status === 'Inside') && !isPickedUp;
+                const isPickedUp = isChildPickedUp(child);
+                const normStatus = normalizeChildStatus(child.status);
+                const isCheckedIn = (normStatus === 'checked_in' || normStatus === 'inside') && !isPickedUp;
+                const isSelectedOrPassReady = (normStatus === 'selected' || normStatus === 'pass_ready') && !isPickedUp;
                 
                 // Derive dynamic location details based on age group
                 const ageGrp = (child.ageGroup || child.draftData?.ageGroup || '').toLowerCase();
@@ -1468,7 +1463,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                         </button>
                       ) : (
                         <div className="space-y-1">
-                          {child.status === 'Pass ready' || Boolean(child.passReference || child.pass?.passCode) ? (
+                          {normStatus === 'pass_ready' || Boolean(child.passReference || child.pass?.passCode) ? (
                             <button
                               type="button"
                               onClick={() => {
@@ -1502,7 +1497,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                               <ChevronRight className="w-4 h-4 text-[#C59B27] shrink-0" />
                             </button>
                           )}
-                          {(child.status === 'Selected' || child.status === 'Pass ready') && isChildPickupManageable(child) && (
+                          {isSelectedOrPassReady && isChildPickupManageable(child) && (
                             <button
                               type="button"
                               onClick={() => handleOpenManagePickup(child)}
@@ -1621,16 +1616,37 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
                     <div className="pt-1">
                       {child.status === 'Pass ready' || child.status === 'Checked in' || child.status === 'Inside' || child.status === 'Picked up' || child.passReference ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedPassChild(child);
-                            handleTabChange('Passes');
-                          }}
-                          className="w-full py-2.5 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer focus:outline-none"
-                        >
-                          View pass
-                        </button>
+                        <div className="space-y-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedPassChild(child);
+                              handleTabChange('Passes');
+                            }}
+                            className="w-full py-2.5 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer focus:outline-none"
+                          >
+                            View pass
+                          </button>
+                          {isChildPickupManageable(child) && !isChildPickedUp(child) && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenManagePickup(child)}
+                              className="w-full text-center py-1 text-xs font-semibold text-[#9A7326] dark:text-[#C59B27] hover:text-[#7D5E1F] dark:hover:text-[#DEB23F] transition-colors cursor-pointer focus:outline-none"
+                            >
+                              Manage pickup person
+                            </button>
+                          )}
+                        </div>
+                      ) : isChildPickupManageable(child) && !isChildPickedUp(child) ? (
+                        <div className="space-y-1">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenManagePickup(child)}
+                            className="w-full py-2.5 px-4 rounded-xl bg-[#C59B27] hover:bg-[#B58E33] active:bg-[#A8822B] text-[#18181B] font-semibold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer focus:outline-none"
+                          >
+                            Manage pickup person
+                          </button>
+                        </div>
                       ) : child.status === 'Incomplete' || child.status === 'Draft' ? (
                         <div className="space-y-2">
                           <button
@@ -1970,7 +1986,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                     <div className="mx-5 h-px bg-[#EDE6D4] dark:bg-[#2E2C27]" />
 
                     {/* C. Footer CTA */}
-                    <div className="px-4 py-1.5">
+                    <div className="px-4 py-1.5 space-y-0.5">
                       <button
                         type="button"
                         onClick={() => {
@@ -1991,6 +2007,15 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                         <span className="text-[13px] font-semibold tracking-wide">View pass</span>
                         <ChevronRight className="w-4 h-4 opacity-80" />
                       </button>
+                      {isChildPickupManageable(c) && !isChildPickedUp && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenManagePickup(c)}
+                          className="w-full text-center pb-2 text-xs font-semibold text-[#9A7326] dark:text-[#C59B27] hover:text-[#7D5E1F] dark:hover:text-[#DEB23F] transition-colors cursor-pointer focus:outline-none"
+                        >
+                          Manage pickup person
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -3602,6 +3627,21 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                       <span className="text-[10px] text-[#9A907A] dark:text-[#7A7570] font-medium block leading-normal">No secondary listed</span>
                     </>
                   )}
+                  {isChildPickupManageable(selectedDetailChild) && !isChildPickedUp(selectedDetailChild) && (
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const childToManage = selectedDetailChild;
+                          setSelectedDetailChild(null);
+                          handleOpenManagePickup(childToManage);
+                        }}
+                        className="text-[11px] font-semibold text-[#9A7326] dark:text-[#C59B27] hover:underline cursor-pointer focus:outline-none"
+                      >
+                        Change pickup person
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -3931,7 +3971,8 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
         const child = pickupSheetState.child;
         const isEditMode = pickupSheetState.mode === 'edit';
         const isPickedUp = isChildPickedUp(child);
-        const isCheckedInChild = child.status === 'Checked in' || child.status === 'Inside';
+        const normalizedSheetStatus = normalizeChildStatus(child.status);
+        const isCheckedInChild = (normalizedSheetStatus === 'checked_in' || normalizedSheetStatus === 'inside') && !isPickedUp;
         const isManageable = isChildPickupManageable(child);
 
         const ageGrp = (child.ageGroup || child.draftData?.ageGroup || '').toLowerCase();
