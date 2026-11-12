@@ -21,7 +21,7 @@ function normalizeOptionalText(val: unknown): string | null {
 }
 import { recordChannelInvitationSent } from '../services/selectedParentsChannelService';
 import { extractFirstName, formatSelectedChildNames } from '../services/whatsapp/personalization';
-import { issuePassForChild, revokePassForChild } from '../services/passService';
+import { issuePassForChild, revokePassForChild, getPassForChild } from '../services/passService';
 import { uploadMedia, buildCloudinaryOptimizedVideoUrl, buildCloudinaryVideoPosterUrl } from '../services/media/cloudinary';
 import { processImage } from '../services/media/imageProcessor';
 import { broadcastSSEEvent } from '../services/sse';
@@ -12225,23 +12225,200 @@ router.get('/reports/volunteer-parent-stats', async (req: AuthenticatedRequest, 
 router.get('/children/:childId/pass', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { childId } = req.params;
-    const entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ?', [childId]);
+    const targetEventId = (req.query.eventId as string) || null;
+
+    let entry = null;
+    if (targetEventId) {
+      entry = await queryOne(
+        'SELECT * FROM child_event_entries WHERE (child_id = ? OR id = ?) AND event_id = ?',
+        [childId, childId, targetEventId]
+      );
+    }
+    if (!entry) {
+      const currentEventId = await getCurrentEventId();
+      if (currentEventId) {
+        entry = await queryOne(
+          'SELECT * FROM child_event_entries WHERE (child_id = ? OR id = ?) AND event_id = ?',
+          [childId, childId, currentEventId]
+        );
+      }
+      if (!entry) {
+        entry = await queryOne(
+          'SELECT * FROM child_event_entries WHERE child_id = ? OR id = ? ORDER BY created_at DESC LIMIT 1',
+          [childId, childId]
+        );
+      }
+    }
+
     if (!entry) {
       return res.status(404).json({ success: false, error: 'Child event registration not found' });
     }
-    const pass = await queryOne('SELECT * FROM event_passes WHERE child_event_entry_id = ? AND status = ?', [entry.id, 'active']);
+
+    const child = await queryOne('SELECT * FROM children WHERE id = ?', [entry.child_id]);
+    const event = await queryOne('SELECT id, title, starts_at, ends_at FROM events WHERE id = ?', [entry.event_id]);
+    const pass = await queryOne(
+      'SELECT * FROM event_passes WHERE child_event_entry_id = ? AND status = ?',
+      [entry.id, 'active']
+    );
+
+    const eventDate = event?.starts_at ? new Date(event.starts_at) : CANONICAL_GA_EVENT_DATE;
+    const ageRes = child?.date_of_birth ? resolveCanonicalAgeGroup(child.date_of_birth, eventDate) : null;
+    const age = ageRes?.age ?? (child?.age ? Number(child.age) : null);
+    const ageGroup = ageRes?.label || child?.age_group || 'Ages 2–14';
+
+    const photoUrl = child?.photo_file_id
+      ? (String(child.photo_file_id).startsWith('http') || String(child.photo_file_id).startsWith('/')
+          ? String(child.photo_file_id)
+          : `/api/media/files/${child.photo_file_id}`)
+      : null;
+
+    const parentProfile = child?.parent_profile_id
+      ? await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [child.parent_profile_id])
+      : null;
+
+    const pickupPerson = await queryOne(
+      'SELECT * FROM pickup_people WHERE child_event_entry_id = ?',
+      [entry.id]
+    );
+
+    const parentPhone = parentProfile?.phone_number || parentProfile?.phone || null;
+    const pickupName = pickupPerson?.pickup_type === 'other_person'
+      ? (pickupPerson.full_name || pickupPerson.pickup_person_full_name || null)
+      : (parentProfile?.full_name || null);
+    const pickupRelation = pickupPerson?.pickup_type === 'other_person'
+      ? (pickupPerson.relationship_to_child || pickupPerson.relationship || 'Authorized adult')
+      : 'Parent';
+
     return res.json({
       success: true,
       entryStatus: entry.status,
+      childId: entry.child_id,
+      childEventEntryId: entry.id,
+      childName: child?.full_name || 'Child',
+      photoUrl,
+      age,
+      ageGroup,
+      parentName: parentProfile?.full_name || null,
+      parentPhone,
+      pickupName,
+      pickupRelation,
+      event: event ? {
+        id: event.id,
+        title: event.title,
+        startsAt: event.starts_at,
+        endsAt: event.ends_at
+      } : null,
       pass: pass ? {
         id: pass.id,
         passReference: pass.pass_reference,
+        qrPayload: pass.pass_reference,
         status: pass.status,
         issuedAt: pass.issued_at
       } : null
     });
   } catch (err: any) {
     console.error('Error in GET /api/admin/children/:childId/pass:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Internal server error' });
+  }
+});
+
+// BATCH READ-ONLY PASS RETRIEVAL FOR ADMIN PRINTING
+router.post('/children/passes/printable', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { childIds, eventId } = req.body || {};
+    if (!Array.isArray(childIds) || childIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'childIds array is required.' });
+    }
+
+    const currentEventId = eventId || (await getCurrentEventId());
+    const passes = [];
+
+    for (const childId of childIds) {
+      let entry = null;
+      if (currentEventId) {
+        entry = await queryOne(
+          'SELECT * FROM child_event_entries WHERE (child_id = ? OR id = ?) AND event_id = ?',
+          [childId, childId, currentEventId]
+        );
+      }
+      if (!entry) {
+        entry = await queryOne(
+          'SELECT * FROM child_event_entries WHERE child_id = ? OR id = ? ORDER BY created_at DESC LIMIT 1',
+          [childId, childId]
+        );
+      }
+      if (!entry) continue;
+
+      const child = await queryOne('SELECT * FROM children WHERE id = ?', [entry.child_id]);
+      const event = await queryOne('SELECT id, title, starts_at, ends_at FROM events WHERE id = ?', [entry.event_id]);
+      const pass = await queryOne(
+        'SELECT * FROM event_passes WHERE child_event_entry_id = ? AND status = ?',
+        [entry.id, 'active']
+      );
+
+      const eventDate = event?.starts_at ? new Date(event.starts_at) : CANONICAL_GA_EVENT_DATE;
+      const ageRes = child?.date_of_birth ? resolveCanonicalAgeGroup(child.date_of_birth, eventDate) : null;
+      const age = ageRes?.age ?? (child?.age ? Number(child.age) : null);
+      const ageGroup = ageRes?.label || child?.age_group || 'Ages 2–14';
+
+      const photoUrl = child?.photo_file_id
+        ? (String(child.photo_file_id).startsWith('http') || String(child.photo_file_id).startsWith('/')
+            ? String(child.photo_file_id)
+            : `/api/media/files/${child.photo_file_id}`)
+        : null;
+
+      const parentProfile = child?.parent_profile_id
+        ? await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [child.parent_profile_id])
+        : null;
+
+      const pickupPerson = await queryOne(
+        'SELECT * FROM pickup_people WHERE child_event_entry_id = ?',
+        [entry.id]
+      );
+
+      const parentPhone = parentProfile?.phone_number || parentProfile?.phone || null;
+      const pickupName = pickupPerson?.pickup_type === 'other_person'
+        ? (pickupPerson.full_name || pickupPerson.pickup_person_full_name || null)
+        : (parentProfile?.full_name || null);
+      const pickupRelation = pickupPerson?.pickup_type === 'other_person'
+        ? (pickupPerson.relationship_to_child || pickupPerson.relationship || 'Authorized adult')
+        : 'Parent';
+
+      passes.push({
+        childId: entry.child_id,
+        childEventEntryId: entry.id,
+        childName: child?.full_name || 'Child',
+        entryStatus: entry.status,
+        photoUrl,
+        age,
+        ageGroup,
+        parentName: parentProfile?.full_name || null,
+        parentPhone,
+        pickupName,
+        pickupRelation,
+        event: event ? {
+          id: event.id,
+          title: event.title,
+          startsAt: event.starts_at,
+          endsAt: event.ends_at
+        } : null,
+        pass: pass ? {
+          id: pass.id,
+          passReference: pass.pass_reference,
+          qrPayload: pass.pass_reference,
+          status: pass.status,
+          issuedAt: pass.issued_at
+        } : null
+      });
+    }
+
+    return res.json({
+      success: true,
+      count: passes.length,
+      passes
+    });
+  } catch (err: any) {
+    console.error('Error in POST /api/admin/children/passes/printable:', err);
     return res.status(500).json({ success: false, error: err.message || 'Internal server error' });
   }
 });
