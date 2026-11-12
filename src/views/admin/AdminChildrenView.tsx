@@ -26,13 +26,16 @@ import {
   UserX,
   ChevronDown,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Printer,
+  QrCode
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { AdminReviewChildView } from './AdminReviewChildView';
+import { AdminPassModal } from '../../components/admin/passes/AdminPassModal';
 import { AddChildModal } from '../../components/admin/modals/AddChildModal';
 import { AdminSelectionCheckbox } from '../../components/common/AdminSelectionCheckbox';
 
@@ -130,6 +133,11 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
   const [showBulkPassModal, setShowBulkPassModal] = useState(false);
   const [submittingBulkPass, setSubmittingBulkPass] = useState(false);
   const [bulkPassResultModal, setBulkPassResultModal] = useState<any | null>(null);
+
+  // Official Event Pass Modal states (Requirements 7, 16, 17, 18)
+  const [passModalOpen, setPassModalOpen] = useState(false);
+  const [passModalChildId, setPassModalChildId] = useState<string | undefined>(undefined);
+  const [passModalChildIds, setPassModalChildIds] = useState<string[] | undefined>(undefined);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -1040,6 +1048,21 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                           <span>Issue missing passes ({missingPassEligibleCount})</span>
                         </button>
                       )}
+                      {selectedChildren.some(c => c.hasPass || c.passStatus === 'pass_ready') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPassModalChildId(undefined);
+                            setPassModalChildIds(selectedChildren.filter(c => c.hasPass || c.passStatus === 'pass_ready').map(c => c.childId));
+                            setPassModalOpen(true);
+                          }}
+                          className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] font-medium hover:bg-zinc-50 dark:hover:bg-[#2A2926] transition-colors focus:outline-none cursor-pointer flex items-center gap-1.5"
+                          id="btn-bulk-print-passes"
+                        >
+                          <Printer className="w-3.5 h-3.5 text-[#C59B27]" />
+                          <span>Print passes ({selectedChildren.filter(c => c.hasPass || c.passStatus === 'pass_ready').length})</span>
+                        </button>
+                      )}
                       {removeEligibleCount > 0 && (
                         <button
                           type="button"
@@ -1275,12 +1298,17 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
                           ) : c.hasPass || c.passStatus === 'pass_ready' ? (
                             <button
                               type="button"
-                              onClick={() => setSelectedApplicationId(c.applicationId)}
-                              className="px-2.5 py-1 text-xs font-medium rounded-lg border border-zinc-200 dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] hover:bg-zinc-50 dark:hover:bg-[#262520] transition-colors cursor-pointer whitespace-nowrap"
-                              title="View pass / details"
+                              onClick={() => {
+                                setPassModalChildId(c.childId);
+                                setPassModalChildIds(undefined);
+                                setPassModalOpen(true);
+                              }}
+                              className="px-2.5 py-1 text-xs font-medium rounded-lg border border-zinc-200 dark:border-[#3A3835] text-zinc-700 dark:text-[#F0EBE3] hover:bg-zinc-50 dark:hover:bg-[#262520] transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1"
+                              title="View pass"
                               id={`view-pass-btn-${c.childId}`}
                             >
-                              View pass
+                              <QrCode className="w-3 h-3 text-[#C59B27]" />
+                              <span>View pass</span>
                             </button>
                           ) : null}
 
@@ -2381,6 +2409,13 @@ export const AdminChildrenView: React.FC<AdminChildrenViewProps> = ({
         isOpen={showAddChildModal}
         onClose={() => setShowAddChildModal(false)}
         onSuccess={() => fetchChildren()}
+      />
+      {/* Official Event Pass Modal */}
+      <AdminPassModal
+        isOpen={passModalOpen}
+        onClose={() => setPassModalOpen(false)}
+        childId={passModalChildId}
+        childIds={passModalChildIds}
       />
     </div>
   );

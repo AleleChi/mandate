@@ -9,11 +9,14 @@ import {
   User,
   Loader2,
   X,
-  ChevronDown
+  ChevronDown,
+  Printer,
+  QrCode
 } from 'lucide-react';
 import { api } from '../../../services/api';
 import { buildApiUrl } from '../../../utils/urlHelper';
 import { useNotification } from '../../../context/NotificationContext';
+import { AdminPassModal } from '../passes/AdminPassModal';
 
 interface SelectedChildRecord {
   childId: string;
@@ -132,6 +135,44 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
   const downloadMenuRef = React.useRef<HTMLDivElement>(null);
+
+  // Batch selection & Pass Modal state (Requirements 8, 16, 17, 18)
+  const [selectedChildIds, setSelectedChildIds] = useState<string[]>([]);
+  const [passModalOpen, setPassModalOpen] = useState(false);
+  const [modalChildId, setModalChildId] = useState<string | undefined>(undefined);
+  const [modalChildIds, setModalChildIds] = useState<string[] | undefined>(undefined);
+
+  const isAllVisibleSelected = children.length > 0 && children.every(c => selectedChildIds.includes(c.childId));
+  const isSomeVisibleSelected = children.some(c => selectedChildIds.includes(c.childId));
+
+  const toggleSelectAllVisible = () => {
+    if (isAllVisibleSelected) {
+      setSelectedChildIds([]);
+    } else {
+      setSelectedChildIds(children.map(c => c.childId));
+    }
+  };
+
+  const toggleSelectChild = (id: string) => {
+    if (selectedChildIds.includes(id)) {
+      setSelectedChildIds(selectedChildIds.filter(i => i !== id));
+    } else {
+      setSelectedChildIds([...selectedChildIds, id]);
+    }
+  };
+
+  const handleViewPass = (childId: string) => {
+    setModalChildId(childId);
+    setModalChildIds(undefined);
+    setPassModalOpen(true);
+  };
+
+  const handlePrintBatchPasses = () => {
+    if (selectedChildIds.length === 0) return;
+    setModalChildId(undefined);
+    setModalChildIds(selectedChildIds);
+    setPassModalOpen(true);
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -1248,6 +1289,18 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-stone-50/70 dark:bg-[#242320] border-b border-stone-200 dark:border-[#2C2A26] text-[10px] font-semibold text-stone-500 dark:text-[#8A847A] uppercase tracking-wider">
+                <th className="py-2.5 px-3 w-8 text-center">
+                  <input
+                    type="checkbox"
+                    checked={isAllVisibleSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = isSomeVisibleSelected && !isAllVisibleSelected;
+                    }}
+                    onChange={toggleSelectAllVisible}
+                    className="rounded text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
+                    aria-label="Select all visible children"
+                  />
+                </th>
                 <th className="py-2.5 px-3">Child</th>
                 <th className="py-2.5 px-3">Age</th>
                 <th className="py-2.5 px-3">Age group</th>
@@ -1264,6 +1317,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                 // Table skeleton rows (Requirement 20)
                 Array.from({ length: 6 }).map((_, i) => (
                   <tr key={`skel-${i}`} className="animate-pulse">
+                    <td className="py-3 px-3 text-center"><div className="w-4 h-4 rounded bg-stone-200 dark:bg-[#2D2B27] mx-auto" /></td>
                     <td className="py-3 px-3">
                       <div className="flex items-center gap-2">
                         <div className="w-6 h-6 rounded bg-stone-200 dark:bg-[#2D2B27]" />
@@ -1283,7 +1337,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
               ) : error ? (
                 // Compact inline error state within table body (Requirement 18)
                 <tr>
-                  <td colSpan={9} className="py-8 text-center px-4">
+                  <td colSpan={10} className="py-8 text-center px-4">
                     <p className="text-xs text-stone-600 dark:text-[#A8A095] font-medium">
                       We couldn't load selected children.
                     </p>
@@ -1299,7 +1353,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
               ) : children.length === 0 ? (
                 // Simple table-body empty state (Requirement 19)
                 <tr>
-                  <td colSpan={9} className="py-10 text-center px-4">
+                  <td colSpan={10} className="py-10 text-center px-4">
                     <p className="text-xs text-stone-500 dark:text-[#8A847A] font-medium">
                       {exactAgeFilter !== 'all' && !debouncedSearch && passStatusFilter === 'all' && attendanceStatusFilter === 'all' && genderFilter === 'all'
                         ? `No selected children aged ${exactAgeFilter}.`
@@ -1326,6 +1380,16 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                       key={c.eventEntryId || c.childId}
                       className="hover:bg-stone-50/70 dark:hover:bg-[#252421] transition-colors h-[56px]"
                     >
+                      {/* Row Checkbox (Requirement 16) */}
+                      <td className="py-2.5 px-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedChildIds.includes(c.childId)}
+                          onChange={() => toggleSelectChild(c.childId)}
+                          className="rounded text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
+                          aria-label={`Select ${c.fullName}`}
+                        />
+                      </td>
                       {/* Child Identity (Requirement 15: small photo or neutral placeholder, full name) */}
                       <td className="py-2.5 px-3">
                         <div className="flex items-center gap-2">
@@ -1405,10 +1469,10 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                               : 'Not arrived'}
                       </td>
 
-                      {/* Action (Requirement 17: quiet text action, Issue pass in gold for missing pass) */}
+                      {/* Action (Requirement 8: quiet text action 'View pass' for pass ready/attending/passReference, or 'Issue pass' in gold for missing pass) */}
                       <td className="py-2.5 px-3 text-right">
                         <div className="inline-flex items-center justify-end gap-2.5">
-                          {!isPassReady && (
+                          {!isPassReady ? (
                             <button
                               type="button"
                               onClick={() => handleIssuePass(c.childId, c.fullName)}
@@ -1422,6 +1486,16 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                                 <Ticket className="w-3 h-3" />
                               )}
                               Issue pass
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleViewPass(c.childId)}
+                              className="inline-flex items-center gap-1 text-[11px] font-medium text-[#C59B27] dark:text-amber-400 hover:underline cursor-pointer"
+                              title="View pass"
+                            >
+                              <QrCode className="w-3 h-3" />
+                              View pass
                             </button>
                           )}
 
@@ -1503,6 +1577,44 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
           </div>
         )}
       </div>
+
+      {/* Floating Batch Pass Print Action (Requirements 16, 17, 18) */}
+      {selectedChildIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-zinc-900 text-white dark:bg-[#1E1E1C] dark:border dark:border-[#383630] py-2.5 px-5 rounded-2xl shadow-xl flex items-center gap-4 text-xs animate-fade-in font-sans">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-amber-400">{selectedChildIds.length}</span>
+            <span className="text-zinc-300">
+              {selectedChildIds.length === 1 ? 'child selected' : 'children selected'}
+            </span>
+          </div>
+          <div className="h-4 w-px bg-zinc-700" />
+          <button
+            type="button"
+            onClick={handlePrintBatchPasses}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#C59B27] hover:bg-[#b08a23] text-white font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
+            id="btn-print-selected-passes"
+          >
+            <Printer className="w-3.5 h-3.5" />
+            <span>Print passes</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedChildIds([])}
+            className="text-zinc-400 hover:text-white transition-colors cursor-pointer"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      {/* Official Pass Viewer & Printable Modal */}
+      <AdminPassModal
+        isOpen={passModalOpen}
+        onClose={() => setPassModalOpen(false)}
+        childId={modalChildId}
+        childIds={modalChildIds}
+        eventId={eventId}
+      />
     </div>
   );
 };

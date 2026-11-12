@@ -1952,8 +1952,15 @@ export const api = {
         method: 'POST'
       });
     },
-    async getChildPass(childId: string) {
-      return api.request<any>(`/api/admin/children/${childId}/pass`);
+    async getChildPass(childId: string, params?: { eventId?: string }) {
+      const qs = params?.eventId ? `?eventId=${encodeURIComponent(params.eventId)}` : '';
+      return api.request<any>(`/api/admin/children/${childId}/pass${qs}`);
+    },
+    async getPrintablePasses(payload: { childIds: string[]; eventId?: string }) {
+      return api.request<any>('/api/admin/children/passes/printable', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
     },
     async revokeChildPass(childId: string, reason: string) {
       return api.request<any>(`/api/admin/children/${childId}/pass/revoke`, {

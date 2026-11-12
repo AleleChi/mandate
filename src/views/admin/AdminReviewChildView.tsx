@@ -18,7 +18,8 @@ import {
   ChevronDown,
   QrCode,
   RotateCcw,
-  Trash2
+  Trash2,
+  Printer
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -26,6 +27,7 @@ import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { EventPassPreviewCard } from '../../components/common/EventPassPreviewCard';
 import { SafeImage } from '../../components/common/SafeImage';
+import { AdminPassModal } from '../../components/admin/passes/AdminPassModal';
 
 interface AdminReviewChildViewProps {
   applicationId: string;
@@ -125,6 +127,7 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
   const [returnReason, setReturnReason] = useState('');
   const [returning, setReturning] = useState(false);
   const [isGeneratePassModalOpen, setIsGeneratePassModalOpen] = useState(false);
+  const [isPassModalOpen, setIsPassModalOpen] = useState(false);
 
   // Super Admin: Reset Event Progress
   const [isResetProgressModalOpen, setIsResetProgressModalOpen] = useState(false);
@@ -1232,6 +1235,29 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                   </div>
                 </div>
 
+                {(app.hasPass || app.passReference) && (
+                  <div className="flex items-center gap-2 pt-2 border-t border-zinc-200 dark:border-[#302E29]">
+                    <button
+                      type="button"
+                      onClick={() => setIsPassModalOpen(true)}
+                      className="flex-1 py-1.5 px-3 bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] hover:border-zinc-300 dark:hover:border-[#C59B27]/50 text-zinc-800 dark:text-[#F0EBE3] font-medium rounded-lg text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                      id="btn-attending-view-pass"
+                    >
+                      <QrCode className="w-3.5 h-3.5 text-[#C59B27]" />
+                      <span>View pass</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsPassModalOpen(true)}
+                      className="flex-1 py-1.5 px-3 bg-[#C59B27] hover:bg-[#b08a23] text-white font-semibold rounded-lg text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+                      id="btn-attending-print-pass"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      <span>Print pass</span>
+                    </button>
+                  </div>
+                )}
+
                 {effectiveSuperAdmin && (
                   <div className="pt-2 border-t border-zinc-200 dark:border-[#302E29] space-y-2">
                     <span className="text-[11px] text-zinc-500 dark:text-[#7A7570] font-medium block">
@@ -1445,7 +1471,7 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                   </p>
                 </div>
 
-                <div className="w-full py-0.5">
+                <div className="w-full py-0.5 space-y-2">
                   <EventPassPreviewCard
                     childName={app.child.fullName}
                     ageGroup={app.child.ageGroup || 'Section'}
@@ -1453,6 +1479,28 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
                     photoUrl={app.child.photoUrl || undefined}
                     passReference={app.passReference}
                   />
+
+                  {/* Operational Pass Actions (Requirement 7: View pass, Print pass) */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsPassModalOpen(true)}
+                      className="flex-1 py-1.5 px-3 bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] hover:border-zinc-300 dark:hover:border-[#C59B27]/50 text-zinc-800 dark:text-[#F0EBE3] font-medium rounded-lg text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                      id="btn-view-pass-detail"
+                    >
+                      <QrCode className="w-3.5 h-3.5 text-[#C59B27]" />
+                      <span>View pass</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsPassModalOpen(true)}
+                      className="flex-1 py-1.5 px-3 bg-[#C59B27] hover:bg-[#b08a23] text-white font-semibold rounded-lg text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+                      id="btn-print-pass-detail"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      <span>Print pass</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-2 pt-2 border-t border-[#EAE8E1]/80 dark:border-[#302E29]">
@@ -2874,6 +2922,14 @@ export const AdminReviewChildView: React.FC<AdminReviewChildViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Official Event Pass Modal */}
+      <AdminPassModal
+        isOpen={isPassModalOpen}
+        onClose={() => setIsPassModalOpen(false)}
+        childId={app?.childId || app?.child?.id}
+        eventId={app?.eventId}
+      />
 
     </div>
   );
