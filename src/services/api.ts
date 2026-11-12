@@ -2027,6 +2027,68 @@ export const api = {
         body: JSON.stringify(payload)
       });
     },
+    async getEventAnalytics(params?: {
+      eventId?: string;
+      ageGroup?: string;
+      volunteerId?: string;
+      action?: string;
+      activityPage?: number;
+      activityPageSize?: number;
+    }, options?: RequestInit) {
+      const queryParams = new URLSearchParams();
+      if (params?.eventId) queryParams.append('eventId', params.eventId);
+      if (params?.ageGroup) queryParams.append('ageGroup', params.ageGroup);
+      if (params?.volunteerId) queryParams.append('volunteerId', params.volunteerId);
+      if (params?.action && params.action !== 'all') queryParams.append('action', params.action);
+      if (params?.activityPage) queryParams.append('activityPage', String(params.activityPage));
+      if (params?.activityPageSize) queryParams.append('activityPageSize', String(params.activityPageSize));
+      const qs = queryParams.toString();
+      return api.request<any>(`/api/admin/event-analytics${qs ? `?${qs}` : ''}`, options);
+    },
+    buildEventAnalyticsStreamUrl(eventId?: string) {
+      const token = api.getToken() || '';
+      const queryParams = new URLSearchParams();
+      if (eventId) queryParams.append('eventId', eventId);
+      if (token) queryParams.append('token', token);
+      return buildApiUrl(`/api/admin/event-analytics/stream?${queryParams.toString()}`);
+    },
+    async downloadEventAnalyticsExport(
+      format: 'csv' | 'pdf',
+      params?: {
+        eventId?: string;
+        ageGroup?: string;
+        volunteerId?: string;
+        action?: string;
+      }
+    ) {
+      const token = api.getToken();
+      const queryParams = new URLSearchParams();
+      if (params?.eventId) queryParams.append('eventId', params.eventId);
+      if (params?.ageGroup) queryParams.append('ageGroup', params.ageGroup);
+      if (params?.volunteerId) queryParams.append('volunteerId', params.volunteerId);
+      if (params?.action && params.action !== 'all') queryParams.append('action', params.action);
+      const qs = queryParams.toString();
+      const path = format === 'pdf' ? '/api/admin/event-analytics/export-pdf' : '/api/admin/event-analytics/export-csv';
+      const url = buildApiUrl(`${path}${qs ? `?${qs}` : ''}`);
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        throw new Error(`Export failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get('content-disposition') || '';
+      const match = disposition.match(/filename="?([^"]+)"?/i);
+      const filename = match?.[1] || `event-analytics.${format}`;
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+    },
     async getMessages(eventId?: string) {
       const qs = eventId ? `?eventId=${encodeURIComponent(eventId)}` : '';
       return api.request<{

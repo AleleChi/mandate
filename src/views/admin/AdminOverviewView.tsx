@@ -35,7 +35,8 @@ import {
   Smartphone,
   CloudOff,
   Tag,
-  Layers
+  Layers,
+  BarChart3
 } from 'lucide-react';
 import { WristbandAssignmentDesk } from '../../components/wristbands/WristbandAssignmentDesk';
 import { WristbandInventoryWorkspace } from '../../components/wristbands/WristbandInventoryWorkspace';
@@ -65,6 +66,7 @@ import { AdminEventsView } from './AdminEventsView';
 import { AdminIncidentRecordsCentre } from './AdminIncidentRecordsCentre';
 import { AdminEscalationsView } from './AdminEscalationsView';
 import { AdminOperationsDashboardView } from './AdminOperationsDashboardView';
+import { EventAnalyticsView } from '../../components/admin/analytics/EventAnalyticsView';
 import { AdminDutyDevicesView } from '../../components/admin/AdminDutyDevicesView';
 import { UrgentAlertTriageWorkspace } from '../../components/admin/alerts/UrgentAlertTriageWorkspace';
 import { ChildEmergencySummary } from '../../components/ChildEmergencySummary';
@@ -73,7 +75,7 @@ import { EventAutomationsInbox } from '../../components/admin/EventAutomationsIn
 import { OperationsAssistantModal } from '../../components/admin/OperationsAssistantModal';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 
-type AdminTab = 'overview' | 'events' | 'applications' | 'review' | 'children' | 'attendance' | 'wristbands' | 'wristbands_inventory' | 'reports' | 'messages' | 'settings' | 'volunteers' | 'parents' | 'duty_devices' | 'incidents' | 'escalations' | 'operations' | 'training';
+type AdminTab = 'overview' | 'events' | 'applications' | 'review' | 'children' | 'attendance' | 'wristbands' | 'wristbands_inventory' | 'reports' | 'messages' | 'settings' | 'volunteers' | 'parents' | 'duty_devices' | 'incidents' | 'escalations' | 'operations' | 'event_analytics' | 'training';
 
 interface AdminOverviewViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -1172,6 +1174,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       onNavigate('/admin/escalations');
     } else if (tab === 'operations') {
       onNavigate('/admin/operations');
+    } else if (tab === 'event_analytics') {
+      onNavigate('/admin/event-analytics');
     } else if (tab === 'wristbands_inventory') {
       onNavigate('/admin/wristbands/inventory');
     } else if (tab === 'wristbands') {
@@ -1371,6 +1375,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
           {[
             { id: 'overview', label: 'Overview', icon: ClipboardList },
             { id: 'operations', label: 'Event Operations', icon: Activity },
+            { id: 'event_analytics', label: 'Event Analytics', icon: BarChart3 },
             { id: 'events', label: 'Events', icon: Calendar },
             { id: 'applications', label: 'Applications', icon: Users },
             { id: 'volunteers', label: 'Volunteers', icon: Award },
@@ -3720,6 +3725,11 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
           {/* ESCALATIONS VIEW PANEL */}
           {activeTab === 'escalations' && (
             <AdminEscalationsView />
+          )}
+
+          {/* EVENT ANALYTICS VIEW (READ-ONLY) */}
+          {activeTab === 'event_analytics' && (
+            <EventAnalyticsView onBackToOverview={() => handleTabChange('overview')} />
           )}
 
           {/* LIVE EVENT OPERATIONS DASHBOARD */}

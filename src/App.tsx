@@ -1294,7 +1294,9 @@ export default function App() {
                                           ? 'escalations'
                                           : cleanRoute === '/admin/operations'
                                             ? 'operations'
-                                            : cleanRoute === '/admin/wristbands/inventory'
+                                            : cleanRoute === '/admin/event-analytics' || cleanRoute.startsWith('/admin/event-analytics/')
+                                              ? 'event_analytics'
+                                              : cleanRoute === '/admin/wristbands/inventory'
                                               ? 'wristbands_inventory'
                                               : cleanRoute === '/admin/wristbands' || cleanRoute.startsWith('/admin/wristbands')
                                                 ? 'wristbands'
