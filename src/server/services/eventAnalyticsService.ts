@@ -37,10 +37,20 @@ export interface AgeGroupMetricsRow {
 export interface VolunteerAnalyticsRow {
   volunteerId: string;
   name: string;
+  email: string | null;
   role: string | null;
   dutyRole: string | null;
   teamKey: string | null;
   assignedAgeGroups: string | null;
+  assignmentId: string | null;
+  assignmentLocation: string | null;
+  assignmentStartsAt: string | null;
+  assignmentEndsAt: string | null;
+  hasUser: boolean;
+  hasVolunteerProfile: boolean;
+  hasDutyAssignment: boolean;
+  hasActivity: boolean;
+  profileState: 'complete' | 'profile_missing' | 'no_profile';
   checkIns: number;
   pickups: number;
   totalActions: number;
@@ -297,6 +307,15 @@ export async function getEventAnalyticsWatermark(eventId: string): Promise<{
     [eventId]
   );
 
+  const dutyAgg = await queryOne<any>(
+    `SELECT
+       COUNT(*) as total_count,
+       MAX(updated_at) as max_updated_at
+     FROM event_duty_assignments
+     WHERE event_id = ?`,
+    [eventId]
+  );
+
   const parts = [
     entryAgg?.total_count ?? 0,
     entryAgg?.max_updated_at ?? '',
@@ -304,7 +323,9 @@ export async function getEventAnalyticsWatermark(eventId: string): Promise<{
     entryAgg?.max_picked_up_at ?? '',
     attAgg?.total_count ?? 0,
     attAgg?.max_created_at ?? '',
-    attAgg?.max_action_time ?? ''
+    attAgg?.max_action_time ?? '',
+    dutyAgg?.total_count ?? 0,
+    dutyAgg?.max_updated_at ?? ''
   ];
 
   const version = parts.map((v) => String(v ?? '')).join('|');
@@ -313,7 +334,8 @@ export async function getEventAnalyticsWatermark(eventId: string): Promise<{
     entryAgg?.max_checked_in_at,
     entryAgg?.max_picked_up_at,
     attAgg?.max_created_at,
-    attAgg?.max_action_time
+    attAgg?.max_action_time,
+    dutyAgg?.max_updated_at
   ]
     .map((v) => toTimestampMs(v))
     .filter((ms): ms is number => ms !== null);
@@ -450,9 +472,19 @@ export async function getEventAnalyticsSnapshot(
 
   // 3. Batch-load volunteer/staff profiles + active duty assignments for this event (zero N+1)
   const dutyRows = await query<any>(
-    `SELECT user_id, responsibility_key, team_key, assigned_age_groups, status
-     FROM event_duty_assignments
-     WHERE event_id = ? AND (status IS NULL OR status != 'cancelled')`,
+    `SELECT
+       a.id,
+       a.user_id,
+       a.responsibility_key,
+       a.team_key,
+       a.assigned_age_groups,
+       a.status,
+       a.starts_at,
+       a.ends_at,
+       el.name as assigned_location_name
+     FROM event_duty_assignments a
+     LEFT JOIN event_locations el ON el.id = a.assigned_location_id
+     WHERE a.event_id = ? AND (a.status IS NULL OR a.status != 'cancelled')`,
     [eventId]
   );
 
@@ -482,10 +514,18 @@ export async function getEventAnalyticsSnapshot(
     string,
     {
       name: string;
+      email: string | null;
       role: string | null;
       dutyRole: string | null;
       teamKey: string | null;
       assignedAgeGroups: string | null;
+      assignmentId: string | null;
+      assignmentLocation: string | null;
+      assignmentStartsAt: string | null;
+      assignmentEndsAt: string | null;
+      hasUser: boolean;
+      hasVolunteerProfile: boolean;
+      hasDutyAssignment: boolean;
     }
   >();
 
@@ -496,6 +536,7 @@ export async function getEventAnalyticsSnapshot(
          u.id,
          u.email,
          u.role,
+         vp.id as volunteer_profile_id,
          vp.full_name as volunteer_full_name,
          pp.full_name as parent_full_name
        FROM users u
@@ -506,17 +547,28 @@ export async function getEventAnalyticsSnapshot(
     );
     for (const u of userRows || []) {
       const duty = dutyByUser.get(u.id);
+      const volunteerName = u.volunteer_full_name && String(u.volunteer_full_name).trim();
+      const parentName = u.parent_full_name && String(u.parent_full_name).trim();
+      const hasVolunteerProfile = Boolean(u.volunteer_profile_id || volunteerName);
       const displayName =
-        (u.volunteer_full_name && String(u.volunteer_full_name).trim()) ||
-        (u.parent_full_name && String(u.parent_full_name).trim()) ||
+        volunteerName ||
+        parentName ||
         (u.email && String(u.email).trim()) ||
         'Staff Member';
       staffMetaMap.set(u.id, {
         name: displayName,
+        email: u.email ? String(u.email).trim() : null,
         role: u.role || null,
         dutyRole: duty ? formatDutyRoleLabel(duty.responsibility_key, duty.team_key) : null,
         teamKey: duty?.team_key || null,
-        assignedAgeGroups: duty?.assigned_age_groups || null
+        assignedAgeGroups: duty?.assigned_age_groups || null,
+        assignmentId: duty?.id || null,
+        assignmentLocation: duty?.assigned_location_name || null,
+        assignmentStartsAt: duty?.starts_at ? String(duty.starts_at) : null,
+        assignmentEndsAt: duty?.ends_at ? String(duty.ends_at) : null,
+        hasUser: true,
+        hasVolunteerProfile,
+        hasDutyAssignment: Boolean(duty)
       });
     }
   }
@@ -527,10 +579,18 @@ export async function getEventAnalyticsSnapshot(
       const duty = dutyByUser.get(id);
       staffMetaMap.set(id, {
         name: 'Unknown Volunteer',
+        email: null,
         role: null,
         dutyRole: duty ? formatDutyRoleLabel(duty.responsibility_key, duty.team_key) : null,
         teamKey: duty?.team_key || null,
-        assignedAgeGroups: duty?.assigned_age_groups || null
+        assignedAgeGroups: duty?.assigned_age_groups || null,
+        assignmentId: duty?.id || null,
+        assignmentLocation: duty?.assigned_location_name || null,
+        assignmentStartsAt: duty?.starts_at ? String(duty.starts_at) : null,
+        assignmentEndsAt: duty?.ends_at ? String(duty.ends_at) : null,
+        hasUser: false,
+        hasVolunteerProfile: false,
+        hasDutyAssignment: Boolean(duty)
       });
     }
   }
@@ -778,23 +838,44 @@ export async function getEventAnalyticsSnapshot(
   const volunteers: VolunteerAnalyticsRow[] = Array.from(volunteerStatsMap.entries())
     .map(([volId, stat]) => {
       const meta = staffMetaMap.get(volId);
+      const totalActions = stat.checkIns + stat.pickups;
+      const hasVolunteerProfile = meta?.hasVolunteerProfile ?? false;
+      const hasDutyAssignment = meta?.hasDutyAssignment ?? false;
+      const profileState: VolunteerAnalyticsRow['profileState'] = hasVolunteerProfile
+        ? 'complete'
+        : hasDutyAssignment
+          ? 'profile_missing'
+          : 'no_profile';
+
       return {
         volunteerId: volId,
         name: meta?.name || 'Unknown Volunteer',
+        email: meta?.email || null,
         role: meta?.role || null,
         dutyRole: meta?.dutyRole || null,
         teamKey: meta?.teamKey || null,
         assignedAgeGroups: meta?.assignedAgeGroups || null,
+        assignmentId: meta?.assignmentId || null,
+        assignmentLocation: meta?.assignmentLocation || null,
+        assignmentStartsAt: meta?.assignmentStartsAt || null,
+        assignmentEndsAt: meta?.assignmentEndsAt || null,
+        hasUser: meta?.hasUser ?? false,
+        hasVolunteerProfile,
+        hasDutyAssignment,
+        hasActivity: totalActions > 0,
+        profileState,
         checkIns: stat.checkIns,
         pickups: stat.pickups,
-        totalActions: stat.checkIns + stat.pickups,
+        totalActions,
         lastActivityAt: stat.lastActivityAt
       };
     })
-    .filter((v) => v.totalActions > 0 || v.dutyRole !== null)
+    .filter((v) => v.totalActions > 0 || v.hasDutyAssignment)
     .sort((a, b) => {
       if (b.totalActions !== a.totalActions) return b.totalActions - a.totalActions;
-      if (b.checkIns !== a.checkIns) return b.checkIns - a.checkIns;
+      const aLast = toTimestampMs(a.lastActivityAt) ?? 0;
+      const bLast = toTimestampMs(b.lastActivityAt) ?? 0;
+      if (bLast !== aLast) return bLast - aLast;
       return a.name.localeCompare(b.name);
     });
 
