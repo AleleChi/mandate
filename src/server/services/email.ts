@@ -1105,3 +1105,92 @@ export async function sendInvitationEmail(params: {
   });
 }
 
+/**
+ * Send or resend secure account-setup invitation email to a zero-child Parent.
+ * Never includes generated passwords; lets the Parent set their own password.
+ */
+export async function sendParentRegistrationInviteEmail(params: {
+  recipientEmail: string;
+  recipientName?: string;
+  preferredName?: string;
+  firstName?: string;
+  inviteLink: string;
+  expiresAt: Date | string;
+}): Promise<SendEmailResult> {
+  const nameToUse = resolveGreetingName({
+    preferredName: params.preferredName,
+    firstName: params.firstName,
+    fullName: params.recipientName
+  });
+
+  const greeting = nameToUse === 'there' ? 'Hello there,' : `Hello ${nameToUse},`;
+  const formattedExpiry = formatInvitationExpiry(params.expiresAt);
+  const subject = 'Complete your Koinonia Children & Teens Parent Account';
+
+  const bodyHtml = `
+    <p style="margin-top: 0;">${greeting}</p>
+    <p>You have been invited to complete your Koinonia Children &amp; Teens Parent account.</p>
+    <p>Please use the secure link below to set up your account and register your child or children for The General Assembly.</p>
+    <div style="margin: 28px 0;">
+      <a href="${params.inviteLink}" style="background-color: #C59B27; color: #FFFFFF; font-weight: 600; text-decoration: none; padding: 12px 24px; border-radius: 6px; display: inline-block; font-size: 15px;">
+        Complete account setup
+      </a>
+    </div>
+    <p style="font-size: 13px; color: #71717A;">This invitation link expires on <strong>${formattedExpiry}</strong>.</p>
+    <p style="margin-top: 20px; font-size: 13px; color: #A1A1AA;">If you did not expect this invitation, you may ignore this email.</p>
+    <p style="margin-top: 24px; margin-bottom: 0;"><strong>Koinonia Children &amp; Teens Team</strong></p>
+  `;
+
+  const text = `${greeting}\n\nYou have been invited to complete your Koinonia Children & Teens Parent account.\n\nPlease use the secure link below to set up your account and register your child or children for The General Assembly.\n\nComplete account setup:\n${params.inviteLink}\n\nThis invitation link expires on ${formattedExpiry}.\n\nIf you did not expect this invitation, you may ignore this email.\n\nKoinonia Children & Teens Team`;
+
+  return sendEmail({
+    to: params.recipientEmail,
+    subject,
+    html: wrapHtmlTemplate(subject, bodyHtml),
+    text
+  });
+}
+
+/**
+ * Send reminder email to an ACTIVE Parent who has 0 registered children.
+ * Does not create invitation tokens or alter password state.
+ */
+export async function sendParentRegistrationReminderEmail(params: {
+  recipientEmail: string;
+  recipientName?: string;
+  preferredName?: string;
+  firstName?: string;
+  signInUrl: string;
+}): Promise<SendEmailResult> {
+  const nameToUse = resolveGreetingName({
+    preferredName: params.preferredName,
+    firstName: params.firstName,
+    fullName: params.recipientName
+  });
+
+  const greeting = nameToUse === 'there' ? 'Hello there,' : `Hello ${nameToUse},`;
+  const subject = 'Register Your Child for The General Assembly';
+
+  const bodyHtml = `
+    <p style="margin-top: 0;">${greeting}</p>
+    <p>Your Koinonia Children &amp; Teens Parent account is active, but no child registration has been added yet for The General Assembly.</p>
+    <p>Please sign in to your Parent account to add and submit your child or children.</p>
+    <div style="margin: 28px 0;">
+      <a href="${params.signInUrl}" style="background-color: #C59B27; color: #FFFFFF; font-weight: 600; text-decoration: none; padding: 12px 24px; border-radius: 6px; display: inline-block; font-size: 15px;">
+        Sign in to Parent Portal
+      </a>
+    </div>
+    <p style="font-size: 13px; color: #71717A;">If you cannot remember your password, use the Forgot Password option on the sign-in page.</p>
+    <p style="margin-top: 24px; margin-bottom: 0;"><strong>Koinonia Children &amp; Teens Team</strong></p>
+  `;
+
+  const text = `${greeting}\n\nYour Koinonia Children & Teens Parent account is active, but no child registration has been added yet for The General Assembly.\n\nPlease sign in to your Parent account to add and submit your child or children.\n\nSign in to Parent Portal:\n${params.signInUrl}\n\nIf you cannot remember your password, use the Forgot Password option on the sign-in page.\n\nKoinonia Children & Teens Team`;
+
+  return sendEmail({
+    to: params.recipientEmail,
+    subject,
+    html: wrapHtmlTemplate(subject, bodyHtml),
+    text
+  });
+}
+

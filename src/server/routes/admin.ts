@@ -6,7 +6,19 @@ import { query, queryOne, execute, transaction } from '../db';
 import { authMiddleware, AuthenticatedRequest, verifyPassword, hashPassword, generateToken } from '../auth';
 import { syncJobsForEvent, executeTestNotification, sendWhatsApp } from '../services/notifications';
 import { sendWebPush } from '../services/push';
-import { sendEmail, sendVolunteerApprovedEmail, sendInvitationEmail, formatInvitationExpiry, isEmailConfigured, resolveEmailProvider, sendChildReturnToDraftEmail, buildParentsChannelEmailSection } from '../services/email';
+import { sendEmail, sendVolunteerApprovedEmail, sendInvitationEmail, sendParentRegistrationInviteEmail, formatInvitationExpiry, isEmailConfigured, resolveEmailProvider, sendChildReturnToDraftEmail, buildParentsChannelEmailSection } from '../services/email';
+import {
+  issueOrReplaceInviteToken,
+  buildRegistrationEmailStatsMap,
+  sendRegistrationAccessEmailForParent,
+  sendBulkRegistrationAccessEmails
+} from '../services/parentRegistrationAccessService';
+
+function normalizeOptionalText(val: unknown): string | null {
+  if (val === undefined || val === null) return null;
+  const trimmed = String(val).trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
 import { recordChannelInvitationSent } from '../services/selectedParentsChannelService';
 import { extractFirstName, formatSelectedChildNames } from '../services/whatsapp/personalization';
 import { issuePassForChild, revokePassForChild } from '../services/passService';
@@ -1192,25 +1204,18 @@ router.post('/invites/resend', authMiddleware, async (req: AuthenticatedRequest,
       }
     }
 
-    // Generate new token with fresh 72-hour expiry
-    const rawToken = crypto.randomBytes(32).toString('hex');
-    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-    const tokenId = crypto.randomUUID();
-    const expiryHours = parseInt(process.env.INVITATION_EXPIRY_HOURS || '72', 10);
-    const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString();
+    let rawToken = '';
+    let expiresAt = '';
 
     // Atomic DB operations for resend
     await transaction(async () => {
-      // Revoke any previous pending tokens for this user safely
-      await execute(
-        "UPDATE auth_tokens SET revoked_at = ?, revoked_by = ? WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL",
-        [nowStr, req.user.id, targetUser.id]
-      );
-
-      await execute(`
-        INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
-        VALUES (?, ?, ?, 'admin_invite', ?, ?)
-      `, [tokenId, targetUser.id, tokenHash, expiresAt, nowStr]);
+      const issued = await issueOrReplaceInviteToken({
+        userId: targetUser.id,
+        revokedByUserId: req.user!.id,
+        nowStr
+      });
+      rawToken = issued.rawToken;
+      expiresAt = issued.expiresAt;
     });
 
     const inviteLink = buildPublicAppUrl(`/admin/accept-invite?token=${rawToken}`);
@@ -1218,13 +1223,20 @@ router.post('/invites/resend', authMiddleware, async (req: AuthenticatedRequest,
     let emailResult: any = null;
     let emailDeliveryError: string | null = null;
     try {
-      emailResult = await sendInvitationEmail({
-        recipientEmail: cleanEmail,
-        recipientName: recipientName || undefined,
-        role: targetUser.role,
-        inviteLink,
-        expiresAt
-      });
+      emailResult = targetUser.role === 'parent'
+        ? await sendParentRegistrationInviteEmail({
+            recipientEmail: cleanEmail,
+            recipientName: recipientName || undefined,
+            inviteLink,
+            expiresAt
+          })
+        : await sendInvitationEmail({
+            recipientEmail: cleanEmail,
+            recipientName: recipientName || undefined,
+            role: targetUser.role,
+            inviteLink,
+            expiresAt
+          });
     } catch (err: any) {
       console.error('Error sending resend invitation email:', err);
       emailDeliveryError = err?.message || 'Email delivery failed';
@@ -1481,8 +1493,8 @@ router.post('/parents', authMiddleware, async (req: AuthenticatedRequest, res: R
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         parentProfileId, parentUserId, fullName, cleanEmail, cleanPhone || null,
-        whatsappPhone || null, homeAddress || null, city || null, stateProvince || null, country || 'UK',
-        preferredContactMethod || 'email', isKoinoniaWorker ? 1 : 0, workerDepartment || null,
+        normalizeOptionalText(whatsappPhone), normalizeOptionalText(homeAddress), normalizeOptionalText(city), normalizeOptionalText(stateProvince), normalizeOptionalText(country),
+        preferredContactMethod || 'email', isKoinoniaWorker ? 1 : 0, normalizeOptionalText(workerDepartment),
         nowStr, nowStr
       ]);
 
@@ -1551,12 +1563,11 @@ router.post('/parents', authMiddleware, async (req: AuthenticatedRequest, res: R
       let emailResult: any = null;
       let emailError: string | null = null;
       try {
-        emailResult = await sendInvitationEmail({
+        emailResult = await sendParentRegistrationInviteEmail({
           recipientEmail: cleanEmail,
           recipientName: fullName,
           preferredName,
           firstName,
-          role: 'parent',
           inviteLink,
           expiresAt: inviteExpiresAt
         });
@@ -11534,52 +11545,26 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
       `)
     ]);
 
-    const pendingUserIds = rows
-      .filter((r: any) => r.user_password_hash === 'invited_pending')
+    const allUserIds = rows
       .map((r: any) => r.user_id)
       .filter(Boolean);
 
-    let latestInviteLogByUserId: Record<string, { status: string; timestamp: string }> = {};
-
-    if (pendingUserIds.length > 0) {
-      const placeholders = pendingUserIds.map(() => '?').join(',');
-      const inviteLogs = await query(`
-        SELECT target_id, details, timestamp
-        FROM audit_logs
-        WHERE action IN ('SEND_INVITATION', 'RESEND_INVITATION')
-          AND target_id IN (${placeholders})
-        ORDER BY timestamp DESC
-      `, pendingUserIds);
-
-      for (const log of inviteLogs) {
-        if (!latestInviteLogByUserId[log.target_id]) {
-          let parsedStatus = 'sent';
-          try {
-            const d = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
-            if (d && d.status === 'failed') parsedStatus = 'failed';
-          } catch (e) {}
-          latestInviteLogByUserId[log.target_id] = {
-            status: parsedStatus,
-            timestamp: log.timestamp
-          };
-        }
-      }
-    }
+    const regStatsByUserId = await buildRegistrationEmailStatsMap(allUserIds);
 
     const formatted = rows.map((p: any) => {
       let accountStatus: 'active' | 'invitation_pending' | 'email_delivery_failed' | 'no_account' = 'active';
       let invitationSentAt: string | null = null;
       let canResendInvitation = false;
+      const stats = regStatsByUserId[p.user_id];
 
       if (p.user_password_hash === 'invited_pending') {
         canResendInvitation = true;
-        const log = latestInviteLogByUserId[p.user_id];
-        if (log && log.status === 'failed') {
+        if (stats && stats.latestInviteStatus === 'failed') {
           accountStatus = 'email_delivery_failed';
         } else {
           accountStatus = 'invitation_pending';
         }
-        invitationSentAt = log?.timestamp || p.created_at || null;
+        invitationSentAt = stats?.latestInviteTimestamp || p.created_at || null;
       } else if (p.user_password_hash === 'profile_no_account') {
         accountStatus = 'no_account';
         canResendInvitation = false;
@@ -11613,6 +11598,10 @@ router.get('/parents', async (req: AuthenticatedRequest, res: Response) => {
         accountStatus,
         invitationSentAt,
         canResendInvitation,
+        registrationEmailCount: stats?.registrationEmailCount || 0,
+        registrationEmailLastSentAt: stats?.registrationEmailLastSentAt || null,
+        lastRegistrationEmailStatus: stats?.lastRegistrationEmailStatus || null,
+        lastRegistrationEmailAction: stats?.lastRegistrationEmailAction || null,
         childrenCount: Number(p.children_count || 0),
         children: childrenByParentId[p.id] || [],
         isDeleted: p.is_deleted === 1,
@@ -11802,6 +11791,71 @@ router.post('/parents/bulk-restore', authMiddleware, async (req: AuthenticatedRe
   }
 });
 
+// POST /api/admin/parents/registration-access-email/bulk - Bulk zero-child registration access email
+router.post('/parents/registration-access-email/bulk', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const { parentIds } = req.body;
+    if (!Array.isArray(parentIds) || parentIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'Parent IDs must be a non-empty array' });
+    }
+
+    const result = await sendBulkRegistrationAccessEmails({
+      parentIds,
+      adminUserId: req.user.id,
+      adminRole: req.user.role
+    });
+
+    return res.json(result);
+  } catch (err: any) {
+    console.error('Error in bulk registration access email:', err);
+    return res.status(500).json({ success: false, error: 'Failed to process registration access emails.' });
+  }
+});
+
+// POST /api/admin/parents/:id/registration-access-email - Send invite, resend invite, or active reminder based on account state
+router.post('/parents/:id/registration-access-email', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    const parentId = req.params.id;
+    const outcome = await sendRegistrationAccessEmailForParent({
+      parentId,
+      adminUserId: req.user.id,
+      adminRole: req.user.role
+    });
+
+    if (outcome.httpStatus !== 200) {
+      return res.status(outcome.httpStatus).json({
+        success: false,
+        code: outcome.code,
+        error: outcome.error
+      });
+    }
+
+    if (!outcome.success) {
+      return res.status(200).json({
+        success: false,
+        code: outcome.code || 'EMAIL_DELIVERY_FAILED',
+        action: outcome.action,
+        error: outcome.error || 'Email could not be delivered. Try again.',
+        message: outcome.error || 'Email could not be delivered. Try again.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      action: outcome.action
+    });
+  } catch (err: any) {
+    console.error('Error sending parent registration access email:', err);
+    return res.status(500).json({ success: false, error: 'Failed to send registration access email.' });
+  }
+});
+
 // GET /api/admin/parents/:id - Get parent details, children, event summary, attention and admin notes
 router.get('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -11946,32 +12000,17 @@ router.get('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
     let accountStatus: 'active' | 'invitation_pending' | 'email_delivery_failed' | 'no_account' = 'active';
     let invitationSentAt: string | null = null;
     let canResendInvitation = false;
+    const statsMap = await buildRegistrationEmailStatsMap(p.user_id ? [p.user_id] : []);
+    const regStats = p.user_id ? statsMap[p.user_id] : undefined;
 
     if (p.user_password_hash === 'invited_pending') {
       canResendInvitation = true;
-      const latestInviteLog = await queryOne<{ details: string; timestamp: string }>(`
-        SELECT details, timestamp
-        FROM audit_logs
-        WHERE action IN ('SEND_INVITATION', 'RESEND_INVITATION')
-          AND target_id = ?
-        ORDER BY timestamp DESC
-        LIMIT 1
-      `, [p.user_id]);
-
-      let parsedStatus = 'sent';
-      if (latestInviteLog) {
-        try {
-          const d = typeof latestInviteLog.details === 'string' ? JSON.parse(latestInviteLog.details) : latestInviteLog.details;
-          if (d && d.status === 'failed') parsedStatus = 'failed';
-        } catch (e) {}
-      }
-
-      if (parsedStatus === 'failed') {
+      if (regStats && regStats.latestInviteStatus === 'failed') {
         accountStatus = 'email_delivery_failed';
       } else {
         accountStatus = 'invitation_pending';
       }
-      invitationSentAt = latestInviteLog?.timestamp || p.created_at || null;
+      invitationSentAt = regStats?.latestInviteTimestamp || p.created_at || null;
     } else if (p.user_password_hash === 'profile_no_account') {
       accountStatus = 'no_account';
       canResendInvitation = false;
@@ -11990,7 +12029,10 @@ router.get('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
       phone: p.phone_number,
       whatsapp: p.whatsapp_number,
       homeAddress: p.home_address,
-      location: locationParts.join(', ') || 'Not Specified',
+      city: p.city || null,
+      stateRegion: p.state_region || null,
+      country: p.country || null,
+      location: locationParts.join(', ') || 'Location not provided',
       preferredContact: p.preferred_contact || 'phone',
       isKoinoniaWorker: p.is_koinonia_worker === 1,
       department: p.department || '',
@@ -12000,6 +12042,11 @@ router.get('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
       accountStatus,
       invitationSentAt,
       canResendInvitation,
+      registrationEmailCount: regStats?.registrationEmailCount || 0,
+      registrationEmailLastSentAt: regStats?.registrationEmailLastSentAt || null,
+      lastRegistrationEmailStatus: regStats?.lastRegistrationEmailStatus || null,
+      lastRegistrationEmailAction: regStats?.lastRegistrationEmailAction || null,
+      childrenCount: kids.length,
       createdAt: p.created_at,
       isDeleted: p.is_deleted === 1,
       deletedAt: p.deleted_at,
@@ -12094,29 +12141,29 @@ router.put('/parents/:id', async (req: AuthenticatedRequest, res: Response) => {
     await execute(`
       UPDATE parent_profiles
       SET 
-        full_name = COALESCE(?, full_name),
-        phone_number = COALESCE(?, phone_number),
-        whatsapp_number = COALESCE(?, whatsapp_number),
-        home_address = COALESCE(?, home_address),
-        preferred_contact = COALESCE(?, preferred_contact),
-        is_koinonia_worker = COALESCE(?, is_koinonia_worker),
-        department = COALESCE(?, department),
-        country = COALESCE(?, country),
-        state_region = COALESCE(?, state_region),
-        city = COALESCE(?, city),
+        full_name = ?,
+        phone_number = ?,
+        whatsapp_number = ?,
+        home_address = ?,
+        preferred_contact = ?,
+        is_koinonia_worker = ?,
+        department = ?,
+        country = ?,
+        state_region = ?,
+        city = ?,
         updated_at = ?
       WHERE id = ?
     `, [
-      fullName || null, 
-      phone || null, 
-      whatsapp || null, 
-      homeAddress || null, 
-      preferredContact || null,
-      isKoinoniaWorker !== undefined ? (isKoinoniaWorker ? 1 : 0) : null,
-      department || null, 
-      country || null, 
-      stateRegion || null, 
-      city || null, 
+      fullName !== undefined ? (normalizeOptionalText(fullName) || p.full_name) : p.full_name,
+      phone !== undefined ? normalizeOptionalText(phone) : p.phone_number,
+      whatsapp !== undefined ? normalizeOptionalText(whatsapp) : p.whatsapp_number,
+      homeAddress !== undefined ? normalizeOptionalText(homeAddress) : p.home_address,
+      preferredContact !== undefined ? (normalizeOptionalText(preferredContact) || p.preferred_contact) : p.preferred_contact,
+      isKoinoniaWorker !== undefined ? (isKoinoniaWorker ? 1 : 0) : p.is_koinonia_worker,
+      department !== undefined ? normalizeOptionalText(department) : p.department,
+      country !== undefined ? normalizeOptionalText(country) : p.country,
+      stateRegion !== undefined ? normalizeOptionalText(stateRegion) : p.state_region,
+      city !== undefined ? normalizeOptionalText(city) : p.city,
       nowStr, 
       id
     ]);
