@@ -203,15 +203,50 @@ async function resolveEventAndCatalog(explicitEventId?: string | null): Promise<
   targetEvent: EventRow | null;
   availableEvents: EventAnalyticsSnapshot['availableEvents'];
 }> {
-  const eventRows = await query<EventRow>(
-    `SELECT id, title, status, starts_at, ends_at, location, timezone, created_at
-     FROM events
-     ORDER BY
-       CASE WHEN status = 'current' THEN 0 WHEN status = 'upcoming' THEN 1 ELSE 2 END,
-       COALESCE(starts_at, created_at) DESC`
-  );
+  const eventRows = await query<EventRow>(`
+    SELECT
+      id,
+      title,
+      status,
+      starts_at,
+      ends_at,
+      location,
+      timezone,
+      created_at
+    FROM events
+  `);
 
-  const availableEvents = (eventRows || []).map((ev) => ({
+  const statusRank = (status?: string | null) => {
+    switch (String(status || '').toLowerCase()) {
+      case 'current':
+        return 0;
+      case 'upcoming':
+        return 1;
+      default:
+        return 2;
+    }
+  };
+
+  const sortedEvents = [...(eventRows || [])].sort((a, b) => {
+    const rankDiff = statusRank(a.status) - statusRank(b.status);
+    if (rankDiff !== 0) {
+      return rankDiff;
+    }
+
+    const aTime =
+      toTimestampMs(a.starts_at) ??
+      toTimestampMs(a.created_at) ??
+      0;
+
+    const bTime =
+      toTimestampMs(b.starts_at) ??
+      toTimestampMs(b.created_at) ??
+      0;
+
+    return bTime - aTime;
+  });
+
+  const availableEvents = sortedEvents.map((ev) => ({
     id: ev.id,
     title: ev.title,
     status: ev.status,

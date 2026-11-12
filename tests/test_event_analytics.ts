@@ -431,6 +431,46 @@ async function main() {
       assert.equal(scaleSnap.volunteers.length, 100);
       assert.ok(elapsedMs < 500, `Expected < 500ms, took ${elapsedMs.toFixed(1)}ms`);
     });
+
+    await runTest('8. Event Catalogue JS Sorting, Null starts_at Fallback, and Current Event Resolution (No Mixed COALESCE)', async () => {
+      const evGaId = `ev-ga-current-${Date.now()}`;
+      const evUpcomingNullStartId = `ev-upcoming-null-${Date.now()}`;
+      const evUpcomingOlderId = `ev-upcoming-older-${Date.now()}`;
+
+      // Archive previous current event cleanly inside isolated temp DB and insert The General Assembly as current
+      await execute(`UPDATE events SET status = 'archived' WHERE status = 'current'`);
+      await execute(
+        `INSERT INTO events (id, title, status, starts_at, ends_at, location, timezone, created_at, updated_at)
+         VALUES (?, 'The General Assembly', 'current', '2026-11-21T08:00:00', '2026-11-21T18:00:00', 'Abuja Sanctuary', 'Africa/Lagos', ?, ?)`,
+        [evGaId, '2026-11-01T10:00:00Z', now]
+      );
+      await execute(
+        `INSERT INTO events (id, title, status, starts_at, ends_at, location, timezone, created_at, updated_at)
+         VALUES (?, 'Upcoming Null Start Event', 'upcoming', NULL, NULL, 'Main Hall', 'Africa/Lagos', ?, ?)`,
+        [evUpcomingNullStartId, '2026-12-05T12:00:00Z', now]
+      );
+      await execute(
+        `INSERT INTO events (id, title, status, starts_at, ends_at, location, timezone, created_at, updated_at)
+         VALUES (?, 'Upcoming Older Event', 'upcoming', '2026-11-28T08:00:00', NULL, 'Annex', 'Africa/Lagos', ?, ?)`,
+        [evUpcomingOlderId, '2026-11-02T12:00:00Z', now]
+      );
+
+      // Verify empty query defaults to The General Assembly and preserves Africa/Lagos timezone
+      const snap = await getEventAnalyticsSnapshot({});
+      assert.ok(snap.event);
+      assert.equal(snap.event.id, evGaId);
+      assert.equal(snap.event.title, 'The General Assembly');
+      assert.equal(snap.event.timezone, 'Africa/Lagos');
+      assert.ok(snap.availableEvents.length >= 3);
+
+      // Verify ordering: current first, then upcoming ordered by (starts_at ?? created_at) DESC, then non-upcoming
+      assert.equal(snap.availableEvents[0].id, evGaId);
+      assert.equal(snap.availableEvents[0].status, 'current');
+
+      const upcomingIds = snap.availableEvents.filter((e) => e.status === 'upcoming').map((e) => e.id);
+      assert.equal(upcomingIds[0], evUpcomingNullStartId, 'Null starts_at should fall back to newer created_at cleanly');
+      assert.ok(upcomingIds.indexOf(evUpcomingNullStartId) < upcomingIds.indexOf(evUpcomingOlderId));
+    });
   } finally {
     if (typeof (server as any).closeAllConnections === 'function') {
       (server as any).closeAllConnections();
