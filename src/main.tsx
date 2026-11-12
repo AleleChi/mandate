@@ -26,10 +26,52 @@ if ('serviceWorker' in navigator) {
       });
     }
   } else {
+    const canSafeReload = (storageKey: string, cooldownMs = 15000) => {
+      try {
+        const now = Date.now();
+        const last = Number(sessionStorage.getItem(storageKey) || '0');
+        if (now - last < cooldownMs) return false;
+        sessionStorage.setItem(storageKey, String(now));
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    // Recover once if an older cached shell tries to import a pruned chunk hash
+    window.addEventListener('vite:preloadError', (event) => {
+      if (canSafeReload('koinonia_preload_reload_ts')) {
+        event.preventDefault();
+        window.location.reload();
+      }
+    });
+
+    let hasActiveController = Boolean(navigator.serviceWorker.controller);
+    let reloadingForSwUpdate = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hasActiveController) {
+        hasActiveController = true;
+        return;
+      }
+      if (reloadingForSwUpdate) return;
+      reloadingForSwUpdate = true;
+      if (canSafeReload('koinonia_sw_reload_ts')) {
+        window.location.reload();
+      }
+    });
+
     const registerSW = () => {
-      navigator.serviceWorker.register('/sw.js')
+      navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
         .then((reg) => {
           console.log('ServiceWorker registration successful with scope: ', reg.scope);
+          reg.update().catch(() => {});
+          let lastCheck = Date.now();
+          document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && Date.now() - lastCheck > 30000) {
+              lastCheck = Date.now();
+              reg.update().catch(() => {});
+            }
+          });
         })
         .catch((err) => {
           console.log('ServiceWorker registration failed: ', err);

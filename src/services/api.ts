@@ -1604,6 +1604,9 @@ export const api = {
       search?: string;
       ageGroup?: string;
       exactAge?: string | number;
+      minAge?: string | number;
+      maxAge?: string | number;
+      sort?: 'name_asc' | 'name_desc' | 'age_asc' | 'age_desc' | string;
       passStatus?: string;
       attendanceStatus?: string;
       gender?: string;
@@ -1616,6 +1619,15 @@ export const api = {
       if (params?.ageGroup && params.ageGroup !== 'all' && params.ageGroup !== 'All age groups') queryParams.append('ageGroup', params.ageGroup);
       if (params?.exactAge !== undefined && params.exactAge !== null && String(params.exactAge).trim() !== '' && String(params.exactAge).trim().toLowerCase() !== 'all') {
         queryParams.append('exactAge', String(params.exactAge).trim());
+      }
+      if (params?.minAge !== undefined && params?.minAge !== null && String(params.minAge).trim() !== '' && String(params.minAge).trim().toLowerCase() !== 'all') {
+        queryParams.append('minAge', String(params.minAge).trim());
+      }
+      if (params?.maxAge !== undefined && params?.maxAge !== null && String(params.maxAge).trim() !== '' && String(params.maxAge).trim().toLowerCase() !== 'all') {
+        queryParams.append('maxAge', String(params.maxAge).trim());
+      }
+      if (params?.sort && String(params.sort).trim() !== '') {
+        queryParams.append('sort', String(params.sort).trim());
       }
       if (params?.passStatus && params.passStatus !== 'all') queryParams.append('passStatus', params.passStatus);
       if (params?.attendanceStatus && params.attendanceStatus !== 'all') queryParams.append('attendanceStatus', params.attendanceStatus);

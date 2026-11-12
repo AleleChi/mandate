@@ -1,16 +1,18 @@
-const CACHE_NAME = 'koinonia-app-shell-v5';
+const CACHE_NAME = 'koinonia-app-shell-v6';
 const CORE_ASSETS = [
   '/',
   '/index.html'
 ];
 
+const HASHED_ASSET_PATTERN = /^\/assets\/.*-[A-Za-z0-9_-]{8,}\.(?:js|css|woff2?|png|jpe?g|svg|webp)$/i;
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
-      // Safe, individual pre-caching so external or transient misses never abort SW installation
+      // Safe, individual pre-caching with HTTP revalidation so stale index.html is never sealed
       for (const asset of CORE_ASSETS) {
         try {
-          await cache.add(asset);
+          await cache.add(new Request(asset, { cache: 'no-cache' }));
         } catch (err) {
           console.warn('[SW] Non-fatal pre-cache miss:', asset, err);
         }
@@ -33,15 +35,15 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
 
-  // CRITICAL SECURITY RULE: Do NOT cache any API routes
+  // CRITICAL SECURITY RULE: Never intercept or cache any API routes
   if (url.pathname.startsWith('/api/')) {
-    event.respondWith(fetch(event.request));
     return;
   }
 
-  // Do NOT cache private child photos, qr codes, event passes, or profiles
+  // Do NOT intercept or cache private child photos, qr codes, event passes, or profiles
   if (
     url.pathname.includes('/pass') ||
     url.pathname.includes('/qr') ||
@@ -49,15 +51,37 @@ self.addEventListener('fetch', (event) => {
     url.pathname.includes('/children') ||
     url.pathname.includes('/parent')
   ) {
-    event.respondWith(fetch(event.request));
     return;
   }
 
-  // For document navigation, we use a Network-First strategy to avoid stale cached builds
+  // Document navigation / app shell (index.html): Network-First with HTTP cache revalidation
   if (event.request.mode === 'navigate' || url.pathname === '/' || url.pathname === '/index.html') {
     event.respondWith(
-      fetch(event.request)
+      fetch(new Request(url.href, { cache: 'no-cache', credentials: 'same-origin' }))
         .then((networkResponse) => {
+          if (networkResponse.ok) {
+            const cacheCopy = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put('/', cacheCopy);
+            });
+          }
+          return networkResponse;
+        })
+        .catch(async () => {
+          return (await caches.match(event.request)) || (await caches.match('/')) || caches.match('/index.html');
+        })
+    );
+    return;
+  }
+
+  // Content-hashed build assets under /assets/: Cache-First (filenames change on every code change)
+  if (url.origin === self.location.origin && HASHED_ASSET_PATTERN.test(url.pathname)) {
+    event.respondWith(
+      caches.match(event.request).then((cachedResponse) => {
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+        return fetch(event.request).then((networkResponse) => {
           if (networkResponse.ok) {
             const cacheCopy = networkResponse.clone();
             caches.open(CACHE_NAME).then((cache) => {
@@ -65,22 +89,23 @@ self.addEventListener('fetch', (event) => {
             });
           }
           return networkResponse;
-        })
-        .catch(() => {
-          return caches.match('/');
-        })
+        });
+      })
     );
     return;
   }
 
-  // For style, script, and font assets, use a Network-First strategy
+  // Other unhashed style, script, and font assets: Network-First with revalidation
   if (
     event.request.destination === 'style' ||
     event.request.destination === 'script' ||
     event.request.destination === 'font'
   ) {
+    const req = url.origin === self.location.origin
+      ? new Request(url.href, { cache: 'no-cache', credentials: 'same-origin' })
+      : event.request;
     event.respondWith(
-      fetch(event.request)
+      fetch(req)
         .then((networkResponse) => {
           if (networkResponse.ok) {
             const cacheCopy = networkResponse.clone();

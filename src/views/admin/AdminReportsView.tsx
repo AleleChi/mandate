@@ -284,23 +284,35 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
   const { showError, showSuccess } = useNotification();
   
   // Tabs State (Reports, Selected Children, Templates, Create report, Event overview)
-  const [activeMainTab, setActiveMainTab] = useState<MainTab>(() => {
+  const isSelectedChildrenRoute = (route?: string) => {
     if (
-      currentRoute?.includes('view=selected-children') ||
-      currentRoute?.includes('view=selected_children') ||
-      currentRoute?.endsWith('/reports/selected-children')
+      route?.includes('view=selected-children') ||
+      route?.includes('view=selected_children') ||
+      route?.endsWith('/reports/selected-children')
     ) {
-      return 'selected_children';
+      return true;
     }
-    return 'reports_centre';
+    if (typeof window !== 'undefined') {
+      const search = window.location.search || '';
+      const hash = window.location.hash || '';
+      const pathname = window.location.pathname || '';
+      return (
+        search.includes('view=selected-children') ||
+        search.includes('view=selected_children') ||
+        hash.includes('view=selected-children') ||
+        hash.includes('view=selected_children') ||
+        pathname.endsWith('/reports/selected-children')
+      );
+    }
+    return false;
+  };
+
+  const [activeMainTab, setActiveMainTab] = useState<MainTab>(() => {
+    return isSelectedChildrenRoute(currentRoute) ? 'selected_children' : 'reports_centre';
   });
 
   useEffect(() => {
-    if (
-      currentRoute?.includes('view=selected-children') ||
-      currentRoute?.includes('view=selected_children') ||
-      currentRoute?.endsWith('/reports/selected-children')
-    ) {
+    if (isSelectedChildrenRoute(currentRoute)) {
       setActiveMainTab('selected_children');
     }
   }, [currentRoute]);
