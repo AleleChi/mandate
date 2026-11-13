@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { X, Printer, QrCode, AlertCircle, Copy, Check, ShieldCheck, User } from 'lucide-react';
 import * as QRCodeLib from 'qrcode';
 import { api } from '../../../services/api';
+import { buildApiUrl } from '../../../utils/urlHelper';
 
 export interface PrintablePassData {
   childId: string;
@@ -53,6 +54,7 @@ export const AdminPassModal: React.FC<AdminPassModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [passes, setPasses] = useState<PrintablePassData[]>([]);
   const [qrCodeUrls, setQrCodeUrls] = useState<Record<string, string>>({});
+  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   const isBatch = Boolean(childIds && childIds.length > 1);
@@ -62,6 +64,7 @@ export const AdminPassModal: React.FC<AdminPassModalProps> = ({
     if (!isOpen) {
       setPasses([]);
       setQrCodeUrls({});
+      setFailedImages({});
       setError(null);
       return;
     }
@@ -309,33 +312,40 @@ export const AdminPassModal: React.FC<AdminPassModalProps> = ({
                       </div>
 
                       {/* Child Profile Strip */}
-                      <div className="py-3 flex items-center gap-3.5 border-b border-[#EAE8E1] dark:border-[#2A2926]">
-                        <div className="w-14 h-14 rounded-xl overflow-hidden bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] flex items-center justify-center shrink-0 text-[#8C6D23] font-serif font-bold text-base">
-                          {item.photoUrl ? (
-                            <img
-                              src={item.photoUrl}
-                              alt=""
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <span>{item.childName.slice(0, 2).toUpperCase()}</span>
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <h5 className="text-sm font-bold text-zinc-900 dark:text-[#F0EBE3] truncate">
-                            {item.childName}
-                          </h5>
-                          <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] mt-0.5">
-                            {item.age !== null && item.age !== undefined ? `${item.age} yrs · ` : ''}
-                            {item.ageGroup || 'Section'}
-                          </p>
-                          {item.pickupName && (
-                            <p className="text-[11px] text-zinc-500 dark:text-[#7A7570] truncate mt-0.5">
-                              Pickup: {item.pickupName} ({item.pickupRelation || 'Adult'})
-                            </p>
-                          )}
-                        </div>
-                      </div>
+                      {(() => {
+                        const itemKey = item.childId || String(idx);
+                        const resolvedPhotoUrl = item.photoUrl && !failedImages[itemKey] ? buildApiUrl(item.photoUrl) : '';
+                        return (
+                          <div className="py-3 flex items-center gap-3.5 border-b border-[#EAE8E1] dark:border-[#2A2926]">
+                            <div className="w-14 h-14 rounded-xl overflow-hidden bg-[#FAF6EB] dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] flex items-center justify-center shrink-0 text-[#8C6D23] font-serif font-bold text-base">
+                              {resolvedPhotoUrl ? (
+                                <img
+                                  src={resolvedPhotoUrl}
+                                  alt=""
+                                  className="w-full h-full object-cover"
+                                  onError={() => setFailedImages(prev => ({ ...prev, [itemKey]: true }))}
+                                />
+                              ) : (
+                                <span>{item.childName.slice(0, 2).toUpperCase()}</span>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <h5 className="text-sm font-bold text-zinc-900 dark:text-[#F0EBE3] truncate">
+                                {item.childName}
+                              </h5>
+                              <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] mt-0.5">
+                                {item.age !== null && item.age !== undefined ? `${item.age} yrs · ` : ''}
+                                {item.ageGroup || 'Section'}
+                              </p>
+                              {item.pickupName && (
+                                <p className="text-[11px] text-zinc-500 dark:text-[#7A7570] truncate mt-0.5">
+                                  Pickup: {item.pickupName} ({item.pickupRelation || 'Adult'})
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* High-Contrast QR Code Module */}
                       <div className="py-4 flex flex-col items-center justify-center space-y-2">
@@ -453,33 +463,40 @@ export const AdminPassModal: React.FC<AdminPassModalProps> = ({
                   </div>
 
                   {/* Child Identity Strip */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4mm', margin: '3mm 0', textAlign: 'left' }}>
-                    {item.photoUrl ? (
-                      <img
-                        src={item.photoUrl}
-                        alt=""
-                        style={{ width: '18mm', height: '18mm', objectFit: 'cover', borderRadius: '3mm', border: '1px solid #999' }}
-                      />
-                    ) : (
-                      <div style={{ width: '18mm', height: '18mm', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F0F0F0', border: '1px solid #999', borderRadius: '3mm', fontSize: '10pt', fontWeight: 'bold' }}>
-                        {item.childName.slice(0, 2).toUpperCase()}
-                      </div>
-                    )}
-                    <div>
-                      <div style={{ fontSize: '12pt', fontWeight: 'bold' }}>
-                        {item.childName}
-                      </div>
-                      <div style={{ fontSize: '9pt', color: '#444' }}>
-                        {item.age !== null && item.age !== undefined ? `${item.age} yrs · ` : ''}
-                        {item.ageGroup || 'Section'}
-                      </div>
-                      {item.pickupName && (
-                        <div style={{ fontSize: '7.5pt', color: '#666', marginTop: '1mm' }}>
-                          Pickup: {item.pickupName} ({item.pickupRelation || 'Adult'})
+                  {(() => {
+                    const itemKey = item.childId || String(idx);
+                    const resolvedPhotoUrl = item.photoUrl && !failedImages[itemKey] ? buildApiUrl(item.photoUrl) : '';
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4mm', margin: '3mm 0', textAlign: 'left' }}>
+                        {resolvedPhotoUrl ? (
+                          <img
+                            src={resolvedPhotoUrl}
+                            alt=""
+                            style={{ width: '18mm', height: '18mm', objectFit: 'cover', borderRadius: '3mm', border: '1px solid #999' }}
+                            onError={() => setFailedImages(prev => ({ ...prev, [itemKey]: true }))}
+                          />
+                        ) : (
+                          <div style={{ width: '18mm', height: '18mm', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F0F0F0', border: '1px solid #999', borderRadius: '3mm', fontSize: '10pt', fontWeight: 'bold' }}>
+                            {item.childName.slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                        <div>
+                          <div style={{ fontSize: '12pt', fontWeight: 'bold' }}>
+                            {item.childName}
+                          </div>
+                          <div style={{ fontSize: '9pt', color: '#444' }}>
+                            {item.age !== null && item.age !== undefined ? `${item.age} yrs · ` : ''}
+                            {item.ageGroup || 'Section'}
+                          </div>
+                          {item.pickupName && (
+                            <div style={{ fontSize: '7.5pt', color: '#666', marginTop: '1mm' }}>
+                              Pickup: {item.pickupName} ({item.pickupRelation || 'Adult'})
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* High Contrast Black & White QR (45mm x 45mm) */}
                   <div style={{ margin: '4mm auto', textAlign: 'center' }}>
