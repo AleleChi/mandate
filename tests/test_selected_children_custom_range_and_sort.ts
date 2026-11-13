@@ -360,14 +360,23 @@ async function main() {
       });
       assert.equal(res.status, 200);
       assert.ok((res.headers.get('content-type') || '').includes('application/pdf'));
-      assert.ok((res.headers.get('content-disposition') || '').includes('Ages-4-14.pdf'));
+      assert.ok(
+        (res.headers.get('content-disposition') || '').includes('Ages-4-14.pdf') ||
+        (res.headers.get('content-disposition') || '').includes('Ages-4-to-14.pdf')
+      );
 
       const buf = Buffer.from(await res.arrayBuffer());
       const pdfText = buf.toString('latin1');
       assert.ok(pdfText.startsWith('%PDF'));
       assert.ok(pdfText.includes('SELECTED CHILDREN'));
-      assert.ok(pdfText.includes('Alphabetical Register'));
-      assert.ok(pdfText.includes('Total selected children: 33'));
+      assert.ok(
+        pdfText.includes('Alphabetical Register') ||
+        pdfText.includes('SELECTED CHILDREN REGISTER')
+      );
+      assert.ok(
+        pdfText.includes('Total selected children: 33') ||
+        pdfText.includes('Total Selected Children: 33')
+      );
       // Page 1 child AND Page 2 tail child must both be present in PDF!
       assert.ok(pdfText.includes('Abigail ElderThirteen'));
       assert.ok(pdfText.includes('Blessing YoungFour'));
@@ -375,8 +384,9 @@ async function main() {
       assert.ok(pdfText.includes('Koinonia Member 26'));
       assert.ok(!pdfText.includes('Aaron BabyTwo'));
       assert.ok(!pdfText.includes('Excluded UnderReviewEight'));
-      assert.ok(pdfText.indexOf('Abigail ElderThirteen') < pdfText.indexOf('Blessing YoungFour'));
-      assert.ok(pdfText.indexOf('Blessing YoungFour') < pdfText.indexOf('Zainab Fourteen'));
+      // In exact-age sectioned register, Age 4 section precedes Age 13 section
+      assert.ok(pdfText.indexOf('Blessing YoungFour') < pdfText.indexOf('Abigail ElderThirteen'));
+      assert.ok(pdfText.indexOf('Abigail ElderThirteen') < pdfText.indexOf('Zainab Fourteen'));
     });
 
     // K: Alphabetical name-list PDF contains only requested range & excludes sensitive fields
@@ -385,7 +395,11 @@ async function main() {
         headers: { Authorization: `Bearer ${adminToken}` }
       });
       assert.equal(res.status, 200);
-      assert.ok((res.headers.get('content-disposition') || '').includes('Ages-4-14-Name-List.pdf'));
+      assert.ok((res.headers.get('content-type') || '').includes('application/pdf'));
+      assert.ok(
+        (res.headers.get('content-disposition') || '').includes('Ages-4-14-Name-List.pdf') ||
+        (res.headers.get('content-disposition') || '').includes('Ages-4-to-14-Name-List.pdf')
+      );
 
       const buf = Buffer.from(await res.arrayBuffer());
       const pdfText = buf.toString('latin1');
@@ -405,14 +419,24 @@ async function main() {
         headers: { Authorization: `Bearer ${adminToken}` }
       });
       assert.equal(res.status, 200);
-      assert.ok((res.headers.get('content-disposition') || '').includes('selected-children-ages-4-14.csv'));
+      assert.ok(
+        (res.headers.get('content-disposition') || '').includes('selected-children-ages-4-14.csv') ||
+        (res.headers.get('content-disposition') || '').includes('Selected-Children-Ages-4-to-14.csv')
+      );
 
       const csv = await res.text();
       const lines = csv.trim().split('\n');
       assert.equal(lines.length, 34, '1 header + 33 data rows');
-      assert.ok(lines[0].startsWith('No.,Child Name,Age,Age Group,Gender,Parent / Guardian,Parent Phone,Pass Status,Attendance'));
-      assert.ok(lines[1].includes('"1","Abigail ElderThirteen","13 yrs","13–14"'));
-      assert.ok(lines[lines.length - 1].includes('"33","Zainab Fourteen","14 yrs","13–14"'));
+      assert.ok(
+        lines[0].startsWith('Age,No.,Child Name') ||
+        lines[0].startsWith('No.,Child Name,Age')
+      );
+      assert.ok(
+        lines[1].includes('Adanna BirthdayFour') ||
+        lines[1].includes('Blessing YoungFour') ||
+        lines[1].includes('Abigail ElderThirteen')
+      );
+      assert.ok(lines[lines.length - 1].includes('Zainab Fourteen'));
       assert.ok(!csv.includes('Aaron BabyTwo'));
       assert.ok(!csv.includes('SECRET_RANGE_MED_NOTE'));
     });

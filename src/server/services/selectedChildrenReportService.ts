@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { jsPDF } from 'jspdf';
+import QRCodeLib from 'qrcode';
 import { query } from '../db';
 import { AuthenticatedRequest } from '../auth';
 import {
@@ -505,29 +506,60 @@ export function renderSelectedChildrenCsv(filtered: SelectedChildRecord[]): stri
     return `"${str}"`;
   };
 
-  let csvContent = 'No.,Child Name,Age,Age Group,Gender,Parent / Guardian,Parent Phone,Pass Status,Attendance\n';
-  filtered.forEach((c, idx) => {
-    const passText = c.passStatus === 'pass_ready' ? 'Pass ready' : 'Missing pass';
-    const attendanceText = c.attendanceStatus === 'picked_up'
-      ? 'Picked up'
-      : c.attendanceStatus === 'inside'
-        ? 'Inside'
-        : c.attendanceStatus === 'checked_in'
-          ? 'Checked in'
-          : 'Not arrived';
+  // Group by exact age ascending, and within each age sort alphabetically by child name A-Z (Requirements 2, 25, 26)
+  const ageMap = new Map<number, SelectedChildRecord[]>();
+  for (const c of filtered) {
+    const age = c.age;
+    if (!ageMap.has(age)) {
+      ageMap.set(age, []);
+    }
+    ageMap.get(age)!.push(c);
+  }
 
-    csvContent += [
-      escapeCSVField(idx + 1),
-      escapeCSVField(c.fullName),
-      escapeCSVField(`${c.age} yrs`),
-      escapeCSVField(c.ageGroup),
-      escapeCSVField(c.gender),
-      escapeCSVField(c.parent.fullName),
-      escapeCSVField(c.parent.phone || ''),
-      escapeCSVField(passText),
-      escapeCSVField(attendanceText)
-    ].join(',') + '\n';
-  });
+  const sortedAges = Array.from(ageMap.keys()).sort((a, b) => a - b);
+
+  let csvContent = 'Age,No.,Child Name,Gender,Age Group,Parent / Guardian,Parent Phone,Pass Code,Pass Status,Attendance\n';
+
+  for (const age of sortedAges) {
+    const childrenOfAge = ageMap.get(age)!;
+    childrenOfAge.sort((a, b) =>
+      (a.fullName || '').trim().toLowerCase().localeCompare(
+        (b.fullName || '').trim().toLowerCase(),
+        'en',
+        { sensitivity: 'base' }
+      )
+    );
+
+    childrenOfAge.forEach((c, idx) => {
+      const passCode = c.passReference || '—';
+      const passText = c.passStatus === 'pass_ready' ? 'Pass ready' : 'Missing pass';
+      const attendanceText = c.attendanceStatus === 'picked_up'
+        ? 'Picked up'
+        : c.attendanceStatus === 'inside'
+          ? 'Inside'
+          : c.attendanceStatus === 'checked_in'
+            ? 'Checked in'
+            : 'Not arrived';
+
+      const ageGroupDisplay = c.ageGroup === 'Age review needed' || c.ageGroup.startsWith('Ages')
+        ? c.ageGroup
+        : `Ages ${c.ageGroup}`;
+
+      csvContent += [
+        escapeCSVField(c.age),
+        escapeCSVField(idx + 1),
+        escapeCSVField(c.fullName),
+        escapeCSVField(c.gender),
+        escapeCSVField(ageGroupDisplay),
+        escapeCSVField(c.parent.fullName),
+        escapeCSVField(c.parent.phone || ''),
+        escapeCSVField(passCode),
+        escapeCSVField(passText),
+        escapeCSVField(attendanceText)
+      ].join(',') + '\n';
+    });
+  }
+
   return csvContent;
 }
 
@@ -539,30 +571,61 @@ export function getSelectedChildrenPdfFilename(
   maxAgeFilter?: number | null,
   variant: 'standard' | 'name_list' = 'standard'
 ): string {
-  let eventSlug = 'GA-2026';
+  let eventSlug = 'TGA-2026';
   if (eventTitle && eventTitle.toLowerCase().includes('general assembly')) {
     const yearMatch = eventTitle.match(/\d{4}/);
-    eventSlug = `GA-${yearMatch ? yearMatch[0] : '2026'}`;
+    eventSlug = `TGA-${yearMatch ? yearMatch[0] : '2026'}`;
   } else if (eventTitle) {
     eventSlug = eventTitle.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   }
 
   const suffix = variant === 'name_list' ? '-Name-List' : '';
 
-  if (exactAgeFilter !== undefined && exactAgeFilter !== null) {
-    return `Koinonia-${eventSlug}-Selected-Children-Age-${exactAgeFilter}${suffix}.pdf`;
+  if (exactAgeFilter !== undefined && exactAgeFilter !== null && String(exactAgeFilter).trim() !== '' && String(exactAgeFilter).toLowerCase() !== 'all') {
+    return `${eventSlug}-Selected-Children-Age-${exactAgeFilter}${suffix}.pdf`;
   }
 
   if (minAgeFilter !== undefined && minAgeFilter !== null && maxAgeFilter !== undefined && maxAgeFilter !== null) {
-    return `Koinonia-${eventSlug}-Selected-Children-Ages-${minAgeFilter}-${maxAgeFilter}${suffix}.pdf`;
+    return `${eventSlug}-Selected-Children-Ages-${minAgeFilter}-to-${maxAgeFilter}${suffix}.pdf`;
   }
 
   const normAge = normalizeAgeGroupLabelToRange(ageGroupFilter);
   if (normAge && normAge.toLowerCase() !== 'all' && normAge.toLowerCase() !== 'all age groups') {
-    const cleanTag = normAge.replace(/[\u2013–—]/g, '-');
-    return `Koinonia-${eventSlug}-Selected-Children-Ages-${cleanTag}${suffix}.pdf`;
+    const cleanTag = normAge.replace(/[\u2013–—]/g, '-to-').replace(/\s+/g, '');
+    return `${eventSlug}-Selected-Children-Ages-${cleanTag}${suffix}.pdf`;
   }
-  return `Koinonia-${eventSlug}-All-Selected-Children${suffix}.pdf`;
+  return `${eventSlug}-Selected-Children-Ages-2-to-14${suffix}.pdf`;
+}
+
+export function getSelectedChildrenCsvFilename(
+  eventTitle: string,
+  ageGroupFilter?: string,
+  exactAgeFilter?: number | null,
+  minAgeFilter?: number | null,
+  maxAgeFilter?: number | null
+): string {
+  let eventSlug = 'TGA-2026';
+  if (eventTitle && eventTitle.toLowerCase().includes('general assembly')) {
+    const yearMatch = eventTitle.match(/\d{4}/);
+    eventSlug = `TGA-${yearMatch ? yearMatch[0] : '2026'}`;
+  } else if (eventTitle) {
+    eventSlug = eventTitle.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+
+  if (exactAgeFilter !== undefined && exactAgeFilter !== null && String(exactAgeFilter).trim() !== '' && String(exactAgeFilter).toLowerCase() !== 'all') {
+    return `${eventSlug}-Selected-Children-Age-${exactAgeFilter}.csv`;
+  }
+
+  if (minAgeFilter !== undefined && minAgeFilter !== null && maxAgeFilter !== undefined && maxAgeFilter !== null) {
+    return `${eventSlug}-Selected-Children-Ages-${minAgeFilter}-to-${maxAgeFilter}.csv`;
+  }
+
+  const normAge = normalizeAgeGroupLabelToRange(ageGroupFilter);
+  if (normAge && normAge.toLowerCase() !== 'all' && normAge.toLowerCase() !== 'all age groups') {
+    const cleanTag = normAge.replace(/[\u2013–—]/g, '-to-').replace(/\s+/g, '');
+    return `${eventSlug}-Selected-Children-Ages-${cleanTag}.csv`;
+  }
+  return `${eventSlug}-Selected-Children-Ages-2-to-14.csv`;
 }
 
 function getSortDisplayLabel(sortOption: SelectedChildrenSortOption): string {
@@ -589,11 +652,13 @@ function getScopeDisplayLabel(data: SelectedChildrenReportData): string {
   if (data.filters.ageGroup && data.filters.ageGroup.toLowerCase() !== 'all') {
     return data.filters.ageGroup.startsWith('Ages') ? data.filters.ageGroup : `Ages ${data.filters.ageGroup}`;
   }
-  return 'All Ages';
+  return 'Ages 2–14';
 }
 
 /**
- * Generate publication-grade Landscape A4 PDF document for Selected Children list.
+ * Generate official consolidated Landscape A4 PDF document for Selected Children.
+ * Separated by exact age sections (Age 2..14), sorted A-Z within each age,
+ * with first-page reconciled summary and 26mm scannable QR codes.
  */
 export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData): Promise<Buffer> {
   const doc = new jsPDF({
@@ -602,10 +667,8 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
     format: 'a4'
   });
 
-  const marginLeft = 17.5;
-  const tableWidth = 262;
-  const isExactAge = data.filters.exactAge !== null && data.filters.exactAge !== undefined;
-  const isCustomRange = !isExactAge && data.filters.minAge !== null && data.filters.maxAge !== null;
+  const marginLeft = 15;
+  const tableWidth = 267;
 
   // Format generation timestamp
   const now = new Date();
@@ -624,35 +687,286 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
     brandLogoBase64 = null;
   }
 
-  // Age scope display string
-  const scopeLabel = getScopeDisplayLabel(data);
-  const sortLabel = getSortDisplayLabel(data.filters.sort);
+  // Determine requested age range boundaries
+  let minAge = 2;
+  let maxAge = 14;
+  let isExactAgeScope = false;
 
-  // Table columns layout: Exact Age operational register omits redundant Age/Age Group columns
-  type ColKey = 'index' | 'name' | 'age' | 'ageGroup' | 'gender' | 'parent' | 'phone' | 'pass' | 'attendance';
-  const cols: Array<{ key: ColKey; header: string; width: number; align: 'left' | 'center'; maxW?: number }> = isExactAge
-    ? [
-        { key: 'index', header: '#', width: 12, align: 'center' },
-        { key: 'name', header: 'Child Name', width: 64, align: 'left', maxW: 60 },
-        { key: 'gender', header: 'Gender', width: 20, align: 'center' },
-        { key: 'parent', header: 'Parent / Guardian', width: 60, align: 'left', maxW: 56 },
-        { key: 'phone', header: 'Phone', width: 38, align: 'left', maxW: 34 },
-        { key: 'pass', header: 'Pass Status', width: 34, align: 'left' },
-        { key: 'attendance', header: 'Attendance', width: 34, align: 'left' }
-      ]
-    : [
-        { key: 'index', header: '#', width: 10, align: 'center' },
-        { key: 'name', header: 'Child Name', width: 52, align: 'left', maxW: 48 },
-        { key: 'age', header: 'Age', width: 14, align: 'center' },
-        { key: 'ageGroup', header: 'Age Group', width: 20, align: 'center' },
-        { key: 'gender', header: 'Gender', width: 16, align: 'center' },
-        { key: 'parent', header: 'Parent / Guardian', width: 48, align: 'left', maxW: 44 },
-        { key: 'phone', header: 'Phone', width: 34, align: 'left', maxW: 30 },
-        { key: 'pass', header: 'Pass Status', width: 34, align: 'left' },
-        { key: 'attendance', header: 'Attendance', width: 34, align: 'left' }
-      ];
+  if (data.filters.exactAge !== null && data.filters.exactAge !== undefined) {
+    minAge = data.filters.exactAge;
+    maxAge = data.filters.exactAge;
+    isExactAgeScope = true;
+  } else if (data.filters.minAge !== null && data.filters.maxAge !== null) {
+    minAge = data.filters.minAge;
+    maxAge = data.filters.maxAge;
+  } else if (data.filters.ageGroup && data.filters.ageGroup.toLowerCase() !== 'all') {
+    const norm = normalizeAgeGroupLabelToRange(data.filters.ageGroup);
+    const foundGroup = CANONICAL_PROGRAMME_AGE_GROUPS.find((g) => g.key === norm);
+    if (foundGroup) {
+      minAge = foundGroup.minAge;
+      maxAge = foundGroup.maxAge;
+    }
+  }
 
-  const drawTableHeader = (y: number) => {
+  const rangeDisplay = isExactAgeScope
+    ? `Age ${minAge}`
+    : `Ages ${minAge}–${maxAge}`;
+
+  // Build list of exact ages within the range
+  const ageRangeList: number[] = [];
+  for (let a = minAge; a <= maxAge; a++) {
+    ageRangeList.push(a);
+  }
+
+  // Group children by exact age and sort each exact age alphabetically A-Z (Requirement 2)
+  const ageToChildrenMap = new Map<number, SelectedChildRecord[]>();
+  for (const a of ageRangeList) {
+    const childrenOfAge = data.filtered.filter((c) => c.age === a);
+    childrenOfAge.sort((aRec, bRec) =>
+      (aRec.fullName || '').trim().toLowerCase().localeCompare(
+        (bRec.fullName || '').trim().toLowerCase(),
+        'en',
+        { sensitivity: 'base' }
+      )
+    );
+    ageToChildrenMap.set(a, childrenOfAge);
+  }
+
+  // Pre-generate QR data URLs for all unique pass references in parallel chunks of 50
+  const qrCache = new Map<string, string>();
+  const distinctRefs = Array.from(
+    new Set(data.filtered.map((c) => c.passReference).filter(Boolean))
+  ) as string[];
+
+  const chunkSize = 50;
+  for (let i = 0; i < distinctRefs.length; i += chunkSize) {
+    const batch = distinctRefs.slice(i, i + chunkSize);
+    await Promise.all(
+      batch.map(async (ref) => {
+        try {
+          const dataUrl = await QRCodeLib.toDataURL(ref, {
+            margin: 1,
+            width: 120,
+            errorCorrectionLevel: 'M',
+            color: { dark: '#000000', light: '#FFFFFF' }
+          });
+          qrCache.set(ref, dataUrl);
+        } catch {
+          // ignore error gracefully
+        }
+      })
+    );
+  }
+
+  const totalFilteredCount = data.filtered.length;
+
+  // =================== PAGE 1: ADMINISTRATIVE HEADER & AGE SUMMARY (Requirements 5, 17, 18) ===================
+  // Brand Logo
+  if (brandLogoBase64) {
+    try {
+      const imgProps = doc.getImageProperties(brandLogoBase64);
+      const ratio = (imgProps.width || 1) / (imgProps.height || 1);
+      const maxH = 12;
+      const logoH = maxH;
+      const logoW = Math.min(32, logoH * ratio);
+      const adjH = logoW / ratio;
+      doc.addImage(
+        brandLogoBase64,
+        imgProps.fileType || 'PNG',
+        marginLeft + tableWidth - logoW,
+        12 + (maxH - adjH) / 2,
+        logoW,
+        adjH
+      );
+    } catch {
+      // Ignore logo error gracefully
+    }
+  }
+
+  // Header Title
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.setTextColor(197, 155, 39); // Koinonia Gold
+  doc.text('KOINONIA CHILDREN & TEENS', marginLeft, 15);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(82, 82, 91);
+  doc.text((data.event.title || 'THE GENERAL ASSEMBLY 2026').toUpperCase(), marginLeft, 21);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(24, 24, 27);
+  doc.text('SELECTED CHILDREN REGISTER', marginLeft, 28.5);
+
+  // Gold accent rule
+  doc.setDrawColor(197, 155, 39);
+  doc.setLineWidth(0.6);
+  doc.line(marginLeft, 33, marginLeft + tableWidth, 33);
+
+  // Administrative metadata banner (Requirement 5)
+  doc.setFillColor(250, 249, 245); // Warm ivory tint
+  doc.rect(marginLeft, 35, tableWidth, 10, 'F');
+  doc.setDrawColor(228, 228, 231);
+  doc.setLineWidth(0.3);
+  doc.rect(marginLeft, 35, tableWidth, 10, 'S');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(24, 24, 27);
+  doc.text(`Age Range: ${rangeDisplay.replace('Ages ', '').replace('Age ', '')}`, marginLeft + 5, 41.5);
+
+  doc.text(`Total Selected Children: ${totalFilteredCount.toLocaleString()}`, marginLeft + 75, 41.5);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(82, 82, 91);
+  doc.text(`Generated: ${dateStr}`, marginLeft + 200, 41.5);
+
+  // First-page Age Summary Table (Requirements 17 & 18)
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(24, 24, 27);
+  doc.text('EXACT AGE BREAKDOWN', marginLeft, 52);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(113, 113, 122);
+  doc.text(
+    'Summary of selected children across exact ages in this register. Reconciled with total records.',
+    marginLeft + 54,
+    52
+  );
+
+  // Draw Summary Table Header
+  const summaryY = 56;
+  doc.setFillColor(244, 244, 245);
+  doc.rect(marginLeft, summaryY, tableWidth, 7, 'F');
+  doc.setDrawColor(228, 228, 231);
+  doc.setLineWidth(0.3);
+  doc.line(marginLeft, summaryY + 7, marginLeft + tableWidth, summaryY + 7);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(63, 63, 70);
+
+  doc.text('AGE', marginLeft + 5, summaryY + 4.8);
+  doc.text('SELECTED CHILDREN', marginLeft + 80, summaryY + 4.8, { align: 'right' });
+  doc.text('PASS READY', marginLeft + 135, summaryY + 4.8, { align: 'right' });
+  doc.text('MISSING PASS', marginLeft + 190, summaryY + 4.8, { align: 'right' });
+  doc.text('% OF TOTAL', marginLeft + 250, summaryY + 4.8, { align: 'right' });
+
+  let curSumY = summaryY + 7;
+  const sumRowH = 6.2;
+  let runningSelectedSum = 0;
+  let runningPassReadySum = 0;
+  let runningMissingPassSum = 0;
+
+  for (const ageVal of ageRangeList) {
+    const list = ageToChildrenMap.get(ageVal) || [];
+    const count = list.length;
+    const readyCount = list.filter((c) => c.passStatus === 'pass_ready').length;
+    const missingCount = list.filter((c) => c.passStatus === 'missing_pass').length;
+
+    runningSelectedSum += count;
+    runningPassReadySum += readyCount;
+    runningMissingPassSum += missingCount;
+
+    const pct = totalFilteredCount > 0 ? ((count / totalFilteredCount) * 100).toFixed(1) + '%' : '0.0%';
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(24, 24, 27);
+    doc.text(`Age ${ageVal}`, marginLeft + 5, curSumY + 4.3);
+    doc.text(count.toLocaleString(), marginLeft + 80, curSumY + 4.3, { align: 'right' });
+
+    doc.setTextColor(21, 128, 61); // green
+    doc.text(readyCount.toLocaleString(), marginLeft + 135, curSumY + 4.3, { align: 'right' });
+
+    if (missingCount > 0) {
+      doc.setTextColor(180, 83, 9); // amber
+    } else {
+      doc.setTextColor(113, 113, 122);
+    }
+    doc.text(missingCount.toLocaleString(), marginLeft + 190, curSumY + 4.3, { align: 'right' });
+
+    doc.setTextColor(82, 82, 91);
+    doc.text(pct, marginLeft + 250, curSumY + 4.3, { align: 'right' });
+
+    doc.setDrawColor(244, 244, 245);
+    doc.setLineWidth(0.2);
+    doc.line(marginLeft, curSumY + sumRowH, marginLeft + tableWidth, curSumY + sumRowH);
+
+    curSumY += sumRowH;
+  }
+
+  // Summary Reconciliation Total Row (Requirement 18)
+  doc.setFillColor(250, 249, 245);
+  doc.rect(marginLeft, curSumY, tableWidth, 7.5, 'F');
+  doc.setDrawColor(197, 155, 39);
+  doc.setLineWidth(0.4);
+  doc.line(marginLeft, curSumY, marginLeft + tableWidth, curSumY);
+  doc.line(marginLeft, curSumY + 7.5, marginLeft + tableWidth, curSumY + 7.5);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(24, 24, 27);
+  doc.text(`TOTAL (${rangeDisplay})`, marginLeft + 5, curSumY + 5.2);
+  doc.text(runningSelectedSum.toLocaleString(), marginLeft + 80, curSumY + 5.2, { align: 'right' });
+
+  doc.setTextColor(21, 128, 61);
+  doc.text(runningPassReadySum.toLocaleString(), marginLeft + 135, curSumY + 5.2, { align: 'right' });
+
+  if (runningMissingPassSum > 0) {
+    doc.setTextColor(180, 83, 9);
+  } else {
+    doc.setTextColor(24, 24, 27);
+  }
+  doc.text(runningMissingPassSum.toLocaleString(), marginLeft + 190, curSumY + 5.2, { align: 'right' });
+
+  doc.setTextColor(24, 24, 27);
+  doc.text('100.0%', marginLeft + 250, curSumY + 5.2, { align: 'right' });
+
+  // Reconciled note box
+  const noteY = curSumY + 11;
+  doc.setFillColor(255, 255, 255);
+  doc.rect(marginLeft, noteY, tableWidth, 14, 'F');
+  doc.setDrawColor(228, 228, 231);
+  doc.setLineWidth(0.3);
+  doc.rect(marginLeft, noteY, tableWidth, 14, 'S');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(24, 24, 27);
+  doc.text('Official Administrative Register · Physical Entry Credentials', marginLeft + 5, noteY + 5.2);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(82, 82, 91);
+  doc.text(
+    'Each subsequent page contains verified selected children separated by exact age, ordered alphabetically (A–Z).',
+    marginLeft + 5,
+    noteY + 9.2
+  );
+  doc.text(
+    'Every entry includes the canonical pass code and a physically scannable QR code matching the Parent Mobile Pass.',
+    marginLeft + 5,
+    noteY + 12.8
+  );
+
+  // =================== EXACT AGE SECTION PAGES (Requirements 6, 7, 8, 9, 10, 11) ===================
+  type RegCol = 'no' | 'child' | 'gender' | 'ageGroup' | 'parent' | 'phone' | 'passCode' | 'qr';
+  const regCols: Array<{ key: RegCol; header: string; width: number; align: 'left' | 'center' }> = [
+    { key: 'no', header: 'NO.', width: 12, align: 'center' },
+    { key: 'child', header: 'CHILD', width: 55, align: 'left' },
+    { key: 'gender', header: 'GENDER', width: 18, align: 'center' },
+    { key: 'ageGroup', header: 'AGE GROUP', width: 22, align: 'center' },
+    { key: 'parent', header: 'PARENT / GUARDIAN', width: 48, align: 'left' },
+    { key: 'phone', header: 'PHONE', width: 34, align: 'left' },
+    { key: 'passCode', header: 'PASS CODE', width: 36, align: 'left' },
+    { key: 'qr', header: 'QR CODE', width: 42, align: 'center' }
+  ];
+
+  const drawRegTableHeader = (y: number) => {
     doc.setFillColor(244, 244, 245);
     doc.rect(marginLeft, y, tableWidth, 7, 'F');
     doc.setDrawColor(228, 228, 231);
@@ -664,7 +978,7 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
     doc.setTextColor(63, 63, 70);
 
     let curX = marginLeft;
-    for (const c of cols) {
+    for (const c of regCols) {
       if (c.align === 'center') {
         doc.text(c.header, curX + c.width / 2, y + 4.8, { align: 'center' });
       } else {
@@ -674,152 +988,6 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
     }
     return y + 7;
   };
-
-  // =================== PAGE 1 HEADER ===================
-  if (brandLogoBase64) {
-    try {
-      const imgProps = doc.getImageProperties(brandLogoBase64);
-      const ratio = (imgProps.width || 1) / (imgProps.height || 1);
-      const maxH = 10;
-      const logoH = maxH;
-      const logoW = Math.min(28, logoH * ratio);
-      const adjH = logoW / ratio;
-      doc.addImage(
-        brandLogoBase64,
-        imgProps.fileType || 'PNG',
-        marginLeft + tableWidth - logoW,
-        10 + (maxH - adjH) / 2,
-        logoW,
-        adjH
-      );
-    } catch {
-      // Ignore invalid/unsupported image format gracefully
-    }
-  }
-
-  if (isExactAge) {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.setTextColor(197, 155, 39); // Restrained Koinonia Gold
-    doc.text('KOINONIA CHILDREN & TEENS', marginLeft, 13.5);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(82, 82, 91);
-    doc.text((data.event.title || 'THE GENERAL ASSEMBLY 2026').toUpperCase(), marginLeft, 19.5);
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(15);
-    doc.setTextColor(24, 24, 27);
-    doc.text(`SELECTED CHILDREN — AGE ${data.filters.exactAge}`, marginLeft, 26.5);
-  } else if (isCustomRange) {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.setTextColor(197, 155, 39); // Restrained Koinonia Gold
-    doc.text('KOINONIA CHILDREN & TEENS', marginLeft, 13.5);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(82, 82, 91);
-    doc.text((data.event.title || 'THE GENERAL ASSEMBLY 2026').toUpperCase(), marginLeft, 19);
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14.5);
-    doc.setTextColor(24, 24, 27);
-    doc.text(`SELECTED CHILDREN — AGES ${data.filters.minAge}–${data.filters.maxAge}`, marginLeft, 25.5);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(82, 82, 91);
-    doc.text(sortLabel, marginLeft, 30);
-  } else {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.setTextColor(197, 155, 39); // Restrained Koinonia Gold
-    doc.text('KOINONIA GLOBAL', marginLeft, 14);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(113, 113, 122);
-    doc.text('Children & Teens Ministry', marginLeft + 38, 14);
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.setTextColor(24, 24, 27);
-    doc.text('Selected Children Report', marginLeft, 22);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(63, 63, 70);
-    doc.text(`Event: ${data.event.title || 'The General Assembly'}`, marginLeft, 28);
-    doc.text(`Scope: ${scopeLabel} · ${sortLabel}`, marginLeft + 75, 28);
-    doc.text(`Generated: ${generatedTimestamp}`, marginLeft + 178, 28);
-  }
-
-  // Summary strip
-  doc.setDrawColor(228, 228, 231);
-  doc.setLineWidth(0.3);
-  doc.line(marginLeft, 32, marginLeft + tableWidth, 32);
-
-  doc.setFillColor(250, 249, 245); // Warm ivory operational tint
-  doc.rect(marginLeft, 33, tableWidth, 9, 'F');
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.setTextColor(24, 24, 27);
-
-  const filteredCount = data.filtered.length;
-  const filteredPassReady = data.filtered.filter(c => c.passStatus === 'pass_ready').length;
-  const filteredMissingPass = data.filtered.filter(c => c.passStatus === 'missing_pass').length;
-  const filteredCheckedIn = data.filtered.filter(c => c.attendanceStatus === 'checked_in').length;
-  const filteredInside = data.filtered.filter(c => c.attendanceStatus === 'inside').length;
-  const filteredPickedUp = data.filtered.filter(c => c.attendanceStatus === 'picked_up').length;
-
-  if (isExactAge || isCustomRange) {
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(63, 63, 70);
-    doc.text(`Generated: ${generatedTimestamp}`, marginLeft + 4, 38.8);
-
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(24, 24, 27);
-    doc.text(`Total selected children: ${filteredCount}`, marginLeft + 62, 38.8);
-    doc.text(`Pass ready: ${filteredPassReady}`, marginLeft + 118, 38.8);
-
-    if (filteredMissingPass > 0) {
-      doc.setTextColor(180, 83, 9);
-    }
-    doc.text(`Missing pass: ${filteredMissingPass}`, marginLeft + 158, 38.8);
-
-    doc.setTextColor(24, 24, 27);
-    doc.text(`Checked in: ${filteredCheckedIn}`, marginLeft + 200, 38.8);
-    doc.text(`Inside: ${filteredInside}`, marginLeft + 236, 38.8);
-  } else {
-    doc.text(`Total selected children: ${filteredCount}`, marginLeft + 4, 38.8);
-    doc.text(`Pass Ready: ${filteredPassReady}`, marginLeft + 56, 38.8);
-
-    if (filteredMissingPass > 0) {
-      doc.setTextColor(180, 83, 9); // Amber
-    } else {
-      doc.setTextColor(24, 24, 27);
-    }
-    doc.text(`Missing Pass: ${filteredMissingPass}`, marginLeft + 102, 38.8);
-
-    doc.setTextColor(24, 24, 27);
-    doc.text(`Checked In: ${filteredCheckedIn}`, marginLeft + 150, 38.8);
-    doc.text(`Inside: ${filteredInside}`, marginLeft + 194, 38.8);
-    if (filteredPickedUp > 0) {
-      doc.text(`Picked Up: ${filteredPickedUp}`, marginLeft + 228, 38.8);
-    }
-  }
-
-  doc.setDrawColor(228, 228, 231);
-  doc.line(marginLeft, 42.5, marginLeft + tableWidth, 42.5);
-
-  let currentY = drawTableHeader(46);
-
-  // =================== ROWS RENDERING ===================
-  const rowHeight = 7.2;
-  const maxY = 194;
 
   const truncateText = (text: string, maxWidth: number): string => {
     if (!text) return '';
@@ -831,89 +999,96 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
     return `${t}…`;
   };
 
-  const runningTitle = isExactAge
-    ? `Koinonia Children & Teens · Selected Children — Age ${data.filters.exactAge} · ${data.event.title || 'The General Assembly 2026'}`
-    : isCustomRange
-      ? `Koinonia Children & Teens · Selected Children — Ages ${data.filters.minAge}–${data.filters.maxAge} · ${data.event.title || 'The General Assembly 2026'}`
-      : `Koinonia Children & Teens · Selected Children Report · ${data.event.title || 'The General Assembly'} (${scopeLabel})`;
+  const rowHeight = 30; // 30mm height accommodates 26mm x 26mm scannable QR code (Requirement 8)
+  const maxY = 194;
 
-  if (data.filtered.length === 0) {
-    doc.setFont('helvetica', 'normal');
+  for (const ageVal of ageRangeList) {
+    const childrenOfAge = ageToChildrenMap.get(ageVal) || [];
+    if (childrenOfAge.length === 0) continue;
+
+    // Start each exact age section on a fresh page (Requirement 10)
+    doc.addPage();
+    let currentY = 12;
+
+    // Section header (Requirement 6)
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(15);
+    doc.setTextColor(24, 24, 27);
+    doc.text(`AGE ${ageVal}`, marginLeft, currentY + 4.5);
+
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
+    doc.setTextColor(197, 155, 39);
+    const countBadge = `${childrenOfAge.length} SELECTED ${childrenOfAge.length === 1 ? 'CHILD' : 'CHILDREN'}`;
+    doc.text(countBadge, marginLeft + 28, currentY + 4.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
     doc.setTextColor(113, 113, 122);
-    const emptyMsg = isExactAge
-      ? `No selected children aged ${data.filters.exactAge}.`
-      : 'No selected children match the specified filters.';
-    doc.text(emptyMsg, marginLeft + tableWidth / 2, currentY + 12, { align: 'center' });
-  } else {
-    data.filtered.forEach((c, idx) => {
+    doc.text(
+      `${data.event.title || 'The General Assembly 2026'} · Exact Age Section`,
+      marginLeft + tableWidth,
+      currentY + 4.5,
+      { align: 'right' }
+    );
+
+    // Koinonia gold rule
+    doc.setDrawColor(197, 155, 39);
+    doc.setLineWidth(0.6);
+    doc.line(marginLeft, currentY + 7.5, marginLeft + tableWidth, currentY + 7.5);
+
+    currentY = drawRegTableHeader(currentY + 10);
+
+    childrenOfAge.forEach((c, idx) => {
       if (currentY + rowHeight > maxY) {
         doc.addPage();
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(24, 24, 27);
+        doc.text(`AGE ${ageVal} — Continued`, marginLeft, 12);
+
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8);
         doc.setTextColor(113, 113, 122);
-        doc.text(runningTitle, marginLeft, 12);
-        currentY = drawTableHeader(16);
+        doc.text(
+          `${data.event.title || 'The General Assembly 2026'} · Selected Children Register`,
+          marginLeft + tableWidth,
+          12,
+          { align: 'right' }
+        );
+
+        doc.setDrawColor(228, 228, 231);
+        doc.setLineWidth(0.3);
+        doc.line(marginLeft, 14.5, marginLeft + tableWidth, 14.5);
+
+        currentY = drawRegTableHeader(17);
       }
 
-      // Thin row divider
-      doc.setDrawColor(244, 244, 245);
+      // Alternating row background for visual tracking
+      if (idx % 2 === 1) {
+        doc.setFillColor(252, 252, 252);
+        doc.rect(marginLeft, currentY, tableWidth, rowHeight, 'F');
+      }
+
+      // Thin bottom divider
+      doc.setDrawColor(235, 235, 238);
       doc.setLineWidth(0.2);
       doc.line(marginLeft, currentY + rowHeight, marginLeft + tableWidth, currentY + rowHeight);
 
       let colX = marginLeft;
-      for (const col of cols) {
-        const textY = currentY + 4.8;
-        if (col.key === 'index') {
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(7.5);
-          doc.setTextColor(113, 113, 122);
-          doc.text(String(idx + 1), colX + col.width / 2, textY, { align: 'center' });
-        } else if (col.key === 'name') {
+      for (const col of regCols) {
+        if (col.key === 'no') {
+          // Per-age numbering resetting at 1 (Requirement 11)
           doc.setFont('helvetica', 'bold');
-          doc.setFontSize(8);
+          doc.setFontSize(8.5);
+          doc.setTextColor(113, 113, 122);
+          doc.text(String(idx + 1), colX + col.width / 2, currentY + 16, { align: 'center' });
+        } else if (col.key === 'child') {
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8.5);
           doc.setTextColor(24, 24, 27);
-          doc.text(truncateText(c.fullName, col.maxW || 48), colX + 2, textY);
-        } else if (col.key === 'age') {
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(8);
-          doc.setTextColor(63, 63, 70);
-          doc.text(`${c.age} yrs`, colX + col.width / 2, textY, { align: 'center' });
-        } else if (col.key === 'ageGroup') {
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(7.8);
-          doc.setTextColor(63, 63, 70);
-          const agText = c.ageGroup === 'Age review needed' ? 'Review' : `Ages ${c.ageGroup}`;
-          doc.text(agText, colX + col.width / 2, textY, { align: 'center' });
-        } else if (col.key === 'gender') {
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(8);
-          doc.setTextColor(63, 63, 70);
-          doc.text(c.gender || '—', colX + col.width / 2, textY, { align: 'center' });
-        } else if (col.key === 'parent') {
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(8);
-          doc.setTextColor(24, 24, 27);
-          doc.text(truncateText(c.parent?.fullName || '—', col.maxW || 44), colX + 2, textY);
-        } else if (col.key === 'phone') {
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(8);
-          doc.setTextColor(63, 63, 70);
-          doc.text(truncateText(c.parent?.phone || '—', col.maxW || 30), colX + 2, textY);
-        } else if (col.key === 'pass') {
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(8);
-          if (c.passStatus === 'pass_ready') {
-            doc.setTextColor(21, 128, 61);
-            doc.text('Pass ready', colX + 2, textY);
-          } else {
-            doc.setTextColor(180, 83, 9);
-            doc.text('Missing pass', colX + 2, textY);
-          }
-        } else if (col.key === 'attendance') {
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(8);
-          doc.setTextColor(63, 63, 70);
+          doc.text(truncateText(c.fullName, 51), colX + 2, currentY + 12);
+
           const attText = c.attendanceStatus === 'picked_up'
             ? 'Picked up'
             : c.attendanceStatus === 'inside'
@@ -921,7 +1096,80 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
               : c.attendanceStatus === 'checked_in'
                 ? 'Checked in'
                 : 'Not arrived';
-          doc.text(attText, colX + 2, textY);
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.5);
+          doc.setTextColor(113, 113, 122);
+          doc.text(`Status: ${attText}`, colX + 2, currentY + 18);
+        } else if (col.key === 'gender') {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          doc.setTextColor(63, 63, 70);
+          doc.text(c.gender || '—', colX + col.width / 2, currentY + 15, { align: 'center' });
+        } else if (col.key === 'ageGroup') {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.8);
+          doc.setTextColor(63, 63, 70);
+          const agText = c.ageGroup === 'Age review needed' ? 'Review' : (c.ageGroup.startsWith('Ages') ? c.ageGroup : `Ages ${c.ageGroup}`);
+          doc.text(agText, colX + col.width / 2, currentY + 15, { align: 'center' });
+        } else if (col.key === 'parent') {
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8);
+          doc.setTextColor(24, 24, 27);
+          doc.text(truncateText(c.parent?.fullName || '—', 44), colX + 2, currentY + 12);
+
+          if (c.parent?.email) {
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7);
+            doc.setTextColor(113, 113, 122);
+            doc.text(truncateText(c.parent.email, 44), colX + 2, currentY + 18);
+          }
+        } else if (col.key === 'phone') {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          doc.setTextColor(63, 63, 70);
+          doc.text(truncateText(c.parent?.phone || '—', 30), colX + 2, currentY + 15);
+        } else if (col.key === 'passCode') {
+          if (c.passReference) {
+            doc.setFont('courier', 'bold');
+            doc.setFontSize(8.5);
+            doc.setTextColor(24, 24, 27);
+            doc.text(c.passReference, colX + 2, currentY + 13);
+
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7.5);
+            doc.setTextColor(21, 128, 61);
+            doc.text('Pass ready', colX + 2, currentY + 18);
+          } else {
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8.5);
+            doc.setTextColor(113, 113, 122);
+            doc.text('—', colX + 2, currentY + 13);
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7.5);
+            doc.setTextColor(180, 83, 9);
+            doc.text('Missing pass', colX + 2, currentY + 18);
+          }
+        } else if (col.key === 'qr') {
+          const qrSize = 26; // 26mm x 26mm scannable QR (Requirement 8)
+          const qrX = colX + (col.width - qrSize) / 2;
+          const qrY = currentY + (rowHeight - qrSize) / 2;
+
+          if (c.passReference && qrCache.has(c.passReference)) {
+            doc.addImage(qrCache.get(c.passReference)!, 'PNG', qrX, qrY, qrSize, qrSize, undefined, 'FAST');
+          } else {
+            // Missing pass box (Requirement 21)
+            doc.setFillColor(254, 243, 199); // amber 100
+            doc.roundedRect(qrX + 3, qrY + 6, qrSize - 6, 14, 1.5, 1.5, 'F');
+            doc.setDrawColor(245, 158, 11);
+            doc.setLineWidth(0.3);
+            doc.roundedRect(qrX + 3, qrY + 6, qrSize - 6, 14, 1.5, 1.5, 'S');
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7);
+            doc.setTextColor(180, 83, 9);
+            doc.text('Missing pass', qrX + qrSize / 2, qrY + 15, { align: 'center' });
+          }
         }
         colX += col.width;
       }
@@ -930,7 +1178,7 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
     });
   }
 
-  // =================== RUNNING FOOTER ON EVERY PAGE ===================
+  // Running Footer across all pages (Requirement 28)
   const pageCount = doc.getNumberOfPages();
   for (let p = 1; p <= pageCount; p++) {
     doc.setPage(p);
@@ -941,7 +1189,11 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.setTextColor(113, 113, 122);
-    doc.text(runningTitle, marginLeft, 203);
+    doc.text(
+      `${data.event.title || 'The General Assembly 2026'} · Selected Children Register · ${rangeDisplay}`,
+      marginLeft,
+      203
+    );
     doc.text(`Page ${p} of ${pageCount}`, marginLeft + tableWidth, 203, { align: 'right' });
   }
 
@@ -1170,11 +1422,13 @@ export async function handleSelectedChildrenReport(
     // 2. CSV Export
     if (requestedFormat === 'csv') {
       const csvContent = renderSelectedChildrenCsv(reportData.filtered);
-      const csvFilename = reportData.filters.exactAge !== null
-        ? `selected-children-age-${reportData.filters.exactAge}.csv`
-        : (reportData.filters.minAge !== null && reportData.filters.maxAge !== null)
-          ? `selected-children-ages-${reportData.filters.minAge}-${reportData.filters.maxAge}.csv`
-          : 'selected-children-report.csv';
+      const csvFilename = getSelectedChildrenCsvFilename(
+        reportData.event.title,
+        ageGroup,
+        reportData.filters.exactAge,
+        reportData.filters.minAge,
+        reportData.filters.maxAge
+      );
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="${csvFilename}"`);
       return res.status(200).send(csvContent);
