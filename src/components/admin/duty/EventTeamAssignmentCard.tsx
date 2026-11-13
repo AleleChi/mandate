@@ -33,6 +33,8 @@ export interface EventDutyAssignmentItem {
   assigned_location_id?: string | null;
   assigned_location_name?: string | null;
   assigned_location_type?: string | null;
+  assigned_age_groups?: string | null;
+  assignedAgeGroups?: string[] | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -88,6 +90,24 @@ export function formatRoleLabel(role?: string): string {
     default:
       return role.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
   }
+}
+
+export function formatAssignedAgeGroups(groups?: string[] | string | null): string {
+  if (!groups) return 'None';
+  let arr: string[] = [];
+  if (Array.isArray(groups)) {
+    arr = groups;
+  } else if (typeof groups === 'string') {
+    try {
+      const parsed = JSON.parse(groups);
+      if (Array.isArray(parsed)) arr = parsed;
+      else arr = [groups];
+    } catch {
+      arr = groups.split(',').map(s => s.trim()).filter(Boolean);
+    }
+  }
+  if (arr.length === 0) return 'None';
+  return arr.join(', ');
 }
 
 export function formatServingGroup(level?: string, teamKey?: string | null): string {
@@ -215,6 +235,7 @@ export default function EventTeamAssignmentCard({
   const deviceSummary = formatDeviceSummary(assignment.ready_devices || 0, assignment.total_devices);
   const humanRole = formatRoleLabel(assignment.user_role);
   const servingGroup = formatServingGroup(assignment.assignment_level, assignment.team_key);
+  const ageGroupsText = formatAssignedAgeGroups(assignment.assignedAgeGroups || assignment.assigned_age_groups);
   const shiftText = formatShiftWindow(assignment.starts_at, assignment.ends_at);
   const initials = getInitials(assignment.user_name || assignment.user_email);
 
@@ -366,6 +387,12 @@ export default function EventTeamAssignmentCard({
           <div>
             <span className="block text-[12px] font-normal text-stone-500 dark:text-[#7A7570]">Serving group</span>
             <span className="block text-[13px] font-medium text-stone-800 dark:text-[#F0EBE3] mt-0.5">{servingGroup}</span>
+          </div>
+          <div>
+            <span className="block text-[12px] font-normal text-stone-500 dark:text-[#7A7570]">Age groups</span>
+            <span className="block text-[13px] font-medium text-stone-800 dark:text-[#F0EBE3] mt-0.5 truncate" title={ageGroupsText}>
+              {ageGroupsText}
+            </span>
           </div>
           <div>
             <span className="block text-[12px] font-normal text-stone-500 dark:text-[#7A7570]">Shift</span>

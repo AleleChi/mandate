@@ -4,7 +4,7 @@ import {
   ShieldCheck, Check, Home, Camera, CameraOff, X, Phone, MessageCircle, 
   ArrowRight, Sparkles, UserCheck, UserX, Clock, ChevronLeft, Calendar, Heart, Info, Keyboard,
   Settings, ChevronRight, Users, LogIn, History, MapPin, Bell, ShieldAlert, Smartphone, ChevronDown, Shield, CheckCircle2,
-  HelpCircle, Tag, Plus, Menu, UtensilsCrossed, Accessibility, ClipboardCheck
+  HelpCircle, Tag, Plus, Menu, UtensilsCrossed, Accessibility, ClipboardCheck, AlertCircle
 } from 'lucide-react';
 import { WristbandAssignmentDesk } from '../components/wristbands/WristbandAssignmentDesk';
 import { AppRoute } from '../types';
@@ -471,6 +471,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     title: 'The General Assembly',
     date: '18th to 22nd November 2026'
   });
+  const [dutyWindow, setDutyWindow] = useState<any>(null);
   const [attentionItems, setAttentionItems] = useState<any[]>([]);
   const [outbox, setOutbox] = useState<OutboxAction[]>([]);
   const [isSyncingOutbox, setIsSyncingOutbox] = useState(false);
@@ -1382,6 +1383,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         if (res.event) setEventDetails(res.event);
         if (res.attentionItems) setAttentionItems(res.attentionItems);
         if (res.dutyLocation) setCurrentDutyLocation(res.dutyLocation);
+        if (res.dutyWindow) setDutyWindow(res.dutyWindow);
       }
     } catch (err: any) {
       console.error('Failed to fetch volunteer dashboard stats:', err);
@@ -1887,7 +1889,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       'WRONG_EVENT',
       'PASS_REVOKED',
       'REVOKED_PASS',
-      'FORBIDDEN'
+      'FORBIDDEN',
+      'EVENT_NOT_STARTED',
+      'EVENT_ENDED',
+      'DUTY_NOT_STARTED',
+      'DUTY_ENDED',
+      'DUTY_INACTIVE',
+      'CHECK_IN_NOT_OPEN',
+      'CHECK_IN_CLOSED',
+      'PICKUP_NOT_STARTED'
     ].includes(code)
       || code.startsWith('WRISTBAND_');
   };
@@ -2170,6 +2180,30 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       } else if (errCode === 'OUT_OF_SCOPE' || String(err?.message || err?.data?.error).includes('assigned to another age group') || String(err?.message || err?.data?.error).includes('belongs to')) {
         title = 'Out of Scope';
         message = err?.message || err?.data?.error || 'This child is assigned to another age group.';
+      } else if (errCode === 'EVENT_NOT_STARTED') {
+        title = 'Event Not Started';
+        message = err?.message || err?.data?.error || 'This event has not started yet.';
+      } else if (errCode === 'EVENT_ENDED') {
+        title = 'Event Ended';
+        message = err?.message || err?.data?.error || 'This event has ended.';
+      } else if (errCode === 'DUTY_NOT_STARTED') {
+        title = 'Duty Not Started';
+        message = err?.message || err?.data?.error || 'Your duty has not started yet.';
+      } else if (errCode === 'DUTY_ENDED') {
+        title = 'Duty Ended';
+        message = err?.message || err?.data?.error || 'Your assigned shift has ended.';
+      } else if (errCode === 'DUTY_INACTIVE') {
+        title = 'Duty Inactive';
+        message = err?.message || err?.data?.error || 'Your duty assignment is currently inactive.';
+      } else if (errCode === 'CHECK_IN_NOT_OPEN') {
+        title = 'Check-in Not Open';
+        message = err?.message || err?.data?.error || 'Check-in is not open yet.';
+      } else if (errCode === 'CHECK_IN_CLOSED') {
+        title = 'Check-in Closed';
+        message = err?.message || err?.data?.error || 'Check-in has closed for this event.';
+      } else if (errCode === 'PICKUP_NOT_STARTED') {
+        title = 'Pickup Not Started';
+        message = err?.message || err?.data?.error || 'Pickup has not started yet.';
       } else if (errCode === 'WRISTBAND_UNASSIGNED') {
         title = 'Wristband Unassigned';
         message = 'This wristband has not been assigned yet.';
@@ -2874,6 +2908,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         showError('Out of Scope', apiErr.message || 'This child is assigned to another age group.');
       } else if (errCode === 'NO_AGE_GROUP_ASSIGNED' || String(err?.message || err?.data?.error).includes('No age group')) {
         showError('Assignment Required', apiErr.message || 'No age group has been assigned to your event duty yet.');
+      } else if (['EVENT_NOT_STARTED', 'EVENT_ENDED', 'DUTY_NOT_STARTED', 'DUTY_ENDED', 'DUTY_INACTIVE', 'PICKUP_NOT_STARTED'].includes(errCode)) {
+        const title = errCode === 'EVENT_NOT_STARTED' ? 'Event Not Started'
+          : errCode === 'EVENT_ENDED' ? 'Event Ended'
+          : errCode === 'DUTY_NOT_STARTED' ? 'Duty Not Started'
+          : errCode === 'DUTY_ENDED' ? 'Duty Ended'
+          : errCode === 'DUTY_INACTIVE' ? 'Duty Inactive'
+          : 'Pickup Not Started';
+        showError(title, apiErr.message || 'Operation outside valid window.');
       } else {
         showError('Lookup Failed', apiErr.message || 'Pass code verification failed. Ensure child is checked in.');
       }
@@ -2922,8 +2964,19 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         }
       }
     } catch (err: any) {
+      const errCode = err?.code || err?.data?.code || '';
       const apiErr = extractApiError(err);
-      showError('Release Failed', apiErr.message || 'Failed to record child release.');
+      if (['EVENT_NOT_STARTED', 'EVENT_ENDED', 'DUTY_NOT_STARTED', 'DUTY_ENDED', 'DUTY_INACTIVE', 'PICKUP_NOT_STARTED'].includes(errCode)) {
+        const title = errCode === 'EVENT_NOT_STARTED' ? 'Event Not Started'
+          : errCode === 'EVENT_ENDED' ? 'Event Ended'
+          : errCode === 'DUTY_NOT_STARTED' ? 'Duty Not Started'
+          : errCode === 'DUTY_ENDED' ? 'Duty Ended'
+          : errCode === 'DUTY_INACTIVE' ? 'Duty Inactive'
+          : 'Pickup Not Started';
+        showError(title, apiErr.message || 'Operation outside valid window.');
+      } else {
+        showError('Release Failed', apiErr.message || 'Failed to record child release.');
+      }
     } finally {
       setPickupLoading(false);
       setIsMarkingPickup(false);
@@ -3569,20 +3622,46 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               )}
             </div>
 
+            {/* Contextual Notice Banner */}
+            {isOrdinaryVolunteer && dutyWindow && !dutyWindow.allowed && (
+              <div className="w-full p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-xl flex items-start space-x-2 text-xs text-amber-800 dark:text-amber-300">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                <div>
+                  <span className="font-semibold block">
+                    {dutyWindow.code === 'EVENT_NOT_STARTED' ? 'Event Not Started'
+                      : dutyWindow.code === 'EVENT_ENDED' ? 'Event Ended'
+                      : dutyWindow.code === 'DUTY_NOT_STARTED' ? 'Duty Not Started'
+                      : dutyWindow.code === 'DUTY_ENDED' ? 'Duty Ended'
+                      : 'Duty Inactive'}
+                  </span>
+                  <span>{dutyWindow.message}</span>
+                </div>
+              </div>
+            )}
+
             {/* 4. Primary Operational Actions (Reflowed cleanly for 500px shell without cramped labels) */}
             <div className="w-full space-y-2.5">
               <button
                 type="button"
+                disabled={isOrdinaryVolunteer && dutyWindow && !dutyWindow.allowed}
                 onClick={() => {
                   setCameraActive(true);
                   setScanMode('check_in');
                   onNavigate('/volunteer/scan');
                 }}
-                className="w-full py-3 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-medium text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2"
+                className="w-full py-3 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-medium text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                 id="btn-volunteer-start-checkin"
               >
                 <QrCode className="w-4 h-4" />
-                <span>Start check-in</span>
+                <span>
+                  {isOrdinaryVolunteer && dutyWindow && !dutyWindow.allowed
+                    ? (dutyWindow.code === 'EVENT_NOT_STARTED' ? 'Event has not started'
+                      : dutyWindow.code === 'EVENT_ENDED' ? 'Event has ended'
+                      : dutyWindow.code === 'DUTY_NOT_STARTED' ? (dutyWindow.dutyStartsAt ? `Duty starts at ${new Date(dutyWindow.dutyStartsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })}` : 'Duty has not started')
+                      : dutyWindow.code === 'DUTY_ENDED' ? (dutyWindow.dutyEndsAt ? `Duty ended at ${new Date(dutyWindow.dutyEndsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })}` : 'Duty has ended')
+                      : 'Duty inactive')
+                    : 'Start check-in'}
+                </span>
               </button>
               <div className="grid grid-cols-2 gap-2.5">
                 <button
@@ -3596,12 +3675,21 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </button>
                 <button
                   type="button"
+                  disabled={isOrdinaryVolunteer && dutyWindow && !dutyWindow.allowed}
                   onClick={() => onNavigate('/volunteer/pickup')}
-                  className="py-2.5 px-3 bg-white dark:bg-[#21211E] border border-stone-200/90 dark:border-[#302E29] hover:bg-stone-50 dark:hover:bg-[#262520] text-stone-900 dark:text-[#F0EBE3] font-sans font-medium text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2"
+                  className="py-2.5 px-3 bg-white dark:bg-[#21211E] border border-stone-200/90 dark:border-[#302E29] hover:bg-stone-50 dark:hover:bg-[#262520] text-stone-900 dark:text-[#F0EBE3] font-sans font-medium text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                   id="btn-volunteer-open-pickup"
                 >
                   <ShieldCheck className="w-4 h-4 text-[#C59B27]" />
-                  <span>Open pickup</span>
+                  <span>
+                    {isOrdinaryVolunteer && dutyWindow && !dutyWindow.allowed
+                      ? (dutyWindow.code === 'EVENT_NOT_STARTED' ? 'Event not started'
+                        : dutyWindow.code === 'EVENT_ENDED' ? 'Event ended'
+                        : dutyWindow.code === 'DUTY_NOT_STARTED' ? 'Duty not started'
+                        : dutyWindow.code === 'DUTY_ENDED' ? 'Duty ended'
+                        : 'Duty inactive')
+                      : 'Open pickup'}
+                  </span>
                 </button>
               </div>
             </div>

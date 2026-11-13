@@ -72,6 +72,32 @@ function formatDutyStatus(status?: string): { label: string; textClass: string; 
   }
 }
 
+export const CANONICAL_AGE_GROUPS = [
+  { key: '2–3', label: 'Ages 2–3' },
+  { key: '4–6', label: 'Ages 4–6' },
+  { key: '7–9', label: 'Ages 7–9' },
+  { key: '10–12', label: 'Ages 10–12' },
+  { key: '13–14', label: 'Ages 13–14' }
+];
+
+export function formatAgeGroupsDisplay(groups?: string[] | string | null): string {
+  if (!groups) return 'None';
+  let arr: string[] = [];
+  if (Array.isArray(groups)) {
+    arr = groups;
+  } else if (typeof groups === 'string') {
+    try {
+      const parsed = JSON.parse(groups);
+      if (Array.isArray(parsed)) arr = parsed;
+      else arr = [groups];
+    } catch {
+      arr = groups.split(',').map(s => s.trim()).filter(Boolean);
+    }
+  }
+  if (arr.length === 0) return 'None';
+  return arr.map(g => (g.startsWith('Ages') ? g : `Ages ${g}`)).join(', ');
+}
+
 export default function EventTeamTab({ eventId = 'event-ga-2026', focusedAssignmentId }: EventTeamTabProps) {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -146,6 +172,7 @@ export default function EventTeamTab({ eventId = 'event-ga-2026', focusedAssignm
   const [formStartsAt, setFormStartsAt] = useState<string>('');
   const [formEndsAt, setFormEndsAt] = useState<string>('');
   const [formNote, setFormNote] = useState<string>('');
+  const [formAssignedAgeGroups, setFormAssignedAgeGroups] = useState<string[]>([]);
 
   const responsibilities = [
     'Room Operator',
@@ -280,6 +307,7 @@ export default function EventTeamTab({ eventId = 'event-ga-2026', focusedAssignm
     setFormResponsibility('Room Operator');
     setFormStatus('scheduled');
     setFormLocationId('');
+    setFormAssignedAgeGroups([]);
 
     const now = new Date();
     const future = new Date(now.getTime() + 2 * 60 * 60 * 1000);
@@ -302,6 +330,21 @@ export default function EventTeamTab({ eventId = 'event-ga-2026', focusedAssignm
     setFormResponsibility(assignment.responsibility_key || 'Room Operator');
     setFormStatus(assignment.status || 'scheduled');
     setFormLocationId(assignment.assigned_location_id || '');
+
+    const initialGroups = assignment.assignedAgeGroups || assignment.assigned_age_groups;
+    let parsed: string[] = [];
+    if (Array.isArray(initialGroups)) {
+      parsed = initialGroups;
+    } else if (typeof initialGroups === 'string') {
+      try {
+        const p = JSON.parse(initialGroups);
+        if (Array.isArray(p)) parsed = p;
+        else parsed = [initialGroups];
+      } catch {
+        parsed = initialGroups.split(',').map(s => s.trim()).filter(Boolean);
+      }
+    }
+    setFormAssignedAgeGroups(parsed);
 
     const toLocalISO = (dString?: string) => {
       if (!dString) return '';
@@ -364,6 +407,13 @@ export default function EventTeamTab({ eventId = 'event-ga-2026', focusedAssignm
       return;
     }
 
+    const normResp = (formResponsibility || '').toLowerCase().replace(/[\s_]+/g, '');
+    const isLeadOrAdmin = ['admin', 'superadmin', 'lead', 'teamlead', 'safeguardinglead', 'attendancelead', 'pickuplead', 'volunteerlead', 'locationlead', 'carelead', 'securitylead'].includes(normResp);
+    if (!isLeadOrAdmin && formAssignedAgeGroups.length === 0) {
+      setFormError('Choose at least one age group for this volunteer.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const token = safeStorage.getItem('koinonia_token');
@@ -382,6 +432,7 @@ export default function EventTeamTab({ eventId = 'event-ga-2026', focusedAssignm
           assignmentLevel: 'primary',
           status: formStatus,
           assignedLocationId: formLocationId || null,
+          assignedAgeGroups: formAssignedAgeGroups,
           startsAt: new Date(formStartsAt).toISOString(),
           endsAt: new Date(formEndsAt).toISOString(),
           note: formNote
@@ -425,6 +476,7 @@ export default function EventTeamTab({ eventId = 'event-ga-2026', focusedAssignm
               assignmentLevel: 'primary',
               status: formStatus,
               assignedLocationId: formLocationId || null,
+              assignedAgeGroups: formAssignedAgeGroups,
               startsAt: new Date(formStartsAt).toISOString(),
               endsAt: new Date(formEndsAt).toISOString(),
               note: formNote
@@ -686,6 +738,7 @@ export default function EventTeamTab({ eventId = 'event-ga-2026', focusedAssignm
                 <tr className="bg-[#FAF9F5] dark:bg-[#21211E] border-b border-[#EAE8E1] dark:border-[#302E29] text-zinc-500 dark:text-[#7A7570] font-medium text-[11px]">
                   <th className="p-3.5 pl-4 font-medium w-[220px]">Team member</th>
                   <th className="p-3.5 font-medium w-[150px]">Role</th>
+                  <th className="p-3.5 font-medium min-w-[140px]">Age groups</th>
                   <th className="p-3.5 font-medium min-w-[180px]">Assigned area</th>
                   <th className="p-3.5 font-medium w-[120px]">Duty status</th>
                   <th className="p-3.5 font-medium w-[140px]">Shift</th>
@@ -730,6 +783,13 @@ export default function EventTeamTab({ eventId = 'event-ga-2026', focusedAssignm
                       {/* Role */}
                       <td className="p-3.5 font-medium text-zinc-800 dark:text-[#F0EBE3]">
                         {as.responsibility_key || formatRoleLabel(as.user_role)}
+                      </td>
+
+                      {/* Age groups */}
+                      <td className="p-3.5 text-zinc-700 dark:text-[#B8B0A5]">
+                        <span className="font-normal text-zinc-800 dark:text-[#F0EBE3]">
+                          {formatAgeGroupsDisplay(as.assignedAgeGroups || as.assigned_age_groups)}
+                        </span>
                       </td>
 
                       {/* Assigned Area */}
@@ -1029,6 +1089,56 @@ export default function EventTeamTab({ eventId = 'event-ga-2026', focusedAssignm
                 </select>
               </div>
 
+              {/* Assigned age groups */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">Assigned age groups</label>
+                  <span className="text-[11px] text-zinc-400 dark:text-[#7A7570]">
+                    {formAssignedAgeGroups.length > 0 ? `${formAssignedAgeGroups.length} selected` : 'Choose at least one'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 bg-[#FAF9F5] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl">
+                  {CANONICAL_AGE_GROUPS.map((group) => {
+                    const isChecked = formAssignedAgeGroups.some(g => {
+                      const cleanG = g.replace(/^Ages\s+/, '').trim().replace('–', '-');
+                      const cleanKey = group.key.replace(/^Ages\s+/, '').trim().replace('–', '-');
+                      return cleanG === cleanKey;
+                    });
+
+                    return (
+                      <label
+                        key={group.key}
+                        className={`flex items-center space-x-2 p-2 rounded-lg border text-xs font-medium cursor-pointer transition-colors ${
+                          isChecked
+                            ? 'bg-[#C59B27]/10 dark:bg-[#C59B27]/20 border-[#C59B27] text-zinc-900 dark:text-[#F0EBE3]'
+                            : 'bg-white dark:bg-[#1D1D1A] border-[#EAE8E1] dark:border-[#302E29] text-zinc-600 dark:text-[#B8B0A5] hover:border-zinc-300 dark:hover:border-zinc-600'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            if (isChecked) {
+                              setFormAssignedAgeGroups(prev =>
+                                prev.filter(g => {
+                                  const cleanG = g.replace(/^Ages\s+/, '').trim().replace('–', '-');
+                                  const cleanKey = group.key.replace(/^Ages\s+/, '').trim().replace('–', '-');
+                                  return cleanG !== cleanKey;
+                                })
+                              );
+                            } else {
+                              setFormAssignedAgeGroups(prev => [...prev, group.label]);
+                            }
+                          }}
+                          className="w-3.5 h-3.5 text-[#C59B27] rounded focus:ring-[#C59B27] border-zinc-300 dark:border-zinc-600 accent-[#C59B27] cursor-pointer"
+                        />
+                        <span>{group.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Shift times */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div className="space-y-1">
@@ -1123,6 +1233,13 @@ export default function EventTeamTab({ eventId = 'event-ga-2026', focusedAssignm
               <div className="p-3 bg-[#FAF9F5] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl flex items-center justify-between">
                 <span className="text-zinc-500 dark:text-[#7A7570]">Area</span>
                 <span className="font-semibold text-zinc-900 dark:text-[#F0EBE3]">{detailAssignment.assigned_location_name || 'Central Command'}</span>
+              </div>
+
+              <div className="p-3 bg-[#FAF9F5] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl flex items-center justify-between">
+                <span className="text-zinc-500 dark:text-[#7A7570]">Age groups</span>
+                <span className="font-semibold text-zinc-900 dark:text-[#F0EBE3]">
+                  {formatAgeGroupsDisplay(detailAssignment.assignedAgeGroups || detailAssignment.assigned_age_groups)}
+                </span>
               </div>
 
               <div className="p-3 bg-[#FAF9F5] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl flex items-center justify-between">
