@@ -398,7 +398,8 @@ async function main() {
       assert.ok((res.headers.get('content-type') || '').includes('application/pdf'));
       assert.ok(
         (res.headers.get('content-disposition') || '').includes('Ages-4-14-Name-List.pdf') ||
-        (res.headers.get('content-disposition') || '').includes('Ages-4-to-14-Name-List.pdf')
+        (res.headers.get('content-disposition') || '').includes('Ages-4-to-14-Name-List.pdf') ||
+        (res.headers.get('content-disposition') || '').includes('Selected-Children-Name-List-Ages-4-to-14.pdf')
       );
 
       const buf = Buffer.from(await res.arrayBuffer());

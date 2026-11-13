@@ -80,6 +80,12 @@ export interface SelectedChildRecord {
     phone: string | null;
     email: string | null;
   };
+  pickupPerson?: {
+    fullName: string;
+    relationship: string;
+    phone: string | null;
+    isPrimaryParent: boolean;
+  };
   passStatus: 'pass_ready' | 'missing_pass';
   attendanceStatus: 'not_arrived' | 'checked_in' | 'inside' | 'picked_up';
   passReference: string | null;
@@ -270,7 +276,7 @@ export async function getSelectedChildrenReportData(params: {
   }
   const sortOption = rawSort as SelectedChildrenSortOption;
 
-  // Query all active selected entries for this event with parent & pass information
+  // Query all active selected entries for this event with parent, pass, and authorised pickup information
   const rows = await query(`
     SELECT 
       e.id as event_entry_id,
@@ -289,13 +295,19 @@ export async function getSelectedChildrenReportData(params: {
       COALESCE(p.email, u.email) as parent_email,
       ep.id as active_pass_id,
       ep.pass_reference,
-      ep.status as pass_record_status
+      ep.status as pass_record_status,
+      pk.id as pickup_id,
+      pk.pickup_type,
+      pk.full_name as pickup_name,
+      pk.relationship_to_child as pickup_relationship,
+      pk.phone_number as pickup_phone
     FROM child_event_entries e
     JOIN children c ON c.id = e.child_id
     LEFT JOIN parent_profiles p ON p.id = c.parent_profile_id
     LEFT JOIN users u ON u.id = p.user_id
     LEFT JOIN media_files m ON m.id = c.photo_file_id
     LEFT JOIN event_passes ep ON ep.child_event_entry_id = e.id AND ep.status = 'active'
+    LEFT JOIN pickup_people pk ON pk.child_event_entry_id = e.id
     WHERE e.event_id = ?
       AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
       AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
@@ -328,6 +340,27 @@ export async function getSelectedChildrenReportData(params: {
       genderDisplay = 'Female';
     }
 
+    // Resolve current canonical authorised pickup person (Requirements 11 & 12)
+    const hasDesignatedPickup = Boolean(r.pickup_name && String(r.pickup_name).trim());
+    let pickupFullName = (r.parent_name || 'Primary Parent').trim();
+    let pickupRelationship = 'Primary parent';
+    let pickupPhone = r.parent_phone || null;
+    let isPrimaryParent = true;
+
+    if (hasDesignatedPickup) {
+      pickupFullName = String(r.pickup_name).trim();
+      pickupRelationship = (r.pickup_relationship && String(r.pickup_relationship).trim()) || 'Authorised pickup';
+      pickupPhone = r.pickup_phone || r.parent_phone || null;
+      if (r.pickup_type === 'parent' || pickupFullName.toLowerCase() === (r.parent_name || '').trim().toLowerCase()) {
+        isPrimaryParent = true;
+        if (!r.pickup_relationship) {
+          pickupRelationship = 'Primary parent';
+        }
+      } else {
+        isPrimaryParent = false;
+      }
+    }
+
     return {
       childId: r.child_id,
       eventEntryId: r.event_entry_id,
@@ -342,6 +375,12 @@ export async function getSelectedChildrenReportData(params: {
         fullName: r.parent_name || 'Parent / Guardian',
         phone: r.parent_phone || null,
         email: r.parent_email || null
+      },
+      pickupPerson: {
+        fullName: pickupFullName,
+        relationship: pickupRelationship,
+        phone: pickupPhone,
+        isPrimaryParent
       },
       passStatus,
       attendanceStatus,
@@ -569,7 +608,7 @@ export function getSelectedChildrenPdfFilename(
   exactAgeFilter?: number | null,
   minAgeFilter?: number | null,
   maxAgeFilter?: number | null,
-  variant: 'standard' | 'name_list' = 'standard'
+  variant: 'standard' | 'qr_register' | 'name_list' = 'qr_register'
 ): string {
   let eventSlug = 'TGA-2026';
   if (eventTitle && eventTitle.toLowerCase().includes('general assembly')) {
@@ -579,22 +618,24 @@ export function getSelectedChildrenPdfFilename(
     eventSlug = eventTitle.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   }
 
-  const suffix = variant === 'name_list' ? '-Name-List' : '';
+  const prefix = variant === 'name_list'
+    ? 'Selected-Children-Name-List'
+    : 'Selected-Children-QR-Register';
 
   if (exactAgeFilter !== undefined && exactAgeFilter !== null && String(exactAgeFilter).trim() !== '' && String(exactAgeFilter).toLowerCase() !== 'all') {
-    return `${eventSlug}-Selected-Children-Age-${exactAgeFilter}${suffix}.pdf`;
+    return `${eventSlug}-${prefix}-Age-${exactAgeFilter}.pdf`;
   }
 
   if (minAgeFilter !== undefined && minAgeFilter !== null && maxAgeFilter !== undefined && maxAgeFilter !== null) {
-    return `${eventSlug}-Selected-Children-Ages-${minAgeFilter}-to-${maxAgeFilter}${suffix}.pdf`;
+    return `${eventSlug}-${prefix}-Ages-${minAgeFilter}-to-${maxAgeFilter}.pdf`;
   }
 
   const normAge = normalizeAgeGroupLabelToRange(ageGroupFilter);
   if (normAge && normAge.toLowerCase() !== 'all' && normAge.toLowerCase() !== 'all age groups') {
     const cleanTag = normAge.replace(/[\u2013–—]/g, '-to-').replace(/\s+/g, '');
-    return `${eventSlug}-Selected-Children-Ages-${cleanTag}${suffix}.pdf`;
+    return `${eventSlug}-${prefix}-Ages-${cleanTag}.pdf`;
   }
-  return `${eventSlug}-Selected-Children-Ages-2-to-14${suffix}.pdf`;
+  return `${eventSlug}-${prefix}-Ages-2-to-14.pdf`;
 }
 
 export function getSelectedChildrenCsvFilename(

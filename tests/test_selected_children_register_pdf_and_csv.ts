@@ -215,7 +215,7 @@ test('Selected Children Register PDF & CSV Suite (Requirements 1–34)', async (
   });
 
   // Test 5: Child Without Pass Handling (Requirement 21)
-  await t.test('Test 5: Selected child without pass shows "Missing pass" without mutating database', async () => {
+  await t.test('Test 5: Selected child without pass shows "PASS NOT AVAILABLE" without mutating database', async () => {
     const countBefore = await queryOne('SELECT COUNT(*) as cnt FROM event_passes');
 
     const res = await fetch(`${baseUrl}/api/admin/reports/selected-children/export-pdf?eventId=${testEventId}`);
@@ -224,7 +224,7 @@ test('Selected Children Register PDF & CSV Suite (Requirements 1–34)', async (
     const buf = Buffer.from(await res.arrayBuffer());
     const pdfText = buf.toString('latin1');
     assert.ok(pdfText.includes('David FiveNoPass'), 'Child without pass must be included');
-    assert.ok(pdfText.includes('Missing pass'), 'Missing pass label must be displayed');
+    assert.ok(pdfText.includes('PASS NOT AVAILABLE'), 'PASS NOT AVAILABLE label must be displayed');
 
     const countAfter = await queryOne('SELECT COUNT(*) as cnt FROM event_passes');
     assert.strictEqual(Number(countBefore.cnt), Number(countAfter.cnt), 'Report generation must NOT create passes');
@@ -261,21 +261,21 @@ test('Selected Children Register PDF & CSV Suite (Requirements 1–34)', async (
   await t.test('Test 7: Filename format complies with TGA-2026 convention', () => {
     // Default range
     const pdfDefault = getSelectedChildrenPdfFilename('The General Assembly 2026');
-    assert.strictEqual(pdfDefault, 'TGA-2026-Selected-Children-Ages-2-to-14.pdf');
+    assert.strictEqual(pdfDefault, 'TGA-2026-Selected-Children-QR-Register-Ages-2-to-14.pdf');
 
     const csvDefault = getSelectedChildrenCsvFilename('The General Assembly 2026');
     assert.strictEqual(csvDefault, 'TGA-2026-Selected-Children-Ages-2-to-14.csv');
 
     // Custom range 4..14
     const pdfCustom = getSelectedChildrenPdfFilename('The General Assembly 2026', undefined, null, 4, 14);
-    assert.strictEqual(pdfCustom, 'TGA-2026-Selected-Children-Ages-4-to-14.pdf');
+    assert.strictEqual(pdfCustom, 'TGA-2026-Selected-Children-QR-Register-Ages-4-to-14.pdf');
 
     const csvCustom = getSelectedChildrenCsvFilename('The General Assembly 2026', undefined, null, 4, 14);
     assert.strictEqual(csvCustom, 'TGA-2026-Selected-Children-Ages-4-to-14.csv');
 
     // Exact age 2
     const pdfExact = getSelectedChildrenPdfFilename('The General Assembly 2026', undefined, 2);
-    assert.strictEqual(pdfExact, 'TGA-2026-Selected-Children-Age-2.pdf');
+    assert.strictEqual(pdfExact, 'TGA-2026-Selected-Children-QR-Register-Age-2.pdf');
 
     const csvExact = getSelectedChildrenCsvFilename('The General Assembly 2026', undefined, 2);
     assert.strictEqual(csvExact, 'TGA-2026-Selected-Children-Age-2.csv');
@@ -303,6 +303,12 @@ test('Selected Children Register PDF & CSV Suite (Requirements 1–34)', async (
           fullName: `Parent ${i}`,
           phone: `+234800000${String(i).padStart(4, '0')}`,
           email: `parent${i}@mock.test`
+        },
+        pickupPerson: {
+          fullName: `Pickup Person ${i}`,
+          relationship: 'Guardian',
+          phone: `+234800000${String(i).padStart(4, '0')}`,
+          isPrimaryParent: false
         },
         passStatus: 'pass_ready',
         attendanceStatus: 'not_arrived',
@@ -351,6 +357,32 @@ test('Selected Children Register PDF & CSV Suite (Requirements 1–34)', async (
 
     const passesCountAfter = await queryOne('SELECT COUNT(*) as cnt FROM event_passes');
     assert.strictEqual(Number(passesCountBefore.cnt), Number(passesCountAfter.cnt), 'Large register generation made ZERO pass mutations');
+  });
+
+  // Test 9: Authorised Pickup Update Test (Requirement 28)
+  await t.test('Test 9: Updated authorised pickup person appears in PDF instead of original parent', async () => {
+    // Seed a child with designated pickup person Sarah Connor (Aunt)
+    const childWithPickup = await seedChildWithPass({
+      fullName: 'John Connor',
+      dob: '2020-05-15', // Age 6
+      passRef: 'KOI-2026-PICKUP-TEST'
+    });
+
+    const pickupId = `pk-${Date.now()}`;
+    await execute(`
+      INSERT INTO pickup_people (id, child_event_entry_id, pickup_type, full_name, relationship_to_child, phone_number, approved_by_parent, created_at, updated_at)
+      VALUES (?, ?, 'designated', 'Sarah Connor', 'Aunt', '+2348099887766', 1, ?, ?)
+    `, [pickupId, childWithPickup.entryId, now, now]);
+
+    const res = await fetch(`${baseUrl}/api/admin/reports/selected-children/export-pdf?eventId=${testEventId}`);
+    assert.strictEqual(res.status, 200);
+
+    const buf = Buffer.from(await res.arrayBuffer());
+    const pdfText = buf.toString('latin1');
+
+    assert.ok(pdfText.includes('JOHN CONNOR'), 'Child name must appear in register');
+    assert.ok(pdfText.includes('Sarah Connor'), 'Updated pickup person name must appear in register');
+    assert.ok(pdfText.includes('Aunt'), 'Updated pickup relationship must appear in register');
   });
 
   server.close();
