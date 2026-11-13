@@ -697,19 +697,20 @@ function getScopeDisplayLabel(data: SelectedChildrenReportData): string {
 }
 
 /**
- * Generate official consolidated Landscape A4 PDF document for Selected Children.
+ * Generate official consolidated Portrait A4 PDF document for Selected Children Printable QR Register.
  * Separated by exact age sections (Age 2..14), sorted A-Z within each age,
- * with first-page reconciled summary and 26mm scannable QR codes.
+ * with first-page reconciled summary and individual bordered cut-records featuring large (38mm) scannable QR codes,
+ * canonical pass codes, parent details, and authorized pickup persons.
  */
 export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData): Promise<Buffer> {
   const doc = new jsPDF({
-    orientation: 'landscape',
+    orientation: 'portrait',
     unit: 'mm',
     format: 'a4'
   });
 
-  const marginLeft = 15;
-  const tableWidth = 267;
+  const marginLeft = 14;
+  const tableWidth = 182;
 
   // Format generation timestamp
   const now = new Date();
@@ -787,7 +788,7 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
         try {
           const dataUrl = await QRCodeLib.toDataURL(ref, {
             margin: 1,
-            width: 120,
+            width: 240,
             errorCorrectionLevel: 'M',
             color: { dark: '#000000', light: '#FFFFFF' }
           });
@@ -807,9 +808,9 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
     try {
       const imgProps = doc.getImageProperties(brandLogoBase64);
       const ratio = (imgProps.width || 1) / (imgProps.height || 1);
-      const maxH = 12;
+      const maxH = 11;
       const logoH = maxH;
-      const logoW = Math.min(32, logoH * ratio);
+      const logoW = Math.min(28, logoH * ratio);
       const adjH = logoW / ratio;
       doc.addImage(
         brandLogoBase64,
@@ -836,50 +837,50 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
   doc.text((data.event.title || 'THE GENERAL ASSEMBLY 2026').toUpperCase(), marginLeft, 21);
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
+  doc.setFontSize(15);
   doc.setTextColor(24, 24, 27);
-  doc.text('SELECTED CHILDREN REGISTER', marginLeft, 28.5);
+  doc.text('SELECTED CHILDREN REGISTER', marginLeft, 28);
 
   // Gold accent rule
   doc.setDrawColor(197, 155, 39);
   doc.setLineWidth(0.6);
-  doc.line(marginLeft, 33, marginLeft + tableWidth, 33);
+  doc.line(marginLeft, 32.5, marginLeft + tableWidth, 32.5);
 
   // Administrative metadata banner (Requirement 5)
   doc.setFillColor(250, 249, 245); // Warm ivory tint
-  doc.rect(marginLeft, 35, tableWidth, 10, 'F');
+  doc.rect(marginLeft, 34.5, tableWidth, 10, 'F');
   doc.setDrawColor(228, 228, 231);
   doc.setLineWidth(0.3);
-  doc.rect(marginLeft, 35, tableWidth, 10, 'S');
+  doc.rect(marginLeft, 34.5, tableWidth, 10, 'S');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
+  doc.setFontSize(8);
   doc.setTextColor(24, 24, 27);
-  doc.text(`Age Range: ${rangeDisplay.replace('Ages ', '').replace('Age ', '')}`, marginLeft + 5, 41.5);
+  doc.text(`Scope: ${rangeDisplay}`, marginLeft + 4, 41);
 
-  doc.text(`Total Selected Children: ${totalFilteredCount.toLocaleString()}`, marginLeft + 75, 41.5);
+  doc.text(`Total Selected: ${totalFilteredCount.toLocaleString()}`, marginLeft + 55, 41);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(82, 82, 91);
-  doc.text(`Generated: ${dateStr}`, marginLeft + 200, 41.5);
+  doc.text(`Generated: ${dateStr}`, marginLeft + tableWidth - 4, 41, { align: 'right' });
 
   // First-page Age Summary Table (Requirements 17 & 18)
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(24, 24, 27);
-  doc.text('EXACT AGE BREAKDOWN', marginLeft, 52);
+  doc.text('EXACT AGE BREAKDOWN', marginLeft, 51);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(113, 113, 122);
   doc.text(
     'Summary of selected children across exact ages in this register. Reconciled with total records.',
-    marginLeft + 54,
-    52
+    marginLeft + 52,
+    51
   );
 
   // Draw Summary Table Header
-  const summaryY = 56;
+  const summaryY = 55;
   doc.setFillColor(244, 244, 245);
   doc.rect(marginLeft, summaryY, tableWidth, 7, 'F');
   doc.setDrawColor(228, 228, 231);
@@ -887,14 +888,14 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
   doc.line(marginLeft, summaryY + 7, marginLeft + tableWidth, summaryY + 7);
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(63, 63, 70);
 
-  doc.text('AGE', marginLeft + 5, summaryY + 4.8);
-  doc.text('SELECTED CHILDREN', marginLeft + 80, summaryY + 4.8, { align: 'right' });
-  doc.text('PASS READY', marginLeft + 135, summaryY + 4.8, { align: 'right' });
-  doc.text('MISSING PASS', marginLeft + 190, summaryY + 4.8, { align: 'right' });
-  doc.text('% OF TOTAL', marginLeft + 250, summaryY + 4.8, { align: 'right' });
+  doc.text('AGE', marginLeft + 4, summaryY + 4.8);
+  doc.text('SELECTED CHILDREN', marginLeft + 55, summaryY + 4.8, { align: 'right' });
+  doc.text('PASS READY', marginLeft + 95, summaryY + 4.8, { align: 'right' });
+  doc.text('MISSING PASS', marginLeft + 138, summaryY + 4.8, { align: 'right' });
+  doc.text('% OF TOTAL', marginLeft + 178, summaryY + 4.8, { align: 'right' });
 
   let curSumY = summaryY + 7;
   const sumRowH = 6.2;
@@ -917,21 +918,21 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(24, 24, 27);
-    doc.text(`Age ${ageVal}`, marginLeft + 5, curSumY + 4.3);
-    doc.text(count.toLocaleString(), marginLeft + 80, curSumY + 4.3, { align: 'right' });
+    doc.text(`Age ${ageVal}`, marginLeft + 4, curSumY + 4.3);
+    doc.text(count.toLocaleString(), marginLeft + 55, curSumY + 4.3, { align: 'right' });
 
     doc.setTextColor(21, 128, 61); // green
-    doc.text(readyCount.toLocaleString(), marginLeft + 135, curSumY + 4.3, { align: 'right' });
+    doc.text(readyCount.toLocaleString(), marginLeft + 95, curSumY + 4.3, { align: 'right' });
 
     if (missingCount > 0) {
       doc.setTextColor(180, 83, 9); // amber
     } else {
       doc.setTextColor(113, 113, 122);
     }
-    doc.text(missingCount.toLocaleString(), marginLeft + 190, curSumY + 4.3, { align: 'right' });
+    doc.text(missingCount.toLocaleString(), marginLeft + 138, curSumY + 4.3, { align: 'right' });
 
     doc.setTextColor(82, 82, 91);
-    doc.text(pct, marginLeft + 250, curSumY + 4.3, { align: 'right' });
+    doc.text(pct, marginLeft + 178, curSumY + 4.3, { align: 'right' });
 
     doc.setDrawColor(244, 244, 245);
     doc.setLineWidth(0.2);
@@ -951,29 +952,29 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
   doc.setTextColor(24, 24, 27);
-  doc.text(`TOTAL (${rangeDisplay})`, marginLeft + 5, curSumY + 5.2);
-  doc.text(runningSelectedSum.toLocaleString(), marginLeft + 80, curSumY + 5.2, { align: 'right' });
+  doc.text(`TOTAL (${rangeDisplay})`, marginLeft + 4, curSumY + 5.2);
+  doc.text(runningSelectedSum.toLocaleString(), marginLeft + 55, curSumY + 5.2, { align: 'right' });
 
   doc.setTextColor(21, 128, 61);
-  doc.text(runningPassReadySum.toLocaleString(), marginLeft + 135, curSumY + 5.2, { align: 'right' });
+  doc.text(runningPassReadySum.toLocaleString(), marginLeft + 95, curSumY + 5.2, { align: 'right' });
 
   if (runningMissingPassSum > 0) {
     doc.setTextColor(180, 83, 9);
   } else {
     doc.setTextColor(24, 24, 27);
   }
-  doc.text(runningMissingPassSum.toLocaleString(), marginLeft + 190, curSumY + 5.2, { align: 'right' });
+  doc.text(runningMissingPassSum.toLocaleString(), marginLeft + 138, curSumY + 5.2, { align: 'right' });
 
   doc.setTextColor(24, 24, 27);
-  doc.text('100.0%', marginLeft + 250, curSumY + 5.2, { align: 'right' });
+  doc.text('100.0%', marginLeft + 178, curSumY + 5.2, { align: 'right' });
 
   // Reconciled note box
   const noteY = curSumY + 11;
   doc.setFillColor(255, 255, 255);
-  doc.rect(marginLeft, noteY, tableWidth, 14, 'F');
+  doc.rect(marginLeft, noteY, tableWidth, 16, 'F');
   doc.setDrawColor(228, 228, 231);
   doc.setLineWidth(0.3);
-  doc.rect(marginLeft, noteY, tableWidth, 14, 'S');
+  doc.rect(marginLeft, noteY, tableWidth, 16, 'S');
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
@@ -984,51 +985,15 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
   doc.setFontSize(7.5);
   doc.setTextColor(82, 82, 91);
   doc.text(
-    'Each subsequent page contains verified selected children separated by exact age, ordered alphabetically (A–Z).',
+    'Each subsequent page contains individual bordered child credential records separated by exact age, ordered A–Z.',
     marginLeft + 5,
-    noteY + 9.2
+    noteY + 9.5
   );
   doc.text(
-    'Every entry includes the canonical pass code and a physically scannable QR code matching the Parent Mobile Pass.',
+    'Each record includes a large scannable QR code (38mm) matching the Parent Pass, parent, and authorized pickup person.',
     marginLeft + 5,
-    noteY + 12.8
+    noteY + 13.5
   );
-
-  // =================== EXACT AGE SECTION PAGES (Requirements 6, 7, 8, 9, 10, 11) ===================
-  type RegCol = 'no' | 'child' | 'gender' | 'ageGroup' | 'parent' | 'phone' | 'passCode' | 'qr';
-  const regCols: Array<{ key: RegCol; header: string; width: number; align: 'left' | 'center' }> = [
-    { key: 'no', header: 'NO.', width: 12, align: 'center' },
-    { key: 'child', header: 'CHILD', width: 55, align: 'left' },
-    { key: 'gender', header: 'GENDER', width: 18, align: 'center' },
-    { key: 'ageGroup', header: 'AGE GROUP', width: 22, align: 'center' },
-    { key: 'parent', header: 'PARENT / GUARDIAN', width: 48, align: 'left' },
-    { key: 'phone', header: 'PHONE', width: 34, align: 'left' },
-    { key: 'passCode', header: 'PASS CODE', width: 36, align: 'left' },
-    { key: 'qr', header: 'QR CODE', width: 42, align: 'center' }
-  ];
-
-  const drawRegTableHeader = (y: number) => {
-    doc.setFillColor(244, 244, 245);
-    doc.rect(marginLeft, y, tableWidth, 7, 'F');
-    doc.setDrawColor(228, 228, 231);
-    doc.setLineWidth(0.3);
-    doc.line(marginLeft, y + 7, marginLeft + tableWidth, y + 7);
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.setTextColor(63, 63, 70);
-
-    let curX = marginLeft;
-    for (const c of regCols) {
-      if (c.align === 'center') {
-        doc.text(c.header, curX + c.width / 2, y + 4.8, { align: 'center' });
-      } else {
-        doc.text(c.header, curX + 2, y + 4.8);
-      }
-      curX += c.width;
-    }
-    return y + 7;
-  };
 
   const truncateText = (text: string, maxWidth: number): string => {
     if (!text) return '';
@@ -1040,182 +1005,194 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
     return `${t}…`;
   };
 
-  const rowHeight = 30; // 30mm height accommodates 26mm x 26mm scannable QR code (Requirement 8)
-  const maxY = 194;
+  // =================== EXACT AGE SECTION PAGES WITH BORDERED CUT-CARDS (Requirements 14, 15) ===================
+  const cardWidth = tableWidth; // 182mm
+  const cardHeight = 54;
+  const gapY = 4;
+  const maxY = 270;
 
   for (const ageVal of ageRangeList) {
     const childrenOfAge = ageToChildrenMap.get(ageVal) || [];
     if (childrenOfAge.length === 0) continue;
 
-    // Start each exact age section on a fresh page (Requirement 10)
+    // Start each exact age section on a fresh page
     doc.addPage();
     let currentY = 12;
 
-    // Section header (Requirement 6)
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(15);
-    doc.setTextColor(24, 24, 27);
-    doc.text(`AGE ${ageVal}`, marginLeft, currentY + 4.5);
+    const drawAgeHeader = (y: number, isContinuation: boolean = false) => {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.setTextColor(24, 24, 27);
+      doc.text(isContinuation ? `AGE ${ageVal} — Continued` : `AGE ${ageVal}`, marginLeft, y + 4.5);
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(197, 155, 39);
-    const countBadge = `${childrenOfAge.length} SELECTED ${childrenOfAge.length === 1 ? 'CHILD' : 'CHILDREN'}`;
-    doc.text(countBadge, marginLeft + 28, currentY + 4.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(197, 155, 39);
+      const countBadge = `${childrenOfAge.length} SELECTED ${childrenOfAge.length === 1 ? 'CHILD' : 'CHILDREN'}`;
+      doc.text(countBadge, marginLeft + 32, y + 4.5);
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(113, 113, 122);
-    doc.text(
-      `${data.event.title || 'The General Assembly 2026'} · Exact Age Section`,
-      marginLeft + tableWidth,
-      currentY + 4.5,
-      { align: 'right' }
-    );
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(113, 113, 122);
+      doc.text(
+        `${data.event.title || 'The General Assembly 2026'} · Printable QR Register`,
+        marginLeft + cardWidth,
+        y + 4.5,
+        { align: 'right' }
+      );
 
-    // Koinonia gold rule
-    doc.setDrawColor(197, 155, 39);
-    doc.setLineWidth(0.6);
-    doc.line(marginLeft, currentY + 7.5, marginLeft + tableWidth, currentY + 7.5);
+      // Gold accent line
+      doc.setDrawColor(197, 155, 39);
+      doc.setLineWidth(0.5);
+      doc.line(marginLeft, y + 7, marginLeft + cardWidth, y + 7);
+      return y + 11;
+    };
 
-    currentY = drawRegTableHeader(currentY + 10);
+    currentY = drawAgeHeader(currentY, false);
 
     childrenOfAge.forEach((c, idx) => {
-      if (currentY + rowHeight > maxY) {
+      if (currentY + cardHeight > maxY) {
         doc.addPage();
+        currentY = drawAgeHeader(12, true);
+      }
+
+      const cardX = marginLeft;
+      const cardY = currentY;
+
+      // 1. Bordered Card Container (Section 14: Printable cut-box)
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(cardX, cardY, cardWidth, cardHeight, 1.5, 1.5, 'F');
+      doc.setDrawColor(212, 212, 216); // zinc 300
+      doc.setLineWidth(0.35);
+      doc.roundedRect(cardX, cardY, cardWidth, cardHeight, 1.5, 1.5, 'S');
+
+      // Left Gold Accent Bar
+      doc.setFillColor(197, 155, 39);
+      doc.roundedRect(cardX, cardY, 2.5, cardHeight, 1, 1, 'F');
+
+      // 2. Child Index Number & Full Name
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(161, 161, 170); // zinc 400
+      const numStr = String(idx + 1).padStart(2, '0');
+      doc.text(numStr, cardX + 6, cardY + 7.5);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor(24, 24, 27);
+      doc.text(truncateText(c.fullName || '', 95), cardX + 15, cardY + 7.5);
+      doc.text((c.fullName || '').toUpperCase(), cardX + 15, cardY + 7.5, { renderingMode: 'invisible' });
+
+      // 3. Subtitle: Exact Age · Age Group · Gender
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(82, 82, 91);
+      const agDisplay = c.ageGroup === 'Age review needed' ? 'Age review needed' : (c.ageGroup.startsWith('Ages') ? c.ageGroup : `Ages ${c.ageGroup}`);
+      const genderDisplay = c.gender ? ` · ${c.gender}` : '';
+      doc.text(`${c.age} yrs · ${agDisplay}${genderDisplay}`, cardX + 15, cardY + 13);
+
+      // Divider inside left area
+      doc.setDrawColor(244, 244, 245);
+      doc.setLineWidth(0.2);
+      doc.line(cardX + 6, cardY + 16.5, cardX + 126, cardY + 16.5);
+
+      // 4. Primary Parent
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(63, 63, 70);
+      doc.text('Parent:', cardX + 6, cardY + 22.5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(24, 24, 27);
+      const parentName = truncateText(c.parent?.fullName || '—', 75);
+      const parentPhone = c.parent?.phone ? ` (${c.parent.phone})` : '';
+      doc.text(`${parentName}${parentPhone}`, cardX + 22, cardY + 22.5);
+
+      // 5. Authorised Pickup Person (from canonical pickup_people)
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(63, 63, 70);
+      doc.text('Pickup:', cardX + 6, cardY + 29.5);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(24, 24, 27);
+      const pickupName = truncateText(c.pickupPerson?.fullName || c.parent?.fullName || '—', 75);
+      const pickupPhone = c.pickupPerson?.phone ? ` (${c.pickupPerson.phone})` : '';
+      doc.text(`${pickupName}${pickupPhone}`, cardX + 22, cardY + 29.5);
+
+      // Relationship
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(7.5);
+      doc.setTextColor(82, 82, 91);
+      const relStr = c.pickupPerson?.relationship || 'Primary parent';
+      doc.text(`Relationship: ${relStr}`, cardX + 22, cardY + 34.5);
+
+      // 6. Attendance Status
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(113, 113, 122);
+      const attText = c.attendanceStatus === 'picked_up'
+        ? 'Picked up'
+        : c.attendanceStatus === 'inside'
+          ? 'Inside'
+          : c.attendanceStatus === 'checked_in'
+            ? 'Checked in'
+            : 'Not arrived';
+      doc.text(`Status: ${attText}`, cardX + 6, cardY + 45.5);
+
+      // Vertical Divider before QR section
+      doc.setDrawColor(240, 240, 243);
+      doc.setLineWidth(0.3);
+      doc.line(cardX + 130, cardY + 3, cardX + 130, cardY + cardHeight - 3);
+
+      // 7. Large QR Code (38mm x 38mm) & Canonical Pass Code (Section 14)
+      const qrSize = 38;
+      const qrX = cardX + 136;
+      const qrY = cardY + 2.5;
+
+      if (c.passReference && qrCache.has(c.passReference)) {
+        doc.addImage(qrCache.get(c.passReference)!, 'PNG', qrX, qrY, qrSize, qrSize, undefined, 'FAST');
+
+        // Pass Code Label & Value below QR
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(10);
+        doc.setFontSize(6);
+        doc.setTextColor(113, 113, 122);
+        doc.text('PASS CODE', qrX + qrSize / 2, qrY + qrSize + 3.2, { align: 'center' });
+
+        doc.setFont('courier', 'bold');
+        doc.setFontSize(8);
         doc.setTextColor(24, 24, 27);
-        doc.text(`AGE ${ageVal} — Continued`, marginLeft, 12);
+        doc.text(c.passReference, qrX + qrSize / 2, qrY + qrSize + 7, { align: 'center' });
+      } else {
+        // Missing Pass box
+        doc.setFillColor(254, 243, 199); // amber 100
+        doc.roundedRect(qrX + 2, qrY + 8, qrSize - 4, 18, 1.5, 1.5, 'F');
+        doc.setDrawColor(245, 158, 11);
+        doc.setLineWidth(0.3);
+        doc.roundedRect(qrX + 2, qrY + 8, qrSize - 4, 18, 1.5, 1.5, 'S');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7);
+        doc.setTextColor(180, 83, 9);
+        doc.text('PASS NOT AVAILABLE', qrX + qrSize / 2, qrY + 16, { align: 'center' });
 
         doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.5);
+        doc.setTextColor(146, 64, 14);
+        doc.text('Missing pass', qrX + qrSize / 2, qrY + 21, { align: 'center' });
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6);
+        doc.setTextColor(113, 113, 122);
+        doc.text('PASS CODE', qrX + qrSize / 2, qrY + qrSize + 3.2, { align: 'center' });
+
+        doc.setFont('courier', 'bold');
         doc.setFontSize(8);
         doc.setTextColor(113, 113, 122);
-        doc.text(
-          `${data.event.title || 'The General Assembly 2026'} · Selected Children Register`,
-          marginLeft + tableWidth,
-          12,
-          { align: 'right' }
-        );
-
-        doc.setDrawColor(228, 228, 231);
-        doc.setLineWidth(0.3);
-        doc.line(marginLeft, 14.5, marginLeft + tableWidth, 14.5);
-
-        currentY = drawRegTableHeader(17);
+        doc.text('—', qrX + qrSize / 2, qrY + qrSize + 7, { align: 'center' });
       }
 
-      // Alternating row background for visual tracking
-      if (idx % 2 === 1) {
-        doc.setFillColor(252, 252, 252);
-        doc.rect(marginLeft, currentY, tableWidth, rowHeight, 'F');
-      }
-
-      // Thin bottom divider
-      doc.setDrawColor(235, 235, 238);
-      doc.setLineWidth(0.2);
-      doc.line(marginLeft, currentY + rowHeight, marginLeft + tableWidth, currentY + rowHeight);
-
-      let colX = marginLeft;
-      for (const col of regCols) {
-        if (col.key === 'no') {
-          // Per-age numbering resetting at 1 (Requirement 11)
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(8.5);
-          doc.setTextColor(113, 113, 122);
-          doc.text(String(idx + 1), colX + col.width / 2, currentY + 16, { align: 'center' });
-        } else if (col.key === 'child') {
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(8.5);
-          doc.setTextColor(24, 24, 27);
-          doc.text(truncateText(c.fullName, 51), colX + 2, currentY + 12);
-
-          const attText = c.attendanceStatus === 'picked_up'
-            ? 'Picked up'
-            : c.attendanceStatus === 'inside'
-              ? 'Inside'
-              : c.attendanceStatus === 'checked_in'
-                ? 'Checked in'
-                : 'Not arrived';
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(7.5);
-          doc.setTextColor(113, 113, 122);
-          doc.text(`Status: ${attText}`, colX + 2, currentY + 18);
-        } else if (col.key === 'gender') {
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(8);
-          doc.setTextColor(63, 63, 70);
-          doc.text(c.gender || '—', colX + col.width / 2, currentY + 15, { align: 'center' });
-        } else if (col.key === 'ageGroup') {
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(7.8);
-          doc.setTextColor(63, 63, 70);
-          const agText = c.ageGroup === 'Age review needed' ? 'Review' : (c.ageGroup.startsWith('Ages') ? c.ageGroup : `Ages ${c.ageGroup}`);
-          doc.text(agText, colX + col.width / 2, currentY + 15, { align: 'center' });
-        } else if (col.key === 'parent') {
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(8);
-          doc.setTextColor(24, 24, 27);
-          doc.text(truncateText(c.parent?.fullName || '—', 44), colX + 2, currentY + 12);
-
-          if (c.parent?.email) {
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(7);
-            doc.setTextColor(113, 113, 122);
-            doc.text(truncateText(c.parent.email, 44), colX + 2, currentY + 18);
-          }
-        } else if (col.key === 'phone') {
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(8);
-          doc.setTextColor(63, 63, 70);
-          doc.text(truncateText(c.parent?.phone || '—', 30), colX + 2, currentY + 15);
-        } else if (col.key === 'passCode') {
-          if (c.passReference) {
-            doc.setFont('courier', 'bold');
-            doc.setFontSize(8.5);
-            doc.setTextColor(24, 24, 27);
-            doc.text(c.passReference, colX + 2, currentY + 13);
-
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(7.5);
-            doc.setTextColor(21, 128, 61);
-            doc.text('Pass ready', colX + 2, currentY + 18);
-          } else {
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(8.5);
-            doc.setTextColor(113, 113, 122);
-            doc.text('—', colX + 2, currentY + 13);
-
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(7.5);
-            doc.setTextColor(180, 83, 9);
-            doc.text('Missing pass', colX + 2, currentY + 18);
-          }
-        } else if (col.key === 'qr') {
-          const qrSize = 26; // 26mm x 26mm scannable QR (Requirement 8)
-          const qrX = colX + (col.width - qrSize) / 2;
-          const qrY = currentY + (rowHeight - qrSize) / 2;
-
-          if (c.passReference && qrCache.has(c.passReference)) {
-            doc.addImage(qrCache.get(c.passReference)!, 'PNG', qrX, qrY, qrSize, qrSize, undefined, 'FAST');
-          } else {
-            // Missing pass box (Requirement 21)
-            doc.setFillColor(254, 243, 199); // amber 100
-            doc.roundedRect(qrX + 3, qrY + 6, qrSize - 6, 14, 1.5, 1.5, 'F');
-            doc.setDrawColor(245, 158, 11);
-            doc.setLineWidth(0.3);
-            doc.roundedRect(qrX + 3, qrY + 6, qrSize - 6, 14, 1.5, 1.5, 'S');
-
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(7);
-            doc.setTextColor(180, 83, 9);
-            doc.text('Missing pass', qrX + qrSize / 2, qrY + 15, { align: 'center' });
-          }
-        }
-        colX += col.width;
-      }
-
-      currentY += rowHeight;
+      currentY += cardHeight + gapY;
     });
   }
 
@@ -1225,7 +1202,7 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
     doc.setPage(p);
     doc.setDrawColor(228, 228, 231);
     doc.setLineWidth(0.3);
-    doc.line(marginLeft, 198, marginLeft + tableWidth, 198);
+    doc.line(marginLeft, 287, marginLeft + tableWidth, 287);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
@@ -1233,9 +1210,9 @@ export async function renderSelectedChildrenPdf(data: SelectedChildrenReportData
     doc.text(
       `${data.event.title || 'The General Assembly 2026'} · Selected Children Register · ${rangeDisplay}`,
       marginLeft,
-      203
+      292
     );
-    doc.text(`Page ${p} of ${pageCount}`, marginLeft + tableWidth, 203, { align: 'right' });
+    doc.text(`Page ${p} of ${pageCount}`, marginLeft + tableWidth, 292, { align: 'right' });
   }
 
   const arrayBuffer = doc.output('arraybuffer');

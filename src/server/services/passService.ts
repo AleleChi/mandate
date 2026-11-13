@@ -471,3 +471,59 @@ export function _clearInMemoryPassCache(): void {
   activePassAuthorizations.clear();
   revokedParentTimestamps.clear();
 }
+
+/**
+ * Centralized, canonical pass reference normalizer.
+ * Supports:
+ * - KOI-2026-F69E8A
+ * - F69E8A (6-hex character short form)
+ * - KCT:KOI-2026-F69E8A or KCT:F69E8A
+ * - PASS-F69E8A
+ * - URLs containing /pass/, ?code=, ?pass=, ?ref=, ?token=
+ * Returns canonical format: KOI-2026-XXXXXX (or original uppercase string if unrecognized).
+ */
+export function normalizePassReference(input: string | null | undefined): string {
+  if (!input) return '';
+  let str = String(input).trim();
+  if (!str) return '';
+
+  // 1. URL extraction
+  if (str.includes('/pass/')) {
+    str = str.split('/pass/')[1]?.split('?')[0]?.replace(/\/$/, '') || str;
+  }
+  if (str.includes('code=')) {
+    str = str.split('code=')[1]?.split('&')[0] || str;
+  } else if (str.includes('pass=')) {
+    str = str.split('pass=')[1]?.split('&')[0] || str;
+  } else if (str.includes('ref=')) {
+    str = str.split('ref=')[1]?.split('&')[0] || str;
+  } else if (str.includes('token=')) {
+    str = str.split('token=')[1]?.split('&')[0] || str;
+  }
+
+  // URL decode if percent-encoded
+  try {
+    str = decodeURIComponent(str);
+  } catch {}
+
+  str = str.trim().toUpperCase();
+
+  // Strip known prefixes
+  if (str.startsWith('KCT:')) {
+    str = str.substring(4).trim();
+  }
+  if (str.startsWith('PASS-')) {
+    str = str.substring(5).trim();
+    if (!str.startsWith('KOI-2026-') && /^[0-9A-F]{6}$/i.test(str)) {
+      str = `KOI-2026-${str}`;
+    }
+    return str;
+  }
+
+  // 6-character hex short reference (e.g. F69E8A -> KOI-2026-F69E8A)
+  if (!str.startsWith('KOI-2026-') && /^[0-9A-F]{6}$/i.test(str)) {
+    str = `KOI-2026-${str}`;
+  }
+
+  return str;
+}

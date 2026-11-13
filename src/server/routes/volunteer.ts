@@ -30,8 +30,22 @@ import {
   parseAssignedAgeGroups,
   isChildInScope,
   buildAgeGroupSqlFilter,
-  normalizeAgeGroup
+  normalizeAgeGroup,
+  resolveCanonicalAgeGroup
 } from '../services/eligibilityService';
+import { normalizePassReference } from '../services/passService';
+
+export function getChildScopeDisplayName(child: any): string {
+  const norm = normalizeAgeGroup(child?.age_group);
+  if (norm && norm !== 'Age review needed') {
+    return `Ages ${norm}`;
+  }
+  const res = resolveCanonicalAgeGroup(child?.date_of_birth || child?.calculated_age);
+  if (res.group) {
+    return `Ages ${res.group}`;
+  }
+  return child?.age_group ? (String(child.age_group).startsWith('Ages') ? String(child.age_group) : `Ages ${child.age_group}`) : 'another age group';
+}
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -136,7 +150,7 @@ function rankSearchResults(results: any[], queryStr: string) {
   .sort((a, b) => b._score - a._score);
 }
 
-async function getEventStats(eventId?: string | null, assignedAgeGroups?: string[] | null) {
+export async function getEventStats(eventId?: string | null, assignedAgeGroups?: string[] | null) {
   const resolvedEventId = eventId || (await getCurrentEventId());
   if (!resolvedEventId) {
     return { expected: 0, checkedIn: 0, pickedUp: 0, attention: 0 };
@@ -153,24 +167,25 @@ async function getEventStats(eventId?: string | null, assignedAgeGroups?: string
     scopeFilter = `AND ${ageFilter.clause}`;
   }
 
-  // 1. Expected: All eligible active children registered for this event
+  // 1. Expected / Assigned children: Active selected children with active passes in assigned scope (Requirement 8 & 9)
   const expectedQuery = await queryOne(`
-    SELECT COUNT(*) as count 
+    SELECT COUNT(DISTINCT e.id) as count 
     FROM child_event_entries e
     JOIN children c ON c.id = e.child_id
     JOIN parent_profiles p ON p.id = c.parent_profile_id
+    JOIN event_passes ep ON ep.child_event_entry_id = e.id AND ep.status = 'active'
     WHERE e.event_id = ?
       AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
       AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
       AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
-      AND e.status != 'removed'
+      AND e.status IN ('selected', 'pass_ready', 'checked_in', 'inside', 'picked_up', 'checked_out')
       ${demoFilter}
       ${scopeFilter}
   `, [resolvedEventId]);
 
-  // 2. Checked in / Inside
+  // 2. Checked in: Cumulative children who checked in for this event (includes currently inside and picked up)
   const checkedInQuery = await queryOne(`
-    SELECT COUNT(*) as count 
+    SELECT COUNT(DISTINCT e.id) as count 
     FROM child_event_entries e
     JOIN children c ON c.id = e.child_id
     JOIN parent_profiles p ON p.id = c.parent_profile_id
@@ -179,14 +194,14 @@ async function getEventStats(eventId?: string | null, assignedAgeGroups?: string
       AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
       AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
       AND e.status != 'removed'
-      AND e.status IN ('checked_in', 'inside')
+      AND e.status IN ('checked_in', 'inside', 'picked_up', 'checked_out')
       ${demoFilter}
       ${scopeFilter}
   `, [resolvedEventId]);
 
   // 3. Picked up / Checked out
   const pickedUpQuery = await queryOne(`
-    SELECT COUNT(*) as count 
+    SELECT COUNT(DISTINCT e.id) as count 
     FROM child_event_entries e
     JOIN children c ON c.id = e.child_id
     JOIN parent_profiles p ON p.id = c.parent_profile_id
@@ -2617,27 +2632,7 @@ router.post('/pass/lookup', authMiddleware, async (req: AuthenticatedRequest, re
 
     if (!entryId) {
       if (passReference) {
-        let cleanRef = passReference.toString().trim();
-        if (cleanRef.includes('/pass/')) {
-          cleanRef = cleanRef.split('/pass/')[1]?.split('?')[0]?.replace(/\/$/, '') || cleanRef;
-        } else if (cleanRef.includes('code=')) {
-          cleanRef = cleanRef.split('code=')[1]?.split('&')[0] || cleanRef;
-        } else if (cleanRef.includes('pass=')) {
-          cleanRef = cleanRef.split('pass=')[1]?.split('&')[0] || cleanRef;
-        } else if (cleanRef.includes('ref=')) {
-          cleanRef = cleanRef.split('ref=')[1]?.split('&')[0] || cleanRef;
-        } else if (cleanRef.includes('token=')) {
-          cleanRef = cleanRef.split('token=')[1]?.split('&')[0] || cleanRef;
-        }
-        if (cleanRef.startsWith('KCT:')) {
-          cleanRef = cleanRef.substring(4);
-        }
-        cleanRef = cleanRef.trim().toUpperCase();
-        if (cleanRef.startsWith('PASS-')) {
-          cleanRef = cleanRef.replace('PASS-', 'KOI-2026-');
-        } else if (!cleanRef.startsWith('KOI-2026-') && cleanRef.length === 6) {
-          cleanRef = `KOI-2026-${cleanRef}`;
-        }
+        const cleanRef = normalizePassReference(passReference);
         
         const passRow = await queryOne('SELECT child_event_entry_id, status FROM event_passes WHERE pass_reference = ? OR id = ?', [cleanRef, passReference]);
         if (!passRow) {
@@ -2681,10 +2676,12 @@ router.post('/pass/lookup', authMiddleware, async (req: AuthenticatedRequest, re
         });
       }
       if (!isChildInScope(child, scope.assignedAgeGroups)) {
+        const ageGroupStr = getChildScopeDisplayName(child);
         return res.status(403).json({
           success: false,
-          error: 'This child is assigned to another age group.',
+          error: `This child belongs to ${ageGroupStr}. Your current assignment does not include this age group.`,
           code: 'OUT_OF_SCOPE',
+          childAgeGroup: ageGroupStr,
           outOfScope: true
         });
       }
@@ -2855,16 +2852,7 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
 
     if (!entryId) {
       if (passReference) {
-        // Normalize passReference (e.g., KOI-2026-6E80A7 or just 6E80A7)
-        let cleanRef = passReference.toString().trim().toUpperCase();
-        if (cleanRef.startsWith('KCT:')) {
-          cleanRef = cleanRef.substring(4);
-        }
-        if (cleanRef.startsWith('PASS-')) {
-          cleanRef = cleanRef.replace('PASS-', 'KOI-2026-');
-        } else if (!cleanRef.startsWith('KOI-2026-') && cleanRef.length === 6) {
-          cleanRef = `KOI-2026-${cleanRef}`;
-        }
+        const cleanRef = normalizePassReference(passReference);
         
         const passRow = await queryOne('SELECT child_event_entry_id, status FROM event_passes WHERE pass_reference = ? OR id = ?', [cleanRef, passReference]);
         if (!passRow) {
@@ -2907,10 +2895,12 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
         });
       }
       if (!isChildInScope(child, scope.assignedAgeGroups)) {
+        const ageGroupStr = getChildScopeDisplayName(child);
         return res.status(403).json({
           success: false,
-          error: 'This child is assigned to another age group.',
+          error: `This child belongs to ${ageGroupStr}. Your current assignment does not include this age group.`,
           code: 'OUT_OF_SCOPE',
+          childAgeGroup: ageGroupStr,
           outOfScope: true
         });
       }
@@ -3327,12 +3317,7 @@ router.post('/check-out', authMiddleware, async (req: AuthenticatedRequest, res:
 
     if (!entryId) {
       if (passReference) {
-        let cleanRef = passReference.toString().trim().toUpperCase();
-        if (cleanRef.startsWith('PASS-')) {
-          cleanRef = cleanRef.replace('PASS-', 'KOI-2026-');
-        } else if (!cleanRef.startsWith('KOI-2026-') && cleanRef.length === 6) {
-          cleanRef = `KOI-2026-${cleanRef}`;
-        }
+        const cleanRef = normalizePassReference(passReference);
         
         const passRow = await queryOne('SELECT child_event_entry_id, status FROM event_passes WHERE pass_reference = ? OR id = ?', [cleanRef, passReference]);
         if (!passRow) {
@@ -3375,10 +3360,12 @@ router.post('/check-out', authMiddleware, async (req: AuthenticatedRequest, res:
         });
       }
       if (!isChildInScope(child, scope.assignedAgeGroups)) {
+        const ageGroupStr = getChildScopeDisplayName(child);
         return res.status(403).json({
           success: false,
-          error: 'This child is assigned to another age group.',
+          error: `This child belongs to ${ageGroupStr}. Your current assignment does not include this age group.`,
           code: 'OUT_OF_SCOPE',
+          childAgeGroup: ageGroupStr,
           outOfScope: true
         });
       }
@@ -3568,12 +3555,7 @@ router.post('/pickup/lookup', authMiddleware, async (req: AuthenticatedRequest, 
       return res.status(400).json({ success: false, error: 'Please provide a pass code' });
     }
 
-    let cleanRef = passCode.toString().trim().toUpperCase();
-    if (cleanRef.startsWith('PASS-')) {
-      cleanRef = cleanRef.replace('PASS-', 'KOI-2026-');
-    } else if (!cleanRef.startsWith('KOI-2026-') && cleanRef.length === 6) {
-      cleanRef = `KOI-2026-${cleanRef}`;
-    }
+    const cleanRef = normalizePassReference(passCode);
 
     const currentEventId = await getCurrentEventId();
     if (!currentEventId) {
@@ -3621,10 +3603,12 @@ router.post('/pickup/lookup', authMiddleware, async (req: AuthenticatedRequest, 
         });
       }
       if (!isChildInScope(child, scope.assignedAgeGroups)) {
+        const ageGroupStr = getChildScopeDisplayName(child);
         return res.status(403).json({
           success: false,
-          error: 'This child is assigned to another age group.',
+          error: `This child belongs to ${ageGroupStr}. Your current assignment does not include this age group.`,
           code: 'OUT_OF_SCOPE',
+          childAgeGroup: ageGroupStr,
           outOfScope: true
         });
       }
@@ -3748,12 +3732,7 @@ router.post('/pickup/mark', authMiddleware, async (req: AuthenticatedRequest, re
     }
 
     if (!entryId && passCode) {
-      let cleanRef = passCode.toString().trim().toUpperCase();
-      if (cleanRef.startsWith('PASS-')) {
-        cleanRef = cleanRef.replace('PASS-', 'KOI-2026-');
-      } else if (!cleanRef.startsWith('KOI-2026-') && cleanRef.length === 6) {
-        cleanRef = `KOI-2026-${cleanRef}`;
-      }
+      const cleanRef = normalizePassReference(passCode);
       const passRow = await queryOne('SELECT child_event_entry_id, status FROM event_passes WHERE pass_reference = ? OR id = ?', [cleanRef, passCode]);
       if (passRow) {
         if (passRow.status === 'revoked' || passRow.status === 'inactive') {
@@ -3787,10 +3766,12 @@ router.post('/pickup/mark', authMiddleware, async (req: AuthenticatedRequest, re
         });
       }
       if (!isChildInScope(child, scope.assignedAgeGroups)) {
+        const ageGroupStr = getChildScopeDisplayName(child);
         return res.status(403).json({
           success: false,
-          error: 'This child is assigned to another age group.',
+          error: `This child belongs to ${ageGroupStr}. Your current assignment does not include this age group.`,
           code: 'OUT_OF_SCOPE',
+          childAgeGroup: ageGroupStr,
           outOfScope: true
         });
       }
@@ -4283,14 +4264,27 @@ router.get('/children/:childId', authMiddleware, async (req: AuthenticatedReques
 
     const scope = await resolveVolunteerScope(req.user.id, req.user.role, currentEventId);
     if (scope.isScoped) {
+      if (scope.assignedAgeGroups.length === 0) {
+        return res.status(403).json({
+          success: false,
+          error: 'No age group has been assigned to your event duty yet.',
+          code: 'NO_AGE_GROUP_ASSIGNED'
+        });
+      }
       if (
-        scope.assignedAgeGroups.length === 0 ||
         !isChildInScope(
           { age_group: entry.age_group, calculated_age: entry.calculated_age, date_of_birth: entry.date_of_birth },
           scope.assignedAgeGroups
         )
       ) {
-        return res.status(403).json({ error: 'This child is assigned to another age group.' });
+        const ageGroupStr = getChildScopeDisplayName(entry);
+        return res.status(403).json({
+          success: false,
+          error: `This child belongs to ${ageGroupStr}. Your current assignment does not include this age group.`,
+          code: 'OUT_OF_SCOPE',
+          childAgeGroup: ageGroupStr,
+          outOfScope: true
+        });
       }
     }
 
@@ -4503,10 +4497,12 @@ router.post('/pickup/prepare-child', authMiddleware, async (req: AuthenticatedRe
         });
       }
       if (!isChildInScope(childRow, scope.assignedAgeGroups)) {
+        const ageGroupStr = getChildScopeDisplayName(childRow);
         return res.status(403).json({
           success: false,
-          error: 'This child is assigned to another age group.',
+          error: `This child belongs to ${ageGroupStr}. Your current assignment does not include this age group.`,
           code: 'OUT_OF_SCOPE',
+          childAgeGroup: ageGroupStr,
           outOfScope: true
         });
       }
