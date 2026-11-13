@@ -405,7 +405,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
     overrideAgeGroup?: string,
     overrideExactAge?: string,
     overrideRange?: { minAge: number; maxAge: number } | null,
-    variant: 'standard' | 'name_list' = 'standard'
+    variant: 'standard' | 'qr_register' | 'name_list' = 'qr_register'
   ) => {
     const queryParams = new URLSearchParams();
     if (eventId) queryParams.append('eventId', eventId);
@@ -434,6 +434,8 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
     queryParams.append('sort', variant === 'name_list' ? 'name_asc' : sortOrder);
     if (variant === 'name_list') {
       queryParams.append('variant', 'name_list');
+    } else {
+      queryParams.append('variant', 'qr_register');
     }
     if (passStatusFilter && passStatusFilter !== 'all') queryParams.append('passStatus', passStatusFilter);
     if (attendanceStatusFilter && attendanceStatusFilter !== 'all') queryParams.append('attendanceStatus', attendanceStatusFilter);
@@ -446,7 +448,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
     targetAgeGroup?: string,
     targetExactAge?: string,
     targetRange?: { minAge: number; maxAge: number } | null,
-    variant: 'standard' | 'name_list' = 'standard'
+    variant: 'standard' | 'qr_register' | 'name_list' = 'qr_register'
   ) => {
     try {
       setDownloadingPdf(true);
@@ -619,13 +621,13 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                 type="button"
                 onClick={() => {
                   if (exactAgeFilter !== 'all') {
-                    handleDownloadPdf(ageGroupFilter !== 'all' ? ageGroupFilter : '', exactAgeFilter, null);
+                    handleDownloadPdf(ageGroupFilter !== 'all' ? ageGroupFilter : '', exactAgeFilter, null, 'qr_register');
                   } else if (customAgeRange) {
-                    handleDownloadPdf('', '', customAgeRange);
+                    handleDownloadPdf('', '', customAgeRange, 'qr_register');
                   } else if (ageGroupFilter !== 'all') {
-                    handleDownloadPdf(ageGroupFilter, '', null);
+                    handleDownloadPdf(ageGroupFilter, '', null, 'qr_register');
                   } else {
-                    handleDownloadPdf('', '', { minAge: 2, maxAge: 14 });
+                    handleDownloadPdf('', '', { minAge: 2, maxAge: 14 }, 'qr_register');
                   }
                 }}
                 disabled={downloadingPdf || loading}
@@ -638,12 +640,12 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                   <Download className="w-3.5 h-3.5" />
                 )}
                 {exactAgeFilter !== 'all'
-                  ? `Download Age ${exactAgeFilter} register`
+                  ? `Download Age ${exactAgeFilter} QR register`
                   : customAgeRange
-                    ? `Download Ages ${customAgeRange.minAge}–${customAgeRange.maxAge} register`
+                    ? `Download Ages ${customAgeRange.minAge}–${customAgeRange.maxAge} QR register`
                     : ageGroupFilter !== 'all'
-                      ? `Download Ages ${ageGroupFilter} register`
-                      : 'Download selected children register'}
+                      ? `Download Ages ${ageGroupFilter} QR register`
+                      : 'Download printable QR register'}
               </button>
 
               <button
@@ -668,14 +670,14 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                 role="menu"
               >
                 <div className="px-3 py-1 text-[10px] font-semibold text-stone-400 uppercase tracking-wider">
-                  Download
+                  Operational Print
                 </div>
                 <button
                   type="button"
-                  onClick={() => handleDownloadPdf(undefined, undefined, undefined, 'standard')}
+                  onClick={() => handleDownloadPdf(undefined, undefined, undefined, 'qr_register')}
                   className="w-full text-left px-3 py-1.5 hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-900 dark:text-[#F0EBE3] font-medium flex items-center justify-between cursor-pointer"
                 >
-                  <span>Current filtered register</span>
+                  <span>Printable QR register</span>
                   <span className="text-[10px] text-stone-400">
                     {exactAgeFilter !== 'all'
                       ? `Age ${exactAgeFilter}`
@@ -683,7 +685,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                         ? `Ages ${customAgeRange.minAge}–${customAgeRange.maxAge}`
                         : ageGroupFilter !== 'all'
                           ? `Ages ${ageGroupFilter}`
-                          : 'All'}
+                          : 'Ages 2–14'}
                   </span>
                 </button>
                 <button
@@ -698,10 +700,10 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
 
                 <button
                   type="button"
-                  onClick={() => handleDownloadPdf('', '', null, 'standard')}
+                  onClick={() => handleDownloadPdf('', '', { minAge: 2, maxAge: 14 }, 'qr_register')}
                   className="w-full text-left px-3 py-1.5 hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-900 dark:text-[#F0EBE3] font-medium cursor-pointer"
                 >
-                  Selected children register (Ages 2–14)
+                  Printable QR register (Ages 2–14)
                 </button>
 
                 <div className="border-t border-stone-100 dark:border-[#2C2A26] my-1" />
@@ -712,7 +714,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                   <button
                     key={g.key}
                     type="button"
-                    onClick={() => handleDownloadPdf(g.key, '', null, 'standard')}
+                    onClick={() => handleDownloadPdf(g.key, '', null, 'qr_register')}
                     className="w-full text-left px-3 py-1 hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-700 dark:text-[#C5BFB5] cursor-pointer"
                   >
                     Ages {g.key}
@@ -728,7 +730,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                     <button
                       key={a}
                       type="button"
-                      onClick={() => handleDownloadPdf('', String(a), null, 'standard')}
+                      onClick={() => handleDownloadPdf('', String(a), null, 'qr_register')}
                       className="text-left px-2 py-1 rounded-xs hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-700 dark:text-[#C5BFB5] cursor-pointer"
                     >
                       Age {a}
