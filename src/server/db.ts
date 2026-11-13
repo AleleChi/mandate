@@ -1141,7 +1141,11 @@ function initSqliteSchema(db: Database.Database) {
     "volunteer_registration_closes_at TEXT",
     "capacity INTEGER",
     "minimum_age INTEGER",
-    "maximum_age INTEGER"
+    "maximum_age INTEGER",
+    "operations_test_override_enabled INTEGER DEFAULT 0",
+    "operations_test_override_expires_at TEXT",
+    "operations_test_override_enabled_by TEXT",
+    "operations_test_override_enabled_at TEXT"
   ];
   for (const col of sqliteEventCols) {
     try {
@@ -3122,7 +3126,13 @@ async function initPostgresSchema(pool: any) {
       "description VARCHAR(1000)",
       "volunteer_registration_opens_at VARCHAR(64)",
       "volunteer_registration_closes_at VARCHAR(64)",
-      "capacity INTEGER"
+      "capacity INTEGER",
+      "minimum_age INTEGER",
+      "maximum_age INTEGER",
+      "operations_test_override_enabled INTEGER DEFAULT 0",
+      "operations_test_override_expires_at VARCHAR(64)",
+      "operations_test_override_enabled_by VARCHAR(64)",
+      "operations_test_override_enabled_at VARCHAR(64)"
     ];
     for (const col of pgEventCols) {
       try {

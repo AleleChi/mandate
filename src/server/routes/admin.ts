@@ -30,6 +30,7 @@ import { serializeChildEmergencySummary, captureChildSnapshot } from './voluntee
 import { eventOperationsService } from '../services/eventOperationsService';
 import { operationsAssistantService } from '../services/operationsAssistantService';
 import { setCurrentEvent, getCurrentEvent, getCurrentEventId, getEventById, EventRow } from '../services/eventService';
+import { getEventOperationsTestOverrideStatus, isEventOperationsTestOverrideActive } from '../services/volunteerDutyWindowService';
 import { cancelActiveEscalationCycles } from '../services/escalationService';
 import { adminDutyRouter, resolveUserDutyLocation } from './duty';
 import { buildPublicAppUrl, buildParentStatusUrl, buildParentPassUrl, buildReviewUrl, resolveMessageTokens } from '../utils/urlHelper';
@@ -5081,6 +5082,11 @@ router.get('/events/:eventId', async (req: AuthenticatedRequest, res: Response) 
     selectedChildrenCount: selectedCount,
     placesRemaining: remaining,
     spacesRemaining: remaining,
+    operationsTestOverrideEnabled: event.operations_test_override_enabled === 1 || event.operations_test_override_enabled === true,
+    operationsTestOverrideExpiresAt: event.operations_test_override_expires_at || null,
+    operationsTestOverrideEnabledBy: event.operations_test_override_enabled_by || null,
+    operationsTestOverrideEnabledAt: event.operations_test_override_enabled_at || null,
+    operationsTestOverrideActive: (event.operations_test_override_enabled === 1 || event.operations_test_override_enabled === true) && (!event.operations_test_override_expires_at || new Date(event.operations_test_override_expires_at).getTime() > Date.now()),
 
     // nested objects for structured events client
     success: true,
@@ -5103,6 +5109,11 @@ router.get('/events/:eventId', async (req: AuthenticatedRequest, res: Response) 
       pickupReminderAt: event.pickup_reminder_at || '',
       timezone: event.timezone || 'Africa/Lagos',
       status: event.status,
+      operationsTestOverrideEnabled: event.operations_test_override_enabled === 1 || event.operations_test_override_enabled === true,
+      operationsTestOverrideExpiresAt: event.operations_test_override_expires_at || null,
+      operationsTestOverrideEnabledBy: event.operations_test_override_enabled_by || null,
+      operationsTestOverrideEnabledAt: event.operations_test_override_enabled_at || null,
+      operationsTestOverrideActive: (event.operations_test_override_enabled === 1 || event.operations_test_override_enabled === true) && (!event.operations_test_override_expires_at || new Date(event.operations_test_override_expires_at).getTime() > Date.now()),
       parentAccessOpensAt: event.parent_access_opens_at,
       parentAccessClosesAt: event.parent_access_closes_at,
       parentsCanCreateAccount: event.parents_can_create_account === 1,
@@ -5185,6 +5196,165 @@ router.put('/events/:eventId', async (req: AuthenticatedRequest, res: Response) 
   });
 });
 
+// GET event operations test override status
+router.get('/events/:eventId/operations-test-override', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Super Admin access required to view event operations test override status.' });
+    }
+
+    const { eventId } = req.params;
+    let event: any = null;
+    if (eventId === 'current') {
+      event = await getCurrentEvent();
+    } else {
+      event = await getEventById(eventId);
+    }
+
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found.' });
+    }
+
+    const status = await getEventOperationsTestOverrideStatus(event.id);
+
+    return res.json({
+      success: true,
+      eventId: event.id,
+      enabled: status.enabled,
+      active: status.active,
+      expiresAt: status.expiresAt,
+      enabledBy: status.enabledBy,
+      enabledAt: status.enabledAt
+    });
+  } catch (err: any) {
+    console.error('Error fetching event operations test override:', err);
+    return res.status(500).json({ error: 'Failed to fetch test override status.' });
+  }
+});
+
+// POST enable / disable event operations test override
+router.post('/events/:eventId/operations-test-override', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Super Admin access required to configure event operations test override.' });
+    }
+
+    const { eventId } = req.params;
+    let event: any = null;
+    if (eventId === 'current') {
+      event = await getCurrentEvent();
+    } else {
+      event = await getEventById(eventId);
+    }
+
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found.' });
+    }
+
+    const { enabled } = req.body;
+    let durationMinutes = Number(req.body.durationMinutes);
+    if (![30, 60, 120].includes(durationMinutes)) {
+      durationMinutes = 60; // Default 60 minutes
+    }
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+
+    if (enabled === true || enabled === 'true' || enabled === 1) {
+      const expiresAt = new Date(now.getTime() + durationMinutes * 60 * 1000).toISOString();
+      const enabledBy = req.user.id;
+      const enabledAt = nowIso;
+
+      await query(`
+        UPDATE events
+        SET operations_test_override_enabled = 1,
+            operations_test_override_expires_at = ?,
+            operations_test_override_enabled_by = ?,
+            operations_test_override_enabled_at = ?
+        WHERE id = ?
+      `, [expiresAt, enabledBy, enabledAt, event.id]);
+
+      try {
+        await query(`
+          INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(),
+          req.user.id,
+          req.user.role,
+          'EVENT_TESTING_OVERRIDE_ENABLED',
+          'event',
+          event.id,
+          JSON.stringify({
+            eventId: event.id,
+            adminUserId: req.user.id,
+            enabledAt,
+            expiresAt,
+            disabledAt: null,
+            durationMinutes
+          }),
+          nowIso
+        ]);
+      } catch (auditErr) {
+        console.error('Audit log write error for test override enabled:', auditErr);
+      }
+
+      return res.json({
+        success: true,
+        eventId: event.id,
+        active: true,
+        enabled: true,
+        expiresAt,
+        enabledAt,
+        enabledBy,
+        durationMinutes
+      });
+    } else {
+      await query(`
+        UPDATE events
+        SET operations_test_override_enabled = 0,
+            operations_test_override_expires_at = NULL
+        WHERE id = ?
+      `, [event.id]);
+
+      try {
+        await query(`
+          INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(),
+          req.user.id,
+          req.user.role,
+          'EVENT_TESTING_OVERRIDE_DISABLED',
+          'event',
+          event.id,
+          JSON.stringify({
+            eventId: event.id,
+            adminUserId: req.user.id,
+            enabledAt: event.operations_test_override_enabled_at || null,
+            expiresAt: null,
+            disabledAt: nowIso
+          }),
+          nowIso
+        ]);
+      } catch (auditErr) {
+        console.error('Audit log write error for test override disabled:', auditErr);
+      }
+
+      return res.json({
+        success: true,
+        eventId: event.id,
+        active: false,
+        enabled: false,
+        expiresAt: null
+      });
+    }
+  } catch (err: any) {
+    console.error('Error updating event operations test override:', err);
+    return res.status(500).json({ error: 'Failed to update test override.' });
+  }
+});
+
 // GET all events
 router.get('/events', async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -5263,7 +5433,12 @@ router.get('/events', async (req: AuthenticatedRequest, res: Response) => {
         selectedCount,
         selectedChildrenCount: selectedCount,
         placesRemaining,
-        spacesRemaining: placesRemaining
+        spacesRemaining: placesRemaining,
+        operationsTestOverrideEnabled: event.operations_test_override_enabled === 1 || event.operations_test_override_enabled === true,
+        operationsTestOverrideExpiresAt: event.operations_test_override_expires_at || null,
+        operationsTestOverrideEnabledBy: event.operations_test_override_enabled_by || null,
+        operationsTestOverrideEnabledAt: event.operations_test_override_enabled_at || null,
+        operationsTestOverrideActive: (event.operations_test_override_enabled === 1 || event.operations_test_override_enabled === true) && (!event.operations_test_override_expires_at || new Date(event.operations_test_override_expires_at).getTime() > Date.now())
       });
     }
 
