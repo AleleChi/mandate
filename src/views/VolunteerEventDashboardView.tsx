@@ -34,6 +34,7 @@ import { MobileNotificationCentre } from '../components/common/MobileNotificatio
 import { PwaInstallBanner } from '../components/common/PwaInstallBanner';
 import { KoinoniaErrorState } from '../components/common/KoinoniaErrorState';
 import { VolunteerWhatsAppPreferences } from '../components/volunteer/VolunteerWhatsAppPreferences';
+import { normalizeVolunteerAgeGroup, isChildInAssignedScopeOffline } from '../utils/ageGroup';
 
 const formatEventDateRange = (startsAt?: string, endsAt?: string): string => {
   if (!startsAt && !endsAt) return '18–22 November 2026';
@@ -717,16 +718,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   }, [isOrdinaryVolunteer, assignedAgeGroups]);
 
   const isChildInAssignedScope = useCallback((child: any) => {
-    if (!isOrdinaryVolunteer) return true; // Admins / Team leads have cross-group visibility
-    if (assignedAgeGroups.length === 0) return false;
-
-    const rawChildGroup = (child?.ageGroup || child?.classGroup || child?.className || '').toLowerCase().trim();
-    const cleanChild = rawChildGroup.replace(/[\u2013\u2014]/g, '-').replace(/^ages\s*/i, '').trim();
-
-    return assignedAgeGroups.some(assigned => {
-      const cleanAssigned = assigned.toLowerCase().replace(/[\u2013\u2014]/g, '-').replace(/^ages\s*/i, '').trim();
-      return cleanChild === cleanAssigned || rawChildGroup.includes(cleanAssigned) || cleanAssigned.includes(cleanChild);
-    });
+    return isChildInAssignedScopeOffline(child, assignedAgeGroups, isOrdinaryVolunteer);
   }, [isOrdinaryVolunteer, assignedAgeGroups]);
   const [showLocationSelectModal, setShowLocationSelectModal] = useState<boolean>(false);
   const [showLocationQRModal, setShowLocationQRModal] = useState<boolean>(false);
@@ -1698,7 +1690,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   // Prepare and initiate pickup check-out flow
   const handlePreparePickup = async (childId: string) => {
-    if (isOrdinaryVolunteer && assignedAgeGroups.length === 0) {
+    if (offlineService.isOffline() && isOrdinaryVolunteer && assignedAgeGroups.length === 0) {
       showWarning('Assignment Required', 'No age group has been assigned to your event duty yet.');
       return;
     }
@@ -1714,7 +1706,24 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       }
     } catch (err: any) {
       const apiErr = extractApiError(err);
-      showError('Pickup Failed', apiErr.message || 'Error preparing child for pickup.');
+      const errCode = apiErr.code || err?.code || '';
+      if (errCode === 'OUT_OF_SCOPE') {
+        const rawGroup = apiErr.childAgeGroup || err?.data?.childAgeGroup || '';
+        const cleanGroup = rawGroup.startsWith('Ages') ? rawGroup.replace(/^Ages\s*/i, '') : rawGroup;
+        const assigned = Array.isArray(apiErr.assignedAgeGroups)
+          ? apiErr.assignedAgeGroups
+          : (Array.isArray(err?.data?.assignedAgeGroups) ? err.data.assignedAgeGroups : assignedAgeGroups);
+        showWarning(
+          'Out of Scope',
+          rawGroup && assigned.length
+            ? `This child belongs to Ages ${cleanGroup}. Your current assignment covers Ages ${assigned.join(', ')}.`
+            : (apiErr.message || 'This child is assigned to another age group.')
+        );
+      } else if (errCode === 'NO_AGE_GROUP_ASSIGNED') {
+        showWarning('Assignment Required', 'No age group has been assigned to your event duty yet.');
+      } else {
+        showError('Pickup Failed', apiErr.message || 'Error preparing child for pickup.');
+      }
     } finally {
       setPickupLoading(false);
     }
@@ -1906,7 +1915,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     const trimmedText = text.trim();
     if (!trimmedText) return;
 
-    if (isOrdinaryVolunteer && assignedAgeGroups.length === 0) {
+    if (offlineService.isOffline() && isOrdinaryVolunteer && assignedAgeGroups.length === 0) {
       showWarning('Assignment Required', 'No age group has been assigned to your event duty yet.');
       setManualCode('');
       return;
@@ -2041,6 +2050,22 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               isOfflineResult: true,
               identificationSource: 'Pass'
             };
+            if (isOrdinaryVolunteer && !isChildInAssignedScope(mockChild)) {
+              const rawChildGroup = mockChild.classGroup || '';
+              const cleanGroup = normalizeVolunteerAgeGroup(rawChildGroup) || rawChildGroup || 'another age group';
+              const cleanAssigned = assignedAgeGroups.map(a => normalizeVolunteerAgeGroup(a) || a);
+              showWarning('Out of Scope', cleanAssigned.length
+                ? `This child belongs to Ages ${cleanGroup}. Your current assignment covers Ages ${cleanAssigned.join(', ')}.`
+                : `This child belongs to Ages ${cleanGroup}.`);
+              isLookupInFlightRef.current = false;
+              lastScannedCodeRef.current = null;
+              isLookupInFlight.current = false;
+              lastScannedCode.current = '';
+              setManualCode('');
+              setScanLoading(false);
+              setCameraActive(true);
+              return;
+            }
             hasSuccessfulScanRef.current = true;
             if (navigator.vibrate) {
               navigator.vibrate([100]);
@@ -2113,21 +2138,6 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         }
 
         if (childData) {
-          // Volunteer Operational Scope Enforcement (Role-aware + Assignment-aware)
-          if (isOrdinaryVolunteer && !isChildInAssignedScope(childData)) {
-            const childGroup = childData.ageGroup || childData.classGroup || 'another age group';
-            const groupLabel = childGroup.startsWith('Ages') ? childGroup : `Ages ${childGroup}`;
-            showWarning('Out of Scope', `This child belongs to ${groupLabel}. Your current assignment does not include this age group.`);
-            isLookupInFlightRef.current = false;
-            lastScannedCodeRef.current = null;
-            isLookupInFlight.current = false;
-            lastScannedCode.current = '';
-            setManualCode('');
-            setScanLoading(false);
-            setCameraActive(true);
-            return;
-          }
-
           hasSuccessfulScanRef.current = true;
 
           // Haptic feedback if available
@@ -2179,7 +2189,18 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         message = 'No age group has been assigned to your event duty yet.';
       } else if (errCode === 'OUT_OF_SCOPE' || String(err?.message || err?.data?.error).includes('assigned to another age group') || String(err?.message || err?.data?.error).includes('belongs to')) {
         title = 'Out of Scope';
-        message = err?.message || err?.data?.error || 'This child is assigned to another age group.';
+        const rawGroup = err?.data?.childAgeGroup || err?.childAgeGroup || '';
+        const assigned = Array.isArray(err?.data?.assignedAgeGroups)
+          ? err.data.assignedAgeGroups
+          : (Array.isArray(err?.assignedAgeGroups) ? err.assignedAgeGroups : assignedAgeGroups);
+        if (rawGroup) {
+          const cleanGroup = rawGroup.startsWith('Ages') ? rawGroup.replace(/^Ages\s*/i, '') : rawGroup;
+          message = assigned.length
+            ? `This child belongs to Ages ${cleanGroup}. Your current assignment covers Ages ${assigned.join(', ')}.`
+            : `This child belongs to Ages ${cleanGroup}.`;
+        } else {
+          message = err?.message || err?.data?.error || 'This child is assigned to another age group.';
+        }
       } else if (errCode === 'EVENT_NOT_STARTED') {
         title = 'Event Not Started';
         message = err?.message || err?.data?.error || 'This event has not started yet.';
@@ -2230,7 +2251,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         message = 'No child was found for this pass or wristband.';
       }
 
-      showError(title, message);
+      if (title === 'Out of Scope' || title === 'Assignment Required') {
+        showWarning(title, message);
+      } else {
+        showError(title, message);
+      }
       isLookupInFlightRef.current = false;
       lastScannedCodeRef.current = null;
       isLookupInFlight.current = false;
@@ -2263,7 +2288,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       return;
     }
 
-    if (isOrdinaryVolunteer && assignedAgeGroups.length === 0) {
+    if (offlineService.isOffline() && isOrdinaryVolunteer && assignedAgeGroups.length === 0) {
       showWarning('Assignment Required', 'No age group has been assigned to your event duty yet.');
       setSearchResults([]);
       return;
@@ -2319,17 +2344,16 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   // Check in directly from children search view (with lookup and transition)
   const handleCheckInDirectly = async (child: any) => {
-    if (isOrdinaryVolunteer && assignedAgeGroups.length === 0) {
-      showWarning('Assignment Required', 'No age group has been assigned to your event duty yet.');
-      return;
-    }
-    if (!isChildInAssignedScope(child)) {
-      showWarning('Out of Scope', 'This child is assigned to another age group.');
-      return;
-    }
-    setScanLoading(true);
-
     if (offlineService.isOffline()) {
+      if (isOrdinaryVolunteer && assignedAgeGroups.length === 0) {
+        showWarning('Assignment Required', 'No age group has been assigned to your event duty yet.');
+        return;
+      }
+      if (!isChildInAssignedScope(child)) {
+        showWarning('Out of Scope', 'This child is assigned to another age group.');
+        return;
+      }
+      setScanLoading(true);
       try {
         const pass = await offlineService.lookupLocalPass(child.entryId || child.childEventEntryId || child.childId);
         if (pass) {
@@ -2368,6 +2392,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       return;
     }
 
+    setScanLoading(true);
     try {
       const res = await api.volunteer.lookupPass({ childId: child.childId });
       if (res.success && res.child) {
@@ -2378,7 +2403,24 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       }
     } catch (err: any) {
       const apiErr = extractApiError(err);
-      showError('Check-In Lookup Failed', apiErr.message);
+      const errCode = apiErr.code || err?.code || '';
+      if (errCode === 'OUT_OF_SCOPE') {
+        const rawGroup = apiErr.childAgeGroup || err?.data?.childAgeGroup || '';
+        const cleanGroup = rawGroup.startsWith('Ages') ? rawGroup.replace(/^Ages\s*/i, '') : rawGroup;
+        const assigned = Array.isArray(apiErr.assignedAgeGroups)
+          ? apiErr.assignedAgeGroups
+          : (Array.isArray(err?.data?.assignedAgeGroups) ? err.data.assignedAgeGroups : assignedAgeGroups);
+        showWarning(
+          'Out of Scope',
+          rawGroup && assigned.length
+            ? `This child belongs to Ages ${cleanGroup}. Your current assignment covers Ages ${assigned.join(', ')}.`
+            : (apiErr.message || 'This child is assigned to another age group.')
+        );
+      } else if (errCode === 'NO_AGE_GROUP_ASSIGNED') {
+        showWarning('Assignment Required', 'No age group has been assigned to your event duty yet.');
+      } else {
+        showError('Check-In Lookup Failed', apiErr.message);
+      }
     } finally {
       setScanLoading(false);
     }
@@ -2394,7 +2436,24 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       }
     } catch (err: any) {
       const apiErr = extractApiError(err);
-      showError('Checkout Lookup Failed', apiErr.message);
+      const errCode = apiErr.code || err?.code || '';
+      if (errCode === 'OUT_OF_SCOPE') {
+        const rawGroup = apiErr.childAgeGroup || err?.data?.childAgeGroup || '';
+        const cleanGroup = rawGroup.startsWith('Ages') ? rawGroup.replace(/^Ages\s*/i, '') : rawGroup;
+        const assigned = Array.isArray(apiErr.assignedAgeGroups)
+          ? apiErr.assignedAgeGroups
+          : (Array.isArray(err?.data?.assignedAgeGroups) ? err.data.assignedAgeGroups : assignedAgeGroups);
+        showWarning(
+          'Out of Scope',
+          rawGroup && assigned.length
+            ? `This child belongs to Ages ${cleanGroup}. Your current assignment covers Ages ${assigned.join(', ')}.`
+            : (apiErr.message || 'This child is assigned to another age group.')
+        );
+      } else if (errCode === 'NO_AGE_GROUP_ASSIGNED') {
+        showWarning('Assignment Required', 'No age group has been assigned to your event duty yet.');
+      } else {
+        showError('Checkout Lookup Failed', apiErr.message);
+      }
     } finally {
       setScanLoading(false);
     }
@@ -2605,15 +2664,6 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const handleConfirmCheckIn = async (child: any) => {
     if (isCheckingIn) return;
 
-    if (isOrdinaryVolunteer && assignedAgeGroups.length === 0) {
-      showWarning('Assignment Required', 'No age group has been assigned to your event duty yet.');
-      return;
-    }
-    if (!isChildInAssignedScope(child)) {
-      showWarning('Out of Scope', 'This child is assigned to another age group.');
-      return;
-    }
-
     const rawStatus = (child?.entryStatus || child?.status || '').toLowerCase();
     const isIneligible = ['under_review', 'waiting_list', 'not_selected', 'withdrawn', 'review_reopened', 'incomplete', 'draft'].includes(rawStatus);
     if (isIneligible) {
@@ -2625,6 +2675,18 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     setScanLoading(true);
 
     if (offlineService.isOffline()) {
+      if (isOrdinaryVolunteer && assignedAgeGroups.length === 0) {
+        showWarning('Assignment Required', 'No age group has been assigned to your event duty yet.');
+        setIsCheckingIn(false);
+        setScanLoading(false);
+        return;
+      }
+      if (!isChildInAssignedScope(child)) {
+        showWarning('Out of Scope', 'This child is assigned to another age group.');
+        setIsCheckingIn(false);
+        setScanLoading(false);
+        return;
+      }
       try {
         const entryId = child.entryId || child.childEventEntryId || child.id;
         const result = await offlineService.queueCheckIn(
@@ -2766,8 +2828,25 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       }
     } catch (err: any) {
       const apiErr = extractApiError(err);
+      const errCode = apiErr.code || err?.code || '';
       console.error('[volunteer check-in failed]', err);
-      showError('Check-In Failed', apiErr.message || 'We could not complete check-in. Please try again.');
+      if (errCode === 'OUT_OF_SCOPE') {
+        const rawGroup = apiErr.childAgeGroup || err?.data?.childAgeGroup || '';
+        const cleanGroup = rawGroup.startsWith('Ages') ? rawGroup.replace(/^Ages\s*/i, '') : rawGroup;
+        const assigned = Array.isArray(apiErr.assignedAgeGroups)
+          ? apiErr.assignedAgeGroups
+          : (Array.isArray(err?.data?.assignedAgeGroups) ? err.data.assignedAgeGroups : assignedAgeGroups);
+        showWarning(
+          'Out of Scope',
+          rawGroup && assigned.length
+            ? `This child belongs to Ages ${cleanGroup}. Your current assignment covers Ages ${assigned.join(', ')}.`
+            : (apiErr.message || 'This child is assigned to another age group.')
+        );
+      } else if (errCode === 'NO_AGE_GROUP_ASSIGNED') {
+        showWarning('Assignment Required', 'No age group has been assigned to your event duty yet.');
+      } else {
+        showError('Check-In Failed', apiErr.message || 'We could not complete check-in. Please try again.');
+      }
     } finally {
       setScanLoading(false);
       setIsCheckingIn(false);
@@ -2822,14 +2901,6 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   // Confirm and perform release of child
   const handleConfirmRelease = async (child: any, bypassVerify = false) => {
-    if (isOrdinaryVolunteer && assignedAgeGroups.length === 0) {
-      showWarning('Assignment Required', 'No age group has been assigned to your event duty yet.');
-      return;
-    }
-    if (!isChildInAssignedScope(child)) {
-      showWarning('Out of Scope', 'This child is assigned to another age group.');
-      return;
-    }
     if (offlineService.isOffline()) {
       showError('Offline Restriction', 'Secure parent pickup and face-to-photo verification requires a live network connection for security.');
       return;
@@ -2861,7 +2932,24 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       }
     } catch (err: any) {
       const apiErr = extractApiError(err);
-      showError('Release Failed', apiErr.message);
+      const errCode = apiErr.code || err?.code || '';
+      if (errCode === 'OUT_OF_SCOPE') {
+        const rawGroup = apiErr.childAgeGroup || err?.data?.childAgeGroup || '';
+        const cleanGroup = rawGroup.startsWith('Ages') ? rawGroup.replace(/^Ages\s*/i, '') : rawGroup;
+        const assigned = Array.isArray(apiErr.assignedAgeGroups)
+          ? apiErr.assignedAgeGroups
+          : (Array.isArray(err?.data?.assignedAgeGroups) ? err.data.assignedAgeGroups : assignedAgeGroups);
+        showWarning(
+          'Out of Scope',
+          rawGroup && assigned.length
+            ? `This child belongs to Ages ${cleanGroup}. Your current assignment covers Ages ${assigned.join(', ')}.`
+            : (apiErr.message || 'This child is assigned to another age group.')
+        );
+      } else if (errCode === 'NO_AGE_GROUP_ASSIGNED') {
+        showWarning('Assignment Required', 'No age group has been assigned to your event duty yet.');
+      } else {
+        showError('Release Failed', apiErr.message);
+      }
     } finally {
       setScanLoading(false);
       setIsReleasing(false);
@@ -2879,18 +2967,6 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     try {
       const res = await api.volunteer.lookupPickup({ passCode: code.trim().toUpperCase() });
       if (res && res.success && res.child) {
-        // Volunteer Operational Scope Enforcement (Sections 16, 17, 18)
-        if (isOrdinaryVolunteer && assignedAgeGroups.length === 0) {
-          showWarning('Assignment Required', 'No age group has been assigned to your event duty yet.');
-          return;
-        }
-        if (!isChildInAssignedScope(res.child)) {
-          const childGroup = res.child.ageGroup || res.child.classGroup || 'another age group';
-          const groupLabel = childGroup.startsWith('Ages') ? childGroup : `Ages ${childGroup}`;
-          showWarning('Out of Scope', `This child belongs to ${groupLabel}. Your current assignment does not include this age group.`);
-          return;
-        }
-
         const childWithPickup = {
           ...res.child,
           pickup: res.child.authorizedPickup && res.child.authorizedPickup.length > 0 ? res.child.authorizedPickup[0] : null
@@ -2905,9 +2981,19 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       const errCode = err?.code || err?.data?.code || '';
       const apiErr = extractApiError(err);
       if (errCode === 'OUT_OF_SCOPE' || String(err?.message || err?.data?.error).includes('belongs to') || String(err?.message || err?.data?.error).includes('assigned to another age group')) {
-        showError('Out of Scope', apiErr.message || 'This child is assigned to another age group.');
+        const rawGroup = apiErr.childAgeGroup || err?.data?.childAgeGroup || '';
+        const cleanGroup = rawGroup.startsWith('Ages') ? rawGroup.replace(/^Ages\s*/i, '') : rawGroup;
+        const assigned = Array.isArray(apiErr.assignedAgeGroups)
+          ? apiErr.assignedAgeGroups
+          : (Array.isArray(err?.data?.assignedAgeGroups) ? err.data.assignedAgeGroups : assignedAgeGroups);
+        showWarning(
+          'Out of Scope',
+          rawGroup && assigned.length
+            ? `This child belongs to Ages ${cleanGroup}. Your current assignment covers Ages ${assigned.join(', ')}.`
+            : (apiErr.message || 'This child is assigned to another age group.')
+        );
       } else if (errCode === 'NO_AGE_GROUP_ASSIGNED' || String(err?.message || err?.data?.error).includes('No age group')) {
-        showError('Assignment Required', apiErr.message || 'No age group has been assigned to your event duty yet.');
+        showWarning('Assignment Required', apiErr.message || 'No age group has been assigned to your event duty yet.');
       } else if (['EVENT_NOT_STARTED', 'EVENT_ENDED', 'DUTY_NOT_STARTED', 'DUTY_ENDED', 'DUTY_INACTIVE', 'PICKUP_NOT_STARTED'].includes(errCode)) {
         const title = errCode === 'EVENT_NOT_STARTED' ? 'Event Not Started'
           : errCode === 'EVENT_ENDED' ? 'Event Ended'
@@ -2966,7 +3052,21 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     } catch (err: any) {
       const errCode = err?.code || err?.data?.code || '';
       const apiErr = extractApiError(err);
-      if (['EVENT_NOT_STARTED', 'EVENT_ENDED', 'DUTY_NOT_STARTED', 'DUTY_ENDED', 'DUTY_INACTIVE', 'PICKUP_NOT_STARTED'].includes(errCode)) {
+      if (errCode === 'OUT_OF_SCOPE') {
+        const rawGroup = apiErr.childAgeGroup || err?.data?.childAgeGroup || '';
+        const cleanGroup = rawGroup.startsWith('Ages') ? rawGroup.replace(/^Ages\s*/i, '') : rawGroup;
+        const assigned = Array.isArray(apiErr.assignedAgeGroups)
+          ? apiErr.assignedAgeGroups
+          : (Array.isArray(err?.data?.assignedAgeGroups) ? err.data.assignedAgeGroups : assignedAgeGroups);
+        showWarning(
+          'Out of Scope',
+          rawGroup && assigned.length
+            ? `This child belongs to Ages ${cleanGroup}. Your current assignment covers Ages ${assigned.join(', ')}.`
+            : (apiErr.message || 'This child is assigned to another age group.')
+        );
+      } else if (errCode === 'NO_AGE_GROUP_ASSIGNED') {
+        showWarning('Assignment Required', 'No age group has been assigned to your event duty yet.');
+      } else if (['EVENT_NOT_STARTED', 'EVENT_ENDED', 'DUTY_NOT_STARTED', 'DUTY_ENDED', 'DUTY_INACTIVE', 'PICKUP_NOT_STARTED'].includes(errCode)) {
         const title = errCode === 'EVENT_NOT_STARTED' ? 'Event Not Started'
           : errCode === 'EVENT_ENDED' ? 'Event Ended'
           : errCode === 'DUTY_NOT_STARTED' ? 'Duty Not Started'

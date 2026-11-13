@@ -1,4 +1,4 @@
-const CACHE_NAME = 'koinonia-app-shell-v6';
+const CACHE_NAME = 'koinonia-app-shell-v7';
 const CORE_ASSETS = [
   '/',
   '/index.html'
