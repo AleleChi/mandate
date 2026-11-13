@@ -3706,7 +3706,7 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
 
           {/* EVENTS VIEW PANEL */}
           {activeTab === 'events' && (
-            <AdminEventsView onBackToOverview={() => handleTabChange('overview')} />
+            <AdminEventsView onBackToOverview={() => handleTabChange('overview')} adminUser={adminUser} />
           )}
 
           {/* EVENT DUTY DEVICES VIEW PANEL */}

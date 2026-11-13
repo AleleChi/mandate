@@ -63,6 +63,11 @@ interface EventData {
   selectedCount?: number;
   minimumAge?: number | null;
   maximumAge?: number | null;
+  operationsTestOverrideEnabled?: boolean;
+  operationsTestOverrideExpiresAt?: string | null;
+  operationsTestOverrideEnabledBy?: string | null;
+  operationsTestOverrideEnabledAt?: string | null;
+  operationsTestOverrideActive?: boolean;
 }
 
 const defaultAgeGroups: AgeGroup[] = [
@@ -75,11 +80,28 @@ const defaultAgeGroups: AgeGroup[] = [
 
 interface AdminEventsViewProps {
   onBackToOverview: () => void;
+  adminUser?: any;
 }
 
-export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOverview }) => {
+export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOverview, adminUser }) => {
   const { showError, showSuccess } = useNotification();
-  
+  const [currentUser, setCurrentUser] = useState<any>(adminUser || null);
+
+  useEffect(() => {
+    if (!currentUser) {
+      try {
+        const stored = localStorage.getItem('mandate_user');
+        if (stored) setCurrentUser(JSON.parse(stored));
+      } catch {}
+      api.admin.getMe().then((res: any) => {
+        if (res?.user) setCurrentUser(res.user);
+      }).catch(() => {});
+    }
+  }, [adminUser]);
+
+  const effectiveAdmin = currentUser || adminUser;
+  const isSuperAdmin = effectiveAdmin?.role === 'super_admin';
+
   // Navigation states
   const [activeTab, setActiveTab] = useState<'current' | 'upcoming' | 'draft' | 'archived'>('current');
   const [currentScreen, setCurrentScreen] = useState<'home' | 'create' | 'edit'>('home');
@@ -91,6 +113,59 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
   const [submitting, setSubmitting] = useState(false);
   const [makeCurrentTargetEvent, setMakeCurrentTargetEvent] = useState<EventData | null>(null);
   const [isSettingCurrent, setIsSettingCurrent] = useState(false);
+
+  // Event Testing Override state
+  const [overrideDuration, setOverrideDuration] = useState<number>(60);
+  const [overrideLoadingEventId, setOverrideLoadingEventId] = useState<string | null>(null);
+
+  const handleEnableTestingOverride = async (eventId: string) => {
+    try {
+      setOverrideLoadingEventId(eventId);
+      const res = await api.admin.setEventOperationsTestOverride(eventId, {
+        enabled: true,
+        durationMinutes: overrideDuration
+      });
+      if (res.success) {
+        showSuccess('Testing Access Enabled', 'Authorised volunteers can now test operations outside the schedule.');
+        setEvents(prev => prev.map(e => e.id === eventId ? {
+          ...e,
+          operationsTestOverrideEnabled: true,
+          operationsTestOverrideActive: true,
+          operationsTestOverrideExpiresAt: res.expiresAt,
+          operationsTestOverrideEnabledAt: res.enabledAt,
+          operationsTestOverrideEnabledBy: res.enabledBy
+        } : e));
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Action Failed', parsed.message || 'Could not enable event testing override.');
+    } finally {
+      setOverrideLoadingEventId(null);
+    }
+  };
+
+  const handleDisableTestingOverride = async (eventId: string) => {
+    try {
+      setOverrideLoadingEventId(eventId);
+      const res = await api.admin.setEventOperationsTestOverride(eventId, {
+        enabled: false
+      });
+      if (res.success) {
+        showSuccess('Testing Access Disabled', 'Normal schedule enforcement has resumed.');
+        setEvents(prev => prev.map(e => e.id === eventId ? {
+          ...e,
+          operationsTestOverrideEnabled: false,
+          operationsTestOverrideActive: false,
+          operationsTestOverrideExpiresAt: null
+        } : e));
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Action Failed', parsed.message || 'Could not disable event testing override.');
+    } finally {
+      setOverrideLoadingEventId(null);
+    }
+  };
 
   // Form states
   const [formTitle, setFormTitle] = useState('');
@@ -661,99 +736,158 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                 <div 
                   key={event.id}
                   data-component-version={event.status === 'current' ? "admin-current-event-card-v2" : undefined}
-                  className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302F2A] rounded-2xl p-6 shadow-3xs flex flex-col lg:flex-row justify-between lg:items-center gap-6 hover:border-[#C59B27]/30 dark:hover:border-[#C59B27]/25 transition-all"
+                  className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302F2A] rounded-2xl p-6 shadow-3xs flex flex-col gap-5 hover:border-[#C59B27]/30 dark:hover:border-[#C59B27]/25 transition-all"
                 >
-                  <div className="space-y-3.5 min-w-0 flex-1">
-                    <div className="flex items-center gap-2.5 flex-wrap">
-                      <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3] truncate">{event.title}</h4>
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-zinc-50 dark:bg-[#24231F] text-zinc-600 dark:text-[#7A7570] border border-zinc-100 dark:border-[#302F2A]">
-                        {event.sectionName}
-                      </span>
-                      {renderStatusBadge(event.status)}
+                  <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-6">
+                    <div className="space-y-3.5 min-w-0 flex-1">
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <h4 className="font-semibold text-base text-[#18181B] dark:text-[#F0EBE3] truncate">{event.title}</h4>
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-zinc-50 dark:bg-[#24231F] text-zinc-600 dark:text-[#7A7570] border border-zinc-100 dark:border-[#302F2A]">
+                          {event.sectionName}
+                        </span>
+                        {renderStatusBadge(event.status)}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-2 gap-x-4 text-xs text-zinc-500 dark:text-[#7A7570]">
+                        <div className="flex items-center space-x-2" data-component-version={event.status === 'current' ? "admin-current-event-date-meta-v1" : undefined}>
+                          <Calendar className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400 dark:text-[#5A5550]'}`} />
+                          <span className={event.status === 'current' ? 'text-zinc-700 dark:text-[#B8B0A5] font-semibold' : ''}>{event.startsAt}</span>
+                        </div>
+                        <div className="flex items-center space-x-2" data-component-version={event.status === 'current' ? "admin-current-event-time-meta-v1" : undefined}>
+                          <Clock className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400 dark:text-[#5A5550]'}`} />
+                          <span className={event.status === 'current' ? 'text-zinc-700 dark:text-[#B8B0A5] font-semibold' : ''}>{event.dailyStartTime} - {event.dailyEndTime}</span>
+                        </div>
+                        <div className="flex items-center space-x-2" data-component-version={event.status === 'current' ? "admin-current-event-venue-meta-v1" : undefined}>
+                          <MapPin className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400 dark:text-[#5A5550]'}`} />
+                          <span className={`truncate ${event.status === 'current' ? 'text-zinc-700 dark:text-[#B8B0A5] font-semibold' : ''}`}>{event.location}</span>
+                        </div>
+                      </div>
+
+                      {/* Meta capacity & access windows info */}
+                      <div className="pt-2 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-zinc-100/60 dark:border-[#302F2A] text-xs text-zinc-500 dark:text-[#7A7570] font-normal">
+                        <span>Event capacity: <strong className="text-zinc-700 dark:text-[#B8B0A5] font-semibold">{event.capacity ? Number(event.capacity).toLocaleString() : (event.eventCapacity ? Number(event.eventCapacity).toLocaleString() : 'Not set')}</strong></span>
+                        <span>Registrations: <strong className="text-zinc-700 dark:text-[#B8B0A5] font-semibold">{event.applicationsCount ?? event.registeredChildrenCount ?? 0}</strong></span>
+                        <span>Selected: <strong className="text-zinc-700 dark:text-[#B8B0A5] font-semibold">{event.selectedCount ?? 0}</strong></span>
+                        <span>Places remaining: <strong className="text-emerald-700 dark:text-emerald-400 font-semibold">{event.capacity ? Math.max(0, Number(event.capacity) - (event.selectedCount ?? 0)).toLocaleString() : '—'}</strong></span>
+                        {event.parentAccessOpensAt && (
+                          <span>Parent window: <span className="text-zinc-600 dark:text-[#7A7570]">{event.parentAccessOpensAt.split('T')[0]} to {event.parentAccessClosesAt?.split('T')[0] || 'open'}</span></span>
+                        )}
+                        {event.volunteerRegistrationOpensAt && (
+                          <span>Volunteer window: <span className="text-zinc-600 dark:text-[#7A7570]">{event.volunteerRegistrationOpensAt.split('T')[0]} to {event.volunteerRegistrationClosesAt?.split('T')[0] || 'open'}</span></span>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-2 gap-x-4 text-xs text-zinc-500 dark:text-[#7A7570]">
-                      <div className="flex items-center space-x-2" data-component-version={event.status === 'current' ? "admin-current-event-date-meta-v1" : undefined}>
-                        <Calendar className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400 dark:text-[#5A5550]'}`} />
-                        <span className={event.status === 'current' ? 'text-zinc-700 dark:text-[#B8B0A5] font-semibold' : ''}>{event.startsAt}</span>
-                      </div>
-                      <div className="flex items-center space-x-2" data-component-version={event.status === 'current' ? "admin-current-event-time-meta-v1" : undefined}>
-                        <Clock className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400 dark:text-[#5A5550]'}`} />
-                        <span className={event.status === 'current' ? 'text-zinc-700 dark:text-[#B8B0A5] font-semibold' : ''}>{event.dailyStartTime} - {event.dailyEndTime}</span>
-                      </div>
-                      <div className="flex items-center space-x-2" data-component-version={event.status === 'current' ? "admin-current-event-venue-meta-v1" : undefined}>
-                        <MapPin className={`w-3.5 h-3.5 shrink-0 ${event.status === 'current' ? 'text-[#C59B27] stroke-[2.5]' : 'text-zinc-400 dark:text-[#5A5550]'}`} />
-                        <span className={`truncate ${event.status === 'current' ? 'text-zinc-700 dark:text-[#B8B0A5] font-semibold' : ''}`}>{event.location}</span>
-                      </div>
-                    </div>
-
-                    {/* Meta capacity & access windows info */}
-                    <div className="pt-2 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-zinc-100/60 dark:border-[#302F2A] text-xs text-zinc-500 dark:text-[#7A7570] font-normal">
-                      <span>Event capacity: <strong className="text-zinc-700 dark:text-[#B8B0A5] font-semibold">{event.capacity ? Number(event.capacity).toLocaleString() : (event.eventCapacity ? Number(event.eventCapacity).toLocaleString() : 'Not set')}</strong></span>
-                      <span>Registrations: <strong className="text-zinc-700 dark:text-[#B8B0A5] font-semibold">{event.applicationsCount ?? event.registeredChildrenCount ?? 0}</strong></span>
-                      <span>Selected: <strong className="text-zinc-700 dark:text-[#B8B0A5] font-semibold">{event.selectedCount ?? 0}</strong></span>
-                      <span>Places remaining: <strong className="text-emerald-700 dark:text-emerald-400 font-semibold">{event.capacity ? Math.max(0, Number(event.capacity) - (event.selectedCount ?? 0)).toLocaleString() : '—'}</strong></span>
-                      {event.parentAccessOpensAt && (
-                        <span>Parent window: <span className="text-zinc-600 dark:text-[#7A7570]">{event.parentAccessOpensAt.split('T')[0]} to {event.parentAccessClosesAt?.split('T')[0] || 'open'}</span></span>
-                      )}
-                      {event.volunteerRegistrationOpensAt && (
-                        <span>Volunteer window: <span className="text-zinc-600 dark:text-[#7A7570]">{event.volunteerRegistrationOpensAt.split('T')[0]} to {event.volunteerRegistrationClosesAt?.split('T')[0] || 'open'}</span></span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Actions buttons */}
-                  <div className="flex items-center gap-2 shrink-0 self-start lg:self-center">
-                    <Button
-                      type="button"
-                      onClick={() => loadEventForEdit(event.id!)}
-                      data-component-version={event.status === 'current' ? "admin-current-event-edit-action-v2" : undefined}
-                      className={
-                        event.status === 'current'
-                          ? "p-2.5 text-white bg-[#C59B27] hover:bg-[#A37B1E] rounded-xl border border-[#C59B27] flex items-center justify-center cursor-pointer transition-colors shadow-sm"
-                          : "p-2 text-zinc-600 dark:text-[#7A7570] hover:text-[#C59B27] bg-zinc-50 dark:bg-[#24231F] hover:bg-zinc-100 dark:hover:bg-[#2A2926] rounded-xl border border-zinc-200/50 dark:border-[#302F2A] flex items-center justify-center cursor-pointer"
-                      }
-                      title="Edit Event details"
-                    >
-                      <Edit2 className={
-                        event.status === 'current'
-                          ? "w-4 h-4 stroke-[2.5]"
-                          : "w-3.5 h-3.5"
-                      } />
-                    </Button>
-
-                    {event.status !== 'current' && event.status !== 'archived' && event.status !== 'closed' && (
+                    {/* Actions buttons */}
+                    <div className="flex items-center gap-2 shrink-0 self-start lg:self-center">
                       <Button
                         type="button"
-                        onClick={() => handleOpenMakeCurrentModal(event)}
-                        className="text-[10px] font-bold bg-[#C59B27]/5 text-[#C59B27] hover:bg-[#C59B27]/10 px-3 py-2 rounded-xl border border-[#C59B27]/20 flex items-center space-x-1 cursor-pointer"
-                        title="Set as Active Current Event"
-                      >
-                        <Play className="w-3 h-3 fill-[#C59B27]" />
-                        <span>Make current</span>
-                      </Button>
-                    )}
-
-                    {event.status !== 'archived' && event.status !== 'closed' && (
-                      <Button
-                        type="button"
-                        onClick={() => handleArchiveEvent(event.id!)}
-                        data-component-version={event.status === 'current' ? "admin-current-event-archive-action-v2" : undefined}
+                        onClick={() => loadEventForEdit(event.id!)}
+                        data-component-version={event.status === 'current' ? "admin-current-event-edit-action-v2" : undefined}
                         className={
                           event.status === 'current'
-                            ? "p-2.5 text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 rounded-xl border border-red-200 dark:border-red-900/50 flex items-center justify-center cursor-pointer transition-colors"
-                            : "p-2 text-zinc-400 dark:text-[#5A5550] hover:text-red-600 dark:hover:text-red-400 bg-zinc-50 dark:bg-[#24231F] hover:bg-red-50 dark:hover:bg-red-950/20 rounded-xl border border-zinc-200/50 dark:border-[#302F2A] flex items-center justify-center cursor-pointer"
+                            ? "p-2.5 text-white bg-[#C59B27] hover:bg-[#A37B1E] rounded-xl border border-[#C59B27] flex items-center justify-center cursor-pointer transition-colors shadow-sm"
+                            : "p-2 text-zinc-600 dark:text-[#7A7570] hover:text-[#C59B27] bg-zinc-50 dark:bg-[#24231F] hover:bg-zinc-100 dark:hover:bg-[#2A2926] rounded-xl border border-zinc-200/50 dark:border-[#302F2A] flex items-center justify-center cursor-pointer"
                         }
-                        title="Archive Event"
+                        title="Edit Event details"
                       >
-                        <Archive className={
+                        <Edit2 className={
                           event.status === 'current'
                             ? "w-4 h-4 stroke-[2.5]"
                             : "w-3.5 h-3.5"
                         } />
                       </Button>
-                    )}
+
+                      {event.status !== 'current' && event.status !== 'archived' && event.status !== 'closed' && (
+                        <Button
+                          type="button"
+                          onClick={() => handleOpenMakeCurrentModal(event)}
+                          className="text-[10px] font-bold bg-[#C59B27]/5 text-[#C59B27] hover:bg-[#C59B27]/10 px-3 py-2 rounded-xl border border-[#C59B27]/20 flex items-center space-x-1 cursor-pointer"
+                          title="Set as Active Current Event"
+                        >
+                          <Play className="w-3 h-3 fill-[#C59B27]" />
+                          <span>Make current</span>
+                        </Button>
+                      )}
+
+                      {event.status !== 'archived' && event.status !== 'closed' && (
+                        <Button
+                          type="button"
+                          onClick={() => handleArchiveEvent(event.id!)}
+                          data-component-version={event.status === 'current' ? "admin-current-event-archive-action-v2" : undefined}
+                          className={
+                            event.status === 'current'
+                              ? "p-2.5 text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 rounded-xl border border-red-200 dark:border-red-900/50 flex items-center justify-center cursor-pointer transition-colors"
+                              : "p-2 text-zinc-400 dark:text-[#5A5550] hover:text-red-600 dark:hover:text-red-400 bg-zinc-50 dark:bg-[#24231F] hover:bg-red-50 dark:hover:bg-red-950/20 rounded-xl border border-zinc-200/50 dark:border-[#302F2A] flex items-center justify-center cursor-pointer"
+                          }
+                          title="Archive Event"
+                        >
+                          <Archive className={
+                            event.status === 'current'
+                              ? "w-4 h-4 stroke-[2.5]"
+                              : "w-3.5 h-3.5"
+                          } />
+                        </Button>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Restrained Event testing section for Super Admin on Current Event */}
+                  {event.status === 'current' && isSuperAdmin && (
+                    <div 
+                      className="pt-4 border-t border-[#EAE8E1] dark:border-[#302F2A] flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                      data-component-version="admin-event-testing-override-v1"
+                    >
+                      <div className="space-y-1 max-w-xl">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">Event testing</span>
+                          {event.operationsTestOverrideActive && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              Testing access active · Ends at {event.operationsTestOverrideExpiresAt ? new Date(event.operationsTestOverrideExpiresAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }) : ''}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-zinc-500 dark:text-[#7A7570] leading-relaxed">
+                          Temporarily allows authorised volunteers to test event operations before the scheduled event time. Pass, age-group and child-status rules remain enforced.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-center">
+                        {event.operationsTestOverrideActive ? (
+                          <Button
+                            type="button"
+                            disabled={overrideLoadingEventId === event.id}
+                            onClick={() => handleDisableTestingOverride(event.id!)}
+                            className="text-xs font-medium px-3.5 py-2 rounded-xl bg-zinc-100 hover:bg-zinc-200/80 dark:bg-[#2A2926] dark:hover:bg-[#32302B] text-zinc-700 dark:text-[#D1CBC2] border border-zinc-200/80 dark:border-[#383630] transition-all cursor-pointer"
+                          >
+                            {overrideLoadingEventId === event.id ? 'Updating...' : 'Disable testing'}
+                          </Button>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={overrideDuration}
+                              onChange={(e) => setOverrideDuration(Number(e.target.value))}
+                              className="text-xs font-medium py-2 px-2.5 rounded-xl border border-zinc-200/90 dark:border-[#302F2A] bg-zinc-50 dark:bg-[#24231F] text-zinc-700 dark:text-[#B8B0A5] focus:outline-none focus:ring-1 focus:ring-[#C59B27] cursor-pointer"
+                              aria-label="Testing duration"
+                            >
+                              <option value={30}>30 minutes</option>
+                              <option value={60}>60 minutes</option>
+                              <option value={120}>2 hours</option>
+                            </select>
+                            <Button
+                              type="button"
+                              disabled={overrideLoadingEventId === event.id}
+                              onClick={() => handleEnableTestingOverride(event.id!)}
+                              className="text-xs font-semibold px-3.5 py-2 rounded-xl bg-[#C59B27] hover:bg-[#b58c22] text-white shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+                            >
+                              {overrideLoadingEventId === event.id ? 'Updating...' : 'Allow check-in and pickup outside the event schedule'}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

@@ -2857,6 +2857,32 @@ export const api = {
         method: 'POST'
       });
     },
+    async getEventOperationsTestOverride(eventId: string) {
+      return api.request<{
+        success: boolean;
+        eventId: string;
+        enabled: boolean;
+        active: boolean;
+        expiresAt: string | null;
+        enabledBy: string | null;
+        enabledAt: string | null;
+      }>(`/api/admin/events/${eventId}/operations-test-override`);
+    },
+    async setEventOperationsTestOverride(eventId: string, data: { enabled: boolean; durationMinutes?: number }) {
+      return api.request<{
+        success: boolean;
+        eventId: string;
+        active: boolean;
+        enabled: boolean;
+        expiresAt: string | null;
+        enabledAt?: string | null;
+        enabledBy?: string | null;
+        durationMinutes?: number;
+      }>(`/api/admin/events/${eventId}/operations-test-override`, {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+    },
     async getOperationsAssistantReadiness(eventId?: string) {
       const q = eventId ? `?eventId=${encodeURIComponent(eventId)}` : '';
       return api.request<{ success: boolean; report: any }>(`/api/admin/operations-assistant/readiness${q}`);

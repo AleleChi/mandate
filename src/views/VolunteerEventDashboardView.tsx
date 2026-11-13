@@ -3622,6 +3622,19 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               )}
             </div>
 
+            {/* Quiet Event Testing Status Banner */}
+            {dutyWindow?.testingAccessActive && (
+              <div 
+                className="w-full px-3 py-2 bg-stone-50 dark:bg-stone-900/60 border border-stone-200/80 dark:border-stone-800/80 rounded-xl flex items-center justify-between text-xs text-stone-600 dark:text-stone-300"
+                data-testid="volunteer-testing-access-indicator"
+              >
+                <div className="flex items-center space-x-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="font-medium">Testing access active</span>
+                </div>
+              </div>
+            )}
+
             {/* Contextual Notice Banner */}
             {isOrdinaryVolunteer && dutyWindow && !dutyWindow.allowed && (
               <div className="w-full p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-xl flex items-start space-x-2 text-xs text-amber-800 dark:text-amber-300">
