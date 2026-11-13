@@ -284,7 +284,8 @@ export const api = {
       }
       if (res.status === 403) {
         const forbiddenMsg = data?.error || data?.message || 'You do not have permission to perform this action.';
-        throw new ParentApiError(forbiddenMsg, 'You do not have permission to perform this action.', 'FORBIDDEN', data, 403);
+        const code = data?.code || 'FORBIDDEN';
+        throw new ParentApiError(forbiddenMsg, data?.description || 'You do not have permission to perform this action.', code, data, 403);
       }
 
       let rawError = data.error || data.message || `Request failed (${res.status})`;

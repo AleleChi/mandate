@@ -1502,10 +1502,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
   const mapAgeGroupDisplayName = (name: string) => {
     const norm = (name || '').toLowerCase().trim();
-    if (norm.includes('creche') || norm.includes('1-3') || norm.includes('toddler')) return 'Ages 1-3';
-    if (norm.includes('preschool') || norm.includes('4-6') || norm.includes('4-8')) return 'Ages 4-6';
-    if (norm.includes('7-9')) return 'Ages 7-9';
-    if (norm.includes('teens') || norm.includes('10-12') || norm.includes('teen')) return 'Ages 10-12';
+    if (norm.includes('creche') || norm.includes('2-3') || norm.includes('1-3') || norm.includes('toddler')) return 'Ages 2–3';
+    if (norm.includes('preschool') || norm.includes('4-6') || norm.includes('4-8')) return 'Ages 4–6';
+    if (norm.includes('7-9')) return 'Ages 7–9';
+    if (norm.includes('10-12')) return 'Ages 10–12';
+    if (norm.includes('13-14') || norm.includes('teens') || norm.includes('teen')) return 'Ages 13–14';
     return name;
   };
 
@@ -1873,6 +1874,24 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     }, 50);
   };
 
+  const shouldPropagateIdentifierError = (err: any) => {
+    const code =
+      err?.code ||
+      err?.data?.code ||
+      err?.response?.data?.code ||
+      '';
+
+    return [
+      'OUT_OF_SCOPE',
+      'NO_AGE_GROUP_ASSIGNED',
+      'WRONG_EVENT',
+      'PASS_REVOKED',
+      'REVOKED_PASS',
+      'FORBIDDEN'
+    ].includes(code)
+      || code.startsWith('WRISTBAND_');
+  };
+
   const handlePassScanned = async (text: string) => {
     const trimmedText = text.trim();
     if (!trimmedText) return;
@@ -1942,6 +1961,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           passCode = trimmedText.split('token=')[1]?.split('&')[0] || trimmedText;
         } else if (trimmedText.startsWith('KCT:')) {
           passCode = trimmedText.substring(4);
+        }
+        if (passCode.startsWith('PASS-')) {
+          passCode = passCode.replace('PASS-', 'KOI-2026-');
+        } else if (!passCode.startsWith('KOI-2026-') && passCode.length === 6) {
+          passCode = `KOI-2026-${passCode}`;
         }
         passCode = passCode.trim().toUpperCase();
         
@@ -2042,6 +2066,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             };
           }
         } catch (passErr: any) {
+          if (shouldPropagateIdentifierError(passErr)) {
+            throw passErr;
+          }
           console.debug('[scan] direct pass lookup error, attempting fallback identifier resolution:', passErr);
         }
 
@@ -2069,8 +2096,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               }
             }
           } catch (resolveErr: any) {
-            const errCode = resolveErr?.code || resolveErr?.data?.code || '';
-            if (errCode.startsWith('WRISTBAND_')) {
+            if (shouldPropagateIdentifierError(resolveErr)) {
               throw resolveErr;
             }
           }
@@ -2079,7 +2105,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         if (childData) {
           // Volunteer Operational Scope Enforcement (Role-aware + Assignment-aware)
           if (isOrdinaryVolunteer && !isChildInAssignedScope(childData)) {
-            showWarning('Out of Scope', 'This child is assigned to another age group.');
+            const childGroup = childData.ageGroup || childData.classGroup || 'another age group';
+            const groupLabel = childGroup.startsWith('Ages') ? childGroup : `Ages ${childGroup}`;
+            showWarning('Out of Scope', `This child belongs to ${groupLabel}. Your current assignment does not include this age group.`);
             isLookupInFlightRef.current = false;
             lastScannedCodeRef.current = null;
             isLookupInFlight.current = false;
@@ -2139,9 +2167,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       if (errCode === 'NO_AGE_GROUP_ASSIGNED' || String(err?.message || err?.data?.error).includes('No age group')) {
         title = 'Assignment Required';
         message = 'No age group has been assigned to your event duty yet.';
-      } else if (errCode === 'OUT_OF_SCOPE' || String(err?.message || err?.data?.error).includes('assigned to another age group')) {
+      } else if (errCode === 'OUT_OF_SCOPE' || String(err?.message || err?.data?.error).includes('assigned to another age group') || String(err?.message || err?.data?.error).includes('belongs to')) {
         title = 'Out of Scope';
-        message = 'This child is assigned to another age group.';
+        message = err?.message || err?.data?.error || 'This child is assigned to another age group.';
       } else if (errCode === 'WRISTBAND_UNASSIGNED') {
         title = 'Wristband Unassigned';
         message = 'This wristband has not been assigned yet.';
@@ -2823,7 +2851,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           return;
         }
         if (!isChildInAssignedScope(res.child)) {
-          showWarning('Out of Scope', 'This child is assigned to another age group.');
+          const childGroup = res.child.ageGroup || res.child.classGroup || 'another age group';
+          const groupLabel = childGroup.startsWith('Ages') ? childGroup : `Ages ${childGroup}`;
+          showWarning('Out of Scope', `This child belongs to ${groupLabel}. Your current assignment does not include this age group.`);
           return;
         }
 
@@ -2838,8 +2868,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         showError('Not Found', 'No active checked-in child found for this pass code.');
       }
     } catch (err: any) {
+      const errCode = err?.code || err?.data?.code || '';
       const apiErr = extractApiError(err);
-      showError('Lookup Failed', apiErr.message || 'Pass code verification failed. Ensure child is checked in.');
+      if (errCode === 'OUT_OF_SCOPE' || String(err?.message || err?.data?.error).includes('belongs to') || String(err?.message || err?.data?.error).includes('assigned to another age group')) {
+        showError('Out of Scope', apiErr.message || 'This child is assigned to another age group.');
+      } else if (errCode === 'NO_AGE_GROUP_ASSIGNED' || String(err?.message || err?.data?.error).includes('No age group')) {
+        showError('Assignment Required', apiErr.message || 'No age group has been assigned to your event duty yet.');
+      } else {
+        showError('Lookup Failed', apiErr.message || 'Pass code verification failed. Ensure child is checked in.');
+      }
     } finally {
       setPickupLoading(false);
     }
@@ -3595,7 +3632,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               <div className="grid grid-cols-4 gap-2 text-center divide-x divide-zinc-100 dark:divide-[#302E29]">
                 <div className="space-y-1">
                   <span className="text-[11px] font-medium text-zinc-400 dark:text-[#7A7570] uppercase tracking-wide block">
-                    Expected
+                    Assigned children
                   </span>
                   <span className="text-2xl sm:text-3xl font-serif font-medium text-zinc-900 dark:text-[#F0EBE3] block leading-tight">
                     {stats.expected || 0}
@@ -4764,7 +4801,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 <div className="bg-white dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] rounded-md p-3">
                   <div className="grid grid-cols-3 divide-x divide-stone-100 dark:divide-[#302E29] text-center">
                     <div className="px-2 first:pl-0">
-                      <span className="block font-sans text-xs text-stone-500 dark:text-[#7A7570]">Expected</span>
+                      <span className="block font-sans text-xs text-stone-500 dark:text-[#7A7570]">Assigned children</span>
                       <span className="block font-sans font-semibold text-base text-stone-900 dark:text-[#F0EBE3] mt-0.5">
                         {stats.expected || 0}
                       </span>
@@ -6099,7 +6136,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       {stats.expected || 0}
                     </span>
                     <span className="text-[10px] font-sans text-zinc-400 dark:text-[#B8B0A5] font-medium mt-1 uppercase tracking-wider">
-                      Expected
+                      Assigned children
                     </span>
                   </div>
                   <div className="flex flex-col justify-between border-l border-zinc-100 dark:border-[#302E29]">
@@ -6526,7 +6563,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       <div className="bg-white dark:bg-[#21211E] border border-zinc-200/80 dark:border-[#302E29] rounded-2xl p-3.5 sm:p-4 shadow-2xs">
                         <div className="grid grid-cols-4 divide-x divide-zinc-100 dark:divide-[#302E29] text-center">
                           <div className="px-1 first:pl-0">
-                            <span className="block font-sans text-[10px] sm:text-[11px] text-zinc-500 dark:text-[#B8B0A5] leading-tight">Expected</span>
+                            <span className="block font-sans text-[10px] sm:text-[11px] text-zinc-500 dark:text-[#B8B0A5] leading-tight">Assigned children</span>
                             <span className="block font-sans font-semibold text-base sm:text-lg text-zinc-900 dark:text-[#F0EBE3] mt-1">{stats.expected || 0}</span>
                           </div>
                           <div className="px-1">
@@ -6576,22 +6613,42 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                       </div>
                     )}
 
-                    {/* Age Groups Section */}
+                    {/* Age Groups Section (Canonical Ages 2–3 through 13–14; role-aware scope display per Section 12) */}
                     <div className="space-y-2">
-                      <h2 className="font-sans font-semibold text-xs text-zinc-500 dark:text-[#B8B0A5] uppercase tracking-wider">Age groups</h2>
+                      <div className="flex items-center justify-between">
+                        <h2 className="font-sans font-semibold text-xs text-zinc-500 dark:text-[#B8B0A5] uppercase tracking-wider">
+                          {isOrdinaryVolunteer && assignedAgeGroups.length > 0 ? 'Your assignment' : 'Age groups'}
+                        </h2>
+                        {isOrdinaryVolunteer && assignedAgeGroups.length > 0 && (
+                          <span className="text-xs font-medium text-[#C59B27] dark:text-[#D4AF37]">{assignedScopeLabel}</span>
+                        )}
+                      </div>
                       {(() => {
-                        const ageGroupCards = [
-                          { key: 'ages_1_3', name: 'Ages 1–3', matchKeys: ['creche', '1-3', 'toddler'], boys: 0, girls: 0, inside: 0, expected: 0 },
+                        const allCanonicalCards = [
+                          { key: 'ages_2_3', name: 'Ages 2–3', matchKeys: ['creche', '2-3', '1-3', 'toddler'], boys: 0, girls: 0, inside: 0, expected: 0 },
                           { key: 'ages_4_6', name: 'Ages 4–6', matchKeys: ['preschool', '4-6', '4-8'], boys: 0, girls: 0, inside: 0, expected: 0 },
                           { key: 'ages_7_9', name: 'Ages 7–9', matchKeys: ['7-9'], boys: 0, girls: 0, inside: 0, expected: 0 },
-                          { key: 'ages_10_12', name: 'Ages 10–12', matchKeys: ['teens', '10-12', 'teen'], boys: 0, girls: 0, inside: 0, expected: 0 },
+                          { key: 'ages_10_12', name: 'Ages 10–12', matchKeys: ['10-12'], boys: 0, girls: 0, inside: 0, expected: 0 },
+                          { key: 'ages_13_14', name: 'Ages 13–14', matchKeys: ['13-14', 'teens', 'teen'], boys: 0, girls: 0, inside: 0, expected: 0 },
                         ];
+
+                        // Filter cards for ordinary volunteers with assignments to avoid confusion (Section 12)
+                        const isAssignedToCard = (card: typeof allCanonicalCards[0]) => {
+                          return assignedAgeGroups.some(assigned => {
+                            const cleanAssigned = assigned.toLowerCase().replace(/[\u2013\u2014]/g, '-').replace(/^ages\s*/i, '').trim();
+                            return card.matchKeys.some(k => cleanAssigned.includes(k) || k.includes(cleanAssigned));
+                          });
+                        };
+
+                        const ageGroupCards = isOrdinaryVolunteer && assignedAgeGroups.length > 0
+                          ? allCanonicalCards.filter(isAssignedToCard)
+                          : allCanonicalCards;
 
                         // 1. Populate from reportsData.ageGroups for inside and expected counts
                         if (reportsData?.ageGroups) {
                           reportsData.ageGroups.forEach((group: any) => {
                             const groupName = (group.ageGroup || '').toLowerCase();
-                            const matchedCard = ageGroupCards.find(card => 
+                            const matchedCard = allCanonicalCards.find(card => 
                               card.matchKeys.some(key => groupName.includes(key))
                             );
                             if (matchedCard) {
@@ -6603,7 +6660,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                         // 2. Populate from directoryChildren to get precise live boys, girls, inside counts
                         if (directoryChildren && directoryChildren.length > 0) {
-                          ageGroupCards.forEach(card => {
+                          allCanonicalCards.forEach(card => {
                             card.boys = 0;
                             card.girls = 0;
                             card.inside = 0;
@@ -6612,7 +6669,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                           directoryChildren.forEach((child: any) => {
                             const childAgeGroup = (child.ageGroup || child.age_group || '').toLowerCase();
-                            const matchedCard = ageGroupCards.find(card => 
+                            const matchedCard = allCanonicalCards.find(card => 
                               card.matchKeys.some(key => childAgeGroup.includes(key))
                             );
                             if (matchedCard) {
