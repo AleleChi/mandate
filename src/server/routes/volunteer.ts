@@ -2929,6 +2929,29 @@ router.post('/children/resolve-identifier', authMiddleware, async (req: Authenti
   }
 });
 
+export type AttendanceState = 'picked_up' | 'checked_in' | 'not_checked_in';
+
+export function getAttendanceState(entry: any): AttendanceState {
+  if (!entry) return 'not_checked_in';
+  if (
+    Boolean(entry.picked_up_at) ||
+    entry.status === 'picked_up' ||
+    entry.status === 'checked_out'
+  ) {
+    return 'picked_up';
+  }
+
+  if (
+    Boolean(entry.checked_in_at) ||
+    entry.status === 'checked_in' ||
+    entry.status === 'inside'
+  ) {
+    return 'checked_in';
+  }
+
+  return 'not_checked_in';
+}
+
 // 7. CHECK IN CHILD
 router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -3046,65 +3069,73 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
     const checkInLocation = (dutyLoc?.name as string) || null;
 
     // Handle Already Picked Up
-    if (entry.status === 'picked_up' || entry.status === 'checked_out' || Boolean(entry.picked_up_at)) {
-      return res.status(400).json({
+    const state = getAttendanceState(entry);
+    if (state === 'picked_up') {
+      return res.status(409).json({
         success: false,
-        error: 'Cannot check in. Child has already been picked up and released.',
         code: 'ALREADY_PICKED_UP',
-        alreadyPickedUp: true
+        error: 'Attendance is complete. This child has already been picked up and released.',
+        alreadyPickedUp: true,
+        pickedUpAt: entry.picked_up_at
       });
     }
 
     // Handle Already Checked In
-    if (entry.status === 'checked_in' || entry.status === 'inside') {
-      const stats = await getEventStats(currentEventId, scope.isScoped ? scope.assignedAgeGroups : null);
-      const currentCheckedInAt = entry.checked_in_at || entry.updated_at || new Date().toISOString();
-      return res.json({
-        success: true,
+    if (state === 'checked_in') {
+      return res.status(409).json({
+        success: false,
+        code: 'ALREADY_CHECKED_IN',
+        error: 'This child has already been checked in.',
         alreadyCheckedIn: true,
-        message: 'This child has already been checked in.',
-        child: {
-          id: child.id,
-          fullName: child.full_name,
-          firstName: child.full_name.split(' ')[0],
-          age: child.calculated_age || 0,
-          gender: child.gender,
-          classGroup: child.age_group || 'General',
-          photoUrl: childPhotoUrl,
-          passImageUrl: null,
-          entryStatus: 'checked_in',
-          checkedInAt: currentCheckedInAt,
-          medicalNote: entry.medical_notes || '',
-          allergies: entry.has_medical_notes === 1 ? 'Yes' : 'No',
-          extraSupport: entry.needs_extra_support === 1 ? 'Yes' : 'No',
-          authorizedPickup
-        },
-        entry: {
-          checkedInAt: currentCheckedInAt,
-          checkedInBy: {
-            id: entry.checked_in_by || req.user.id,
-            fullName: volunteerName
-          },
-          point: checkInLocation || undefined
-        },
-        stats: {
-          expected: stats.expected,
-          checkedIn: stats.checkedIn,
-          waiting: Math.max(0, stats.expected - stats.checkedIn)
-        }
+        checkedInAt: entry.checked_in_at || entry.updated_at
       });
     }
 
     if (entry.status !== 'pass_ready' && entry.status !== 'selected') {
-      return res.status(400).json({ error: `Cannot check in. Child entry status is currently "${entry.status}" (must be "pass_ready")` });
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_STATUS',
+        error: `Cannot check in. Child entry status is currently "${entry.status}" (must be "pass_ready" or "selected")`
+      });
     }
 
     const now = new Date().toISOString();
-    await execute(`
+    const updateResult = await execute(`
       UPDATE child_event_entries
       SET status = 'checked_in', checked_in_at = ?, checked_in_by = ?, updated_at = ?
       WHERE id = ?
+        AND status IN ('selected', 'pass_ready')
+        AND checked_in_at IS NULL
+        AND picked_up_at IS NULL
     `, [now, req.user.id, now, entryId]);
+
+    if (!updateResult || updateResult.changes === 0) {
+      const reRead = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [entryId]);
+      const reState = getAttendanceState(reRead);
+      if (reState === 'picked_up') {
+        return res.status(409).json({
+          success: false,
+          code: 'ALREADY_PICKED_UP',
+          error: 'Attendance is complete. This child has already been picked up and released.',
+          alreadyPickedUp: true,
+          pickedUpAt: reRead?.picked_up_at
+        });
+      }
+      if (reState === 'checked_in') {
+        return res.status(409).json({
+          success: false,
+          code: 'ALREADY_CHECKED_IN',
+          error: 'This child has already been checked in.',
+          alreadyCheckedIn: true,
+          checkedInAt: reRead?.checked_in_at || reRead?.updated_at
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_STATUS',
+        error: `Cannot check in. Child entry status is currently "${reRead?.status}" (must be "pass_ready" or "selected")`
+      });
+    }
 
     // Write immutable attendance audit record idempotently
     const idempotencyKey = req.body.idempotencyKey || `online_check_in_${entryId}`;
@@ -3505,49 +3536,57 @@ router.post('/check-out', authMiddleware, async (req: AuthenticatedRequest, res:
       };
     }
 
-    // Handle Already Checked Out
-    if (entry.status === 'picked_up' || entry.status === 'checked_out') {
-      const stats = await getEventStats(currentEventId);
-      const lastPickedUpVal = await getLastPickedUp(currentEventId);
-      return res.json({
-        success: true,
+    // Handle Already Checked Out / Released
+    const state = getAttendanceState(entry);
+    if (state === 'picked_up') {
+      return res.status(409).json({
+        success: false,
+        code: 'ALREADY_PICKED_UP',
+        error: 'Attendance is complete. This child has already been picked up and released.',
         alreadyPickedUp: true,
-        message: 'This child has already been picked up.',
-        child: {
-          id: child.id,
-          fullName: child.full_name,
-          age: child.calculated_age || 0,
-          pickupStatus: 'picked_up',
-          pickedUpAt: entry.picked_up_at || entry.updated_at
-        },
-        pickup: {
-          pickedUpAt: entry.picked_up_at || entry.updated_at,
-          pickedUpBy: {
-            id: entry.picked_up_by || req.user.id,
-            fullName: volunteerName
-          },
-          pickupPerson: pickupPersonDetails
-        },
-        stats,
-        lastPickedUp: lastPickedUpVal
+        pickedUpAt: entry.picked_up_at || entry.updated_at,
+        pickedUpBy: entry.picked_up_by
       });
     }
 
     // Ensure they are checked in first
-    if (entry.status !== 'checked_in' && entry.status !== 'inside') {
-      return res.status(400).json({
+    if (state !== 'checked_in') {
+      return res.status(409).json({
         success: false,
         code: 'NOT_CHECKED_IN',
-        message: 'This child has not been checked in yet.'
+        error: 'This child has not been checked in yet.'
       });
     }
 
     const now = new Date().toISOString();
-    await execute(`
+    const assignedPickupPersonId = pickupPersonId || (pickupRow ? pickupRow.id : parent.id);
+    const updateResult = await execute(`
       UPDATE child_event_entries
       SET status = 'picked_up', picked_up_at = ?, picked_up_by = ?, pickup_person_id = ?, updated_at = ?
       WHERE id = ?
-    `, [now, req.user.id, pickupPersonId || (pickupRow ? pickupRow.id : parent.id), now, entryId]);
+        AND status IN ('checked_in', 'inside')
+        AND picked_up_at IS NULL
+    `, [now, req.user.id, assignedPickupPersonId, now, entryId]);
+
+    if (!updateResult || updateResult.changes === 0) {
+      const reRead = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [entryId]);
+      const reState = getAttendanceState(reRead);
+      if (reState === 'picked_up') {
+        return res.status(409).json({
+          success: false,
+          code: 'ALREADY_PICKED_UP',
+          error: 'Attendance is complete. This child has already been picked up and released.',
+          alreadyPickedUp: true,
+          pickedUpAt: reRead?.picked_up_at || reRead?.updated_at,
+          pickedUpBy: reRead?.picked_up_by
+        });
+      }
+      return res.status(409).json({
+        success: false,
+        code: 'NOT_CHECKED_IN',
+        error: 'This child has not been checked in yet.'
+      });
+    }
 
     // Create real-time notification in parent_notifications
     const parentNotificationId = crypto.randomUUID();
@@ -3743,43 +3782,24 @@ router.post('/pickup/lookup', authMiddleware, async (req: AuthenticatedRequest, 
     const volunteerName = volunteerProfile ? volunteerProfile.full_name : (req.user.email || 'Event Worker');
 
     // Handle Already Picked Up
-    if (entry.status === 'picked_up' || entry.status === 'checked_out') {
-      return res.json({
-        success: true,
+    const state = getAttendanceState(entry);
+    if (state === 'picked_up') {
+      return res.status(409).json({
+        success: false,
+        code: 'ALREADY_PICKED_UP',
+        error: 'This child has already been picked up and released.',
         alreadyPickedUp: true,
-        child: {
-          id: child.id,
-          fullName: child.full_name,
-          firstName: child.full_name.split(' ')[0],
-          age: child.calculated_age || 0,
-          gender: child.gender,
-          classGroup: child.age_group || 'General',
-          photoUrl: childPhotoUrl,
-          entryStatus: 'checked_in',
-          pickupStatus: 'picked_up',
-          checkedInAt: entry.checked_in_at || entry.created_at,
-          pickedUpAt: entry.picked_up_at || entry.updated_at,
-          medicalNote: entry.medical_notes || '',
-          allergies: entry.has_medical_notes === 1 ? 'Yes' : 'No',
-          extraSupport: entry.needs_extra_support === 1 ? 'Yes' : 'No',
-          authorizedPickup
-        },
-        pickup: {
-          pickedUpAt: entry.picked_up_at || entry.updated_at,
-          pickedUpBy: {
-            id: entry.picked_up_by || req.user.id,
-            fullName: volunteerName
-          }
-        }
+        pickedUpAt: entry.picked_up_at || entry.updated_at,
+        pickedUpBy: entry.picked_up_by
       });
     }
 
     // Ensure checked in
-    if (entry.status !== 'checked_in' && entry.status !== 'inside') {
-      return res.json({
+    if (state !== 'checked_in') {
+      return res.status(409).json({
         success: false,
         code: 'NOT_CHECKED_IN',
-        message: 'This child has not been checked in yet.'
+        error: 'This child has not been checked in yet.'
       });
     }
 
@@ -3906,58 +3926,54 @@ router.post('/pickup/mark', authMiddleware, async (req: AuthenticatedRequest, re
     };
 
     // Handle Already Picked Up
-    if (entry.status === 'picked_up' || entry.status === 'checked_out') {
-      const stats = await getEventStats(currentEventId, scope.isScoped ? scope.assignedAgeGroups : null);
-      const lastPickedUpVal = await getLastPickedUp(currentEventId);
-      const pickedUpAtVal = entry.picked_up_at || entry.updated_at || new Date().toISOString();
-      return res.json({
-        success: true,
+    const state = getAttendanceState(entry);
+    if (state === 'picked_up') {
+      return res.status(409).json({
+        success: false,
+        code: 'ALREADY_PICKED_UP',
+        error: 'Attendance is complete. This child has already been picked up and released.',
         alreadyPickedUp: true,
-        message: 'This child has already been picked up.',
-        child: {
-          id: child.id,
-          fullName: child.full_name,
-          firstName: child.full_name.split(' ')[0],
-          age: child.calculated_age || 0,
-          classGroup: child.age_group || 'General',
-          photoUrl: childPhotoUrl,
-          passImageUrl: null,
-          pickupStatus: 'picked_up',
-          pickedUpAt: pickedUpAtVal
-        },
-        pickup: {
-          pickedUpAt: pickedUpAtVal,
-          pickedUpBy: pickupPersonDetails,
-          confirmedBy: {
-            id: entry.picked_up_by || req.user.id,
-            fullName: volunteerName
-          },
-          point: 'Main exit'
-        },
-        stats: {
-          inside: stats.checkedIn,
-          pickedUp: stats.pickedUp,
-          attention: stats.attention
-        },
-        lastPickedUp: lastPickedUpVal
+        pickedUpAt: entry.picked_up_at || entry.updated_at
       });
     }
 
     // Ensure they are checked in first
-    if (entry.status !== 'checked_in' && entry.status !== 'inside') {
-      return res.status(400).json({
+    if (state !== 'checked_in') {
+      return res.status(409).json({
         success: false,
         code: 'NOT_CHECKED_IN',
-        message: 'This child has not been checked in yet.'
+        error: 'This child has not been checked in yet.'
       });
     }
 
     const now = new Date().toISOString();
-    await execute(`
+    const assignedPickupPersonId = pickupPersonId || (pickupRow ? pickupRow.id : parent.id);
+    const updateResult = await execute(`
       UPDATE child_event_entries
       SET status = 'picked_up', picked_up_at = ?, picked_up_by = ?, pickup_person_id = ?, updated_at = ?
       WHERE id = ?
-    `, [now, req.user.id, pickupPersonId || (pickupRow ? pickupRow.id : parent.id), now, entryId]);
+        AND status IN ('checked_in', 'inside')
+        AND picked_up_at IS NULL
+    `, [now, req.user.id, assignedPickupPersonId, now, entryId]);
+
+    if (!updateResult || updateResult.changes === 0) {
+      const reRead = await queryOne('SELECT * FROM child_event_entries WHERE id = ?', [entryId]);
+      const reState = getAttendanceState(reRead);
+      if (reState === 'picked_up') {
+        return res.status(409).json({
+          success: false,
+          code: 'ALREADY_PICKED_UP',
+          error: 'Attendance is complete. This child has already been picked up and released.',
+          alreadyPickedUp: true,
+          pickedUpAt: reRead?.picked_up_at || reRead?.updated_at
+        });
+      }
+      return res.status(409).json({
+        success: false,
+        code: 'NOT_CHECKED_IN',
+        error: 'This child has not been checked in yet.'
+      });
+    }
 
     // Create real-time notification in parent_notifications
     const parentNotificationId = crypto.randomUUID();
@@ -4588,12 +4604,23 @@ router.post('/pickup/prepare-child', authMiddleware, async (req: AuthenticatedRe
       return res.status(scopeCheck.status || 403).json(scopeCheck.body);
     }
 
-    if (entry.status !== 'checked_in' && entry.status !== 'inside') {
-      return res.status(400).json({ error: 'Child is not checked in' });
+    const state = getAttendanceState(entry);
+    if (state === 'picked_up') {
+      return res.status(409).json({
+        success: false,
+        code: 'ALREADY_PICKED_UP',
+        error: 'Attendance is complete. This child has already been picked up and released.',
+        alreadyPickedUp: true,
+        pickedUpAt: entry.picked_up_at
+      });
     }
 
-    if (entry.status === 'picked_up' || entry.status === 'checked_out') {
-      return res.status(400).json({ error: 'Child has already been picked up' });
+    if (state !== 'checked_in') {
+      return res.status(409).json({
+        success: false,
+        code: 'NOT_CHECKED_IN',
+        error: 'Child has not checked in yet'
+      });
     }
 
     // Get pickup people
