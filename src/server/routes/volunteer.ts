@@ -31,19 +31,16 @@ import {
   isChildInScope,
   buildAgeGroupSqlFilter,
   normalizeAgeGroup,
-  resolveCanonicalAgeGroup
+  resolveCanonicalAgeGroup,
+  resolveChildScopeAgeGroup
 } from '../services/eligibilityService';
 import { normalizePassReference } from '../services/passService';
 import { validateVolunteerDutyWindow } from '../services/volunteerDutyWindowService';
 
-export function getChildScopeDisplayName(child: any): string {
-  const norm = normalizeAgeGroup(child?.age_group);
-  if (norm && norm !== 'Age review needed') {
-    return `Ages ${norm}`;
-  }
-  const res = resolveCanonicalAgeGroup(child?.date_of_birth || child?.calculated_age);
-  if (res.group) {
-    return `Ages ${res.group}`;
+export function getChildScopeDisplayName(child: any, eventStart?: string | Date | null): string {
+  const scope = resolveChildScopeAgeGroup(child, eventStart);
+  if (scope.group) {
+    return `Ages ${scope.group}`;
   }
   return child?.age_group ? (String(child.age_group).startsWith('Ages') ? String(child.age_group) : `Ages ${child.age_group}`) : 'another age group';
 }
@@ -60,22 +57,105 @@ export async function resolveVolunteerScope(userId: string, userRole: string, ev
     return { isScoped: false, assignedAgeGroups: [] };
   }
 
-  const duty = await queryOne(
+  const rows = await query(
     `SELECT assigned_age_groups, responsibility_key, team_key 
      FROM event_duty_assignments 
      WHERE event_id = ? AND user_id = ? AND status != 'cancelled'`,
     [eventId, userId]
   );
 
-  if (duty && ['admin', 'super_admin', 'team_lead', 'lead'].includes(duty.responsibility_key?.toLowerCase())) {
+  if (!rows || rows.length === 0) {
     return { isScoped: false, assignedAgeGroups: [] };
   }
 
-  const assignedGroups = parseAssignedAgeGroups(duty?.assigned_age_groups);
+  for (const row of rows) {
+    if (['admin', 'super_admin', 'team_lead', 'lead'].includes(row.responsibility_key?.toLowerCase())) {
+      return { isScoped: false, assignedAgeGroups: [] };
+    }
+  }
+
+  const allAssigned: string[] = [];
+  for (const row of rows) {
+    const parsed = parseAssignedAgeGroups(row.assigned_age_groups);
+    for (const g of parsed) {
+      const norm = normalizeAgeGroup(g);
+      if (norm && !allAssigned.includes(norm)) {
+        allAssigned.push(norm);
+      }
+    }
+  }
+
+  if (allAssigned.length > 0) {
+    return {
+      isScoped: true,
+      assignedAgeGroups: allAssigned
+    };
+  }
+
   return {
-    isScoped: true,
-    assignedAgeGroups: assignedGroups
+    isScoped: false,
+    assignedAgeGroups: []
   };
+}
+
+export interface ScopeCheckResult {
+  allowed: boolean;
+  status?: number;
+  body?: any;
+}
+
+export function checkChildVolunteerScope(
+  child: {
+    id?: string;
+    date_of_birth?: string | null;
+    calculated_age?: number | string | null;
+    age_group?: string | null;
+  },
+  scope: { isScoped: boolean; assignedAgeGroups: string[] },
+  eventStartsAt?: string | Date | null,
+  eventId?: string
+): ScopeCheckResult {
+  if (!scope.isScoped) {
+    return { allowed: true };
+  }
+  if (scope.assignedAgeGroups.length === 0) {
+    return {
+      allowed: false,
+      status: 403,
+      body: {
+        success: false,
+        error: 'No age group has been assigned to your event duty yet.',
+        code: 'NO_AGE_GROUP_ASSIGNED'
+      }
+    };
+  }
+  if (!isChildInScope(child, scope.assignedAgeGroups, eventStartsAt)) {
+    const childScope = resolveChildScopeAgeGroup(child, eventStartsAt);
+    const ageGroupStr = childScope.group ? `Ages ${childScope.group}` : getChildScopeDisplayName(child, eventStartsAt);
+    console.warn('[SCOPE_CHECK] OUT_OF_SCOPE diagnostic:', {
+      childId: child?.id,
+      storedAgeGroup: child?.age_group,
+      storedCalculatedAge: child?.calculated_age,
+      resolvedCanonicalAge: childScope.age,
+      resolvedCanonicalGroup: childScope.group,
+      assignedAgeGroups: scope.assignedAgeGroups,
+      eventId: eventId
+    });
+    return {
+      allowed: false,
+      status: 403,
+      body: {
+        success: false,
+        code: 'OUT_OF_SCOPE',
+        childAge: childScope.age,
+        childAgeGroup: childScope.group,
+        assignedAgeGroups: scope.assignedAgeGroups,
+        error: `This child belongs to ${ageGroupStr}. Your current assignment does not include this age group.`,
+        outOfScope: true
+      }
+    };
+  }
+  return { allowed: true };
 }
 
 export function normalizeAlertSeverity(value: string): string {
@@ -2689,25 +2769,12 @@ router.post('/pass/lookup', authMiddleware, async (req: AuthenticatedRequest, re
       return res.status(404).json({ error: 'Registered child details not found' });
     }
 
+    const currentEvent = await getCurrentEvent();
+    const eventStartsAt = currentEvent?.starts_at;
     const scope = await resolveVolunteerScope(req.user.id, req.user.role, currentEventId);
-    if (scope.isScoped) {
-      if (scope.assignedAgeGroups.length === 0) {
-        return res.status(403).json({
-          success: false,
-          error: 'No age group has been assigned to your event duty yet.',
-          code: 'NO_AGE_GROUP_ASSIGNED'
-        });
-      }
-      if (!isChildInScope(child, scope.assignedAgeGroups)) {
-        const ageGroupStr = getChildScopeDisplayName(child);
-        return res.status(403).json({
-          success: false,
-          error: `This child belongs to ${ageGroupStr}. Your current assignment does not include this age group.`,
-          code: 'OUT_OF_SCOPE',
-          childAgeGroup: ageGroupStr,
-          outOfScope: true
-        });
-      }
+    const scopeCheck = checkChildVolunteerScope(child, scope, eventStartsAt, currentEventId);
+    if (!scopeCheck.allowed) {
+      return res.status(scopeCheck.status || 403).json(scopeCheck.body);
     }
 
     const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [child.parent_profile_id]);
@@ -2938,25 +3005,12 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
       return res.status(404).json({ error: 'Registered child details not found' });
     }
 
+    const currentEvent = await getCurrentEvent();
+    const eventStartsAt = currentEvent?.starts_at;
     const scope = await resolveVolunteerScope(req.user.id, req.user.role, currentEventId);
-    if (scope.isScoped) {
-      if (scope.assignedAgeGroups.length === 0) {
-        return res.status(403).json({
-          success: false,
-          error: 'No age group has been assigned to your event duty yet.',
-          code: 'NO_AGE_GROUP_ASSIGNED'
-        });
-      }
-      if (!isChildInScope(child, scope.assignedAgeGroups)) {
-        const ageGroupStr = getChildScopeDisplayName(child);
-        return res.status(403).json({
-          success: false,
-          error: `This child belongs to ${ageGroupStr}. Your current assignment does not include this age group.`,
-          code: 'OUT_OF_SCOPE',
-          childAgeGroup: ageGroupStr,
-          outOfScope: true
-        });
-      }
+    const scopeCheck = checkChildVolunteerScope(child, scope, eventStartsAt, currentEventId);
+    if (!scopeCheck.allowed) {
+      return res.status(scopeCheck.status || 403).json(scopeCheck.body);
     }
 
     const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [child.parent_profile_id]);
@@ -3418,25 +3472,12 @@ router.post('/check-out', authMiddleware, async (req: AuthenticatedRequest, res:
       return res.status(404).json({ error: 'Registered child details not found' });
     }
 
+    const currentEvent = await getCurrentEvent();
+    const eventStartsAt = currentEvent?.starts_at;
     const scope = await resolveVolunteerScope(req.user.id, req.user.role, currentEventId);
-    if (scope.isScoped) {
-      if (scope.assignedAgeGroups.length === 0) {
-        return res.status(403).json({
-          success: false,
-          error: 'No age group has been assigned to your event duty yet.',
-          code: 'NO_AGE_GROUP_ASSIGNED'
-        });
-      }
-      if (!isChildInScope(child, scope.assignedAgeGroups)) {
-        const ageGroupStr = getChildScopeDisplayName(child);
-        return res.status(403).json({
-          success: false,
-          error: `This child belongs to ${ageGroupStr}. Your current assignment does not include this age group.`,
-          code: 'OUT_OF_SCOPE',
-          childAgeGroup: ageGroupStr,
-          outOfScope: true
-        });
-      }
+    const scopeCheck = checkChildVolunteerScope(child, scope, eventStartsAt, currentEventId);
+    if (!scopeCheck.allowed) {
+      return res.status(scopeCheck.status || 403).json(scopeCheck.body);
     }
     const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [child.parent_profile_id]);
     const pickupRow = await queryOne('SELECT * FROM pickup_people WHERE child_event_entry_id = ?', [entryId]);
@@ -3676,25 +3717,12 @@ router.post('/pickup/lookup', authMiddleware, async (req: AuthenticatedRequest, 
       return res.status(404).json({ error: 'Registered child details not found' });
     }
 
+    const currentEvent = await getCurrentEvent();
+    const eventStartsAt = currentEvent?.starts_at;
     const scope = await resolveVolunteerScope(req.user.id, req.user.role, currentEventId);
-    if (scope.isScoped) {
-      if (scope.assignedAgeGroups.length === 0) {
-        return res.status(403).json({
-          success: false,
-          error: 'No age group has been assigned to your event duty yet.',
-          code: 'NO_AGE_GROUP_ASSIGNED'
-        });
-      }
-      if (!isChildInScope(child, scope.assignedAgeGroups)) {
-        const ageGroupStr = getChildScopeDisplayName(child);
-        return res.status(403).json({
-          success: false,
-          error: `This child belongs to ${ageGroupStr}. Your current assignment does not include this age group.`,
-          code: 'OUT_OF_SCOPE',
-          childAgeGroup: ageGroupStr,
-          outOfScope: true
-        });
-      }
+    const scopeCheck = checkChildVolunteerScope(child, scope, eventStartsAt, currentEventId);
+    if (!scopeCheck.allowed) {
+      return res.status(scopeCheck.status || 403).json(scopeCheck.body);
     }
 
     const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [child.parent_profile_id]);
@@ -3854,25 +3882,12 @@ router.post('/pickup/mark', authMiddleware, async (req: AuthenticatedRequest, re
       return res.status(404).json({ error: 'Registered child details not found' });
     }
 
+    const currentEvent = await getCurrentEvent();
+    const eventStartsAt = currentEvent?.starts_at;
     const scope = await resolveVolunteerScope(req.user.id, req.user.role, currentEventId);
-    if (scope.isScoped) {
-      if (scope.assignedAgeGroups.length === 0) {
-        return res.status(403).json({
-          success: false,
-          error: 'No age group has been assigned to your event duty yet.',
-          code: 'NO_AGE_GROUP_ASSIGNED'
-        });
-      }
-      if (!isChildInScope(child, scope.assignedAgeGroups)) {
-        const ageGroupStr = getChildScopeDisplayName(child);
-        return res.status(403).json({
-          success: false,
-          error: `This child belongs to ${ageGroupStr}. Your current assignment does not include this age group.`,
-          code: 'OUT_OF_SCOPE',
-          childAgeGroup: ageGroupStr,
-          outOfScope: true
-        });
-      }
+    const scopeCheck = checkChildVolunteerScope(child, scope, eventStartsAt, currentEventId);
+    if (!scopeCheck.allowed) {
+      return res.status(scopeCheck.status || 403).json(scopeCheck.body);
     }
 
     const parent = await queryOne('SELECT * FROM parent_profiles WHERE id = ?', [child.parent_profile_id]);
@@ -4360,30 +4375,17 @@ router.get('/children/:childId', authMiddleware, async (req: AuthenticatedReques
       return res.status(404).json({ error: 'This child is no longer available.' });
     }
 
+    const currentEvent = await getCurrentEvent();
+    const eventStartsAt = currentEvent?.starts_at;
     const scope = await resolveVolunteerScope(req.user.id, req.user.role, currentEventId);
-    if (scope.isScoped) {
-      if (scope.assignedAgeGroups.length === 0) {
-        return res.status(403).json({
-          success: false,
-          error: 'No age group has been assigned to your event duty yet.',
-          code: 'NO_AGE_GROUP_ASSIGNED'
-        });
-      }
-      if (
-        !isChildInScope(
-          { age_group: entry.age_group, calculated_age: entry.calculated_age, date_of_birth: entry.date_of_birth },
-          scope.assignedAgeGroups
-        )
-      ) {
-        const ageGroupStr = getChildScopeDisplayName(entry);
-        return res.status(403).json({
-          success: false,
-          error: `This child belongs to ${ageGroupStr}. Your current assignment does not include this age group.`,
-          code: 'OUT_OF_SCOPE',
-          childAgeGroup: ageGroupStr,
-          outOfScope: true
-        });
-      }
+    const scopeCheck = checkChildVolunteerScope(
+      { id: entry.child_id || entry.id, age_group: entry.age_group, calculated_age: entry.calculated_age, date_of_birth: entry.date_of_birth },
+      scope,
+      eventStartsAt,
+      currentEventId
+    );
+    if (!scopeCheck.allowed) {
+      return res.status(scopeCheck.status || 403).json(scopeCheck.body);
     }
 
     const childPhotoUrl = await resolvePhotoUrl(entry.child_photo_id);
@@ -4585,25 +4587,12 @@ router.post('/pickup/prepare-child', authMiddleware, async (req: AuthenticatedRe
       return res.status(404).json({ error: 'Registered child details not found' });
     }
 
+    const currentEvent = await getCurrentEvent();
+    const eventStartsAt = currentEvent?.starts_at;
     const scope = await resolveVolunteerScope(req.user.id, req.user.role, currentEventId);
-    if (scope.isScoped) {
-      if (scope.assignedAgeGroups.length === 0) {
-        return res.status(403).json({
-          success: false,
-          error: 'No age group has been assigned to your event duty yet.',
-          code: 'NO_AGE_GROUP_ASSIGNED'
-        });
-      }
-      if (!isChildInScope(childRow, scope.assignedAgeGroups)) {
-        const ageGroupStr = getChildScopeDisplayName(childRow);
-        return res.status(403).json({
-          success: false,
-          error: `This child belongs to ${ageGroupStr}. Your current assignment does not include this age group.`,
-          code: 'OUT_OF_SCOPE',
-          childAgeGroup: ageGroupStr,
-          outOfScope: true
-        });
-      }
+    const scopeCheck = checkChildVolunteerScope(childRow, scope, eventStartsAt, currentEventId);
+    if (!scopeCheck.allowed) {
+      return res.status(scopeCheck.status || 403).json(scopeCheck.body);
     }
 
     if (entry.status !== 'checked_in' && entry.status !== 'inside') {

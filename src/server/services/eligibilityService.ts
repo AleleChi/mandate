@@ -288,7 +288,34 @@ export function checkEventEligibility(
 
 export function normalizeAgeGroup(g?: string | null): string {
   if (!g) return '';
-  return g.replace(/^Ages\s+/i, '').replace(/\s+to\s+/i, '–').replace(/-/g, '–').trim();
+  const trimmed = String(g).trim();
+  if (!trimmed) return '';
+
+  // Remove leading 'Ages ' or 'Age ' (case-insensitive)
+  let cleaned = trimmed.replace(/^Ages?\s+/i, '');
+
+  // Normalize Unicode dashes and 'to':
+  // - hyphen \u002D (-)
+  // - non-breaking hyphen \u2011 (‑)
+  // - figure dash \u2012 (‒)
+  // - en dash \u2013 (–)
+  // - em dash \u2014 (—)
+  // - horizontal bar \u2015 (―)
+  cleaned = cleaned
+    .replace(/[\u002D\u2011\u2012\u2013\u2014\u2015]/g, '–')
+    .replace(/\s+to\s+/i, '–')
+    .replace(/\s*–\s*/g, '–')
+    .trim();
+
+  // Validate against canonical groups
+  const canonicalGroups: CanonicalAgeGroupKey[] = ['2–3', '4–6', '7–9', '10–12', '13–14'];
+  for (const cg of canonicalGroups) {
+    if (cleaned === cg) {
+      return cg;
+    }
+  }
+
+  return '';
 }
 
 export function parseAssignedAgeGroups(raw: any): string[] {
@@ -307,38 +334,84 @@ export function parseAssignedAgeGroups(raw: any): string[] {
   return [];
 }
 
+/**
+ * Shared Authoritative Child Scope Resolver for Volunteer & Pass operations.
+ * Priority:
+ * 1. DOB + event date (authoritative)
+ * 2. calculated_age (numeric or string) if DOB unavailable
+ * 3. legacy stored age_group (normalized) as last fallback
+ */
+export function resolveChildScopeAgeGroup(
+  child: {
+    date_of_birth?: string | null;
+    calculated_age?: number | string | null;
+    age_group?: string | null;
+  },
+  eventStart?: string | Date | null
+): {
+  age: number | null;
+  group: string;
+} {
+  const refDate = eventStart || CANONICAL_GA_EVENT_DATE;
+
+  // 1. DOB + event date: primary authoritative source
+  if (child?.date_of_birth && String(child.date_of_birth).trim()) {
+    const res = resolveCanonicalAgeGroup(child.date_of_birth, refDate);
+    if (res.group) {
+      return { age: res.age, group: res.group };
+    }
+    if (res.age !== null) {
+      return { age: res.age, group: '' };
+    }
+  }
+
+  // 2. calculated_age: if DOB unavailable
+  if (child?.calculated_age !== null && child?.calculated_age !== undefined) {
+    const raw = String(child.calculated_age).trim();
+    if (raw) {
+      const num = Number(raw);
+      if (!isNaN(num) && isFinite(num)) {
+        const res = resolveCanonicalAgeGroup(num, refDate);
+        if (res.group) {
+          return { age: res.age, group: res.group };
+        }
+        return { age: num, group: '' };
+      }
+    }
+  }
+
+  // 3. legacy stored age_group: only as last fallback
+  if (child?.age_group) {
+    const norm = normalizeAgeGroup(child.age_group);
+    if (norm) {
+      return { age: null, group: norm };
+    }
+  }
+
+  return { age: null, group: '' };
+}
+
 export function isChildInScope(
-  child: { age_group?: string | null; calculated_age?: number | null; date_of_birth?: string | null },
-  assignedGroups: string[]
+  child: {
+    age_group?: string | null;
+    calculated_age?: number | string | null;
+    date_of_birth?: string | null;
+  },
+  assignedGroups: string[],
+  eventStart?: string | Date | null
 ): boolean {
   if (!assignedGroups || assignedGroups.length === 0) return false;
-  const normalizedAssigned = assignedGroups.map(normalizeAgeGroup);
 
-  const childNorm = normalizeAgeGroup(child.age_group);
-  if (childNorm && normalizedAssigned.includes(childNorm)) {
-    return true;
-  }
+  const normalizedAssigned = assignedGroups
+    .map(normalizeAgeGroup)
+    .filter(Boolean);
 
-  let childAge = child.calculated_age;
-  if ((childAge === null || childAge === undefined) && child.date_of_birth) {
-    const resolution = resolveCanonicalAgeGroup(child.date_of_birth);
-    if (resolution.group && normalizedAssigned.includes(resolution.group)) {
-      return true;
-    }
-    childAge = resolution.age;
-  }
+  if (normalizedAssigned.length === 0) return false;
 
-  if (typeof childAge === 'number') {
-    for (const group of normalizedAssigned) {
-      if (group === '2–3' && childAge >= 2 && childAge <= 3) return true;
-      if (group === '4–6' && childAge >= 4 && childAge <= 6) return true;
-      if (group === '7–9' && childAge >= 7 && childAge <= 9) return true;
-      if (group === '10–12' && childAge >= 10 && childAge <= 12) return true;
-      if (group === '13–14' && childAge >= 13 && childAge <= 14) return true;
-    }
-  }
+  const childScope = resolveChildScopeAgeGroup(child, eventStart);
+  if (!childScope.group) return false;
 
-  return false;
+  return normalizedAssigned.includes(childScope.group);
 }
 
 export function buildAgeGroupSqlFilter(assignedGroups: string[], tableAlias = 'c'): { clause: string; params: any[] } {
