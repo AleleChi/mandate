@@ -65,7 +65,7 @@ export async function resolveVolunteerScope(userId: string, userRole: string, ev
   );
 
   if (!rows || rows.length === 0) {
-    return { isScoped: false, assignedAgeGroups: [] };
+    return { isScoped: true, assignedAgeGroups: [] };
   }
 
   for (const row of rows) {
@@ -85,16 +85,9 @@ export async function resolveVolunteerScope(userId: string, userRole: string, ev
     }
   }
 
-  if (allAssigned.length > 0) {
-    return {
-      isScoped: true,
-      assignedAgeGroups: allAssigned
-    };
-  }
-
   return {
-    isScoped: false,
-    assignedAgeGroups: []
+    isScoped: true,
+    assignedAgeGroups: allAssigned
   };
 }
 

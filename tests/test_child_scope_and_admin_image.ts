@@ -115,9 +115,14 @@ test('Child Scope Parity & Admin Pass Image Regression Suite', async (t) => {
   // Database setup for multi-duty and route tests
   const volUserId1 = `usr-vol-multi-${Date.now()}`;
   const volUserId2 = `usr-vol-lead-${Date.now()}`;
+  const volNoRowId = `usr-vol-norow-${Date.now()}`;
+  const volEmptyDutyId = `usr-vol-empty-${Date.now()}`;
+  const vol1314Id = `usr-vol-1314-${Date.now()}`;
   const dutyId1 = `duty-1-${Date.now()}`;
   const dutyId2 = `duty-2-${Date.now()}`;
   const dutyId3 = `duty-3-${Date.now()}`;
+  const dutyEmptyId = `duty-empty-${Date.now()}`;
+  const duty1314Id = `duty-1314-${Date.now()}`;
 
   try {
     await execute(`
@@ -152,6 +157,34 @@ test('Child Scope Parity & Admin Pass Image Regression Suite', async (t) => {
       VALUES (?, ?, ?, 'team_lead', 'ushers', 'lead', 'active', '2026-11-21T07:00:00Z', '2026-11-21T18:00:00Z', '["4–6"]', ?, ?)
     `, [dutyId3, testEventId, volUserId2, now, now]);
 
+    // Volunteer No Row: ordinary volunteer with NO duty assignment row
+    await execute(`
+      INSERT INTO users (id, email, password_hash, role, status, created_at, updated_at)
+      VALUES (?, ?, 'hash', 'volunteer', 'active', ?, ?)
+    `, [volNoRowId, `volnorow_${Date.now()}@test.koinonia`, now, now]);
+
+    // Volunteer Empty Duty: ordinary volunteer with duty assignment but NO assigned age groups
+    await execute(`
+      INSERT INTO users (id, email, password_hash, role, status, created_at, updated_at)
+      VALUES (?, ?, 'hash', 'volunteer', 'active', ?, ?)
+    `, [volEmptyDutyId, `volempty_${Date.now()}@test.koinonia`, now, now]);
+
+    await execute(`
+      INSERT INTO event_duty_assignments (id, event_id, user_id, responsibility_key, team_key, assignment_level, status, starts_at, ends_at, assigned_age_groups, created_at, updated_at)
+      VALUES (?, ?, ?, 'checkin_marshal', 'checkin', 'primary', 'active', '2026-11-21T07:00:00Z', '2026-11-21T18:00:00Z', '[]', ?, ?)
+    `, [dutyEmptyId, testEventId, volEmptyDutyId, now, now]);
+
+    // Volunteer 13–14: ordinary volunteer with Ages 13–14
+    await execute(`
+      INSERT INTO users (id, email, password_hash, role, status, created_at, updated_at)
+      VALUES (?, ?, 'hash', 'volunteer', 'active', ?, ?)
+    `, [vol1314Id, `vol1314_${Date.now()}@test.koinonia`, now, now]);
+
+    await execute(`
+      INSERT INTO event_duty_assignments (id, event_id, user_id, responsibility_key, team_key, assignment_level, status, starts_at, ends_at, assigned_age_groups, created_at, updated_at)
+      VALUES (?, ?, ?, 'checkin_marshal', 'checkin', 'primary', 'active', '2026-11-21T07:00:00Z', '2026-11-21T18:00:00Z', '["13–14"]', ?, ?)
+    `, [duty1314Id, testEventId, vol1314Id, now, now]);
+
     // Test 5: Multiple duty assignments aggregation
     await t.test('5. Multiple duty assignments are aggregated and deduplicated; lead becomes unscoped', async () => {
       // Volunteer 1: aggregated 10–12 and 13–14
@@ -163,6 +196,66 @@ test('Child Scope Parity & Admin Pass Image Regression Suite', async (t) => {
       const scope2 = await resolveVolunteerScope(volUserId2, 'volunteer', testEventId);
       assert.strictEqual(scope2.isScoped, false);
       assert.deepStrictEqual(scope2.assignedAgeGroups, []);
+    });
+
+    // Test 5b: Exact regression - Ordinary volunteer + no assignment row
+    await t.test('5b. Ordinary volunteer + no assignment row yields isScoped=true, assignedAgeGroups=[] and NO_AGE_GROUP_ASSIGNED', async () => {
+      const scope = await resolveVolunteerScope(volNoRowId, 'volunteer', testEventId);
+      assert.strictEqual(scope.isScoped, true, 'Ordinary volunteer with no assignment row must be isScoped=true');
+      assert.deepStrictEqual(scope.assignedAgeGroups, [], 'assignedAgeGroups must be empty array');
+
+      const child14 = { date_of_birth: '2012-04-15' };
+      const passLookupCheck = checkChildVolunteerScope(child14, scope, eventDate, testEventId);
+      assert.strictEqual(passLookupCheck.allowed, false);
+      assert.strictEqual(passLookupCheck.body?.code, 'NO_AGE_GROUP_ASSIGNED');
+      assert.strictEqual(passLookupCheck.body?.error, 'No age group has been assigned to your event duty yet.');
+    });
+
+    // Test 5c: Exact regression - Ordinary volunteer + assignment row but no age groups
+    await t.test('5c. Ordinary volunteer + assignment row but no age groups yields NO_AGE_GROUP_ASSIGNED', async () => {
+      const scope = await resolveVolunteerScope(volEmptyDutyId, 'volunteer', testEventId);
+      assert.strictEqual(scope.isScoped, true, 'Ordinary volunteer with empty groups row must be isScoped=true');
+      assert.deepStrictEqual(scope.assignedAgeGroups, [], 'assignedAgeGroups must be empty array');
+
+      const child14 = { date_of_birth: '2012-04-15' };
+      const passLookupCheck = checkChildVolunteerScope(child14, scope, eventDate, testEventId);
+      assert.strictEqual(passLookupCheck.allowed, false);
+      assert.strictEqual(passLookupCheck.body?.code, 'NO_AGE_GROUP_ASSIGNED');
+      assert.strictEqual(passLookupCheck.body?.error, 'No age group has been assigned to your event duty yet.');
+    });
+
+    // Test 5d: Exact regression - Ordinary volunteer + 13–14 scanning Age 14 child allowed, Age 8 child OUT_OF_SCOPE
+    await t.test('5d. Ordinary volunteer + 13–14 allows Age 14 child and rejects Age 8 child with OUT_OF_SCOPE', async () => {
+      const scope = await resolveVolunteerScope(vol1314Id, 'volunteer', testEventId);
+      assert.strictEqual(scope.isScoped, true);
+      assert.deepStrictEqual(scope.assignedAgeGroups, ['13–14']);
+
+      const child14 = { date_of_birth: '2012-04-15', full_name: 'Fourteen Year Old' };
+      const check14 = checkChildVolunteerScope(child14, scope, eventDate, testEventId);
+      assert.strictEqual(check14.allowed, true, 'Scanning Age 14 child must be allowed');
+
+      const child8 = { id: 'ch-age-8', date_of_birth: '2018-05-10', full_name: 'Eight Year Old' };
+      const check8 = checkChildVolunteerScope(child8, scope, eventDate, testEventId);
+      assert.strictEqual(check8.allowed, false, 'Scanning Age 8 child must be rejected');
+      assert.strictEqual(check8.body?.code, 'OUT_OF_SCOPE');
+      assert.strictEqual(check8.body?.childAge, 8);
+      assert.strictEqual(check8.body?.childAgeGroup, '7–9');
+      assert.deepStrictEqual(check8.body?.assignedAgeGroups, ['13–14']);
+    });
+
+    // Test 5e: Exact regression - Team lead preserves unscoped access
+    await t.test('5e. Team lead preserves unscoped access across any child age group', async () => {
+      const leadScope = await resolveVolunteerScope(volUserId2, 'volunteer', testEventId);
+      assert.strictEqual(leadScope.isScoped, false, 'Team lead must remain unscoped');
+      assert.deepStrictEqual(leadScope.assignedAgeGroups, []);
+
+      const child8 = { date_of_birth: '2018-05-10' };
+      const check8 = checkChildVolunteerScope(child8, leadScope, eventDate, testEventId);
+      assert.strictEqual(check8.allowed, true, 'Team lead can scan Age 8 child');
+
+      const child14 = { date_of_birth: '2012-04-15' };
+      const check14 = checkChildVolunteerScope(child14, leadScope, eventDate, testEventId);
+      assert.strictEqual(check14.allowed, true, 'Team lead can scan Age 14 child');
     });
 
     // Test 6: Correct scope check
@@ -244,7 +337,7 @@ test('Child Scope Parity & Admin Pass Image Regression Suite', async (t) => {
   } finally {
     // Clean up test rows
     await execute(`DELETE FROM event_duty_assignments WHERE event_id = ?`, [testEventId]);
-    await execute(`DELETE FROM users WHERE id IN (?, ?)`, [volUserId1, volUserId2]);
+    await execute(`DELETE FROM users WHERE id IN (?, ?, ?, ?, ?)`, [volUserId1, volUserId2, volNoRowId, volEmptyDutyId, vol1314Id]);
     await execute(`DELETE FROM events WHERE id = ?`, [testEventId]);
   }
 
