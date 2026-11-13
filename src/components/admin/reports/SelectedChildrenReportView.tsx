@@ -625,7 +625,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                   } else if (ageGroupFilter !== 'all') {
                     handleDownloadPdf(ageGroupFilter, '', null);
                   } else {
-                    setDownloadMenuOpen(prev => !prev);
+                    handleDownloadPdf('', '', { minAge: 2, maxAge: 14 });
                   }
                 }}
                 disabled={downloadingPdf || loading}
@@ -638,12 +638,12 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                   <Download className="w-3.5 h-3.5" />
                 )}
                 {exactAgeFilter !== 'all'
-                  ? `Download Age ${exactAgeFilter} report`
+                  ? `Download Age ${exactAgeFilter} register`
                   : customAgeRange
-                    ? `Download Ages ${customAgeRange.minAge}–${customAgeRange.maxAge} report`
+                    ? `Download Ages ${customAgeRange.minAge}–${customAgeRange.maxAge} register`
                     : ageGroupFilter !== 'all'
-                      ? `Download Ages ${ageGroupFilter} report`
-                      : 'Download report'}
+                      ? `Download Ages ${ageGroupFilter} register`
+                      : 'Download selected children register'}
               </button>
 
               <button
@@ -675,7 +675,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                   onClick={() => handleDownloadPdf(undefined, undefined, undefined, 'standard')}
                   className="w-full text-left px-3 py-1.5 hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-900 dark:text-[#F0EBE3] font-medium flex items-center justify-between cursor-pointer"
                 >
-                  <span>Current filtered report</span>
+                  <span>Current filtered register</span>
                   <span className="text-[10px] text-stone-400">
                     {exactAgeFilter !== 'all'
                       ? `Age ${exactAgeFilter}`
@@ -701,7 +701,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                   onClick={() => handleDownloadPdf('', '', null, 'standard')}
                   className="w-full text-left px-3 py-1.5 hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-900 dark:text-[#F0EBE3] font-medium cursor-pointer"
                 >
-                  All selected children
+                  Selected children register (Ages 2–14)
                 </button>
 
                 <div className="border-t border-stone-100 dark:border-[#2C2A26] my-1" />
