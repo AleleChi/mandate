@@ -34,6 +34,7 @@ import {
   resolveCanonicalAgeGroup
 } from '../services/eligibilityService';
 import { normalizePassReference } from '../services/passService';
+import { validateVolunteerDutyWindow } from '../services/volunteerDutyWindowService';
 
 export function getChildScopeDisplayName(child: any): string {
   const norm = normalizeAgeGroup(child?.age_group);
@@ -2267,6 +2268,12 @@ router.get('/event-home', authMiddleware, async (req: AuthenticatedRequest, res:
 
     const stats = await getEventStats(currentEventId, scope.isScoped ? scope.assignedAgeGroups : null);
     const dutyLocation = req.user?.id ? await resolveUserDutyLocation(req.user.id, currentEventId) : null;
+    const dutyWindow = await validateVolunteerDutyWindow({
+      userId: req.user?.id,
+      userRole: req.user?.role,
+      eventId: currentEventId,
+      operationType: 'general'
+    });
 
     res.json({
       event,
@@ -2274,7 +2281,8 @@ router.get('/event-home', authMiddleware, async (req: AuthenticatedRequest, res:
       attentionItems: attentionItems,
       dutyLocation,
       assignedAgeGroups: scope.assignedAgeGroups,
-      isScoped: scope.isScoped
+      isScoped: scope.isScoped,
+      dutyWindow
     });
   } catch (err) {
     console.error('Event home error:', err);
@@ -2627,6 +2635,21 @@ router.post('/pass/lookup', authMiddleware, async (req: AuthenticatedRequest, re
       return res.status(400).json({ error: 'No current event is available.' });
     }
 
+    const dutyWindow = await validateVolunteerDutyWindow({
+      userId: req.user.id,
+      userRole: req.user.role,
+      eventId: currentEventId,
+      operationType: 'lookup'
+    });
+    if (!dutyWindow.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: dutyWindow.message,
+        code: dutyWindow.code,
+        dutyWindow
+      });
+    }
+
     const { passReference, childId, childEventEntryId } = req.body;
     let entryId = childEventEntryId;
 
@@ -2807,6 +2830,21 @@ router.post('/children/resolve-identifier', authMiddleware, async (req: Authenti
       return res.status(400).json({ error: 'No current event is available or eventId is missing.', code: 'EVENT_ID_REQUIRED' });
     }
 
+    const dutyWindow = await validateVolunteerDutyWindow({
+      userId: req.user.id,
+      userRole: req.user.role,
+      eventId: targetEventId,
+      operationType: 'lookup'
+    });
+    if (!dutyWindow.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: dutyWindow.message,
+        code: dutyWindow.code,
+        dutyWindow
+      });
+    }
+
     if (!identifier || typeof identifier !== 'string' || !identifier.trim()) {
       return res.status(400).json({ error: 'Please provide a non-empty identifier', code: 'INVALID_IDENTIFIER' });
     }
@@ -2845,6 +2883,21 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
     const currentEventId = await getCurrentEventId();
     if (!currentEventId) {
       return res.status(400).json({ error: 'No current event is available.' });
+    }
+
+    const dutyWindow = await validateVolunteerDutyWindow({
+      userId: req.user.id,
+      userRole: req.user.role,
+      eventId: currentEventId,
+      operationType: 'check_in'
+    });
+    if (!dutyWindow.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: dutyWindow.message,
+        code: dutyWindow.code,
+        dutyWindow
+      });
     }
 
     const { passReference, childId, childEventEntryId } = req.body;
@@ -3312,6 +3365,21 @@ router.post('/check-out', authMiddleware, async (req: AuthenticatedRequest, res:
       return res.status(400).json({ error: 'No current event is available.' });
     }
 
+    const dutyWindow = await validateVolunteerDutyWindow({
+      userId: req.user.id,
+      userRole: req.user.role,
+      eventId: currentEventId,
+      operationType: 'pickup'
+    });
+    if (!dutyWindow.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: dutyWindow.message,
+        code: dutyWindow.code,
+        dutyWindow
+      });
+    }
+
     const { passReference, childId, childEventEntryId, pickupPersonId } = req.body;
     let entryId = childEventEntryId;
 
@@ -3562,6 +3630,21 @@ router.post('/pickup/lookup', authMiddleware, async (req: AuthenticatedRequest, 
       return res.status(400).json({ success: false, error: 'No current event is available.' });
     }
 
+    const dutyWindow = await validateVolunteerDutyWindow({
+      userId: req.user.id,
+      userRole: req.user.role,
+      eventId: currentEventId,
+      operationType: 'pickup'
+    });
+    if (!dutyWindow.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: dutyWindow.message,
+        code: dutyWindow.code,
+        dutyWindow
+      });
+    }
+
     const passRow = await queryOne('SELECT child_event_entry_id, status FROM event_passes WHERE pass_reference = ? OR id = ?', [cleanRef, passCode]);
     if (!passRow) {
       return res.status(404).json({
@@ -3719,6 +3802,21 @@ router.post('/pickup/mark', authMiddleware, async (req: AuthenticatedRequest, re
     const currentEventId = await getCurrentEventId();
     if (!currentEventId) {
       return res.status(400).json({ error: 'No current event is available.' });
+    }
+
+    const dutyWindow = await validateVolunteerDutyWindow({
+      userId: req.user.id,
+      userRole: req.user.role,
+      eventId: currentEventId,
+      operationType: 'pickup'
+    });
+    if (!dutyWindow.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: dutyWindow.message,
+        code: dutyWindow.code,
+        dutyWindow
+      });
     }
 
     const { childId, passCode, pickupPersonId } = req.body;

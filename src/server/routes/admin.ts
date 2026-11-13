@@ -16566,6 +16566,12 @@ router.use('/events/:eventId/response-coverage', (req, res, next) => {
   adminDutyRouter(req, res, next);
 });
 
+// Alias /api/admin/events/:eventId/duty-assignments to adminDutyRouter
+router.use('/events/:eventId/duty-assignments', (req, res, next) => {
+  req.url = `/events/${req.params.eventId}/duty-assignments${req.url === '/' ? '' : req.url}`;
+  adminDutyRouter(req, res, next);
+});
+
 // =========================================================================
 // OPERATIONS ASSISTANT ENDPOINTS (PHASE 1)
 // =========================================================================

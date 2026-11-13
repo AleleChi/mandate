@@ -5,6 +5,7 @@ import { getCurrentEvent, getCurrentEventId } from '../services/eventService';
 import { authMiddleware, optionalAuthMiddleware, AuthenticatedRequest } from '../auth';
 import { sendWebPush } from '../services/push';
 import { broadcastSSEEvent } from '../services/sse';
+import { parseAssignedAgeGroups, normalizeAgeGroup } from '../services/eligibilityService';
 
 const dutyRouter = Router();
 
@@ -1219,10 +1220,15 @@ adminDutyRouter.get('/events/:eventId/duty-assignments', async (req: Authenticat
     const queryParams = [...params, limit, offset];
     const items = await query(itemsQuery, queryParams);
 
+    const mappedItems = (items || []).map((item: any) => ({
+      ...item,
+      assignedAgeGroups: parseAssignedAgeGroups(item.assigned_age_groups).map(normalizeAgeGroup).filter(Boolean)
+    }));
+
     return res.json({
       success: true,
-      items: items || [],
-      assignments: items || [],
+      items: mappedItems,
+      assignments: mappedItems,
       pagination: {
         page,
         limit,
@@ -1247,7 +1253,7 @@ adminDutyRouter.post('/events/:eventId/duty-assignments', async (req: Authentica
     }
 
     const { eventId } = req.params;
-    const { userId, responsibilityKey, teamKey, assignmentLevel, status, startsAt, endsAt, note, assignedLocationId } = req.body;
+    const { userId, responsibilityKey, teamKey, assignmentLevel, status, startsAt, endsAt, note, assignedLocationId, assignedAgeGroups } = req.body;
 
     if (!userId || !responsibilityKey || !startsAt || !endsAt) {
       return res.status(400).json({ error: 'Missing required assignment fields' });
@@ -1256,6 +1262,9 @@ adminDutyRouter.post('/events/:eventId/duty-assignments', async (req: Authentica
     if (new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
       return res.status(400).json({ error: 'Shift end time must be later than start time.' });
     }
+
+    const parsedGroups = parseAssignedAgeGroups(assignedAgeGroups).map(normalizeAgeGroup).filter(Boolean);
+    const assignedAgeGroupsStr = JSON.stringify(parsedGroups);
 
     const targetUser = await queryOne(`
       SELECT u.id, u.role, u.status as user_status, vp.id as volunteer_profile_id, vp.status as volunteer_status
@@ -1318,6 +1327,7 @@ adminDutyRouter.post('/events/:eventId/duty-assignments', async (req: Authentica
             note = ?,
             assigned_by = ?,
             assigned_location_id = ?,
+            assigned_age_groups = ?,
             updated_at = ?
         WHERE id = ?
       `, [
@@ -1330,6 +1340,7 @@ adminDutyRouter.post('/events/:eventId/duty-assignments', async (req: Authentica
         note || null,
         req.user.id,
         assignedLocationId || null,
+        assignedAgeGroupsStr,
         now,
         assignmentId
       ]);
@@ -1337,10 +1348,10 @@ adminDutyRouter.post('/events/:eventId/duty-assignments', async (req: Authentica
       assignmentId = `assign-${crypto.randomBytes(8).toString('hex')}`;
       await execute(`
         INSERT INTO event_duty_assignments (
-          id, event_id, user_id, responsibility_key, team_key, assignment_level, status, starts_at, ends_at, note, assigned_by, assigned_location_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, event_id, user_id, responsibility_key, team_key, assignment_level, status, starts_at, ends_at, note, assigned_by, assigned_location_id, assigned_age_groups, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
-        assignmentId, eventId, userId, responsibilityKey, teamKey || null, assignmentLevel || 'primary', status || 'scheduled', startsAt, endsAt, note || null, req.user.id, assignedLocationId || null, now, now
+        assignmentId, eventId, userId, responsibilityKey, teamKey || null, assignmentLevel || 'primary', status || 'scheduled', startsAt, endsAt, note || null, req.user.id, assignedLocationId || null, assignedAgeGroupsStr, now, now
       ]);
     }
 
@@ -1404,11 +1415,17 @@ adminDutyRouter.patch('/events/:eventId/duty-assignments/:assignmentId', async (
     }
 
     const { assignmentId } = req.params;
-    const { responsibilityKey, teamKey, assignmentLevel, status, startsAt, endsAt, note, assignedLocationId } = req.body;
+    const { responsibilityKey, teamKey, assignmentLevel, status, startsAt, endsAt, note, assignedLocationId, assignedAgeGroups } = req.body;
 
     const assignment = await queryOne('SELECT * FROM event_duty_assignments WHERE id = ?', [assignmentId]);
     if (!assignment) {
       return res.status(404).json({ error: 'Assignment not found' });
+    }
+
+    let effectiveAgeGroups = assignment.assigned_age_groups;
+    if (assignedAgeGroups !== undefined) {
+      const parsedGroups = parseAssignedAgeGroups(assignedAgeGroups).map(normalizeAgeGroup).filter(Boolean);
+      effectiveAgeGroups = JSON.stringify(parsedGroups);
     }
 
     const effectiveStart = startsAt || assignment.starts_at;
@@ -1451,10 +1468,11 @@ adminDutyRouter.patch('/events/:eventId/duty-assignments/:assignmentId', async (
           ends_at = COALESCE(?, ends_at),
           note = COALESCE(?, note),
           assigned_location_id = ?,
+          assigned_age_groups = ?,
           updated_at = ?
       WHERE id = ?
     `, [
-      responsibilityKey || null, teamKey || null, assignmentLevel || null, status || null, startsAt || null, endsAt || null, note || null, assignedLocationId === '' ? null : (assignedLocationId || assignment.assigned_location_id), now, assignmentId
+      responsibilityKey || null, teamKey || null, assignmentLevel || null, status || null, startsAt || null, endsAt || null, note || null, assignedLocationId === '' ? null : (assignedLocationId || assignment.assigned_location_id), effectiveAgeGroups, now, assignmentId
     ]);
 
     // Audit change
