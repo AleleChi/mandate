@@ -1707,7 +1707,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     } catch (err: any) {
       const apiErr = extractApiError(err);
       const errCode = apiErr.code || err?.code || '';
-      if (errCode === 'OUT_OF_SCOPE') {
+      if (errCode === 'ALREADY_PICKED_UP') {
+        const timeStr = err?.data?.pickedUpAt || err?.pickedUpAt || apiErr.pickedUpAt ? formatTime(err?.data?.pickedUpAt || err?.pickedUpAt || apiErr.pickedUpAt) : '';
+        const msg = timeStr ? `This child has already been picked up and released. Picked up at ${timeStr}.` : 'This child has already been picked up and released.';
+        showWarning('Pickup completed', msg);
+        setPickupChild(null);
+      } else if (errCode === 'NOT_CHECKED_IN') {
+        showWarning('Not Checked In', apiErr.message || 'This child has not been checked in yet.');
+        setPickupChild(null);
+      } else if (errCode === 'OUT_OF_SCOPE') {
         const rawGroup = apiErr.childAgeGroup || err?.data?.childAgeGroup || '';
         const cleanGroup = rawGroup.startsWith('Ages') ? rawGroup.replace(/^Ages\s*/i, '') : rawGroup;
         const assigned = Array.isArray(apiErr.assignedAgeGroups)
@@ -1906,7 +1914,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       'DUTY_INACTIVE',
       'CHECK_IN_NOT_OPEN',
       'CHECK_IN_CLOSED',
-      'PICKUP_NOT_STARTED'
+      'PICKUP_NOT_STARTED',
+      'ALREADY_CHECKED_IN',
+      'ALREADY_PICKED_UP',
+      'NOT_CHECKED_IN'
     ].includes(code)
       || code.startsWith('WRISTBAND_');
   };
@@ -2148,19 +2159,39 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           // Reset manual code input
           setManualCode('');
 
-          const isCheckedIn = childData.entryStatus === 'checked_in' || childData.entryStatus === 'inside' || childData.status === 'checked_in' || childData.status === 'inside';
-          const isPickedUp = childData.entryStatus === 'picked_up' || childData.entryStatus === 'checked_out' || childData.status === 'picked_up' || childData.status === 'checked_out';
+          const isCheckedIn = childData.entryStatus === 'checked_in' || childData.entryStatus === 'inside' || childData.status === 'checked_in' || childData.status === 'inside' || Boolean(childData.checkedInAt || childData.checked_in_at);
+          const isPickedUp = childData.entryStatus === 'picked_up' || childData.entryStatus === 'checked_out' || childData.status === 'picked_up' || childData.status === 'checked_out' || Boolean(childData.pickedUpAt || childData.picked_up_at);
 
           if (cleanRoute === '/volunteer/pickup' || scanMode === 'check_out') {
             if (isPickedUp) {
-              showWarning('Already Released', `${childData.fullName} has already been picked up.`);
-              handlePreparePickup(childData.id || childData.childId || childData.entryId);
+              const timeStr = childData.pickedUpAt || childData.picked_up_at ? formatTime(childData.pickedUpAt || childData.picked_up_at) : '';
+              const msg = timeStr ? `This child has already been picked up and released. Picked up at ${timeStr}.` : `${childData.fullName} has already been picked up and released.`;
+              showWarning('Pickup completed', msg);
+              isLookupInFlightRef.current = false;
+              lastScannedCodeRef.current = null;
+              isLookupInFlight.current = false;
+              lastScannedCode.current = '';
+              setCameraActive(true);
             } else if (isCheckedIn) {
               handlePreparePickup(childData.id || childData.childId || childData.entryId);
             } else {
-              showError('Not Checked In', `${childData.fullName} has not checked in yet. Please check in the child before release.`);
+              showWarning('Not Checked In', `${childData.fullName} has not checked in yet. Please check in the child before release.`);
+              isLookupInFlightRef.current = false;
+              lastScannedCodeRef.current = null;
+              isLookupInFlight.current = false;
+              lastScannedCode.current = '';
+              setCameraActive(true);
             }
           } else {
+            if (isPickedUp) {
+              const timeStr = childData.pickedUpAt || childData.picked_up_at ? formatTime(childData.pickedUpAt || childData.picked_up_at) : '';
+              const msg = timeStr ? `Attendance is complete. This child has already been picked up and released at ${timeStr}.` : 'Attendance is complete. This child has already been picked up and released.';
+              showWarning('Pickup completed', msg);
+            } else if (isCheckedIn) {
+              const timeStr = childData.checkedInAt || childData.checked_in_at ? formatTime(childData.checkedInAt || childData.checked_in_at) : '';
+              const msg = timeStr ? `This child was checked in at ${timeStr}. No further check-in is required.` : 'This child has already been checked in. No further check-in is required.';
+              showWarning('Already checked in', msg);
+            }
             setLookedUpChild(childData);
             if (cleanRoute !== '/volunteer/scan') {
               onNavigate('/volunteer/scan');
@@ -2187,6 +2218,17 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       if (errCode === 'NO_AGE_GROUP_ASSIGNED' || String(err?.message || err?.data?.error).includes('No age group')) {
         title = 'Assignment Required';
         message = 'No age group has been assigned to your event duty yet.';
+      } else if (errCode === 'ALREADY_CHECKED_IN') {
+        title = 'Already checked in';
+        const timeStr = err?.data?.checkedInAt || err?.checkedInAt ? formatTime(err?.data?.checkedInAt || err?.checkedInAt) : '';
+        message = timeStr ? `This child was checked in at ${timeStr}. No further check-in is required.` : (err?.message || err?.data?.error || 'This child has already been checked in. No further check-in is required.');
+      } else if (errCode === 'ALREADY_PICKED_UP') {
+        title = 'Pickup completed';
+        const timeStr = err?.data?.pickedUpAt || err?.pickedUpAt ? formatTime(err?.data?.pickedUpAt || err?.pickedUpAt) : '';
+        message = timeStr ? `This child has already been picked up and released. Picked up at ${timeStr}.` : (err?.message || err?.data?.error || 'This child has already been picked up and released.');
+      } else if (errCode === 'NOT_CHECKED_IN') {
+        title = 'Not Checked In';
+        message = err?.message || err?.data?.error || 'This child has not been checked in yet.';
       } else if (errCode === 'OUT_OF_SCOPE' || String(err?.message || err?.data?.error).includes('assigned to another age group') || String(err?.message || err?.data?.error).includes('belongs to')) {
         title = 'Out of Scope';
         const rawGroup = err?.data?.childAgeGroup || err?.childAgeGroup || '';
@@ -2251,7 +2293,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         message = 'No child was found for this pass or wristband.';
       }
 
-      if (title === 'Out of Scope' || title === 'Assignment Required') {
+      if (title === 'Out of Scope' || title === 'Assignment Required' || title === 'Already checked in' || title === 'Pickup completed' || title === 'Not Checked In') {
         showWarning(title, message);
       } else {
         showError(title, message);
@@ -2404,7 +2446,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     } catch (err: any) {
       const apiErr = extractApiError(err);
       const errCode = apiErr.code || err?.code || '';
-      if (errCode === 'OUT_OF_SCOPE') {
+      if (errCode === 'ALREADY_PICKED_UP') {
+        const timeStr = err?.data?.pickedUpAt || err?.pickedUpAt || apiErr.pickedUpAt ? formatTime(err?.data?.pickedUpAt || err?.pickedUpAt || apiErr.pickedUpAt) : '';
+        const msg = timeStr ? `This child has already been picked up and released. Picked up at ${timeStr}.` : 'This child has already been picked up and released.';
+        showWarning('Pickup completed', msg);
+        setPickupChild(null);
+      } else if (errCode === 'NOT_CHECKED_IN') {
+        showWarning('Not Checked In', apiErr.message || 'This child has not been checked in yet.');
+        setPickupChild(null);
+      } else if (errCode === 'OUT_OF_SCOPE') {
         const rawGroup = apiErr.childAgeGroup || err?.data?.childAgeGroup || '';
         const cleanGroup = rawGroup.startsWith('Ages') ? rawGroup.replace(/^Ages\s*/i, '') : rawGroup;
         const assigned = Array.isArray(apiErr.assignedAgeGroups)
@@ -2437,7 +2487,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     } catch (err: any) {
       const apiErr = extractApiError(err);
       const errCode = apiErr.code || err?.code || '';
-      if (errCode === 'OUT_OF_SCOPE') {
+      if (errCode === 'ALREADY_PICKED_UP') {
+        const timeStr = err?.data?.pickedUpAt || err?.pickedUpAt || apiErr.pickedUpAt ? formatTime(err?.data?.pickedUpAt || err?.pickedUpAt || apiErr.pickedUpAt) : '';
+        const msg = timeStr ? `This child has already been picked up and released. Picked up at ${timeStr}.` : 'This child has already been picked up and released.';
+        showWarning('Pickup completed', msg);
+        setPickupChild(null);
+      } else if (errCode === 'NOT_CHECKED_IN') {
+        showWarning('Not Checked In', apiErr.message || 'This child has not been checked in yet.');
+        setPickupChild(null);
+      } else if (errCode === 'OUT_OF_SCOPE') {
         const rawGroup = apiErr.childAgeGroup || err?.data?.childAgeGroup || '';
         const cleanGroup = rawGroup.startsWith('Ages') ? rawGroup.replace(/^Ages\s*/i, '') : rawGroup;
         const assigned = Array.isArray(apiErr.assignedAgeGroups)
@@ -2830,7 +2888,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
       const apiErr = extractApiError(err);
       const errCode = apiErr.code || err?.code || '';
       console.error('[volunteer check-in failed]', err);
-      if (errCode === 'OUT_OF_SCOPE') {
+      if (errCode === 'ALREADY_CHECKED_IN') {
+        const timeStr = apiErr.checkedInAt || err?.data?.checkedInAt ? formatTime(apiErr.checkedInAt || err?.data?.checkedInAt) : '';
+        showWarning('Already checked in', timeStr ? `This child was checked in at ${timeStr}. No further check-in is required.` : 'This child has already been checked in. No further check-in is required.');
+        setLookedUpChild(null);
+      } else if (errCode === 'ALREADY_PICKED_UP') {
+        const timeStr = apiErr.pickedUpAt || err?.data?.pickedUpAt ? formatTime(apiErr.pickedUpAt || err?.data?.pickedUpAt) : '';
+        showWarning('Pickup completed', timeStr ? `Attendance is complete. This child has already been picked up and released at ${timeStr}.` : 'Attendance is complete. This child has already been picked up and released.');
+        setLookedUpChild(null);
+      } else if (errCode === 'OUT_OF_SCOPE') {
         const rawGroup = apiErr.childAgeGroup || err?.data?.childAgeGroup || '';
         const cleanGroup = rawGroup.startsWith('Ages') ? rawGroup.replace(/^Ages\s*/i, '') : rawGroup;
         const assigned = Array.isArray(apiErr.assignedAgeGroups)
@@ -2933,7 +2999,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     } catch (err: any) {
       const apiErr = extractApiError(err);
       const errCode = apiErr.code || err?.code || '';
-      if (errCode === 'OUT_OF_SCOPE') {
+      if (errCode === 'ALREADY_PICKED_UP') {
+        const timeStr = err?.data?.pickedUpAt || err?.pickedUpAt || apiErr.pickedUpAt ? formatTime(err?.data?.pickedUpAt || err?.pickedUpAt || apiErr.pickedUpAt) : '';
+        const msg = timeStr ? `This child has already been picked up and released. Picked up at ${timeStr}.` : 'This child has already been picked up and released.';
+        showWarning('Pickup completed', msg);
+        setPickupChild(null);
+      } else if (errCode === 'NOT_CHECKED_IN') {
+        showWarning('Not Checked In', apiErr.message || 'This child has not been checked in yet.');
+        setPickupChild(null);
+      } else if (errCode === 'OUT_OF_SCOPE') {
         const rawGroup = apiErr.childAgeGroup || err?.data?.childAgeGroup || '';
         const cleanGroup = rawGroup.startsWith('Ages') ? rawGroup.replace(/^Ages\s*/i, '') : rawGroup;
         const assigned = Array.isArray(apiErr.assignedAgeGroups)
@@ -2980,7 +3054,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     } catch (err: any) {
       const errCode = err?.code || err?.data?.code || '';
       const apiErr = extractApiError(err);
-      if (errCode === 'OUT_OF_SCOPE' || String(err?.message || err?.data?.error).includes('belongs to') || String(err?.message || err?.data?.error).includes('assigned to another age group')) {
+      if (errCode === 'ALREADY_PICKED_UP') {
+        const timeStr = err?.data?.pickedUpAt || err?.pickedUpAt || apiErr.pickedUpAt ? formatTime(err?.data?.pickedUpAt || err?.pickedUpAt || apiErr.pickedUpAt) : '';
+        const msg = timeStr ? `This child has already been picked up and released. Picked up at ${timeStr}.` : 'This child has already been picked up and released.';
+        showWarning('Pickup completed', msg);
+        setPickupChild(null);
+      } else if (errCode === 'NOT_CHECKED_IN') {
+        showWarning('Not Checked In', apiErr.message || 'This child has not been checked in yet.');
+        setPickupChild(null);
+      } else if (errCode === 'OUT_OF_SCOPE' || String(err?.message || err?.data?.error).includes('belongs to') || String(err?.message || err?.data?.error).includes('assigned to another age group')) {
         const rawGroup = apiErr.childAgeGroup || err?.data?.childAgeGroup || '';
         const cleanGroup = rawGroup.startsWith('Ages') ? rawGroup.replace(/^Ages\s*/i, '') : rawGroup;
         const assigned = Array.isArray(apiErr.assignedAgeGroups)
@@ -4352,7 +4434,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         {isAlreadyPickedUp
                           ? (lookedUpChild.pickedUpAt ? `Picked up at ${formatTime(lookedUpChild.pickedUpAt)}` : 'Child has been released to guardian')
                           : isAlreadyCheckedIn 
-                          ? `Checked in at ${formatTime(lookedUpChild.checkedInAt || lookedUpChild.checked_in_at || new Date().toISOString())}` 
+                          ? `Checked in at ${formatTime(lookedUpChild.checkedInAt || lookedUpChild.checked_in_at || new Date().toISOString())}. No further check-in is required.` 
                           : isIneligible
                           ? `Current status is ${rawStatus.replace(/_/g, ' ').toUpperCase()}. Check-in is not permitted.`
                           : 'Ready for processing'}
@@ -4373,26 +4455,15 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         <span>SCAN ANOTHER PASS</span>
                       </button>
                     ) : isAlreadyCheckedIn ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handlePreparePickup(lookedUpChild.id || lookedUpChild.childId || lookedUpChild.entryId)}
-                          data-component-version="volunteer-child-proceed-pickup-action"
-                          className="w-full bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#18181B] font-bold tracking-widest py-3 rounded-md text-xs transition-all shadow-xs uppercase cursor-pointer flex items-center justify-center space-x-2"
-                        >
-                          <LogOut className="h-4 w-4" />
-                          <span>PROCEED TO PICKUP / RELEASE</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleResetScannerState}
-                          data-component-version="volunteer-scan-another-action-v4"
-                          className="w-full border border-gray-300 dark:border-[#302E29] hover:border-gray-400 dark:hover:border-[#3A3835] text-gray-800 dark:text-[#F0EBE3] font-bold tracking-widest py-3 rounded-md text-xs transition-all uppercase text-center cursor-pointer block bg-white dark:bg-[#21211E] hover:bg-gray-50 dark:hover:bg-[#262520] flex items-center justify-center space-x-2"
-                        >
-                          <QrCode className="h-4 w-4 text-gray-600 dark:text-[#B8B0A5] stroke-[2]" />
-                          <span>SCAN ANOTHER PASS</span>
-                        </button>
-                      </>
+                      <button
+                        type="button"
+                        onClick={handleResetScannerState}
+                        data-component-version="volunteer-scan-another-action-v4"
+                        className="w-full bg-[#C59B27] hover:bg-[#A47E1F] text-white dark:text-[#18181B] font-bold tracking-widest py-3 rounded-md text-xs transition-all shadow-xs uppercase cursor-pointer flex items-center justify-center space-x-2"
+                      >
+                        <QrCode className="h-4 w-4" />
+                        <span>SCAN ANOTHER PASS</span>
+                      </button>
                     ) : isIneligible ? (
                       <button
                         type="button"
