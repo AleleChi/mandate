@@ -138,7 +138,8 @@ export default function EventTeamTab({ eventId = 'event-ga-2026', focusedAssignm
     const query = memberSearch.toLowerCase().trim();
     const name = (m.full_name || '').toLowerCase();
     const email = (m.email || '').toLowerCase();
-    return name.includes(query) || email.includes(query);
+    const phone = (m.phone || '').toLowerCase();
+    return name.includes(query) || email.includes(query) || phone.includes(query);
   });
 
   const toggleMemberSelection = (memberId: string) => {
@@ -240,7 +241,7 @@ export default function EventTeamTab({ eventId = 'event-ga-2026', focusedAssignm
     }
   };
 
-  const fetchEligibleMembers = async () => {
+  const fetchEligibleMembers = async (searchQuery = memberSearch) => {
     try {
       const token = safeStorage.getItem('koinonia_token');
       const headers: Record<string, string> = {
@@ -251,15 +252,15 @@ export default function EventTeamTab({ eventId = 'event-ga-2026', focusedAssignm
       }
 
       const queryParams = new URLSearchParams({
-        query: memberSearch,
-        limit: '50'
+        query: searchQuery.trim(),
+        limit: '500'
       });
 
       const res = await fetch(buildApiUrl(`/api/admin/duty/events/${eventId}/eligible-team-members?${queryParams.toString()}`), { headers });
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
-          setEligibleMembers(data.items || []);
+          setEligibleMembers(data.items || data.members || []);
         }
       }
     } catch (err) {
@@ -295,9 +296,11 @@ export default function EventTeamTab({ eventId = 'event-ga-2026', focusedAssignm
   }, [eventId, filterRole, filterStatus, teamSearch]);
 
   useEffect(() => {
-    if (showAddAssignModal) {
-      fetchEligibleMembers();
-    }
+    if (!showAddAssignModal) return;
+    const timer = setTimeout(() => {
+      fetchEligibleMembers(memberSearch);
+    }, 250);
+    return () => clearTimeout(timer);
   }, [showAddAssignModal, memberSearch, eventId]);
 
   const openAddModal = () => {
@@ -322,6 +325,7 @@ export default function EventTeamTab({ eventId = 'event-ga-2026', focusedAssignm
     setFormNote('');
     setFormError(null);
     setShowAddAssignModal(true);
+    fetchEligibleMembers('');
   };
 
   const openEditModal = (assignment: EventDutyAssignmentItem) => {
@@ -1026,7 +1030,7 @@ export default function EventTeamTab({ eventId = 'event-ga-2026', focusedAssignm
                                     {m.full_name || m.email}
                                   </div>
                                   <div className="text-[11px] text-zinc-500 dark:text-[#B8B0A5] truncate">
-                                    {m.email}{m.user_role === 'volunteer' || m.role === 'volunteer' ? ' • Volunteer' : ''}
+                                    {m.email}{m.phone ? ` • ${m.phone}` : ''}{m.is_koinonia_worker ? ' • Staff worker' : (m.user_role === 'volunteer' || m.role === 'volunteer' ? ' • Volunteer' : '')}
                                   </div>
                                 </div>
                               </div>
