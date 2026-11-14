@@ -49,6 +49,7 @@ const AdminForgotPasswordView = React.lazy(() => import('./views/admin/AdminForg
 const AdminResetPasswordView = React.lazy(() => import('./views/admin/AdminResetPasswordView').then(m => ({ default: m.AdminResetPasswordView })));
 const AdminOverviewView = React.lazy(() => import('./views/admin/AdminOverviewView').then(m => ({ default: m.AdminOverviewView })));
 const AdminAcceptInviteView = React.lazy(() => import('./views/admin/AdminAcceptInviteView').then(m => ({ default: m.AdminAcceptInviteView })));
+const VolunteerAcceptInviteView = React.lazy(() => import('./views/volunteer/VolunteerAcceptInviteView').then(m => ({ default: m.VolunteerAcceptInviteView })));
 const TeamAlertsView = React.lazy(() => import('./views/admin/TeamAlertsView').then(m => ({ default: m.TeamAlertsView })));
 import { Seo } from './components/common/Seo';
 import { LegalPagesView } from './views/LegalPagesView';
@@ -173,6 +174,12 @@ const getSeoPropsForRoute = (route: string) => {
   }
 
   // Volunteer Routes
+  if (cleanRoute === '/volunteer/accept-invite') {
+    return {
+      title: 'Accept Volunteer Invitation | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
   if (cleanRoute === '/volunteer/sign-in') {
     return {
       title: 'Volunteer Sign In | Koinonia Children and Teens',
@@ -1608,6 +1615,8 @@ export default function App() {
             }}
           />
         );
+      case '/volunteer/accept-invite':
+        return <VolunteerAcceptInviteView onNavigate={navigate} />;
       case '/admin/accept-invite':
         return <AdminAcceptInviteView onNavigate={navigate} />;
       case '/admin/sign-in':

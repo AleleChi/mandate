@@ -78,6 +78,7 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
   const [assignedAgeGroups, setAssignedAgeGroups] = useState<string[]>([]);
   const [submittingReview, setSubmittingReview] = useState(false);
   const [submittingAssignment, setSubmittingAssignment] = useState(false);
+  const [resendingVolId, setResendingVolId] = useState<string | null>(null);
   const [resendingEmail, setResendingEmail] = useState(false);
   const [showMoreActions, setShowMoreActions] = useState(false);
 
@@ -140,11 +141,52 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
 
   const statusLabel = (vol: any): string => {
     if (!vol) return 'Unknown';
+    if (vol.password_hash === 'invited_pending' || vol.passwordHash === 'invited_pending' || vol.invitationStatus === 'pending' || vol.isPendingInvite) {
+      return 'Invitation pending';
+    }
     const s = typeof vol.status === 'string' ? vol.status.toLowerCase() : '';
     if (s === 'approved' || s === 'active') return 'Active';
     if (s === 'pending_review' || s === 'pending') return 'Awaiting review';
     if (s === 'rejected' || s === 'declined') return 'Not approved';
     return vol.status || 'Unknown';
+  };
+
+  const formatLastSent = (dateStr: string | null | undefined): string => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+  };
+
+  const handleResendInvite = async (vol: any) => {
+    if (!vol) return;
+    const targetUserId = vol.userId || vol.user_id;
+    if (!targetUserId) {
+      showError('Resend Failed', 'No user account found for this volunteer.');
+      return;
+    }
+    setResendingVolId(vol.id);
+    try {
+      const res = await api.admin.resendInvite({ userId: targetUserId });
+      if (res.success || res.emailDelivered) {
+        showSuccess('Invitation Sent', `Fresh invitation sent to ${vol.email || 'volunteer'}.`);
+        await fetchVolunteers();
+      } else {
+        showError('Delivery Failed', res.message || res.error || 'Failed to deliver invitation email.');
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Resend Failed', parsed.message || 'Failed to resend invitation.');
+    } finally {
+      setResendingVolId(null);
+    }
   };
 
   const getInitials = (name: any): string => {
@@ -2017,15 +2059,41 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
 
                         {/* Status */}
                         <td className="p-4">
-                          <span className={`text-xs font-medium ${
-                            (vol.status === 'approved' || vol.status === 'active')
-                              ? 'text-emerald-700 dark:text-emerald-400'
-                              : (vol.status === 'pending_review' || vol.status === 'pending')
-                              ? 'text-amber-700 dark:text-amber-400'
-                              : 'text-zinc-500 dark:text-[#7A7570]'
-                          }`}>
-                            {sLabel}
-                          </span>
+                          {vol.password_hash === 'invited_pending' || vol.passwordHash === 'invited_pending' || vol.invitationStatus === 'pending' || vol.isPendingInvite ? (
+                            <div className="space-y-1">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200/60 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/40">
+                                <Mail className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                                Invitation pending
+                              </span>
+                              {(vol.invitationLastSentAt || vol.createdAt || vol.created_at) && (
+                                <span className="block text-[10px] text-zinc-500 dark:text-[#7A7570]">
+                                  Last sent: {formatLastSent(vol.invitationLastSentAt || vol.createdAt || vol.created_at)}
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                disabled={resendingVolId === vol.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleResendInvite(vol);
+                                }}
+                                className="inline-flex items-center gap-1 text-[11px] font-medium text-[#C59B27] hover:text-[#9A781E] hover:underline disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none cursor-pointer pt-0.5"
+                              >
+                                <RotateCcw className={`w-3 h-3 ${resendingVolId === vol.id ? 'animate-spin' : ''}`} />
+                                {resendingVolId === vol.id ? 'Sending...' : 'Resend invitation'}
+                              </button>
+                            </div>
+                          ) : (
+                            <span className={`text-xs font-medium ${
+                              (vol.status === 'approved' || vol.status === 'active')
+                                ? 'text-emerald-700 dark:text-emerald-400'
+                                : (vol.status === 'pending_review' || vol.status === 'pending')
+                                ? 'text-amber-700 dark:text-amber-400'
+                                : 'text-zinc-500 dark:text-[#7A7570]'
+                            }`}>
+                              {sLabel}
+                            </span>
+                          )}
                         </td>
 
                         {/* Action */}

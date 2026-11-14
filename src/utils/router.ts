@@ -45,6 +45,7 @@ export const isValidRoute = (route: string): boolean => {
     '/admin/settings',
     '/admin/applications',
     '/admin/accept-invite',
+    '/volunteer/accept-invite',
     '/admin/wristbands',
     '/admin/wristbands/inventory',
     '/volunteer/wristbands',

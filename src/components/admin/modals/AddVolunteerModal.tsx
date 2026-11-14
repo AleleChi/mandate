@@ -123,7 +123,11 @@ export const AddVolunteerModal: React.FC<AddVolunteerModalProps> = ({ isOpen, on
 
       const res = await api.admin.addVolunteer(payload);
       if (res.success) {
-        showSuccess('Volunteer Created', res.message || 'Volunteer record created successfully.');
+        if (res.invitationSent === false && res.code === 'EMAIL_DELIVERY_FAILED') {
+          showError('Email Delivery Notice', res.message || 'Volunteer created, but the invitation email could not be delivered. You can resend it from the Volunteers list.');
+        } else {
+          showSuccess('Volunteer Created', res.message || 'Volunteer record created successfully.');
+        }
         resetForm();
         onSuccess(res.volunteerId);
         onClose();
