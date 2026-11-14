@@ -34,6 +34,7 @@ import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { AddParentModal } from '../../components/admin/modals/AddParentModal';
 import { ChildReviewModal } from '../../components/admin/modals/ChildReviewModal';
+import { ChildOperationalDetailModal } from '../../components/admin/modals/ChildOperationalDetailModal';
 import { 
   BulkChildEventActionModal, 
   BulkChildActionType, 
@@ -419,6 +420,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
 
   // Quick View Modal
   const [quickViewParent, setQuickViewParent] = useState<any | null>(null);
+  const [viewingOperationalChild, setViewingOperationalChild] = useState<any | null>(null);
 
   // Overflow menu state per row
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
@@ -701,8 +703,7 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
   };
 
   const handleViewModalChild = (child: any) => {
-    setQuickViewParent(null);
-    onNavigate(`/admin/children/${child.id}` as AppRoute);
+    setViewingOperationalChild(child);
   };
 
   const handleRestoreModalChildConfirm = async () => {
@@ -2213,6 +2214,17 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       {customAmountModal}
       {confirmSelectAllModal}
       {quickViewModal}
+      {viewingOperationalChild && (
+        <ChildOperationalDetailModal
+          isOpen={Boolean(viewingOperationalChild)}
+          childId={viewingOperationalChild.id}
+          applicationId={viewingOperationalChild.applicationId}
+          childSummary={viewingOperationalChild}
+          parentProfile={quickViewParent}
+          activeEvent={activeEvent}
+          onClose={() => setViewingOperationalChild(null)}
+        />
+      )}
       {resendInviteModal}
       {singleRegEmailModal}
       {bulkRegEmailModal}
