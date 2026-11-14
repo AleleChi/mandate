@@ -42,11 +42,13 @@ export async function issueOrReplaceInviteToken(params: {
   userId: string;
   revokedByUserId?: string | null;
   nowStr?: string;
-}): Promise<{ rawToken: string; expiresAt: string; nowStr: string }> {
+  tokenType?: string;
+}): Promise<{ rawToken: string; expiresAt: string; nowStr: string; tokenId: string }> {
   const nowStr = params.nowStr || new Date().toISOString();
   const rawToken = crypto.randomBytes(32).toString('hex');
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
   const tokenId = crypto.randomUUID();
+  const tokenType = params.tokenType || 'admin_invite';
   const expiryHours = parseInt(process.env.INVITATION_EXPIRY_HOURS || '72', 10);
   const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString();
 
@@ -57,11 +59,11 @@ export async function issueOrReplaceInviteToken(params: {
 
   await execute(
     `INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
-     VALUES (?, ?, ?, 'admin_invite', ?, ?)`,
-    [tokenId, params.userId, tokenHash, expiresAt, nowStr]
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [tokenId, params.userId, tokenHash, tokenType, expiresAt, nowStr]
   );
 
-  return { rawToken, expiresAt, nowStr };
+  return { rawToken, expiresAt, nowStr, tokenId };
 }
 
 /**

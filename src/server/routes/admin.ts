@@ -573,6 +573,16 @@ router.get('/verify-invite', async (req, res) => {
       });
     }
 
+    // Check token type (backward compatible with admin_invite, volunteer_invite, account_invite)
+    const validInviteTypes = ['admin_invite', 'volunteer_invite', 'account_invite'];
+    if (dbToken.token_type && !validInviteTypes.includes(dbToken.token_type)) {
+      return res.status(400).json({
+        valid: false,
+        code: 'INVITATION_INVALID',
+        message: 'Invitation record not found or link is broken.'
+      });
+    }
+
     // Check revoked / replaced
     if (dbToken.revoked_at || dbToken.used_at === 'replaced' || dbToken.used_at === 'revoked') {
       return res.status(400).json({
@@ -661,6 +671,11 @@ router.post('/accept-invite', async (req, res) => {
     );
 
     if (!dbToken) {
+      return res.status(400).json({ success: false, code: 'INVITATION_INVALID', error: 'This invitation link is invalid.' });
+    }
+
+    const validInviteTypes = ['admin_invite', 'volunteer_invite', 'account_invite'];
+    if (dbToken.token_type && !validInviteTypes.includes(dbToken.token_type)) {
       return res.status(400).json({ success: false, code: 'INVITATION_INVALID', error: 'This invitation link is invalid.' });
     }
 
@@ -1207,19 +1222,38 @@ router.post('/invites/resend', authMiddleware, async (req: AuthenticatedRequest,
 
     let rawToken = '';
     let expiresAt = '';
+    let issuedTokenId = '';
+    const tokenType = targetUser.role === 'volunteer' ? 'volunteer_invite' : 'admin_invite';
 
     // Atomic DB operations for resend
     await transaction(async () => {
       const issued = await issueOrReplaceInviteToken({
         userId: targetUser.id,
         revokedByUserId: req.user!.id,
-        nowStr
+        nowStr,
+        tokenType
       });
       rawToken = issued.rawToken;
       expiresAt = issued.expiresAt;
+      issuedTokenId = issued.tokenId;
     });
 
-    const inviteLink = buildPublicAppUrl(`/admin/accept-invite?token=${rawToken}`);
+    // Assert persistence
+    if (issuedTokenId) {
+      const persistedToken = await queryOne(
+        'SELECT id FROM auth_tokens WHERE id = ?',
+        [issuedTokenId]
+      );
+      if (!persistedToken) {
+        throw new Error('Failed to persist resent invitation token.');
+      }
+    }
+
+    const inviteRoute = targetUser.role === 'volunteer'
+      ? `/volunteer/accept-invite?token=${encodeURIComponent(rawToken)}`
+      : `/admin/accept-invite?token=${encodeURIComponent(rawToken)}`;
+
+    const inviteLink = buildPublicAppUrl(inviteRoute);
 
     let emailResult: any = null;
     let emailDeliveryError: string | null = null;
@@ -1475,6 +1509,7 @@ router.post('/parents', authMiddleware, async (req: AuthenticatedRequest, res: R
 
     let inviteTokenRaw = '';
     let inviteExpiresAt = '';
+    let issuedTokenId = '';
 
     await transaction(async () => {
       // 1. Create User
@@ -1833,6 +1868,7 @@ router.post('/volunteers', authMiddleware, async (req: AuthenticatedRequest, res
 
     let inviteTokenRaw = '';
     let inviteExpiresAt = '';
+    let issuedTokenId = '';
 
     await transaction(async () => {
       // 1. Create User
@@ -1867,52 +1903,96 @@ router.post('/volunteers', authMiddleware, async (req: AuthenticatedRequest, res
         } catch (e) {}
       }
 
-      // 4. Send invitation token
+      // 4. Centralized token issuance
       if (sendInvitation) {
-        inviteTokenRaw = crypto.randomBytes(32).toString('hex');
-        const tokenHash = crypto.createHash('sha256').update(inviteTokenRaw).digest('hex');
-        const tokenId = crypto.randomUUID();
-        const expiryHours = parseInt(process.env.INVITATION_EXPIRY_HOURS || '72', 10);
-        inviteExpiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString();
-
-        await execute(`
-          INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
-          VALUES (?, ?, ?, 'admin_invite', ?, ?)
-        `, [tokenId, volUserId, tokenHash, inviteExpiresAt, nowStr]);
+        const tokenRes = await issueOrReplaceInviteToken({
+          userId: volUserId,
+          revokedByUserId: req.user.id,
+          nowStr,
+          tokenType: 'volunteer_invite'
+        });
+        inviteTokenRaw = tokenRes.rawToken;
+        inviteExpiresAt = tokenRes.expiresAt;
+        issuedTokenId = tokenRes.tokenId;
       }
-
-      // 5. Audit log
-      try {
-        await execute(`
-          INSERT INTO audit_logs (id, user_id, action, target_type, target_id, details, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `, [
-          crypto.randomUUID(), req.user.id, 'ADMIN_ADD_VOLUNTEER', 'volunteer_profile', volProfileId,
-          JSON.stringify({ fullName, email: cleanEmail, sendInvitation: !!sendInvitation }), nowStr
-        ]);
-      } catch (e) {}
     });
 
+    // 5. Audit log outside the core creation transaction to avoid Postgres transaction aborts
+    try {
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, 'ADMIN_ADD_VOLUNTEER', 'volunteer_profile', ?, ?, ?)
+      `, [
+        crypto.randomUUID(), req.user.id, req.user.role || 'admin', volProfileId,
+        JSON.stringify({ fullName, email: cleanEmail, sendInvitation: !!sendInvitation }), nowStr
+      ]);
+    } catch (e) {
+      console.warn('[admin.addVolunteer] Failed to write audit log:', e);
+    }
+
+    // 6. Assert token persistence immediately before sending email
+    if (sendInvitation && issuedTokenId) {
+      const persistedToken = await queryOne(
+        'SELECT id, user_id, token_hash, token_type, expires_at, used_at, revoked_at FROM auth_tokens WHERE id = ?',
+        [issuedTokenId]
+      );
+      if (!persistedToken) {
+        console.error('[admin.addVolunteer] Token was not persisted in auth_tokens table:', issuedTokenId);
+        throw new Error('Failed to persist volunteer invitation token.');
+      }
+    }
+
+    let emailDelivered = false;
+    let emailErrorMsg: string | null = null;
+
     if (sendInvitation && inviteTokenRaw) {
-      const inviteLink = buildPublicAppUrl(`/admin/accept-invite?token=${inviteTokenRaw}`);
-      await sendInvitationEmail({
-        recipientEmail: cleanEmail,
-        recipientName: fullName,
-        preferredName,
-        firstName,
-        role: 'volunteer',
-        inviteLink,
-        expiresAt: inviteExpiresAt
-      }).catch(err => {
+      const inviteLink = buildPublicAppUrl(`/volunteer/accept-invite?token=${encodeURIComponent(inviteTokenRaw)}`);
+      try {
+        const emailResult = await sendInvitationEmail({
+          recipientEmail: cleanEmail,
+          recipientName: fullName,
+          preferredName,
+          firstName,
+          role: 'volunteer',
+          inviteLink,
+          expiresAt: inviteExpiresAt
+        });
+        emailDelivered = Boolean(emailResult && emailResult.success);
+        if (!emailDelivered) {
+          emailErrorMsg = emailResult?.error || 'Email delivery failed';
+        }
+      } catch (err: any) {
         console.error('Error sending volunteer invitation email:', err);
+        emailErrorMsg = err?.message || 'Email delivery failed';
+      }
+    }
+
+    if (sendInvitation) {
+      if (!emailDelivered) {
+        return res.json({
+          success: true,
+          invitationSent: false,
+          code: 'EMAIL_DELIVERY_FAILED',
+          message: 'Volunteer created, but the invitation email could not be delivered. You can resend it.',
+          error: emailErrorMsg || undefined,
+          volunteerId: volProfileId,
+          userId: volUserId
+        });
+      }
+
+      return res.json({
+        success: true,
+        invitationSent: true,
+        message: `Volunteer record created and invitation sent to ${cleanEmail}.`,
+        volunteerId: volProfileId,
+        userId: volUserId
       });
     }
 
     return res.json({
       success: true,
-      message: sendInvitation
-        ? `Volunteer record created and invitation sent to ${cleanEmail}.`
-        : `Volunteer record created successfully without active login account.`,
+      invitationSent: false,
+      message: 'Volunteer record created successfully without active login account.',
       volunteerId: volProfileId,
       userId: volUserId
     });
@@ -10728,6 +10808,7 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
         v.*,
         u.email,
         u.role,
+        u.password_hash,
         u.email_verified,
         m.secure_url as photo_url
       FROM volunteer_profiles v
@@ -10759,6 +10840,27 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
       }
     }
 
+    // Query recent invitation tokens for volunteers with pending invitations
+    const pendingUserIds = rows
+      .filter((v: any) => v.password_hash === 'invited_pending')
+      .map((v: any) => v.user_id);
+    const lastInviteMap = new Map<string, string>();
+    if (pendingUserIds.length > 0) {
+      const pPlaceholders = pendingUserIds.map(() => '?').join(',');
+      const recentTokens = await query<{ user_id: string; created_at: string }>(
+        `SELECT user_id, created_at 
+         FROM auth_tokens 
+         WHERE user_id IN (${pPlaceholders})
+         ORDER BY created_at DESC`,
+        pendingUserIds
+      );
+      for (const t of recentTokens) {
+        if (!lastInviteMap.has(t.user_id)) {
+          lastInviteMap.set(t.user_id, t.created_at);
+        }
+      }
+    }
+
     const formatted = rows.map((v: any) => ({
       id: v.id,
       userId: v.user_id,
@@ -10773,12 +10875,16 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
       servingExperience: v.serving_experience,
       note: v.note,
       status: v.status || 'pending_review',
+      isPendingInvite: v.password_hash === 'invited_pending',
+      invitationStatus: v.password_hash === 'invited_pending' ? 'pending' : 'active',
+      invitationLastSentAt: lastInviteMap.get(v.user_id) || v.created_at,
       photoFileId: v.photo_file_id,
       photoUrl: v.photo_url || (v.photo_file_id ? (String(v.photo_file_id).startsWith('http') || String(v.photo_file_id).startsWith('/') ? String(v.photo_file_id) : `/api/media/files/${v.photo_file_id}`) : ''),
       createdAt: v.created_at,
       updatedAt: v.updated_at,
       email: v.email,
       role: v.role,
+      passwordHash: v.password_hash,
       emailVerified: v.email_verified === 1 || v.email_verified === true || v.email_verified === '1',
       isDeleted: false,
       deletedAt: null,
