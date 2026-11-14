@@ -6,6 +6,7 @@ import { authMiddleware, optionalAuthMiddleware, AuthenticatedRequest } from '..
 import { sendWebPush } from '../services/push';
 import { broadcastSSEEvent } from '../services/sse';
 import { parseAssignedAgeGroups, normalizeAgeGroup } from '../services/eligibilityService';
+import { validateVolunteerDutyWindow } from '../services/volunteerDutyWindowService';
 
 const dutyRouter = Router();
 
@@ -1253,9 +1254,13 @@ adminDutyRouter.post('/events/:eventId/duty-assignments', async (req: Authentica
     }
 
     const { eventId } = req.params;
-    const { userId, responsibilityKey, teamKey, assignmentLevel, status, startsAt, endsAt, note, assignedLocationId, assignedAgeGroups } = req.body;
+    const { userId, userIds: rawUserIds, responsibilityKey, teamKey, assignmentLevel, status, startsAt, endsAt, note, assignedLocationId, assignedAgeGroups } = req.body;
 
-    if (!userId || !responsibilityKey || !startsAt || !endsAt) {
+    const userIdsList: string[] = Array.isArray(rawUserIds) && rawUserIds.length > 0
+      ? Array.from(new Set(rawUserIds.filter(Boolean)))
+      : (userId ? [userId] : []);
+
+    if (userIdsList.length === 0 || !responsibilityKey || !startsAt || !endsAt) {
       return res.status(400).json({ error: 'Missing required assignment fields' });
     }
 
@@ -1265,21 +1270,6 @@ adminDutyRouter.post('/events/:eventId/duty-assignments', async (req: Authentica
 
     const parsedGroups = parseAssignedAgeGroups(assignedAgeGroups).map(normalizeAgeGroup).filter(Boolean);
     const assignedAgeGroupsStr = JSON.stringify(parsedGroups);
-
-    const targetUser = await queryOne(`
-      SELECT u.id, u.role, u.status as user_status, vp.id as volunteer_profile_id, vp.status as volunteer_status
-      FROM users u
-      LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
-      WHERE u.id = ?
-    `, [userId]);
-
-    if (!targetUser || targetUser.user_status === 'inactive' || targetUser.user_status === 'suspended') {
-      return res.status(400).json({ error: 'Selected user is inactive or does not exist' });
-    }
-
-    if (!targetUser.volunteer_profile_id || !['approved', 'active'].includes(targetUser.volunteer_status)) {
-      return res.status(400).json({ error: 'Selected user does not have an approved volunteer profile' });
-    }
 
     if (assignedLocationId) {
       const loc = await queryOne('SELECT id, name, capacity, volunteer_capacity FROM event_locations WHERE id = ? AND event_id = ?', [assignedLocationId, eventId]);
@@ -1291,10 +1281,10 @@ adminDutyRouter.post('/events/:eventId/duty-assignments', async (req: Authentica
           const countRow = await queryOne(`
             SELECT COUNT(DISTINCT user_id) as count
             FROM event_duty_assignments
-            WHERE event_id = ? AND assigned_location_id = ? AND status NOT IN ('cancelled', 'ended') AND user_id != ?
-          `, [eventId, assignedLocationId, userId]);
+            WHERE event_id = ? AND assigned_location_id = ? AND status NOT IN ('cancelled', 'ended')
+          `, [eventId, assignedLocationId]);
           const currentCount = Number(countRow?.count || 0);
-          if (currentCount + 1 > effectiveCap) {
+          if (currentCount + userIdsList.length > effectiveCap) {
             return res.status(400).json({
               error: `Location capacity reached for ${loc.name}. Maximum volunteer capacity is ${effectiveCap}.`
             });
@@ -1304,101 +1294,116 @@ adminDutyRouter.post('/events/:eventId/duty-assignments', async (req: Authentica
     }
 
     const now = new Date().toISOString();
+    const createdAssignmentIds: string[] = [];
 
-    // Check for existing active or scheduled assignment for this user in this event (duplicate protection)
-    const existingAssignment = await queryOne(`
-      SELECT id FROM event_duty_assignments
-      WHERE event_id = ? AND user_id = ? AND status NOT IN ('cancelled', 'ended')
-      LIMIT 1
-    `, [eventId, userId]);
+    for (const targetUserId of userIdsList) {
+      const targetUser = await queryOne(`
+        SELECT u.id, u.role, u.status as user_status, vp.id as volunteer_profile_id, vp.status as volunteer_status
+        FROM users u
+        LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
+        WHERE u.id = ?
+      `, [targetUserId]);
 
-    let assignmentId: string;
+      if (!targetUser || targetUser.user_status === 'inactive' || targetUser.user_status === 'suspended') {
+        continue;
+      }
 
-    if (existingAssignment) {
-      assignmentId = existingAssignment.id;
-      await execute(`
-        UPDATE event_duty_assignments
-        SET responsibility_key = ?,
-            team_key = ?,
-            assignment_level = ?,
-            status = ?,
-            starts_at = ?,
-            ends_at = ?,
-            note = ?,
-            assigned_by = ?,
-            assigned_location_id = ?,
-            assigned_age_groups = ?,
-            updated_at = ?
-        WHERE id = ?
-      `, [
-        responsibilityKey,
-        teamKey || null,
-        assignmentLevel || 'primary',
-        status || 'scheduled',
-        startsAt,
-        endsAt,
-        note || null,
-        req.user.id,
-        assignedLocationId || null,
-        assignedAgeGroupsStr,
-        now,
-        assignmentId
-      ]);
-    } else {
-      assignmentId = `assign-${crypto.randomBytes(8).toString('hex')}`;
-      await execute(`
-        INSERT INTO event_duty_assignments (
-          id, event_id, user_id, responsibility_key, team_key, assignment_level, status, starts_at, ends_at, note, assigned_by, assigned_location_id, assigned_age_groups, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        assignmentId, eventId, userId, responsibilityKey, teamKey || null, assignmentLevel || 'primary', status || 'scheduled', startsAt, endsAt, note || null, req.user.id, assignedLocationId || null, assignedAgeGroupsStr, now, now
-      ]);
+      if (!targetUser.volunteer_profile_id || !['approved', 'active'].includes(targetUser.volunteer_status)) {
+        continue;
+      }
+
+      // Check for existing active or scheduled assignment for this user in this event (duplicate protection)
+      const existingAssignment = await queryOne(`
+        SELECT id FROM event_duty_assignments
+        WHERE event_id = ? AND user_id = ? AND status NOT IN ('cancelled', 'ended')
+        LIMIT 1
+      `, [eventId, targetUserId]);
+
+      let assignmentId: string;
+
+      if (existingAssignment) {
+        assignmentId = existingAssignment.id;
+        await execute(`
+          UPDATE event_duty_assignments
+          SET responsibility_key = ?,
+              team_key = ?,
+              assignment_level = ?,
+              status = ?,
+              starts_at = ?,
+              ends_at = ?,
+              note = ?,
+              assigned_by = ?,
+              assigned_location_id = ?,
+              assigned_age_groups = ?,
+              updated_at = ?
+          WHERE id = ?
+        `, [
+          responsibilityKey,
+          teamKey || null,
+          assignmentLevel || 'primary',
+          status || 'scheduled',
+          startsAt,
+          endsAt,
+          note || null,
+          req.user.id,
+          assignedLocationId || null,
+          assignedAgeGroupsStr,
+          now,
+          assignmentId
+        ]);
+      } else {
+        assignmentId = `assign-${crypto.randomBytes(8).toString('hex')}`;
+        await execute(`
+          INSERT INTO event_duty_assignments (
+            id, event_id, user_id, responsibility_key, team_key, assignment_level, status, starts_at, ends_at, note, assigned_by, assigned_location_id, assigned_age_groups, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          assignmentId, eventId, targetUserId, responsibilityKey, teamKey || null, assignmentLevel || 'primary', status || 'scheduled', startsAt, endsAt, note || null, req.user.id, assignedLocationId || null, assignedAgeGroupsStr, now, now
+        ]);
+      }
+
+      createdAssignmentIds.push(assignmentId);
+
+      // Send notification to volunteer
+      try {
+        const notifId = `notif-${crypto.randomBytes(8).toString('hex')}`;
+        const friendlyResponsibility = responsibilityKey.replace('_', ' ');
+        await execute(`
+          INSERT INTO notifications (
+            id, title, message, type, audience_role, audience_scope, event_id, created_by_user_id, created_at, priority
+          ) VALUES (?, ?, ?, 'info', 'volunteer', 'user', ?, ?, ?, 'high')
+        `, [
+          notifId,
+          'New Event Duty Assignment',
+          `You have been assigned as "${friendlyResponsibility}" for the upcoming event. Please review and start duty when shift starts.`,
+          eventId,
+          req.user.id,
+          now
+        ]);
+      } catch (notifErr) {
+        console.error('[Duty Assignment] Non-blocking notification insert failed:', notifErr);
+      }
+
+      // Async push notification
+      sendWebPush(targetUserId, {
+        title: 'New Duty Assignment',
+        body: `You are assigned as ${responsibilityKey.replace('_', ' ')}. Please complete your device readiness check.`
+      }).catch(err => console.error('[Duty Assignment] Failed to send assignment push:', err));
+
+      // SSE update
+      broadcastSSEEvent('assignment_updated', { assignmentId, action: existingAssignment ? 'update' : 'create' });
     }
 
-    // Send notification to volunteer
-    try {
-      const notifId = `notif-${crypto.randomBytes(8).toString('hex')}`;
-      const friendlyResponsibility = responsibilityKey.replace('_', ' ');
-      await execute(`
-        INSERT INTO notifications (
-          id, title, message, type, audience_role, audience_scope, event_id, created_by_user_id, created_at, priority
-        ) VALUES (?, ?, ?, 'info', 'volunteer', 'user', ?, ?, ?, 'high')
-      `, [
-        notifId,
-        'New Event Duty Assignment',
-        `You have been assigned as "${friendlyResponsibility}" for the upcoming event. Please review and start duty when shift starts.`,
-        eventId,
-        req.user.id,
-        now
-      ]);
-    } catch (notifErr) {
-      console.error('[Duty Assignment] Non-blocking notification insert failed:', notifErr);
+    if (createdAssignmentIds.length === 0) {
+      return res.status(400).json({ error: 'Selected user(s) are inactive or lack an approved volunteer profile.' });
     }
-
-    // Async push notification
-    sendWebPush(userId, {
-      title: 'New Duty Assignment',
-      body: `You are assigned as ${responsibilityKey.replace('_', ' ')}. Please complete your device readiness check.`
-    }).catch(err => console.error('[Duty Assignment] Failed to send assignment push:', err));
-
-    // Change history log
-    try {
-      const historyId = `history-${crypto.randomBytes(8).toString('hex')}`;
-      await execute(`
-        INSERT INTO event_routing_change_history (id, event_id, user_id, action, target_type, target_id, details, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [historyId, eventId, req.user.id, existingAssignment ? 'assignment_updated' : 'assignment_created', 'assignment', assignmentId, `Assigned user ${userId} to responsibility ${responsibilityKey}`, now]);
-    } catch (historyErr) {
-      console.error('[Duty Assignment] Non-blocking change history log failed:', historyErr);
-    }
-
-    // SSE update
-    broadcastSSEEvent('assignment_updated', { assignmentId, action: existingAssignment ? 'update' : 'create' });
 
     return res.json({
       success: true,
-      assignmentId,
-      message: existingAssignment ? 'Event duty assignment updated successfully' : 'Event duty assignment created successfully'
+      assignmentId: createdAssignmentIds[0],
+      assignmentIds: createdAssignmentIds,
+      count: createdAssignmentIds.length,
+      message: 'Event duty assignment(s) saved successfully'
     });
   } catch (err: any) {
     console.error('Error creating assignment:', err);
@@ -2818,13 +2823,13 @@ export async function resolveUserDutyLocation(userId: string, eventId?: string |
 
     // Check user's duty assignment for the current event
     const assignment = await queryOne(`
-      SELECT a.id as assignment_id, a.responsibility_key, a.team_key as assignment_team, a.assigned_location_id, a.status as assignment_status,
+      SELECT a.id as assignment_id, a.responsibility_key, a.team_key as assignment_team, a.assigned_location_id, a.assigned_age_groups, a.status as assignment_status,
              a.starts_at, a.ends_at,
              el.id as location_id, el.name, el.location_type, el.instructions, el.age_group_key, el.team_key as location_team,
              el.short_name, el.description
       FROM event_duty_assignments a
-      JOIN event_locations el ON a.assigned_location_id = el.id
-      WHERE a.user_id = ? AND a.event_id = ? AND a.status NOT IN ('cancelled', 'ended') AND el.is_active = 1 AND el.archived_at IS NULL
+      LEFT JOIN event_locations el ON a.assigned_location_id = el.id AND el.is_active = 1 AND el.archived_at IS NULL
+      WHERE a.user_id = ? AND a.event_id = ? AND a.status NOT IN ('cancelled', 'ended')
       ORDER BY CASE WHEN a.status = 'on_duty' THEN 1 WHEN a.status = 'available' THEN 2 WHEN a.status = 'scheduled' THEN 3 ELSE 4 END, a.updated_at DESC
       LIMIT 1
     `, [userId, resolvedEventId]);
@@ -2856,10 +2861,13 @@ export async function resolveUserDutyLocation(userId: string, eventId?: string |
       return pathParts.join(' › ');
     };
 
-    const activePres = await queryOne(
+    const activePres = assignment.location_id ? await queryOne(
       'SELECT started_at FROM event_duty_location_presence WHERE user_id = ? AND event_location_id = ? AND ended_at IS NULL AND event_id = ? LIMIT 1',
       [userId, assignment.location_id, resolvedEventId]
-    );
+    ) : null;
+
+    // Parse canonical volunteer assigned age groups
+    const parsedAgeGroups = parseAssignedAgeGroups(assignment.assigned_age_groups).map(normalizeAgeGroup).filter(Boolean);
 
     // Format responsibility: e.g. "room_support" -> "Room support"
     const rawResp = (assignment.responsibility_key || 'Room support').trim();
@@ -2902,11 +2910,15 @@ export async function resolveUserDutyLocation(userId: string, eventId?: string |
 
     return {
       id: assignment.assignment_id,
-      locationId: assignment.location_id,
-      name: assignment.name,
-      type: assignment.location_type,
-      ageGroup: assignment.age_group_key,
-      ageGroupKey: assignment.age_group_key,
+      locationId: assignment.location_id || assignment.assigned_location_id || null,
+      name: assignment.name || (assignment.assigned_location_id ? 'Assigned Location' : 'General / Central Command'),
+      locationName: assignment.name || (assignment.assigned_location_id ? 'Assigned Location' : 'General / Central Command'),
+      type: assignment.location_type || 'general',
+      locationAgeGroup: assignment.age_group_key || null,
+      ageGroup: parsedAgeGroups.length > 0 ? parsedAgeGroups.map((g: string) => `Ages ${g}`).join(', ') : (assignment.age_group_key || null),
+      ageGroupKey: parsedAgeGroups.length > 0 ? parsedAgeGroups.join(', ') : (assignment.age_group_key || null),
+      assignedAgeGroups: parsedAgeGroups,
+      rawAssignedAgeGroups: assignment.assigned_age_groups,
       team: assignment.location_team || assignment.assignment_team,
       teamKey: assignment.location_team || assignment.assignment_team,
       responsibility: formattedResp,
@@ -2920,9 +2932,10 @@ export async function resolveUserDutyLocation(userId: string, eventId?: string |
       description: assignment.description,
       source: 'admin',
       isAssignedByAdmin: true,
+      hasAssignedLocation: !!(assignment.location_id || assignment.assigned_location_id),
       isPresent: !!activePres,
       presentSince: activePres ? activePres.started_at : null,
-      pathLabel: getFullPath(assignment.location_id)
+      pathLabel: assignment.location_id ? getFullPath(assignment.location_id) : 'General'
     };
   } catch (err) {
     console.error('Error resolving user duty location:', err);
@@ -3134,29 +3147,61 @@ dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Resp
       return res.status(400).json({ success: false, error: 'The selected location is invalid or no longer active.' });
     }
 
+    // Validate duty window before allowing volunteer presence registration (Sections 11, 20, 22)
+    const dutyWindow = await validateVolunteerDutyWindow({
+      userId,
+      userRole: req.user?.role,
+      eventId: currentEventId,
+      operationType: 'general'
+    });
+
+    if (!dutyWindow.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: dutyWindow.code || 'DUTY_INACTIVE',
+        code: dutyWindow.code || 'DUTY_INACTIVE',
+        message: dutyWindow.message,
+        startsAt: dutyWindow.dutyStartsAt,
+        endsAt: dutyWindow.dutyEndsAt,
+        dutyWindow
+      });
+    }
+
     // Backend verification: User MUST have an active or scheduled duty assignment for the current event
-    const userAssignments = await query(`
+    const allUserAssignments = await query(`
       SELECT a.*, el.name as assigned_location_name
       FROM event_duty_assignments a
-      JOIN event_locations el ON a.assigned_location_id = el.id
-      WHERE a.user_id = ? AND a.event_id = ? AND a.status NOT IN ('cancelled', 'ended') AND a.assigned_location_id IS NOT NULL AND a.assigned_location_id != ''
+      LEFT JOIN event_locations el ON a.assigned_location_id = el.id
+      WHERE a.user_id = ? AND a.event_id = ? AND a.status NOT IN ('cancelled', 'ended')
     `, [userId, currentEventId]);
 
-    if (!userAssignments || userAssignments.length === 0) {
+    if (!allUserAssignments || allUserAssignments.length === 0) {
       return res.status(403).json({
         success: false,
         error: 'no_assignment',
-        message: "You don't have a duty location assigned yet."
+        code: 'ASSIGNMENT_MISSING',
+        message: "We couldn't find your duty assignment. Please ask your team lead to confirm your location."
+      });
+    }
+
+    const userAssignmentsWithLoc = allUserAssignments.filter((a: any) => a.assigned_location_id && a.assigned_location_id.trim() !== '');
+    if (userAssignmentsWithLoc.length === 0) {
+      return res.status(403).json({
+        success: false,
+        error: 'location_missing',
+        code: 'LOCATION_MISSING',
+        message: 'Your assignment does not have a duty location yet. Please contact your team lead.'
       });
     }
 
     // Check if any assignment matches the resolved location
-    const matchingAssignment = userAssignments.find((a: any) => a.assigned_location_id === resolvedLocationId);
+    const matchingAssignment = userAssignmentsWithLoc.find((a: any) => a.assigned_location_id === resolvedLocationId);
     if (!matchingAssignment) {
-      const assignedName = userAssignments[0]?.assigned_location_name || 'your assigned location';
+      const assignedName = userAssignmentsWithLoc[0]?.assigned_location_name || 'your assigned location';
       return res.status(403).json({
         success: false,
         error: 'assigned_elsewhere',
+        code: 'ASSIGNED_ELSEWHERE',
         assignedLocationName: assignedName,
         message: `You're assigned to ${assignedName}. You can only report for duty at your assigned location.`
       });
@@ -3169,17 +3214,25 @@ dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Resp
       ORDER BY started_at DESC LIMIT 1
     `, [userId, resolvedLocationId, currentEventId]);
 
+    const parsedGroups = matchingAssignment.assigned_age_groups
+      ? parseAssignedAgeGroups(matchingAssignment.assigned_age_groups).map(normalizeAgeGroup).filter(Boolean)
+      : [];
+    const ageGroupLabel = parsedGroups.length > 0 ? parsedGroups.map((g: string) => `Ages ${g}`).join(', ') : loc.age_group_key;
+
     if (existingPresence) {
       return res.json({
         success: true,
         alreadyPresent: true,
+        message: `You're already on duty at ${loc.name}.`,
         presence: {
           id: existingPresence.id,
           locationId: resolvedLocationId,
           name: loc.name,
+          locationName: loc.name,
           type: loc.location_type,
-          ageGroup: loc.age_group_key,
-          ageGroupKey: loc.age_group_key,
+          ageGroup: ageGroupLabel,
+          ageGroupKey: parsedGroups.length > 0 ? parsedGroups.join(', ') : loc.age_group_key,
+          assignedAgeGroups: parsedGroups,
           team: loc.team_key,
           teamKey: loc.team_key,
           instructions: loc.instructions,
@@ -3222,9 +3275,11 @@ dutyRouter.post('/current-location', async (req: AuthenticatedRequest, res: Resp
         id: presenceId,
         locationId: resolvedLocationId,
         name: loc.name,
+        locationName: loc.name,
         type: loc.location_type,
-        ageGroup: loc.age_group_key,
-        ageGroupKey: loc.age_group_key,
+        ageGroup: ageGroupLabel,
+        ageGroupKey: parsedGroups.length > 0 ? parsedGroups.join(', ') : loc.age_group_key,
+        assignedAgeGroups: parsedGroups,
         team: loc.team_key,
         teamKey: loc.team_key,
         instructions: loc.instructions,

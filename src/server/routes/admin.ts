@@ -16081,23 +16081,27 @@ router.get('/events/:eventId/locations/:locationId/coverage', authMiddleware, as
 
     // Active present responders (from both volunteer_profiles and parent_profiles)
     const activePresence = await query(`
-      SELECT p.*, u.role, COALESCE(vp.full_name, pr.full_name, u.email) as full_name, COALESCE(vp.phone, pr.phone_number) as phone_number
+      SELECT p.*, u.role, COALESCE(vp.full_name, pr.full_name, u.email) as full_name, COALESCE(vp.phone, pr.phone_number) as phone_number,
+             a.responsibility_key, a.assigned_age_groups, a.status as assignment_status
       FROM event_duty_location_presence p
       JOIN users u ON p.user_id = u.id
       LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
       LEFT JOIN parent_profiles pr ON u.id = pr.user_id
+      LEFT JOIN event_duty_assignments a ON a.user_id = p.user_id AND a.event_id = p.event_id AND a.status != 'cancelled'
       WHERE p.event_location_id = ? AND p.ended_at IS NULL
     `, [locationId]);
 
     // Assigned responders (status != cancelled)
     const assignedResponders = await query(`
-      SELECT a.*, COALESCE(vp.full_name, pr.full_name, u.email) as full_name, u.role,
+      SELECT a.*, COALESCE(vp.full_name, pr.full_name, u.email) as full_name, u.role, u.email,
+             COALESCE(vp.phone, pr.phone_number) as phone_number, vp.is_koinonia_worker,
              (SELECT p2.started_at FROM event_duty_location_presence p2 WHERE p2.user_id = a.user_id AND p2.event_location_id = a.assigned_location_id AND p2.ended_at IS NULL ORDER BY p2.started_at DESC LIMIT 1) as present_since
       FROM event_duty_assignments a
       JOIN users u ON a.user_id = u.id
       LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
       LEFT JOIN parent_profiles pr ON u.id = pr.user_id
       WHERE a.event_id = ? AND a.assigned_location_id = ? AND a.status != 'cancelled'
+      ORDER BY CASE WHEN a.status = 'on_duty' THEN 1 WHEN a.status = 'scheduled' THEN 2 ELSE 3 END, a.starts_at ASC
     `, [eventId, locationId]);
 
     let coverageStatus = 'Not covered';
@@ -16126,18 +16130,29 @@ router.get('/events/:eventId/locations/:locationId/coverage', authMiddleware, as
           role: p.role,
           phone: p.phone_number,
           source: p.source,
-          startedAt: p.started_at
+          startedAt: p.started_at,
+          responsibilityKey: p.responsibility_key,
+          assignedAgeGroups: parseAssignedAgeGroups(p.assigned_age_groups),
+          rawAssignedAgeGroups: p.assigned_age_groups,
+          status: p.assignment_status || 'on_duty'
         })),
         assignedResponders: assignedResponders.map(a => ({
           id: a.id,
           userId: a.user_id,
           fullName: a.full_name,
+          email: a.email,
+          phone: a.phone_number,
           role: a.role,
           responsibilityKey: a.responsibility_key,
+          assignedAgeGroups: parseAssignedAgeGroups(a.assigned_age_groups),
+          rawAssignedAgeGroups: a.assigned_age_groups,
+          status: a.status,
           startsAt: a.starts_at,
           endsAt: a.ends_at,
+          assignedLocationId: a.assigned_location_id,
           isPresent: !!a.present_since,
-          presentSince: a.present_since
+          presentSince: a.present_since,
+          isKoinoniaWorker: a.is_koinonia_worker === 1 || a.is_koinonia_worker === true
         })),
         activeAlertsCount: activeAlerts.length,
         activeAlerts
@@ -16435,26 +16450,85 @@ router.get('/locations/:locationId/coverage', authMiddleware, async (req: Authen
   if (!loc) {
     return res.status(404).json({ success: false, error: 'Location not found' });
   }
+  const eventId = loc.event_id || 'event-ga-2026';
+
   const activePresence = await query(`
-    SELECT p.*, u.role, pr.full_name, pr.phone_number
+    SELECT p.*, u.role, COALESCE(vp.full_name, pr.full_name, u.email) as full_name, COALESCE(vp.phone, pr.phone_number) as phone_number,
+           a.responsibility_key, a.assigned_age_groups, a.status as assignment_status
     FROM event_duty_location_presence p
     JOIN users u ON p.user_id = u.id
-    JOIN parent_profiles pr ON u.id = pr.user_id
+    LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
+    LEFT JOIN parent_profiles pr ON u.id = pr.user_id
+    LEFT JOIN event_duty_assignments a ON a.user_id = p.user_id AND a.event_id = p.event_id AND a.status != 'cancelled'
     WHERE p.event_location_id = ? AND p.ended_at IS NULL
   `, [locationId]);
+
+  const assignedResponders = await query(`
+    SELECT a.*, COALESCE(vp.full_name, pr.full_name, u.email) as full_name, u.role, u.email,
+           COALESCE(vp.phone, pr.phone_number) as phone_number, vp.is_koinonia_worker,
+           (SELECT p2.started_at FROM event_duty_location_presence p2 WHERE p2.user_id = a.user_id AND p2.event_location_id = a.assigned_location_id AND p2.ended_at IS NULL ORDER BY p2.started_at DESC LIMIT 1) as present_since
+    FROM event_duty_assignments a
+    JOIN users u ON a.user_id = u.id
+    LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
+    LEFT JOIN parent_profiles pr ON u.id = pr.user_id
+    WHERE a.event_id = ? AND a.assigned_location_id = ? AND a.status != 'cancelled'
+    ORDER BY CASE WHEN a.status = 'on_duty' THEN 1 WHEN a.status = 'scheduled' THEN 2 ELSE 3 END, a.starts_at ASC
+  `, [eventId, locationId]);
+
+  let coverageStatus = 'Not covered';
+  if (activePresence.length > 0) {
+    coverageStatus = 'Covered';
+  } else if (assignedResponders.length > 0) {
+    coverageStatus = 'Covered with backup only';
+  }
+
+  const activeAlerts = await query(`
+    SELECT id, title, category, severity, status, created_at
+    FROM event_safety_alerts
+    WHERE event_id = ? AND location_id = ? AND status IN ('open', 'acknowledged')
+  `, [eventId, locationId]);
 
   return res.json({
     success: true,
     coverage: {
       locationId,
       locationName: loc.name,
+      coverageStatus,
       activePresence: activePresence.map(p => ({
-        userId: p.user_id, fullName: p.full_name, role: p.role, phone: p.phone_number, startedAt: p.started_at
+        userId: p.user_id,
+        fullName: p.full_name,
+        role: p.role,
+        phone: p.phone_number,
+        source: p.source,
+        startedAt: p.started_at,
+        responsibilityKey: p.responsibility_key,
+        assignedAgeGroups: parseAssignedAgeGroups(p.assigned_age_groups),
+        rawAssignedAgeGroups: p.assigned_age_groups,
+        status: p.assignment_status || 'on_duty'
       })),
-      activeAlerts: []
+      assignedResponders: assignedResponders.map(a => ({
+        id: a.id,
+        userId: a.user_id,
+        fullName: a.full_name,
+        email: a.email,
+        phone: a.phone_number,
+        role: a.role,
+        responsibilityKey: a.responsibility_key,
+        assignedAgeGroups: parseAssignedAgeGroups(a.assigned_age_groups),
+        rawAssignedAgeGroups: a.assigned_age_groups,
+        status: a.status,
+        startsAt: a.starts_at,
+        endsAt: a.ends_at,
+        assignedLocationId: a.assigned_location_id,
+        isPresent: !!a.present_since,
+        presentSince: a.present_since,
+        isKoinoniaWorker: a.is_koinonia_worker === 1 || a.is_koinonia_worker === true
+      })),
+      activeAlertsCount: activeAlerts.length,
+      activeAlerts
     },
     responders: activePresence,
-    alerts: []
+    alerts: activeAlerts
   });
 });
 
