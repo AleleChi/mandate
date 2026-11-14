@@ -17,10 +17,14 @@ import {
   Pause,
   Play,
   UserCheck,
-  LogOut
+  LogOut,
+  Edit3,
+  Trash2
 } from 'lucide-react';
 import { safeStorage } from '../../../utils/storage';
 import { buildApiUrl } from '../../../utils/urlHelper';
+import VolunteerDutyAssignmentModal from './VolunteerDutyAssignmentModal';
+import { formatRoleLabel, formatShiftWindow } from './EventTeamAssignmentCard';
 
 interface AdminEventLocationsTabProps {
   eventId?: string;
@@ -117,6 +121,12 @@ export default function AdminEventLocationsTab({
   const [batchQRMap, setBatchQRMap] = useState<Record<string, string>>({});
   const [batchLoading, setBatchLoading] = useState<boolean>(false);
 
+  // In-place Volunteer Assignment Modal State (Sections 4-6)
+  const [showAssignModal, setShowAssignModal] = useState<boolean>(false);
+  const [editingAssignment, setEditingAssignment] = useState<any | null>(null);
+  const [assignmentToDelete, setAssignmentToDelete] = useState<any | null>(null);
+  const [isDeletingAssignment, setIsDeletingAssignment] = useState<boolean>(false);
+
   // External trigger for Create Location
   const lastCreateTrigger = useRef(triggerCreateLocation);
   useEffect(() => {
@@ -162,6 +172,24 @@ export default function AdminEventLocationsTab({
     } catch {
       return isoString;
     }
+  };
+
+  const formatServingAgeGroups = (groups?: string[] | string | null): string => {
+    if (!groups) return 'General (All ages)';
+    let arr: string[] = [];
+    if (Array.isArray(groups)) {
+      arr = groups;
+    } else if (typeof groups === 'string') {
+      try {
+        const p = JSON.parse(groups);
+        if (Array.isArray(p)) arr = p;
+        else arr = [groups];
+      } catch {
+        arr = groups.split(',').map(s => s.trim()).filter(Boolean);
+      }
+    }
+    if (arr.length === 0) return 'General (All ages)';
+    return arr.map(g => g.startsWith('Ages ') ? g : `Ages ${g}`).join(', ');
   };
 
   const formatTypeLabel = (type: string) => {
@@ -530,6 +558,48 @@ export default function AdminEventLocationsTab({
     }
   };
 
+  // Location-centric assignment saved callback
+  const handleAssignmentSaved = async () => {
+    setSuccess('Duty assignments updated.');
+    setTimeout(() => setSuccess(null), 3500);
+    if (selectedLocation) {
+      await fetchLocationCoverage(selectedLocation.id);
+    }
+    await fetchLocations();
+  };
+
+  // Remove / Cancel duty assignment from location
+  const handleRemoveAssignment = async (assignmentId: string) => {
+    try {
+      setIsDeletingAssignment(true);
+      const token = safeStorage.getItem('koinonia_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(buildApiUrl(`/api/admin/duty/events/${eventId}/duty-assignments/${assignmentId}`), {
+        method: 'DELETE',
+        headers
+      });
+
+      if (res.ok) {
+        setSuccess('Duty assignment removed.');
+        setTimeout(() => setSuccess(null), 3500);
+        setAssignmentToDelete(null);
+        if (selectedLocation) {
+          await fetchLocationCoverage(selectedLocation.id);
+        }
+        await fetchLocations();
+      } else {
+        setError('Failed to remove duty assignment.');
+      }
+    } catch (err) {
+      console.error('Error removing duty assignment:', err);
+      setError('Failed to remove duty assignment.');
+    } finally {
+      setIsDeletingAssignment(false);
+    }
+  };
+
   // Download QR Code Image
   const handleDownloadQR = () => {
     if (!qrDataUrl || !selectedLocation) return;
@@ -833,11 +903,23 @@ export default function AdminEventLocationsTab({
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <button
                     type="button"
+                    onClick={() => {
+                      setEditingAssignment(null);
+                      setShowAssignModal(true);
+                    }}
+                    className="px-3.5 py-1.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white text-xs font-semibold rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 shadow-2xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Assign volunteers</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => openEditModal(selectedLocation)}
                     className="px-3 py-1.5 bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] hover:bg-zinc-50 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#B8B0A5] text-xs font-semibold rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 shadow-2xs"
                   >
                     <Edit className="w-3.5 h-3.5 text-zinc-500 dark:text-[#7A7570]" />
-                    <span>Edit</span>
+                    <span>Edit location</span>
                   </button>
 
                   <button
@@ -873,37 +955,166 @@ export default function AdminEventLocationsTab({
                 </div>
               </div>
 
-              {/* STAFF ON-DUTY SECTION (Section 14) */}
+              {/* TEAM AT THIS LOCATION SECTION (Sections 3, 13, 14, 15, 16) */}
               <div className="space-y-4 pb-5 border-b border-[#EAE8E1] dark:border-[#302E29]">
-                {/* On duty now */}
-                <div className="space-y-2.5">
-                  <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between">
+                  <div>
                     <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-zinc-700 dark:text-[#F0EBE3]">
-                      On duty now
+                      Team at this location
                     </h3>
-                    <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 px-2 py-0.5 rounded-full">
-                      {onDutyResponders.length} present
+                    <p className="text-[11px] text-zinc-500 dark:text-[#7A7570] font-sans">
+                      {assignedResponders.length} assigned · {onDutyResponders.length} on duty
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingAssignment(null);
+                      setShowAssignModal(true);
+                    }}
+                    className="px-3 py-1.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-semibold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center space-x-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ Assign volunteers</span>
+                  </button>
+                </div>
+
+                {/* Assigned List */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-sans font-bold uppercase tracking-wider text-zinc-500 dark:text-[#A8A29E]">
+                      Assigned ({assignedResponders.length})
                     </span>
                   </div>
 
                   {coverageLoading ? (
                     <div className="p-4 text-center text-xs text-zinc-400 dark:text-[#7A7570] space-y-1">
                       <RefreshCw className="w-3.5 h-3.5 animate-spin mx-auto text-[#C59B27]" />
-                      <span>Checking presence…</span>
+                      <span>Loading team coverage…</span>
                     </div>
-                  ) : onDutyResponders.length === 0 ? (
+                  ) : assignedResponders.length === 0 ? (
+                    <div className="p-4 bg-[#FAF9F6] dark:bg-[#1D1D1A] rounded-xl border border-[#EAE8E1] dark:border-[#302E29] text-center space-y-2">
+                      <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] font-sans italic">
+                        No volunteers currently assigned to this location.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingAssignment(null);
+                          setShowAssignModal(true);
+                        }}
+                        className="text-xs text-[#C59B27] hover:text-[#A47E1F] font-sans font-medium inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Assign volunteers now</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-zinc-100 dark:divide-[#302E29] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl overflow-hidden">
+                      {assignedResponders.map((resp: any) => (
+                        <div
+                          key={resp.id || resp.userId}
+                          className="p-3 sm:p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs font-sans bg-white dark:bg-[#1D1D1A] hover:bg-zinc-50/50 dark:hover:bg-[#262520] transition-colors"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center space-x-2">
+                              <span className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">
+                                {resp.fullName || 'Volunteer'}
+                              </span>
+                              {resp.isKoinoniaWorker && (
+                                <span className="text-[10px] bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 px-1.5 py-0.2 rounded font-medium">
+                                  Staff
+                                </span>
+                              )}
+                              <span
+                                className={`text-[10px] font-medium px-2 py-0.2 rounded-full ${
+                                  resp.isPresent
+                                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
+                                    : 'bg-zinc-100 text-zinc-600 dark:bg-[#262520] dark:text-[#A8A29E]'
+                                }`}
+                              >
+                                {resp.isPresent ? 'On duty' : (resp.status ? (resp.status.charAt(0).toUpperCase() + resp.status.slice(1).replace('_', ' ')) : 'Scheduled')}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-zinc-500 dark:text-[#7A7570] flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                              <span className="font-medium text-[#A47E1F] dark:text-amber-400">
+                                {formatServingAgeGroups(resp.assignedAgeGroups || resp.rawAssignedAgeGroups)}
+                              </span>
+                              <span>·</span>
+                              <span>{formatRoleLabel(resp.responsibilityKey)}</span>
+                              <span>·</span>
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-zinc-400" />
+                                <span>{formatShiftWindow(resp.startsAt, resp.endsAt)}</span>
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center space-x-2 self-end sm:self-auto shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingAssignment(resp);
+                                setShowAssignModal(true);
+                              }}
+                              className="px-2.5 py-1 text-zinc-600 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white bg-zinc-100 dark:bg-[#262520] hover:bg-zinc-200 dark:hover:bg-[#302E29] rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center space-x-1"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setAssignmentToDelete(resp)}
+                              className="px-2.5 py-1 text-rose-600 hover:text-rose-800 dark:text-rose-400 dark:hover:text-rose-300 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-950/40 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center space-x-1"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>Remove</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* On duty now */}
+                <div className="space-y-2 pt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-sans font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                      On duty now ({onDutyResponders.length})
+                    </span>
+                  </div>
+
+                  {onDutyResponders.length === 0 ? (
                     <p className="text-xs text-zinc-500 dark:text-[#B8B0A5] font-sans italic bg-[#FAF9F6] dark:bg-[#1D1D1A] p-3 rounded-xl border border-[#EAE8E1] dark:border-[#302E29]">
-                      No volunteers currently on duty at this location.
+                      No volunteers currently active on duty at this location.
                     </p>
                   ) : (
                     <div className="divide-y divide-zinc-100 dark:divide-[#302E29] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl overflow-hidden">
                       {onDutyResponders.map((resp: any) => (
-                        <div key={resp.id || resp.userId} className="p-3 flex items-center justify-between text-xs font-sans bg-white dark:bg-[#1D1D1A] hover:bg-zinc-50/50 dark:hover:bg-[#262520]">
-                          <div>
-                            <div className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">{resp.fullName || 'Volunteer'}</div>
-                            <div className="text-[11px] text-zinc-500 dark:text-[#7A7570] flex items-center space-x-1 pt-0.5">
-                              <Clock className="w-3 h-3 text-zinc-400 dark:text-[#7A7570]" />
-                              <span>Reported {formatDisplayTime(resp.startedAt)}</span>
+                        <div
+                          key={resp.id || resp.userId}
+                          className="p-3 flex items-center justify-between text-xs font-sans bg-white dark:bg-[#1D1D1A] hover:bg-zinc-50/50 dark:hover:bg-[#262520]"
+                        >
+                          <div className="space-y-0.5">
+                            <div className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">
+                              {resp.fullName || 'Volunteer'}
+                            </div>
+                            <div className="text-[11px] text-zinc-500 dark:text-[#7A7570] flex items-center space-x-2">
+                              <span>{formatRoleLabel(resp.responsibilityKey || resp.role)}</span>
+                              {resp.assignedAgeGroups && (
+                                <>
+                                  <span>·</span>
+                                  <span className="text-[#A47E1F] dark:text-amber-400">
+                                    {formatServingAgeGroups(resp.assignedAgeGroups)}
+                                  </span>
+                                </>
+                              )}
+                              <span>·</span>
+                              <span className="flex items-center space-x-1">
+                                <Clock className="w-3 h-3 text-zinc-400 dark:text-[#7A7570]" />
+                                <span>Reported {formatDisplayTime(resp.startedAt)}</span>
+                              </span>
                             </div>
                           </div>
                           <button
@@ -922,13 +1133,10 @@ export default function AdminEventLocationsTab({
                 </div>
 
                 {/* Still expected */}
-                <div className="space-y-2.5 pt-2">
+                <div className="space-y-2 pt-2">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-zinc-700 dark:text-[#F0EBE3]">
-                      Still expected
-                    </h3>
-                    <span className="text-xs font-medium text-zinc-500 dark:text-[#B8B0A5] bg-zinc-100 dark:bg-[#262520] px-2 py-0.5 rounded-full">
-                      {stillExpectedResponders.length} expected
+                    <span className="text-[11px] font-sans font-bold uppercase tracking-wider text-zinc-500 dark:text-[#A8A29E]">
+                      Still expected ({stillExpectedResponders.length})
                     </span>
                   </div>
 
@@ -939,10 +1147,17 @@ export default function AdminEventLocationsTab({
                   ) : (
                     <div className="divide-y divide-zinc-100 dark:divide-[#302E29] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl overflow-hidden">
                       {stillExpectedResponders.map((resp: any) => (
-                        <div key={resp.id || resp.userId} className="p-3 flex items-center justify-between text-xs font-sans bg-white dark:bg-[#1D1D1A] hover:bg-zinc-50/50 dark:hover:bg-[#262520]">
+                        <div
+                          key={resp.id || resp.userId}
+                          className="p-3 flex items-center justify-between text-xs font-sans bg-white dark:bg-[#1D1D1A] hover:bg-zinc-50/50 dark:hover:bg-[#262520]"
+                        >
                           <div>
-                            <div className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">{resp.fullName || 'Volunteer'}</div>
-                            <div className="text-[11px] text-zinc-500 dark:text-[#7A7570]">{resp.responsibilityKey || 'General Response'}</div>
+                            <div className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">
+                              {resp.fullName || 'Volunteer'}
+                            </div>
+                            <div className="text-[11px] text-zinc-500 dark:text-[#7A7570]">
+                              {formatRoleLabel(resp.responsibilityKey)} · {formatServingAgeGroups(resp.assignedAgeGroups || resp.rawAssignedAgeGroups)}
+                            </div>
                           </div>
                           <button
                             type="button"
@@ -960,13 +1175,13 @@ export default function AdminEventLocationsTab({
                 </div>
 
                 {onNavigateTab && (
-                  <div className="pt-1 text-right">
+                  <div className="pt-2 text-right">
                     <button
                       type="button"
                       onClick={() => onNavigateTab('event_team')}
                       className="text-xs text-[#C59B27] hover:text-[#A47E1F] dark:text-amber-400 dark:hover:text-amber-300 font-sans font-medium transition-colors cursor-pointer"
                     >
-                      Manage team assignments ›
+                      View all assignments ›
                     </button>
                   </div>
                 )}
@@ -1466,6 +1681,66 @@ export default function AdminEventLocationsTab({
               >
                 <Printer className="w-4 h-4" />
                 <span>Print all posters</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 6: VOLUNTEER DUTY ASSIGNMENT (IN-PLACE LOCATION ASSIGNMENT / EDIT) */}
+      <VolunteerDutyAssignmentModal
+        isOpen={showAssignModal}
+        onClose={() => {
+          setShowAssignModal(false);
+          setEditingAssignment(null);
+        }}
+        onSaved={handleAssignmentSaved}
+        eventId={eventId}
+        locations={locations}
+        prefilledLocationId={selectedLocation?.id || null}
+        editingAssignment={editingAssignment}
+      />
+
+      {/* MODAL 7: CONFIRM REMOVE ASSIGNMENT */}
+      {assignmentToDelete && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-3xl p-6 w-full max-w-sm shadow-xl space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+              <Trash2 className="w-5 h-5" />
+            </div>
+
+            <div className="space-y-1.5">
+              <h4 className="text-xl font-bold font-sans text-[#18181B] dark:text-[#F0EBE3] tracking-tight">
+                Remove duty assignment?
+              </h4>
+              <p className="text-xs text-zinc-600 dark:text-[#B8B0A5] font-sans leading-relaxed">
+                Remove <span className="font-semibold text-zinc-900 dark:text-white">{assignmentToDelete.fullName}</span> from this location assignment? This will release their scheduled duty for this location.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-100 dark:border-[#302E29]">
+              <button
+                type="button"
+                onClick={() => setAssignmentToDelete(null)}
+                disabled={isDeletingAssignment}
+                className="py-2.5 bg-zinc-100 dark:bg-[#262520] hover:bg-zinc-200 dark:hover:bg-[#2A2926] text-zinc-700 dark:text-[#B8B0A5] rounded-xl text-xs font-semibold cursor-pointer transition-all disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRemoveAssignment(assignmentToDelete.id)}
+                disabled={isDeletingAssignment}
+                className="py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold cursor-pointer transition-all shadow-xs flex items-center justify-center space-x-1 disabled:opacity-50"
+              >
+                {isDeletingAssignment ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Removing…</span>
+                  </>
+                ) : (
+                  <span>Confirm Remove</span>
+                )}
               </button>
             </div>
           </div>

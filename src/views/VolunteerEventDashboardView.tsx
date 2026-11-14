@@ -748,7 +748,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   };
 
   const handleConfirmArrival = async () => {
-    if (!currentDutyLocation?.locationId && !currentDutyLocation?.id) return;
+    if (!currentDutyLocation?.locationId && !currentDutyLocation?.id) {
+      showError("Location not assigned", "Your assignment does not have a duty location yet. Please contact your team lead.");
+      return;
+    }
     setPresenceActionLoading(true);
     try {
       const locId = currentDutyLocation.locationId || currentDutyLocation.id;
@@ -757,17 +760,21 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         body: JSON.stringify({ locationId: locId, source: 'manual' })
       });
       if (data && data.success) {
-        showSuccess("Checked in for duty", `Confirmed at ${data.presence?.name || currentDutyLocation.name}`);
+        const title = data.alreadyPresent ? "Already on duty" : "Checked in for duty";
+        const msg = data.message || `Confirmed at ${data.presence?.name || currentDutyLocation.name}`;
+        showSuccess(title, msg);
         setCurrentDutyLocation(data.presence || {
           ...currentDutyLocation,
           isPresent: true,
-          presentSince: new Date().toISOString()
+          presentSince: data.presence?.reported_at || data.presence?.presentSince || new Date().toISOString()
         });
       } else {
-        showError("Check-in error", data?.error || "Could not confirm presence.");
+        const errorMsg = data?.message || data?.error || "Could not confirm presence.";
+        showError("Check-in notice", errorMsg);
       }
     } catch (err: any) {
-      showError("Check-in error", err?.message || "Failed to confirm duty presence.");
+      const errMsg = err?.message || "Failed to confirm duty presence.";
+      showError("Check-in notice", errMsg);
     } finally {
       setPresenceActionLoading(false);
     }
@@ -887,18 +894,24 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           source: 'scanned'
         })
       });
-      if (data && data.success && data.presence) {
-        showSuccess('Arrival Confirmed', `Duty location set to: ${data.presence.name}`);
-        setCurrentDutyLocation(data.presence);
+      if (data && data.success) {
+        const title = data.alreadyPresent ? 'Already on duty' : 'Arrival Confirmed';
+        const msg = data.message || `Duty location set to: ${data.presence?.name || scannedLocationData?.location?.name}`;
+        showSuccess(title, msg);
+        if (data.presence) {
+          setCurrentDutyLocation(data.presence);
+        }
         setScannedLocationData(null);
         setScannedTokenStr(null);
         setShowLocationQRModal(false);
       } else {
-        showError('Action Failed', data?.error || 'Could not register presence.');
+        const errorMsg = data?.message || data?.error || 'Could not register presence.';
+        showError('Check-in notice', errorMsg);
       }
     } catch (err: any) {
       console.error('Error confirming arrival:', err);
-      showError('Error', 'Failed to register duty location arrival.');
+      const errMsg = err?.message || 'Failed to register duty location arrival.';
+      showError('Check-in notice', errMsg);
     } finally {
       setPresenceActionLoading(false);
     }
@@ -3709,16 +3722,29 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="text-base sm:text-lg font-serif font-semibold text-stone-900 dark:text-[#F0EBE3] tracking-tight">
-                          {currentDutyLocation.name || currentDutyLocation.locationName}
+                          {currentDutyLocation.hasAssignedLocation === false
+                            ? 'No duty location assigned yet'
+                            : (currentDutyLocation.name || currentDutyLocation.locationName || 'Assigned Location')}
                         </div>
-                        {(currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey || currentDutyLocation.team || currentDutyLocation.teamKey) && (
-                          <div className="text-xs text-stone-500 dark:text-[#B8B0A5] font-sans mt-0.5">
-                            {[
-                              cleanAgeGroup(currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey) || currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey,
-                              currentDutyLocation.team || currentDutyLocation.teamKey
-                            ].filter(Boolean).join(' · ')}
-                          </div>
-                        )}
+                        <div className="text-xs text-stone-500 dark:text-[#B8B0A5] font-sans mt-0.5 flex flex-wrap items-center gap-1.5">
+                          <span className="font-medium text-stone-700 dark:text-[#E0DBD3]">
+                            {currentDutyLocation.role || currentDutyLocation.responsibilityKey || currentDutyLocation.responsibility || 'Volunteer'}
+                          </span>
+                          <span>•</span>
+                          <span className="text-[#A47E1F] dark:text-[#D4AF37] font-medium">
+                            {Array.isArray(currentDutyLocation.assignedAgeGroups) && currentDutyLocation.assignedAgeGroups.length > 0
+                              ? currentDutyLocation.assignedAgeGroups.map((g: string) => g.startsWith('Ages') ? g : `Ages ${g}`).join(', ')
+                              : (cleanAgeGroup(currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey) || currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey || 'All Ages')}
+                          </span>
+                          {currentDutyLocation.shiftStartsAt && currentDutyLocation.shiftEndsAt && (
+                            <>
+                              <span>•</span>
+                              <span className="text-stone-500 dark:text-[#7A7570]">
+                                {new Date(currentDutyLocation.shiftStartsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}–{new Date(currentDutyLocation.shiftEndsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                              </span>
+                            </>
+                          )}
+                        </div>
                       </div>
                       <button
                         type="button"
@@ -3740,14 +3766,23 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   {/* Presence Status & Arrival Confirmation */}
                   {currentDutyLocation.isPresent ? (
                     <div className="pt-2.5 border-t border-stone-100 dark:border-[#302E29] flex items-center justify-between">
-                      <div className="text-xs font-sans text-stone-600 dark:text-[#B8B0A5]">
-                        <span className="font-medium text-[#C59B27] dark:text-[#D4AF37]">On duty</span>
+                      <div className="text-xs font-sans text-stone-600 dark:text-[#B8B0A5] flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 font-semibold text-xs border border-emerald-200 dark:border-emerald-800">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          On duty · {currentDutyLocation.name || 'Location'}
+                        </span>
                         {currentDutyLocation.presentSince && (
                           <span className="text-stone-500 dark:text-[#7A7570]">
-                            {' '}· Since {new Date(currentDutyLocation.presentSince).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                            Reported at {new Date(currentDutyLocation.presentSince).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
                           </span>
                         )}
                       </div>
+                    </div>
+                  ) : currentDutyLocation.hasAssignedLocation === false ? (
+                    <div className="pt-2.5 border-t border-stone-100 dark:border-[#302E29]">
+                      <p className="text-xs text-amber-700 dark:text-amber-400 font-sans">
+                        Your assignment does not have a duty location yet. Please contact your team lead.
+                      </p>
                     </div>
                   ) : (
                     <div className="pt-2.5 border-t border-stone-100 dark:border-[#302E29] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
@@ -3760,8 +3795,17 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         onClick={handleConfirmArrival}
                         className="py-2 px-4 bg-[#C59B27] hover:bg-[#A47E1F] text-white font-sans font-medium text-xs rounded-xl shadow-xs transition-all cursor-pointer shrink-0 disabled:opacity-50 flex items-center justify-center gap-1.5"
                       >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>{presenceActionLoading ? 'Checking in...' : "I'm here"}</span>
+                        {presenceActionLoading ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Checking in...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>I'm here</span>
+                          </>
+                        )}
                       </button>
                     </div>
                   )}
@@ -9081,11 +9125,12 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             <div className="space-y-4 py-1 text-left">
               <div>
                 <h4 className="text-lg font-serif font-bold text-zinc-900">
-                  {currentDutyLocation.name || currentDutyLocation.locationName}
+                  {currentDutyLocation.hasAssignedLocation === false
+                    ? 'No duty location assigned yet'
+                    : (currentDutyLocation.name || currentDutyLocation.locationName || 'Assigned Location')}
                 </h4>
                 <p className="text-xs text-zinc-500 font-sans mt-0.5">
                   {[
-                    currentDutyLocation.ageGroup || currentDutyLocation.ageGroupKey,
                     currentDutyLocation.type || currentDutyLocation.location_type || 'Room',
                     currentDutyLocation.capacity ? `Capacity ${currentDutyLocation.capacity}` : null
                   ].filter(Boolean).join(' · ')}
@@ -9102,6 +9147,20 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               )}
 
               <div className="grid grid-cols-2 gap-3 text-xs font-sans">
+                <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-100">
+                  <div className="text-zinc-400 text-[11px]">Role</div>
+                  <div className="font-medium text-zinc-800 mt-0.5">
+                    {currentDutyLocation.role || currentDutyLocation.responsibilityKey || 'Volunteer'}
+                  </div>
+                </div>
+                <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-100">
+                  <div className="text-zinc-400 text-[11px]">Assigned Age Groups</div>
+                  <div className="font-medium text-zinc-800 mt-0.5">
+                    {Array.isArray(currentDutyLocation.assignedAgeGroups) && currentDutyLocation.assignedAgeGroups.length > 0
+                      ? currentDutyLocation.assignedAgeGroups.join(', ')
+                      : (currentDutyLocation.ageGroup || 'All Ages')}
+                  </div>
+                </div>
                 <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-100">
                   <div className="text-zinc-400 text-[11px]">Assignment</div>
                   <div className="font-medium text-zinc-800 mt-0.5">
