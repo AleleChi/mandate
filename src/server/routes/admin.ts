@@ -16853,6 +16853,12 @@ router.use('/events/:eventId/duty-assignments', (req, res, next) => {
   adminDutyRouter(req, res, next);
 });
 
+// Alias /api/admin/events/:eventId/eligible-team-members to adminDutyRouter
+router.use('/events/:eventId/eligible-team-members', (req, res, next) => {
+  req.url = `/events/${req.params.eventId}/eligible-team-members${req.url === '/' ? '' : req.url}`;
+  adminDutyRouter(req, res, next);
+});
+
 // =========================================================================
 // OPERATIONS ASSISTANT ENDPOINTS (PHASE 1)
 // =========================================================================

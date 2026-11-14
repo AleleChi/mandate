@@ -1765,22 +1765,57 @@ adminDutyRouter.delete('/events/:eventId/alert-routing/:ruleId', async (req: Aut
 adminDutyRouter.get('/events/:eventId/eligible-team-members', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const role = req.user?.role;
-    if (role !== 'admin' && role !== 'super_admin') {
+    if (!role || !['admin', 'super_admin', 'team'].includes(role)) {
       return res.status(403).json({ error: 'Access denied: Admin role required' });
     }
 
     const { eventId } = req.params;
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 25;
+    const rawLimit = req.query.limit !== undefined ? parseInt(req.query.limit as string) : 500;
+    const limit = Math.max(1, Math.min(isNaN(rawLimit) ? 500 : rawLimit, 1000));
     const offset = (page - 1) * limit;
     const queryStr = ((req.query.query as string) || '').trim();
+    const includeAssigned = req.query.includeAssigned === 'true';
 
-    let whereClause = "WHERE (u.status = 'active' OR u.status IS NULL) AND vp.id IS NOT NULL AND vp.status IN ('approved', 'active') AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)";
+    // Canonical active volunteer eligibility:
+    // 1. User must be active (not revoked, suspended, or deactivated)
+    // 2. User must not be pending invitation acceptance
+    // 3. Volunteer profile must exist and have status 'approved' or 'active' (and not 'removed')
+    // 4. Volunteer profile must not be soft-deleted
+    // 5. Unless includeAssigned=true, exclude volunteers already holding a non-cancelled assignment for this specific event
+    let whereClause = `
+      WHERE (u.status = 'active' OR u.status IS NULL)
+        AND (u.status NOT IN ('inactive', 'suspended', 'revoked', 'deactivated'))
+        AND (u.password_hash IS NULL OR u.password_hash != 'invited_pending')
+        AND vp.id IS NOT NULL
+        AND vp.status IN ('approved', 'active')
+        AND (vp.status != 'removed')
+        AND (vp.is_deleted = 0 OR vp.is_deleted IS NULL)
+    `;
     const params: any[] = [];
 
+    if (!includeAssigned) {
+      whereClause += `
+        AND u.id NOT IN (
+          SELECT a.user_id 
+          FROM event_duty_assignments a 
+          WHERE a.event_id = ? AND a.status NOT IN ('cancelled', 'ended')
+        )
+      `;
+      params.push(eventId);
+    }
+
     if (queryStr) {
-      whereClause += ' AND (COALESCE(vp.full_name, u.email) LIKE ? OR u.email LIKE ?)';
-      params.push(`%${queryStr}%`, `%${queryStr}%`);
+      whereClause += `
+        AND (
+          COALESCE(vp.full_name, '') LIKE ? 
+          OR u.email LIKE ? 
+          OR COALESCE(vp.phone, '') LIKE ? 
+          OR COALESCE(vp.whatsapp, '') LIKE ?
+        )
+      `;
+      const pattern = `%${queryStr}%`;
+      params.push(pattern, pattern, pattern, pattern);
     }
 
     const countQuery = `
@@ -1790,11 +1825,22 @@ adminDutyRouter.get('/events/:eventId/eligible-team-members', async (req: Authen
       ${whereClause}
     `;
     const countResult = await queryOne(countQuery, params);
-    const total = countResult?.total || 0;
-    const totalPages = Math.ceil(total / limit);
+    const total = Number(countResult?.total || 0);
+    const totalPages = Math.ceil(total / limit) || 1;
 
     const itemsQuery = `
-      SELECT u.id, vp.full_name, u.email, u.role, u.created_at,
+      SELECT u.id, 
+             u.id as user_id, 
+             vp.full_name, 
+             u.email, 
+             vp.phone,
+             vp.whatsapp,
+             vp.preferred_team,
+             vp.is_koinonia_worker,
+             vp.department,
+             u.role as user_role, 
+             u.role,
+             u.created_at,
              vp.status as volunteer_status,
              (SELECT COUNT(*) FROM event_duty_devices d WHERE d.user_id = u.id AND d.event_id = ?) as device_count,
              (SELECT COUNT(*) FROM event_duty_assignments a WHERE a.user_id = u.id AND a.event_id = ? AND a.status NOT IN ('cancelled', 'ended')) as active_assignments_count
@@ -1810,6 +1856,7 @@ adminDutyRouter.get('/events/:eventId/eligible-team-members', async (req: Authen
     return res.json({
       success: true,
       items: items || [],
+      members: items || [],
       pagination: {
         page,
         limit,
