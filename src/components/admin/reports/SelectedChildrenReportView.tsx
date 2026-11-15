@@ -405,7 +405,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
     overrideAgeGroup?: string,
     overrideExactAge?: string,
     overrideRange?: { minAge: number; maxAge: number } | null,
-    variant: 'standard' | 'qr_register' | 'name_list' = 'qr_register'
+    variant: 'standard' | 'qr_register' | 'name_list' | 'printer_compact' = 'qr_register'
   ) => {
     const queryParams = new URLSearchParams();
     if (eventId) queryParams.append('eventId', eventId);
@@ -434,6 +434,8 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
     queryParams.append('sort', variant === 'name_list' ? 'name_asc' : sortOrder);
     if (variant === 'name_list') {
       queryParams.append('variant', 'name_list');
+    } else if (variant === 'printer_compact') {
+      queryParams.append('variant', 'printer_compact');
     } else {
       queryParams.append('variant', 'qr_register');
     }
@@ -448,7 +450,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
     targetAgeGroup?: string,
     targetExactAge?: string,
     targetRange?: { minAge: number; maxAge: number } | null,
-    variant: 'standard' | 'qr_register' | 'name_list' = 'qr_register'
+    variant: 'standard' | 'qr_register' | 'name_list' | 'printer_compact' = 'qr_register'
   ) => {
     try {
       setDownloadingPdf(true);
@@ -483,7 +485,11 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
       }
 
       if (!filename) {
-        const suffix = variant === 'name_list' ? '-Name-List' : '';
+        const suffix = variant === 'name_list'
+          ? '-Name-List'
+          : variant === 'printer_compact'
+            ? '-Printer-Compact-6.7x1.6'
+            : '';
         if (effectiveExactAge && effectiveExactAge !== 'all') {
           filename = `Koinonia-GA-2026-Selected-Children-Age-${effectiveExactAge}${suffix}.pdf`;
         } else if (effectiveRange) {
@@ -514,8 +520,18 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
           ? `Ages ${effectiveRange.minAge}–${effectiveRange.maxAge}`
           : (effectiveAgeGroup && effectiveAgeGroup !== 'all' ? `Ages ${effectiveAgeGroup}` : 'All');
       showSuccess(
-        variant === 'name_list' ? 'Name List Downloaded' : 'Report Downloaded',
-        `Selected children ${variant === 'name_list' ? 'alphabetical name list ' : 'PDF '}(${label}) ready.`
+        variant === 'name_list'
+          ? 'Name List Downloaded'
+          : variant === 'printer_compact'
+            ? 'Compact Register Downloaded'
+            : 'Report Downloaded',
+        `Selected children ${
+          variant === 'name_list'
+            ? 'alphabetical name list '
+            : variant === 'printer_compact'
+              ? 'printer compact QR register (6.7 × 1.6 in) '
+              : 'PDF '
+        }(${label}) ready.`
       );
     } catch (err: any) {
       console.error(err);
@@ -666,7 +682,7 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
             {/* Restrained compact dropdown with current/name-list, age-group & 2-column exact-age sections */}
             {downloadMenuOpen && (
               <div 
-                className="absolute right-0 mt-1 w-64 max-h-[75vh] overflow-y-auto bg-white dark:bg-[#1E1E1C] border border-stone-200 dark:border-[#33312B] rounded shadow-lg z-50 py-1 text-xs"
+                className="absolute right-0 mt-1 w-72 max-h-[75vh] overflow-y-auto bg-white dark:bg-[#1E1E1C] border border-stone-200 dark:border-[#33312B] rounded shadow-lg z-50 py-1 text-xs"
                 role="menu"
               >
                 <div className="px-3 py-1 text-[10px] font-semibold text-stone-400 uppercase tracking-wider">
@@ -704,6 +720,40 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
                   className="w-full text-left px-3 py-1.5 hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-900 dark:text-[#F0EBE3] font-medium cursor-pointer"
                 >
                   Printable QR register (Ages 2–14)
+                </button>
+
+                <div className="border-t border-stone-100 dark:border-[#2C2A26] my-1" />
+                <div className="px-3 py-1 text-[10px] font-semibold text-stone-400 uppercase tracking-wider">
+                  Printer Format
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleDownloadPdf(undefined, undefined, undefined, 'printer_compact')}
+                  className="w-full text-left px-3 py-1.5 hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-900 dark:text-[#F0EBE3] font-medium flex items-center justify-between cursor-pointer"
+                >
+                  <div>
+                    <div>Printable QR register — Printer Compact</div>
+                    <div className="text-[10px] text-stone-400 font-normal">6.7 × 1.6 in rows</div>
+                  </div>
+                  <span className="text-[10px] text-stone-400 ml-2 shrink-0">
+                    {exactAgeFilter !== 'all'
+                      ? `Age ${exactAgeFilter}`
+                      : customAgeRange
+                        ? `Ages ${customAgeRange.minAge}–${customAgeRange.maxAge}`
+                        : ageGroupFilter !== 'all'
+                          ? `Ages ${ageGroupFilter}`
+                          : 'Ages 2–14'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDownloadPdf('', '', { minAge: 2, maxAge: 14 }, 'printer_compact')}
+                  className="w-full text-left px-3 py-1.5 hover:bg-stone-50 dark:hover:bg-[#282724] text-stone-900 dark:text-[#F0EBE3] font-medium cursor-pointer"
+                >
+                  <div>
+                    <div>Printer compact QR register (Ages 2–14)</div>
+                    <div className="text-[10px] text-stone-400 font-normal">6.7 × 1.6 in rows</div>
+                  </div>
                 </button>
 
                 <div className="border-t border-stone-100 dark:border-[#2C2A26] my-1" />

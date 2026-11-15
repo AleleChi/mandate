@@ -355,6 +355,14 @@
   }
 }
 
+.printer-compact-register-row {
+  width: 6.7in;
+  height: 1.6in;
+  box-sizing: border-box;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
 /* ============================================================================
    KOINONIA ADMIN DARK — SURFACE TOKENS & SCOPED RULES
    ALL rules below are scoped under .admin-shell.
