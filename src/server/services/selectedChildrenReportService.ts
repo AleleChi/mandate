@@ -608,7 +608,7 @@ export function getSelectedChildrenPdfFilename(
   exactAgeFilter?: number | null,
   minAgeFilter?: number | null,
   maxAgeFilter?: number | null,
-  variant: 'standard' | 'qr_register' | 'name_list' = 'qr_register'
+  variant: 'standard' | 'qr_register' | 'name_list' | 'printer_compact' = 'qr_register'
 ): string {
   let eventSlug = 'TGA-2026';
   if (eventTitle && eventTitle.toLowerCase().includes('general assembly')) {
@@ -616,6 +616,27 @@ export function getSelectedChildrenPdfFilename(
     eventSlug = `TGA-${yearMatch ? yearMatch[0] : '2026'}`;
   } else if (eventTitle) {
     eventSlug = eventTitle.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+
+  if (variant === 'printer_compact') {
+    if (exactAgeFilter !== undefined && exactAgeFilter !== null && String(exactAgeFilter).trim() !== '' && String(exactAgeFilter).toLowerCase() !== 'all') {
+      return `${eventSlug}-QR-Register-Age-${exactAgeFilter}-Printer-Compact-6.7x1.6.pdf`;
+    }
+
+    if (minAgeFilter !== undefined && minAgeFilter !== null && maxAgeFilter !== undefined && maxAgeFilter !== null) {
+      if (Number(minAgeFilter) === 2 && Number(maxAgeFilter) === 14) {
+        return `${eventSlug}-QR-Register-Ages-2-14-Printer-Compact-6.7x1.6.pdf`;
+      }
+      return `${eventSlug}-QR-Register-Ages-${minAgeFilter}-${maxAgeFilter}-Printer-Compact-6.7x1.6.pdf`;
+    }
+
+    const normAge = normalizeAgeGroupLabelToRange(ageGroupFilter);
+    if (normAge && normAge.toLowerCase() !== 'all' && normAge.toLowerCase() !== 'all age groups') {
+      const cleanTag = normAge.replace(/[\u2013–—]/g, '-').replace(/\s+/g, '');
+      return `${eventSlug}-QR-Register-Ages-${cleanTag}-Printer-Compact-6.7x1.6.pdf`;
+    }
+
+    return `${eventSlug}-QR-Register-Printer-Compact-6.7x1.6.pdf`;
   }
 
   const prefix = variant === 'name_list'
@@ -1370,6 +1391,363 @@ export async function renderSelectedChildrenNameListPdf(data: SelectedChildrenRe
 }
 
 /**
+ * Generate official Printer Compact Portrait A4 PDF document for Selected Children QR Register.
+ * Each child row has a finished physical size of exactly:
+ *   WIDTH: 6.7 inches (482.4 pt)
+ *   HEIGHT: 1.6 inches (115.2 pt)
+ * High contrast, black on white, scannable QR code (~1.07in / 77pt), canonical pass reference,
+ * parent name/phone, authorized pickup name/phone/relationship, and attendance status.
+ * Complete rows only — never splits a row across pages.
+ */
+export async function renderSelectedChildrenPrinterCompactPdf(data: SelectedChildrenReportData): Promise<Buffer> {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'pt',
+    format: 'a4'
+  });
+
+  // Physical specifications:
+  // A4 dimensions in points: 595.28 pt width x 841.89 pt height
+  // 1 inch = 72 points
+  // Target row outer dimensions: exactly 6.7in x 1.6in = 482.4 pt x 115.2 pt
+  const rowWidth = 482.4;
+  const rowHeight = 115.2;
+  const marginLeft = (595.28 - rowWidth) / 2; // 56.44 pt (centered horizontally)
+  const rowGap = 8;
+  const maxY = 800;
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+  // Determine requested age range boundaries
+  let minAge = 2;
+  let maxAge = 14;
+  let isExactAgeScope = false;
+
+  if (data.filters.exactAge !== null && data.filters.exactAge !== undefined) {
+    minAge = data.filters.exactAge;
+    maxAge = data.filters.exactAge;
+    isExactAgeScope = true;
+  } else if (data.filters.minAge !== null && data.filters.maxAge !== null) {
+    minAge = data.filters.minAge;
+    maxAge = data.filters.maxAge;
+  } else if (data.filters.ageGroup && data.filters.ageGroup.toLowerCase() !== 'all') {
+    const norm = normalizeAgeGroupLabelToRange(data.filters.ageGroup);
+    const foundGroup = CANONICAL_PROGRAMME_AGE_GROUPS.find((g) => g.key === norm);
+    if (foundGroup) {
+      minAge = foundGroup.minAge;
+      maxAge = foundGroup.maxAge;
+    }
+  }
+
+  const rangeDisplay = isExactAgeScope
+    ? `Age ${minAge}`
+    : `Ages ${minAge}–${maxAge}`;
+
+  // Build list of exact ages within the range
+  const ageRangeList: number[] = [];
+  for (let a = minAge; a <= maxAge; a++) {
+    ageRangeList.push(a);
+  }
+
+  // Group children by exact age and sort each exact age alphabetically A-Z (Section 26)
+  const ageToChildrenMap = new Map<number, SelectedChildRecord[]>();
+  for (const a of ageRangeList) {
+    const childrenOfAge = data.filtered.filter((c) => c.age === a);
+    childrenOfAge.sort((aRec, bRec) =>
+      (aRec.fullName || '').trim().toLowerCase().localeCompare(
+        (bRec.fullName || '').trim().toLowerCase(),
+        'en',
+        { sensitivity: 'base' }
+      )
+    );
+    ageToChildrenMap.set(a, childrenOfAge);
+  }
+
+  // Pre-generate QR data URLs for all unique pass references in parallel chunks of 50
+  const qrCache = new Map<string, string>();
+  const distinctRefs = Array.from(
+    new Set(data.filtered.map((c) => c.passReference).filter(Boolean))
+  ) as string[];
+
+  const chunkSize = 50;
+  for (let i = 0; i < distinctRefs.length; i += chunkSize) {
+    const batch = distinctRefs.slice(i, i + chunkSize);
+    await Promise.all(
+      batch.map(async (ref) => {
+        try {
+          const dataUrl = await QRCodeLib.toDataURL(ref, {
+            margin: 1,
+            width: 240,
+            errorCorrectionLevel: 'M',
+            color: { dark: '#000000', light: '#FFFFFF' }
+          });
+          qrCache.set(ref, dataUrl);
+        } catch {
+          // ignore error gracefully
+        }
+      })
+    );
+  }
+
+  const truncateText = (text: string, maxWidth: number): string => {
+    if (!text) return '';
+    if (doc.getTextWidth(text) <= maxWidth) return text;
+    let t = text;
+    while (t.length > 0 && doc.getTextWidth(`${t}…`) > maxWidth) {
+      t = t.slice(0, -1);
+    }
+    return `${t}…`;
+  };
+
+  const drawPageHeader = (ageVal: number, countOfAge: number, isContinuation: boolean = false) => {
+    const headerY = 18;
+
+    // Brand Title Left
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(197, 155, 39); // Koinonia Gold
+    doc.text('KOINONIA CHILDREN & TEENS', marginLeft, headerY + 8);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(82, 82, 91);
+    doc.text((data.event.title || 'THE GENERAL ASSEMBLY 2026').toUpperCase(), marginLeft, headerY + 17);
+
+    // Section Age Title
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(24, 24, 27);
+    const ageTitle = isContinuation ? `AGE ${ageVal} — Continued` : `AGE ${ageVal}`;
+    doc.text(ageTitle, marginLeft, headerY + 29);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(197, 155, 39);
+    doc.text(`${countOfAge} SELECTED ${countOfAge === 1 ? 'CHILD' : 'CHILDREN'}`, marginLeft + 110, headerY + 29);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(113, 113, 122);
+    doc.text('PRINTER COMPACT (6.7 x 1.6 in)', marginLeft + 230, headerY + 29);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(113, 113, 122);
+    doc.text(`Generated: ${dateStr}`, marginLeft + rowWidth, headerY + 29, { align: 'right' });
+
+    // Gold accent rule
+    doc.setDrawColor(197, 155, 39);
+    doc.setLineWidth(0.5);
+    doc.line(marginLeft, headerY + 33, marginLeft + rowWidth, headerY + 33);
+
+    return headerY + 41;
+  };
+
+  let isFirstPage = true;
+  let currentY = 0;
+
+  if (data.filtered.length === 0) {
+    currentY = drawPageHeader(minAge, 0, false);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(113, 113, 122);
+    doc.text('No selected children match the specified filters.', marginLeft + rowWidth / 2, currentY + 30, { align: 'center' });
+  } else {
+    for (const ageVal of ageRangeList) {
+      const childrenOfAge = ageToChildrenMap.get(ageVal) || [];
+      if (childrenOfAge.length === 0) continue;
+
+      if (!isFirstPage) {
+        doc.addPage();
+      }
+      isFirstPage = false;
+
+      currentY = drawPageHeader(ageVal, childrenOfAge.length, false);
+
+      childrenOfAge.forEach((c, idx) => {
+        // Section 19: Row Breaking - Never split a child row between pages
+        if (currentY + rowHeight > maxY) {
+          doc.addPage();
+          currentY = drawPageHeader(ageVal, childrenOfAge.length, true);
+        }
+
+        const cardX = marginLeft;
+        const cardY = currentY;
+
+        // 1. Outer Container (Physical box: exactly 482.4 pt x 115.2 pt = 6.7 in x 1.6 in)
+        doc.setFillColor(255, 255, 255);
+        doc.rect(cardX, cardY, rowWidth, rowHeight, 'F');
+        doc.setDrawColor(212, 212, 216); // #D4D4D8
+        doc.setLineWidth(0.5);
+        doc.rect(cardX, cardY, rowWidth, rowHeight, 'S');
+
+        // 2. Left Gold Accent Strip (0.075 in = 5.4 pt per Section 15)
+        const goldWidth = 5.4;
+        doc.setFillColor(197, 155, 39); // Koinonia Gold
+        doc.rect(cardX, cardY, goldWidth, rowHeight, 'F');
+
+        // 3. Subtle vertical divider before right QR area (Left: ~74%, Right: ~26% per Section 6)
+        const dividerX = cardX + 357;
+        doc.setDrawColor(240, 240, 243);
+        doc.setLineWidth(0.4);
+        doc.line(dividerX, cardY + 4, dividerX, cardY + rowHeight - 4);
+
+        // --- LEFT INFORMATION AREA ---
+        const contentX = cardX + 13;
+        const maxTextWidth = 338; // 357 - 13 - 6
+
+        // Sequence number (e.g. "05")
+        const numStr = String(idx + 1).padStart(2, '0');
+        doc.setFont('courier', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor(161, 161, 170); // zinc 400
+        doc.text(numStr, contentX, cardY + 16);
+
+        // Child Full Name (Primary text per Section 9)
+        const nameX = contentX + 18;
+        const nameMaxWidth = maxTextWidth - 18;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10.5);
+        doc.setTextColor(24, 24, 27); // zinc 900
+        doc.text(truncateText(c.fullName || '', nameMaxWidth), nameX, cardY + 16);
+        doc.text((c.fullName || '').toUpperCase(), nameX, cardY + 16, { renderingMode: 'invisible' });
+
+        // Metadata line: Exact Age · Age Group · Gender (Section 10)
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(82, 82, 91); // zinc 600
+        const agDisplay = c.ageGroup === 'Age review needed' ? 'Age review needed' : (c.ageGroup.startsWith('Ages') ? c.ageGroup : `Ages ${c.ageGroup}`);
+        const genderDisplay = c.gender ? ` · ${c.gender}` : '';
+        doc.text(`${c.age} yrs · ${agDisplay}${genderDisplay}`, nameX, cardY + 27.5);
+
+        // Subtle horizontal divider line
+        doc.setDrawColor(244, 244, 245);
+        doc.setLineWidth(0.3);
+        doc.line(contentX, cardY + 33, cardX + 350, cardY + 33);
+
+        // Parent Information (Compact to one line per Section 11)
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(63, 63, 70);
+        doc.text('Parent:', contentX, cardY + 45.5);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(24, 24, 27);
+        const parentName = c.parent?.fullName || '—';
+        const parentPhone = c.parent?.phone ? ` · ${c.parent.phone}` : '';
+        doc.text(truncateText(`${parentName}${parentPhone}`, maxTextWidth - 34), contentX + 34, cardY + 45.5);
+
+        // Pickup Information (Compact per Section 12)
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(63, 63, 70);
+        doc.text('Pickup:', contentX, cardY + 59.5);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(24, 24, 27);
+        const pickupName = c.pickupPerson?.fullName || c.parent?.fullName || '—';
+        const pickupPhone = c.pickupPerson?.phone ? ` · ${c.pickupPerson.phone}` : (c.parent?.phone ? ` · ${c.parent.phone}` : '');
+        doc.text(truncateText(`${pickupName}${pickupPhone}`, maxTextWidth - 34), contentX + 34, cardY + 59.5);
+
+        // Relationship (Quiet relationship line per Section 12)
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(6.8);
+        doc.setTextColor(113, 113, 122);
+        const relStr = c.pickupPerson?.relationship || 'Primary parent';
+        const relDisplay = relStr.toLowerCase().startsWith('relationship') ? relStr : `Relationship: ${relStr}`;
+        doc.text(truncateText(relDisplay, maxTextWidth - 34), contentX + 34, cardY + 70.5);
+
+        // Attendance Status (Section 13)
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(113, 113, 122);
+        const attText = c.attendanceStatus === 'picked_up'
+          ? 'Picked up'
+          : c.attendanceStatus === 'inside'
+            ? 'Inside'
+            : c.attendanceStatus === 'checked_in'
+              ? 'Checked in'
+              : 'Not arrived';
+        doc.text(`Status: ${attText}`, contentX, cardY + 97.5);
+
+        // --- RIGHT QR AREA (Section 7 & 8) ---
+        const qrSize = 77; // ~1.07 inches square (target: 1.05in – 1.15in)
+        const qrAreaWidth = rowWidth - 357; // 125.4 pt
+        const qrX = dividerX + (qrAreaWidth - qrSize) / 2; // centered with generous white quiet zone
+        const qrY = cardY + 4.5;
+        const qrCenterX = qrX + qrSize / 2;
+
+        if (c.passReference && qrCache.has(c.passReference)) {
+          doc.addImage(qrCache.get(c.passReference)!, 'PNG', qrX, qrY, qrSize, qrSize, undefined, 'FAST');
+
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(5.5);
+          doc.setTextColor(113, 113, 122);
+          doc.text('PASS CODE', qrCenterX, qrY + qrSize + 8, { align: 'center' });
+
+          doc.setFont('courier', 'bold');
+          doc.setFontSize(8);
+          doc.setTextColor(24, 24, 27);
+          doc.text(c.passReference, qrCenterX, qrY + qrSize + 18, { align: 'center' });
+        } else {
+          doc.setFillColor(254, 243, 199);
+          doc.rect(qrX + 2, qrY + 12, qrSize - 4, 32, 'F');
+          doc.setDrawColor(245, 158, 11);
+          doc.setLineWidth(0.4);
+          doc.rect(qrX + 2, qrY + 12, qrSize - 4, 32, 'S');
+
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(6.5);
+          doc.setTextColor(180, 83, 9);
+          doc.text('PASS NOT AVAILABLE', qrCenterX, qrY + 26, { align: 'center' });
+
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(6);
+          doc.setTextColor(146, 64, 14);
+          doc.text('Missing pass', qrCenterX, qrY + 36, { align: 'center' });
+
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(5.5);
+          doc.setTextColor(113, 113, 122);
+          doc.text('PASS CODE', qrCenterX, qrY + qrSize + 8, { align: 'center' });
+
+          doc.setFont('courier', 'bold');
+          doc.setFontSize(8);
+          doc.setTextColor(113, 113, 122);
+          doc.text('—', qrCenterX, qrY + qrSize + 18, { align: 'center' });
+        }
+
+        currentY += rowHeight + rowGap;
+      });
+    }
+  }
+
+  // Running Footer across all pages
+  const pageCount = doc.getNumberOfPages();
+  for (let p = 1; p <= pageCount; p++) {
+    doc.setPage(p);
+    doc.setDrawColor(228, 228, 231);
+    doc.setLineWidth(0.4);
+    doc.line(marginLeft, 808, marginLeft + rowWidth, 808);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(113, 113, 122);
+    doc.text(
+      `${data.event.title || 'The General Assembly 2026'} · Printable QR Register — Printer Compact (6.7 x 1.6 in) · ${rangeDisplay}`,
+      marginLeft,
+      822
+    );
+    doc.text(`Page ${p} of ${pageCount}`, marginLeft + rowWidth, 822, { align: 'right' });
+  }
+
+  const arrayBuffer = doc.output('arraybuffer');
+  return Buffer.from(arrayBuffer);
+}
+
+/**
  * Main Controller Handler for Selected Children Report (JSON, CSV, and PDF)
  */
 export async function handleSelectedChildrenReport(
@@ -1400,7 +1778,11 @@ export async function handleSelectedChildrenReport(
     const passStatus = typeof req.query.passStatus === 'string' ? req.query.passStatus.trim() : '';
     const attendanceStatus = typeof req.query.attendanceStatus === 'string' ? req.query.attendanceStatus.trim() : '';
     const gender = typeof req.query.gender === 'string' ? req.query.gender.trim() : '';
-    const variant = req.query.variant === 'name_list' || req.query.listMode === 'name_list' ? 'name_list' : 'standard';
+    const variant = req.query.variant === 'name_list' || req.query.listMode === 'name_list'
+      ? 'name_list'
+      : req.query.variant === 'printer_compact' || req.query.compact === 'true'
+        ? 'printer_compact'
+        : 'standard';
 
     const reportData = await getSelectedChildrenReportData({
       eventId: req.query.eventId as string,
@@ -1421,7 +1803,9 @@ export async function handleSelectedChildrenReport(
     if (requestedFormat === 'pdf') {
       const pdfBuffer = variant === 'name_list'
         ? await renderSelectedChildrenNameListPdf(reportData)
-        : await renderSelectedChildrenPdf(reportData);
+        : variant === 'printer_compact'
+          ? await renderSelectedChildrenPrinterCompactPdf(reportData)
+          : await renderSelectedChildrenPdf(reportData);
       const filename = getSelectedChildrenPdfFilename(
         reportData.event.title,
         ageGroup,
