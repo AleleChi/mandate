@@ -2109,6 +2109,13 @@ export const api = {
           pending: number;
         };
         recipientGroups: Array<{ key: string; label: string; count: number }>;
+        selectedParentsSummary?: {
+          totalSelectedChildren: number;
+          totalEligibleParents: number;
+          validEmailCount: number;
+          missingEmailCount: number;
+          alreadyEmailedCount: number;
+        };
         channelEligibility?: {
           inApp: number;
           push: number;

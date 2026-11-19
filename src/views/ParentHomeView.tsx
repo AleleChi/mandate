@@ -1222,6 +1222,25 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
               </span>
             </div>
 
+            {(activeEvent?.venue_address || activeEvent?.location) && (
+              <div className="pt-3 border-t border-[#F4F3EF] dark:border-[#2D2B26]" data-testid="parent-event-venue-section">
+                <div className="flex items-start text-xs sm:text-sm text-[#3F3F46] dark:text-[#B8B0A5]">
+                  <MapPin className="w-4 h-4 mr-3 text-[#B89047] dark:text-[#C59B27] shrink-0 stroke-[2] mt-0.5" />
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-bold tracking-wider text-[#A19D94] dark:text-[#8E8A80] uppercase block">
+                      Event Venue
+                    </span>
+                    <p className="font-semibold text-[#18181B] dark:text-[#F0EBE3]">
+                      {activeEvent.venue_name || activeEvent.title || 'Auditorium'}
+                    </p>
+                    <p className="text-xs text-[#6B6860] dark:text-[#A19D94] leading-relaxed">
+                      {activeEvent.venue_address || activeEvent.location}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <button
               type="button"
               onClick={() => {

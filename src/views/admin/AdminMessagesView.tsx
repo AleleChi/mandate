@@ -176,8 +176,12 @@ export function isChildSpecificMessageType(messageType?: string, body?: string, 
 
 const TOKENS = [
   { key: '{Parent name}', label: 'Parent name' },
+  { key: '{Selected child name(s)}', label: 'Selected child name(s)' },
   { key: '{Child name}', label: 'Child name' },
   { key: '{Event name}', label: 'Event name' },
+  { key: '{Event date}', label: 'Event date' },
+  { key: '{Venue name}', label: 'Venue name' },
+  { key: '{Venue address}', label: 'Venue address' },
   { key: '{Pass link}', label: 'Pass link' },
   { key: '{Review link}', label: 'Review link' },
   { key: '{Pickup time}', label: 'Pickup time' },
@@ -278,6 +282,7 @@ export function calculateEffectiveEligibility(params: {
   eventVolunteers: any[];
   channelEligibility: any;
   whatsappEnabled: boolean;
+  selectedParentsSummary?: any;
 }) {
   const {
     selectedGroup,
@@ -287,8 +292,19 @@ export function calculateEffectiveEligibility(params: {
     selectedVolunteersList,
     eventVolunteers,
     channelEligibility,
-    whatsappEnabled
+    whatsappEnabled,
+    selectedParentsSummary
   } = params;
+
+  if (selectedGroup === 'selected_parents') {
+    return {
+      inApp: selectedParentsSummary?.totalEligibleParents ?? (channelEligibility?.inApp ?? 0),
+      push: channelEligibility?.push ?? 0,
+      email: selectedParentsSummary?.validEmailCount ?? (channelEligibility?.email ?? 0),
+      whatsappNumbers: channelEligibility?.whatsappNumbers ?? 0,
+      whatsappOptedIn: whatsappEnabled ? (channelEligibility?.whatsappOptedIn ?? 0) : 0
+    };
+  }
 
   const isVolAudience = isVolunteerAudience(selectedGroup);
 
@@ -647,6 +663,13 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
   const [selectedChannels, setSelectedChannels] = useState<string[]>(['in_app', 'push']);
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
+  const [selectedParentsSummary, setSelectedParentsSummary] = useState<{
+    totalSelectedChildren: number;
+    totalEligibleParents: number;
+    validEmailCount: number;
+    missingEmailCount: number;
+    alreadyEmailedCount: number;
+  } | null>(null);
 
   const toggleChannel = (channelId: string) => {
     setSelectedChannels(prev => {
@@ -830,6 +853,10 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
 
         if (data.channelEligibility) {
           setChannelEligibility(data.channelEligibility);
+        }
+
+        if (data.selectedParentsSummary) {
+          setSelectedParentsSummary(data.selectedParentsSummary);
         }
 
         if (data.eventParents) {
@@ -1120,6 +1147,14 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
         setBody(tmpl.body);
       }
     }
+
+    if (group === 'selected_parents') {
+      setSelectedChannels(['email']);
+      if (!subject || subject.startsWith('Important Event Details') || !body) {
+        setSubject('Important Event Details – {Event name}');
+        setBody('Dear {Parent name},\n\nWe are pleased to inform you that {Selected child name(s)} has/have been selected for {Event name}.\n\nPlease find the venue details below:\n\n**Event:** {Event name}\n**Venue:** {Venue name}\n**Address:** {Venue address}\n\nPlease take note of these details and make the necessary arrangements for your child\'s participation.\n\nWarm regards,\nThe Koinonia Children & Teens Team');
+      }
+    }
   };
 
   const handleTypeChange = (type: string) => {
@@ -1373,7 +1408,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
     selectedVolunteersList,
     eventVolunteers,
     channelEligibility,
-    whatsappEnabled
+    whatsappEnabled,
+    selectedParentsSummary
   });
 
   const activeGroupRecipients = isSpecificParents
@@ -2539,14 +2575,17 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                     {recipientGroups.map(group => {
                       let groupLabel = group.key === 'all_parents' ? 'All current-event parents' : group.label;
                       let count = group.count;
-                      if (group.key === 'specific_parents') {
+                      if (group.key === 'selected_parents') {
                         groupLabel = 'Selected parents';
+                        count = selectedParentsSummary?.totalEligibleParents ?? group.count;
+                      } else if (group.key === 'specific_parents') {
+                        groupLabel = 'Specific parents (manual)';
                         count = selectedParentIds.length;
                       } else if (group.key === 'specific_volunteers') {
                         groupLabel = 'Selected volunteers';
                         count = selectedVolunteerIds.length;
                       }
-                      const unitLabel = (group.key === 'specific_parents' || group.key === 'all_parents')
+                      const unitLabel = (group.key === 'selected_parents' || group.key === 'specific_parents' || group.key === 'all_parents')
                         ? (count === 1 ? 'parent' : 'parents')
                         : (group.key === 'specific_volunteers' || group.key === 'volunteers')
                         ? (count === 1 ? 'volunteer' : 'volunteers')
@@ -2592,6 +2631,52 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                   </select>
                 </div>
               </div>
+
+              {/* Selected Parents Audience Summary Card */}
+              {selectedGroup === 'selected_parents' && (
+                <div className="rounded-xl border border-amber-200/80 dark:border-amber-900/40 bg-amber-50/60 dark:bg-amber-950/20 p-4 space-y-3" data-testid="selected-parents-summary-card">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-amber-950 dark:text-amber-200 uppercase tracking-wider">
+                      Selected Parents Audience Summary
+                    </span>
+                    <span className="text-[11px] font-medium text-amber-800 dark:text-amber-300">
+                      Event: {events.find(e => e.id === selectedEventId)?.title || 'Current Event'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+                    <div className="bg-white dark:bg-[#1E1E1B] p-2.5 rounded-lg border border-amber-200/60 dark:border-amber-900/30 shadow-2xs">
+                      <span className="text-[10px] text-zinc-500 dark:text-[#A19D94] block">Selected Children</span>
+                      <span className="text-base font-bold text-zinc-900 dark:text-[#F0EBE3]">
+                        {selectedParentsSummary?.totalSelectedChildren ?? 0}
+                      </span>
+                    </div>
+                    <div className="bg-white dark:bg-[#1E1E1B] p-2.5 rounded-lg border border-amber-200/60 dark:border-amber-900/30 shadow-2xs">
+                      <span className="text-[10px] text-zinc-500 dark:text-[#A19D94] block">Unique Eligible Parents</span>
+                      <span className="text-base font-bold text-zinc-900 dark:text-[#F0EBE3]">
+                        {selectedParentsSummary?.totalEligibleParents ?? 0}
+                      </span>
+                    </div>
+                    <div className="bg-white dark:bg-[#1E1E1B] p-2.5 rounded-lg border border-emerald-200/60 dark:border-emerald-900/30 shadow-2xs">
+                      <span className="text-[10px] text-emerald-700 dark:text-emerald-400 block">Valid Email Addresses</span>
+                      <span className="text-base font-bold text-emerald-700 dark:text-emerald-400">
+                        {selectedParentsSummary?.validEmailCount ?? 0}
+                      </span>
+                    </div>
+                    <div className="bg-white dark:bg-[#1E1E1B] p-2.5 rounded-lg border border-rose-200/60 dark:border-rose-900/30 shadow-2xs">
+                      <span className="text-[10px] text-rose-700 dark:text-rose-400 block">Excluded (No Valid Email)</span>
+                      <span className="text-base font-bold text-rose-700 dark:text-rose-400">
+                        {selectedParentsSummary?.missingEmailCount ?? 0}
+                      </span>
+                    </div>
+                    <div className="bg-white dark:bg-[#1E1E1B] p-2.5 rounded-lg border border-amber-200/60 dark:border-amber-900/30 shadow-2xs">
+                      <span className="text-[10px] text-amber-700 dark:text-amber-400 block">Already Emailed</span>
+                      <span className="text-base font-bold text-amber-700 dark:text-amber-400">
+                        {selectedParentsSummary?.alreadyEmailedCount ?? 0}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Specific parents searchable multi-select */}
               {isSpecificParents && (
