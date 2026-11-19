@@ -5187,6 +5187,12 @@ router.get('/events/:eventId', async (req: AuthenticatedRequest, res: Response) 
     operationsTestOverrideEnabledBy: event.operations_test_override_enabled_by || null,
     operationsTestOverrideEnabledAt: event.operations_test_override_enabled_at || null,
     operationsTestOverrideActive: (event.operations_test_override_enabled === 1 || event.operations_test_override_enabled === true) && (!event.operations_test_override_expires_at || new Date(event.operations_test_override_expires_at).getTime() > Date.now()),
+    showVenueToSelectedParents: event.venue_visible_to_selected_parents === 1 || event.venue_visible_to_selected_parents === true,
+    venueVisibleToSelectedParents: event.venue_visible_to_selected_parents === 1 || event.venue_visible_to_selected_parents === true,
+    venueVisibilityReleasedAt: event.venue_visibility_released_at || null,
+    venueVisibilityReleasedBy: event.venue_visibility_released_by || null,
+    venueVisibilityUpdatedAt: event.venue_visibility_updated_at || null,
+    venueVisibilityUpdatedBy: event.venue_visibility_updated_by || null,
 
     // nested objects for structured events client
     success: true,
@@ -5209,6 +5215,12 @@ router.get('/events/:eventId', async (req: AuthenticatedRequest, res: Response) 
       pickupReminderAt: event.pickup_reminder_at || '',
       timezone: event.timezone || 'Africa/Lagos',
       status: event.status,
+      showVenueToSelectedParents: event.venue_visible_to_selected_parents === 1 || event.venue_visible_to_selected_parents === true,
+      venueVisibleToSelectedParents: event.venue_visible_to_selected_parents === 1 || event.venue_visible_to_selected_parents === true,
+      venueVisibilityReleasedAt: event.venue_visibility_released_at || null,
+      venueVisibilityReleasedBy: event.venue_visibility_released_by || null,
+      venueVisibilityUpdatedAt: event.venue_visibility_updated_at || null,
+      venueVisibilityUpdatedBy: event.venue_visibility_updated_by || null,
       operationsTestOverrideEnabled: event.operations_test_override_enabled === 1 || event.operations_test_override_enabled === true,
       operationsTestOverrideExpiresAt: event.operations_test_override_expires_at || null,
       operationsTestOverrideEnabledBy: event.operations_test_override_enabled_by || null,
@@ -5455,6 +5467,142 @@ router.post('/events/:eventId/operations-test-override', authMiddleware, async (
   }
 });
 
+// GET /api/admin/events/:eventId/venue-visibility
+router.get('/events/:eventId/venue-visibility', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
+      return res.status(403).json({ error: 'Administrator access required to view venue visibility.' });
+    }
+
+    const { eventId } = req.params;
+    let event: any = null;
+    if (eventId === 'current') {
+      event = await getCurrentEvent();
+    } else {
+      event = await getEventById(eventId);
+    }
+
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found.' });
+    }
+
+    const isVisible = event.venue_visible_to_selected_parents === 1 || event.venue_visible_to_selected_parents === true;
+
+    return res.json({
+      success: true,
+      eventId: event.id,
+      eventTitle: event.title,
+      showVenueToSelectedParents: isVisible,
+      venueVisibleToSelectedParents: isVisible,
+      releasedAt: event.venue_visibility_released_at || null,
+      releasedBy: event.venue_visibility_released_by || null,
+      updatedAt: event.venue_visibility_updated_at || null,
+      updatedBy: event.venue_visibility_updated_by || null
+    });
+  } catch (err: any) {
+    console.error('Error fetching event venue visibility:', err);
+    return res.status(500).json({ error: 'Failed to fetch event venue visibility.' });
+  }
+});
+
+// POST /api/admin/events/:eventId/venue-visibility (and PUT)
+const handleSetVenueVisibility = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
+      return res.status(403).json({ error: 'Administrator access required to configure venue visibility.' });
+    }
+
+    const { eventId } = req.params;
+    let event: any = null;
+    if (eventId === 'current') {
+      event = await getCurrentEvent();
+    } else {
+      event = await getEventById(eventId);
+    }
+
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found.' });
+    }
+
+    const rawVisible = req.body.visible !== undefined
+      ? req.body.visible
+      : (req.body.showVenueToSelectedParents !== undefined
+        ? req.body.showVenueToSelectedParents
+        : req.body.enabled);
+    const visible = Boolean(rawVisible === true || rawVisible === 'true' || rawVisible === 1);
+    const visibleInt = visible ? 1 : 0;
+    const now = new Date().toISOString();
+    const previousValue = event.venue_visible_to_selected_parents === 1 || event.venue_visible_to_selected_parents === true;
+
+    await execute(`
+      UPDATE events SET
+        venue_visible_to_selected_parents = ?,
+        venue_visibility_released_at = CASE WHEN ? = 1 AND (venue_visibility_released_at IS NULL OR venue_visibility_released_at = '') THEN ? ELSE venue_visibility_released_at END,
+        venue_visibility_released_by = CASE WHEN ? = 1 AND (venue_visibility_released_by IS NULL OR venue_visibility_released_by = '') THEN ? ELSE venue_visibility_released_by END,
+        venue_visibility_updated_at = ?,
+        venue_visibility_updated_by = ?,
+        updated_at = ?
+      WHERE id = ?
+    `, [
+      visibleInt,
+      visibleInt,
+      now,
+      req.user.id,
+      now,
+      req.user.id,
+      now,
+      event.id
+    ]);
+
+    // Record in audit infrastructure
+    try {
+      await execute(`
+        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        crypto.randomUUID(),
+        req.user.id,
+        req.user.role,
+        'Update Event Venue Visibility',
+        'event',
+        event.id,
+        JSON.stringify({
+          administrator: req.user.id,
+          userRole: req.user.role,
+          eventId: event.id,
+          eventTitle: event.title,
+          previousValue: Boolean(previousValue),
+          newValue: visible,
+          timestamp: now
+        }),
+        now
+      ]);
+    } catch (auditErr) {
+      console.error('Audit log write error for venue visibility:', auditErr);
+    }
+
+    return res.json({
+      success: true,
+      eventId: event.id,
+      showVenueToSelectedParents: visible,
+      venueVisibleToSelectedParents: visible,
+      releasedAt: visible ? (event.venue_visibility_released_at || now) : event.venue_visibility_released_at,
+      releasedBy: visible ? (event.venue_visibility_released_by || req.user.id) : event.venue_visibility_released_by,
+      updatedAt: now,
+      updatedBy: req.user.id,
+      message: visible
+        ? "Publish this event's venue address to all eligible selected parents? They will be able to view it immediately in their parent portal."
+        : 'Venue visibility turned off for selected parents.'
+    });
+  } catch (err: any) {
+    console.error('Error updating event venue visibility:', err);
+    return res.status(500).json({ error: 'Failed to update venue visibility.' });
+  }
+};
+
+router.post('/events/:eventId/venue-visibility', authMiddleware, handleSetVenueVisibility);
+router.put('/events/:eventId/venue-visibility', authMiddleware, handleSetVenueVisibility);
+
 // GET all events
 router.get('/events', async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -5538,7 +5686,13 @@ router.get('/events', async (req: AuthenticatedRequest, res: Response) => {
         operationsTestOverrideExpiresAt: event.operations_test_override_expires_at || null,
         operationsTestOverrideEnabledBy: event.operations_test_override_enabled_by || null,
         operationsTestOverrideEnabledAt: event.operations_test_override_enabled_at || null,
-        operationsTestOverrideActive: (event.operations_test_override_enabled === 1 || event.operations_test_override_enabled === true) && (!event.operations_test_override_expires_at || new Date(event.operations_test_override_expires_at).getTime() > Date.now())
+        operationsTestOverrideActive: (event.operations_test_override_enabled === 1 || event.operations_test_override_enabled === true) && (!event.operations_test_override_expires_at || new Date(event.operations_test_override_expires_at).getTime() > Date.now()),
+        showVenueToSelectedParents: event.venue_visible_to_selected_parents === 1 || event.venue_visible_to_selected_parents === true,
+        venueVisibleToSelectedParents: event.venue_visible_to_selected_parents === 1 || event.venue_visible_to_selected_parents === true,
+        venueVisibilityReleasedAt: event.venue_visibility_released_at || null,
+        venueVisibilityReleasedBy: event.venue_visibility_released_by || null,
+        venueVisibilityUpdatedAt: event.venue_visibility_updated_at || null,
+        venueVisibilityUpdatedBy: event.venue_visibility_updated_by || null
       });
     }
 
@@ -5718,7 +5872,9 @@ router.patch('/events/:eventId', async (req: AuthenticatedRequest, res: Response
       capacity,
       eventCapacity,
       status,
-      ageGroups
+      ageGroups,
+      showVenueToSelectedParents,
+      venueVisibleToSelectedParents
     } = req.body;
 
     const event = await queryOne('SELECT * FROM events WHERE id = ?', [eventId]);
@@ -5799,6 +5955,56 @@ router.patch('/events/:eventId', async (req: AuthenticatedRequest, res: Response
       now,
       eventId
     ]);
+
+    const resolvedVenueVis = showVenueToSelectedParents !== undefined
+      ? (showVenueToSelectedParents ? 1 : 0)
+      : (venueVisibleToSelectedParents !== undefined ? (venueVisibleToSelectedParents ? 1 : 0) : undefined);
+    if (resolvedVenueVis !== undefined) {
+      const previousVal = event.venue_visible_to_selected_parents === 1 || event.venue_visible_to_selected_parents === true;
+      await execute(`
+        UPDATE events SET
+          venue_visible_to_selected_parents = ?,
+          venue_visibility_released_at = CASE WHEN ? = 1 AND (venue_visibility_released_at IS NULL OR venue_visibility_released_at = '') THEN ? ELSE venue_visibility_released_at END,
+          venue_visibility_released_by = CASE WHEN ? = 1 AND (venue_visibility_released_by IS NULL OR venue_visibility_released_by = '') THEN ? ELSE venue_visibility_released_by END,
+          venue_visibility_updated_at = ?,
+          venue_visibility_updated_by = ?
+        WHERE id = ?
+      `, [
+        resolvedVenueVis,
+        resolvedVenueVis,
+        now,
+        req.user?.id || 'admin',
+        now,
+        req.user?.id || 'admin',
+        eventId
+      ]);
+
+      if (Boolean(previousVal) !== Boolean(resolvedVenueVis)) {
+        try {
+          await execute(`
+            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            crypto.randomUUID(),
+            req.user?.id || 'admin',
+            req.user?.role || 'admin',
+            'Update Event Venue Visibility',
+            'event',
+            eventId,
+            JSON.stringify({
+              administrator: req.user?.id || 'admin',
+              userRole: req.user?.role || 'admin',
+              eventId,
+              eventTitle: event.title,
+              previousValue: previousVal,
+              newValue: Boolean(resolvedVenueVis),
+              timestamp: now
+            }),
+            now
+          ]);
+        } catch (_) {}
+      }
+    }
 
     if (ageGroups && Array.isArray(ageGroups)) {
       await execute('DELETE FROM event_age_groups WHERE event_id = ?', [eventId]);
@@ -8007,12 +8213,17 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       alreadyEmailedCount = Number(emailedRes?.count || 0);
     }
 
+    const msgEvRow = await queryOne('SELECT id, title, location, venue_visible_to_selected_parents FROM events WHERE id = ?', [eventId]);
+    const venueVisibleToSelectedParents = Boolean(msgEvRow && (msgEvRow.venue_visible_to_selected_parents === 1 || msgEvRow.venue_visible_to_selected_parents === true));
+
     const selectedParentsSummary = {
       totalSelectedChildren,
       totalEligibleParents,
       validEmailCount,
       missingEmailCount,
-      alreadyEmailedCount
+      alreadyEmailedCount,
+      venueVisibleToSelectedParents,
+      venueVisibility: venueVisibleToSelectedParents
     };
 
     const recipientGroups = [
@@ -8388,6 +8599,7 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       },
       recipientGroups,
       selectedParentsSummary,
+      venueVisibleToSelectedParents,
       channelEligibility,
       messageTypes,
       volunteerMessageTypes,
@@ -9580,12 +9792,20 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
       const qualifyingStatuses = [...QUALIFYING_CHILD_STATUSES];
       const qPlaceholders = qualifyingStatuses.map(() => '?').join(',');
 
-      const evRowFull = await queryOne('SELECT title, start_date, end_date, location FROM events WHERE id = ?', [eventId]);
+      const evRowFull = await queryOne('SELECT title, start_date, end_date, location, venue_visible_to_selected_parents FROM events WHERE id = ?', [eventId]);
       const eventTitle = evRowFull?.title || eventName || 'The General Assembly';
       const eventDate = evRowFull?.start_date ? formatEventDateString(evRowFull.start_date) : '';
+      const isVenueVisible = Boolean(evRowFull && (evRowFull.venue_visible_to_selected_parents === 1 || evRowFull.venue_visible_to_selected_parents === true));
       const rawLocation = (evRowFull?.location || '').trim();
-      const venueName = rawLocation ? (rawLocation.split(',')[0]?.trim() || rawLocation) : (eventTitle || 'Auditorium');
-      const venueAddress = rawLocation || 'Koinonia Global Auditorium & Children Pavilion, Abuja';
+      const venueName = isVenueVisible
+        ? (rawLocation ? (rawLocation.split(',')[0]?.trim() || rawLocation) : (eventTitle || 'Auditorium'))
+        : '[Venue hidden - Visibility is OFF]';
+      const venueAddress = isVenueVisible
+        ? (rawLocation || 'Koinonia Global Auditorium & Children Pavilion, Abuja')
+        : '[Venue address hidden - Visibility is OFF]';
+
+      const RESTRICTED_VENUE_TOKEN_REGEX = /\{(Venue address|Venue name|Address)\}/i;
+      const containsRestrictedVenueToken = RESTRICTED_VENUE_TOKEN_REGEX.test(body) || RESTRICTED_VENUE_TOKEN_REGEX.test(subject || '');
 
       const sampleParentRow = await queryOne(`
         SELECT p.id as parent_id, p.full_name as parent_name, u.email
@@ -9652,6 +9872,10 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
 
       return res.json({
         success: true,
+        venueVisibilityOff: !isVenueVisible,
+        warning: (containsRestrictedVenueToken && !isVenueVisible)
+          ? 'Venue Visibility is currently OFF for this event. Venue address details are hidden and messages containing venue tokens cannot be sent until enabled.'
+          : undefined,
         preview: {
           subject: renderedSubject,
           body: renderedBody,
@@ -9826,8 +10050,20 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     }
 
     const eventId = req.body.eventId || 'event-ga-2026';
-    const eventRow = await queryOne(`SELECT title FROM events WHERE id = ?`, [eventId]);
+    const eventRow = await queryOne(`SELECT id, title, location, venue_visible_to_selected_parents FROM events WHERE id = ?`, [eventId]);
     const eventTitle = eventRow?.title || 'The General Assembly';
+    const isVenueVisible = Boolean(eventRow && (eventRow.venue_visible_to_selected_parents === 1 || eventRow.venue_visible_to_selected_parents === true));
+
+    // Enforcement: Protect restricted venue address visibility in announcement/broadcast workflow
+    const RESTRICTED_VENUE_TOKEN_REGEX = /\{(Venue address|Venue name|Address)\}/i;
+    const containsRestrictedVenueToken = RESTRICTED_VENUE_TOKEN_REGEX.test(body) || RESTRICTED_VENUE_TOKEN_REGEX.test(subject || '');
+
+    if (containsRestrictedVenueToken && !isVenueVisible) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot send message containing restricted venue details while Venue Visibility is OFF. Please enable "Show venue to selected parents" in Event Settings before including venue tokens, or remove the venue token from your message.'
+      });
+    }
 
     // 1. Resolve recipients query based on group
     let rows: any[] = [];
@@ -10072,12 +10308,17 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     const isVolunteerAudience = recipientGroup === 'volunteers' || recipientGroup === 'specific_volunteers';
 
     if (recipientGroup === 'selected_parents') {
-      const evRowFull = await queryOne('SELECT title, start_date, end_date, location FROM events WHERE id = ?', [eventId]);
+      const evRowFull = await queryOne('SELECT title, start_date, end_date, location, venue_visible_to_selected_parents FROM events WHERE id = ?', [eventId]);
       const eventTitleFull = evRowFull?.title || eventTitle || 'The General Assembly';
       const eventDateFull = evRowFull?.start_date ? formatEventDateString(evRowFull.start_date) : '';
+      const isEvVenueVisible = Boolean(evRowFull && (evRowFull.venue_visible_to_selected_parents === 1 || evRowFull.venue_visible_to_selected_parents === true));
       const rawLocation = (evRowFull?.location || '').trim();
-      const venueName = rawLocation ? (rawLocation.split(',')[0]?.trim() || rawLocation) : (eventTitleFull || 'Auditorium');
-      const venueAddress = rawLocation || 'Koinonia Global Auditorium & Children Pavilion, Abuja';
+      const venueName = isEvVenueVisible
+        ? (rawLocation ? (rawLocation.split(',')[0]?.trim() || rawLocation) : (eventTitleFull || 'Auditorium'))
+        : '[Venue hidden]';
+      const venueAddress = isEvVenueVisible
+        ? (rawLocation || 'Koinonia Global Auditorium & Children Pavilion, Abuja')
+        : '[Venue address hidden]';
 
       const parentMap = new Map<string, {
         parentId: string;

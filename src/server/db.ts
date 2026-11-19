@@ -283,6 +283,11 @@ function initSqliteSchema(db: Database.Database) {
       capacity INTEGER,
       minimum_age INTEGER,
       maximum_age INTEGER,
+      venue_visible_to_selected_parents INTEGER DEFAULT 0,
+      venue_visibility_released_at TEXT,
+      venue_visibility_released_by TEXT,
+      venue_visibility_updated_at TEXT,
+      venue_visibility_updated_by TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -1169,7 +1174,12 @@ function initSqliteSchema(db: Database.Database) {
     "operations_test_override_enabled INTEGER DEFAULT 0",
     "operations_test_override_expires_at TEXT",
     "operations_test_override_enabled_by TEXT",
-    "operations_test_override_enabled_at TEXT"
+    "operations_test_override_enabled_at TEXT",
+    "venue_visible_to_selected_parents INTEGER DEFAULT 0",
+    "venue_visibility_released_at TEXT",
+    "venue_visibility_released_by TEXT",
+    "venue_visibility_updated_at TEXT",
+    "venue_visibility_updated_by TEXT"
   ];
   for (const col of sqliteEventCols) {
     try {
@@ -2325,6 +2335,11 @@ async function initPostgresSchema(pool: any) {
         volunteer_registration_opens_at VARCHAR(64),
         volunteer_registration_closes_at VARCHAR(64),
         capacity INTEGER,
+        venue_visible_to_selected_parents INTEGER DEFAULT 0,
+        venue_visibility_released_at VARCHAR(64),
+        venue_visibility_released_by VARCHAR(64),
+        venue_visibility_updated_at VARCHAR(64),
+        venue_visibility_updated_by VARCHAR(64),
         created_at TIMESTAMP NOT NULL,
         updated_at TIMESTAMP NOT NULL
       );
@@ -3180,7 +3195,12 @@ async function initPostgresSchema(pool: any) {
       "operations_test_override_enabled INTEGER DEFAULT 0",
       "operations_test_override_expires_at VARCHAR(64)",
       "operations_test_override_enabled_by VARCHAR(64)",
-      "operations_test_override_enabled_at VARCHAR(64)"
+      "operations_test_override_enabled_at VARCHAR(64)",
+      "venue_visible_to_selected_parents INTEGER DEFAULT 0",
+      "venue_visibility_released_at VARCHAR(64)",
+      "venue_visibility_released_by VARCHAR(64)",
+      "venue_visibility_updated_at VARCHAR(64)",
+      "venue_visibility_updated_by VARCHAR(64)"
     ];
     for (const col of pgEventCols) {
       try {

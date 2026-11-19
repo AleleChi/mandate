@@ -447,8 +447,24 @@ router.get('/venue-access', async (req: AuthenticatedRequest, res: Response) => 
       return res.json({
         success: true,
         eligible: false,
+        venueReleased: false,
         eventTitle: currentEvent?.title || 'Current Event',
         message: 'Venue details are available only to parents and guardians of selected children for this event.'
+      });
+    }
+
+    // Condition A: Administrator has published/enabled venue visibility for this event
+    const isVenueVisible = currentEvent.venue_visible_to_selected_parents === 1 || currentEvent.venue_visible_to_selected_parents === true;
+    if (!isVenueVisible) {
+      return res.json({
+        success: true,
+        eligible: true,
+        venueReleased: false,
+        venueName: null,
+        venueAddress: null,
+        eventTitle: currentEvent?.title || 'Current Event',
+        selectedChildrenCount: qualifyingChildren.length,
+        message: 'Venue details will be shared here soon. Please check back for updates.'
       });
     }
 
@@ -462,6 +478,7 @@ router.get('/venue-access', async (req: AuthenticatedRequest, res: Response) => 
     return res.json({
       success: true,
       eligible: true,
+      venueReleased: true,
       eventTitle: currentEvent?.title || 'Current Event',
       venueName,
       venueAddress,
@@ -472,6 +489,7 @@ router.get('/venue-access', async (req: AuthenticatedRequest, res: Response) => 
     return res.status(500).json({
       success: false,
       eligible: false,
+      venueReleased: false,
       message: 'Failed to verify venue eligibility. Please try again.'
     });
   }
@@ -487,6 +505,7 @@ router.get('/events/:eventId/venue-access', async (req: AuthenticatedRequest, re
       return res.status(403).json({
         success: false,
         eligible: false,
+        venueReleased: false,
         message: 'Parent profile required to access venue details.'
       });
     }
@@ -497,6 +516,7 @@ router.get('/events/:eventId/venue-access', async (req: AuthenticatedRequest, re
       return res.status(404).json({
         success: false,
         eligible: false,
+        venueReleased: false,
         message: 'Event not found.'
       });
     }
@@ -516,8 +536,24 @@ router.get('/events/:eventId/venue-access', async (req: AuthenticatedRequest, re
       return res.json({
         success: true,
         eligible: false,
+        venueReleased: false,
         eventTitle: event.title,
         message: 'Venue details are available only to parents and guardians of selected children for this event.'
+      });
+    }
+
+    // Condition A: Administrator has published/enabled venue visibility for this event
+    const isVenueVisible = event.venue_visible_to_selected_parents === 1 || event.venue_visible_to_selected_parents === true;
+    if (!isVenueVisible) {
+      return res.json({
+        success: true,
+        eligible: true,
+        venueReleased: false,
+        venueName: null,
+        venueAddress: null,
+        eventTitle: event.title,
+        selectedChildrenCount: qualifyingChildren.length,
+        message: 'Venue details will be shared here soon. Please check back for updates.'
       });
     }
 
@@ -531,6 +567,7 @@ router.get('/events/:eventId/venue-access', async (req: AuthenticatedRequest, re
     return res.json({
       success: true,
       eligible: true,
+      venueReleased: true,
       eventTitle: event.title,
       venueName,
       venueAddress,
@@ -810,9 +847,16 @@ router.get('/home', async (req: AuthenticatedRequest, res: Response) => {
     return ['selected', 'pass_ready', 'checked_in', 'inside', 'picked_up', 'checked_out'].includes(s);
   }) : false;
 
+  const isVenueVisible = currentEvent ? (
+    currentEvent.venue_visible_to_selected_parents === 1 ||
+    currentEvent.venue_visible_to_selected_parents === true
+  ) : false;
+
+  const canSeeVenue = Boolean(isSelectedParent && isVenueVisible);
+
   let venueName: string | null = null;
   let venueAddress: string | null = null;
-  if (isSelectedParent && currentEvent?.location) {
+  if (canSeeVenue && currentEvent?.location) {
     venueAddress = currentEvent.location;
     const parts = currentEvent.location.split(',');
     venueName = parts.length > 1 ? parts[0].trim() : (currentEvent.title || 'Event Venue');
@@ -833,12 +877,14 @@ router.get('/home', async (req: AuthenticatedRequest, res: Response) => {
     dailyStartTime: currentEvent.daily_start_time,
     daily_end_time: currentEvent.daily_end_time,
     dailyEndTime: currentEvent.daily_end_time,
-    location: isSelectedParent ? currentEvent.location : null,
+    location: canSeeVenue ? currentEvent.location : null,
     venue_name: venueName,
     venueName: venueName,
     venue_address: venueAddress,
     venueAddress: venueAddress,
-    venue_accessible: isSelectedParent,
+    venue_accessible: canSeeVenue,
+    venue_released: isVenueVisible,
+    venue_pending_release: Boolean(isSelectedParent && !isVenueVisible),
     status: currentEvent.status
   } : null;
 
