@@ -220,10 +220,14 @@ export function buildReviewUrl(childId?: string): string {
 export interface RecipientTokenContext {
   parentName?: string;
   childName?: string;
+  selectedChildNames?: string;
   volunteerName?: string;
   team?: string;
   location?: string;
+  venueName?: string;
+  venueAddress?: string;
   eventName?: string;
+  eventDate?: string;
   passUrl?: string;
   reviewUrl?: string;
   pickupTime?: string;
@@ -235,10 +239,15 @@ export interface RecipientTokenContext {
  * Supported tokens:
  * - {Parent name}
  * - {Child name}
+ * - {Selected child name(s)}
  * - {Volunteer name}
  * - {Team}
  * - {Location}
+ * - {Venue name}
+ * - {Venue address}
+ * - {Address}
  * - {Event name}
+ * - {Event date}
  * - {Pass link}
  * - {Review link}
  * - {Pickup time}
@@ -247,11 +256,15 @@ export interface RecipientTokenContext {
 export function resolveMessageTokens(template: string, context: RecipientTokenContext): string {
   if (!template) return '';
   const pName = (context.parentName || '').trim() || 'Parent';
-  const cName = (context.childName || '').trim() || 'your child';
+  const selectedChildren = (context.selectedChildNames || context.childName || '').trim() || 'your child';
+  const cName = (context.childName || context.selectedChildNames || '').trim() || 'your child';
   const vName = (context.volunteerName || '').trim() || 'Volunteer';
   const vTeam = (context.team || '').trim() || 'Assigned Team';
   const vLoc = (context.location || '').trim();
+  const vNameResolved = (context.venueName || '').trim() || vLoc;
+  const vAddrResolved = (context.venueAddress || '').trim() || vLoc;
   const eName = (context.eventName || '').trim() || 'The General Assembly';
+  const eDate = (context.eventDate || '').trim();
   const pLink = context.passUrl || buildParentPassUrl();
   const rLink = context.reviewUrl || buildParentStatusUrl();
   const pTime = (context.pickupTime || '').trim() || '4:00 PM';
@@ -259,15 +272,24 @@ export function resolveMessageTokens(template: string, context: RecipientTokenCo
 
   let result = template
     .replace(/\{Parent name\}/gi, pName)
+    .replace(/\{Selected child name\(s\)\}/gi, selectedChildren)
     .replace(/\{Child name\}/gi, cName)
     .replace(/\{Volunteer name\}/gi, vName)
     .replace(/\{Team\}/gi, vTeam)
     .replace(/\{Event name\}/gi, eName)
+    .replace(/\{Event date\}/gi, eDate)
     .replace(/\{Pass link\}/gi, pLink)
     .replace(/\{Review link\}/gi, rLink)
     .replace(/\{Pickup time\}/gi, pTime)
     .replace(/\{Support contact\}/gi, sContact);
 
+  if (vNameResolved) {
+    result = result.replace(/\{Venue name\}/gi, vNameResolved);
+  }
+  if (vAddrResolved) {
+    result = result.replace(/\{Venue address\}/gi, vAddrResolved);
+    result = result.replace(/\{Address\}/gi, vAddrResolved);
+  }
   if (vLoc) {
     result = result.replace(/\{Location\}/gi, vLoc);
   }

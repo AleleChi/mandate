@@ -19,7 +19,27 @@ function normalizeOptionalText(val: unknown): string | null {
   const trimmed = String(val).trim();
   return trimmed.length > 0 ? trimmed : null;
 }
-import { recordChannelInvitationSent } from '../services/selectedParentsChannelService';
+import { recordChannelInvitationSent, QUALIFYING_CHILD_STATUSES } from '../services/selectedParentsChannelService';
+
+function formatEventDateString(dateStr: string | null | undefined): string {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return String(dateStr);
+    const day = d.getDate();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = months[d.getMonth()];
+    const year = d.getFullYear();
+    const j = day % 10, k = day % 100;
+    let suffix = 'th';
+    if (j === 1 && k !== 11) suffix = 'st';
+    else if (j === 2 && k !== 12) suffix = 'nd';
+    else if (j === 3 && k !== 13) suffix = 'rd';
+    return `${day}${suffix} ${month} ${year}`;
+  } catch {
+    return String(dateStr);
+  }
+}
 import { extractFirstName, formatSelectedChildNames } from '../services/whatsapp/personalization';
 import { issuePassForChild, revokePassForChild, getPassForChild } from '../services/passService';
 import { uploadMedia, buildCloudinaryOptimizedVideoUrl, buildCloudinaryVideoPosterUrl } from '../services/media/cloudinary';
@@ -7929,9 +7949,76 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
       v.whatsappConsentStatus = v.volunteerConsentStatus || 'unknown';
     }
 
+    // Calculate Selected Parents summary metrics for currently selected event
+    const qualifyingStatuses = [...QUALIFYING_CHILD_STATUSES];
+    const qPlaceholders = qualifyingStatuses.map(() => '?').join(',');
+
+    const totalSelectedChildrenRes = await queryOne(`
+      SELECT COUNT(DISTINCT cee.child_id) as count
+      FROM child_event_entries cee
+      JOIN children c ON c.id = cee.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      WHERE cee.event_id = ?
+        AND cee.status IN (${qPlaceholders})
+        AND (cee.is_deleted = 0 OR cee.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+    `, [eventId, ...qualifyingStatuses]);
+
+    const eligibleParentsRes = await query(`
+      SELECT DISTINCT p.id as parent_id, u.email
+      FROM child_event_entries cee
+      JOIN children c ON c.id = cee.child_id
+      JOIN parent_profiles p ON p.id = c.parent_profile_id
+      JOIN users u ON u.id = p.user_id
+      WHERE cee.event_id = ?
+        AND cee.status IN (${qPlaceholders})
+        AND (cee.is_deleted = 0 OR cee.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+        AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+    `, [eventId, ...qualifyingStatuses]);
+
+    const totalSelectedChildren = Number(totalSelectedChildrenRes?.count || 0);
+    const totalEligibleParents = eligibleParentsRes?.length || 0;
+    let validEmailCount = 0;
+    let missingEmailCount = 0;
+    const eligibleParentIds: string[] = [];
+
+    for (const ep of (eligibleParentsRes || [])) {
+      eligibleParentIds.push(ep.parent_id);
+      const email = (ep.email || '').trim();
+      if (email && email.includes('@')) {
+        validEmailCount++;
+      } else {
+        missingEmailCount++;
+      }
+    }
+
+    let alreadyEmailedCount = 0;
+    if (eligibleParentIds.length > 0) {
+      const pPlaceholders = eligibleParentIds.map(() => '?').join(',');
+      const emailedRes = await queryOne(`
+        SELECT COUNT(DISTINCT parent_profile_id) as count
+        FROM email_delivery_logs
+        WHERE event_id = ?
+          AND status = 'sent'
+          AND parent_profile_id IN (${pPlaceholders})
+      `, [eventId, ...eligibleParentIds]);
+      alreadyEmailedCount = Number(emailedRes?.count || 0);
+    }
+
+    const selectedParentsSummary = {
+      totalSelectedChildren,
+      totalEligibleParents,
+      validEmailCount,
+      missingEmailCount,
+      alreadyEmailedCount
+    };
+
     const recipientGroups = [
+      { key: 'selected_parents', label: 'Selected parents', count: totalEligibleParents },
       { key: 'all_parents', label: 'All parents', count: Number(countAllRes?.count || 0) },
-      { key: 'specific_parents', label: 'Selected parents', count: eventParents.length },
+      { key: 'specific_parents', label: 'Specific parents (manual)', count: eventParents.length },
       { key: 'selected_children', label: 'Selected children', count: Number(countSelectedRes?.count || 0) },
       { key: 'under_review', label: 'Under review', count: Number(countReviewRes?.count || 0) },
       { key: 'waiting_list', label: 'Waiting list', count: Number(countWaitingRes?.count || 0) },
@@ -8300,6 +8387,7 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
         pending
       },
       recipientGroups,
+      selectedParentsSummary,
       channelEligibility,
       messageTypes,
       volunteerMessageTypes,
@@ -9487,6 +9575,94 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
       });
     }
 
+    // Dedicated Selected Parents Audience Preview
+    if (recipientGroup === 'selected_parents') {
+      const qualifyingStatuses = [...QUALIFYING_CHILD_STATUSES];
+      const qPlaceholders = qualifyingStatuses.map(() => '?').join(',');
+
+      const evRowFull = await queryOne('SELECT title, start_date, end_date, location FROM events WHERE id = ?', [eventId]);
+      const eventTitle = evRowFull?.title || eventName || 'The General Assembly';
+      const eventDate = evRowFull?.start_date ? formatEventDateString(evRowFull.start_date) : '';
+      const rawLocation = (evRowFull?.location || '').trim();
+      const venueName = rawLocation ? (rawLocation.split(',')[0]?.trim() || rawLocation) : (eventTitle || 'Auditorium');
+      const venueAddress = rawLocation || 'Koinonia Global Auditorium & Children Pavilion, Abuja';
+
+      const sampleParentRow = await queryOne(`
+        SELECT p.id as parent_id, p.full_name as parent_name, u.email
+        FROM child_event_entries cee
+        JOIN children c ON c.id = cee.child_id
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        JOIN users u ON u.id = p.user_id
+        WHERE cee.event_id = ?
+          AND cee.status IN (${qPlaceholders})
+          AND (cee.is_deleted = 0 OR cee.is_deleted IS NULL)
+          AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+          AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+        ORDER BY p.full_name ASC
+        LIMIT 1
+      `, [eventId, ...qualifyingStatuses]);
+
+      let selectedChildNames = 'your child';
+      let parentName = 'Parent';
+      if (sampleParentRow) {
+        parentName = (sampleParentRow.parent_name || '').trim() || 'Parent';
+        const sampleChildren = await query(`
+          SELECT c.full_name as child_name
+          FROM child_event_entries cee
+          JOIN children c ON c.id = cee.child_id
+          WHERE cee.event_id = ?
+            AND c.parent_profile_id = ?
+            AND cee.status IN (${qPlaceholders})
+            AND (cee.is_deleted = 0 OR cee.is_deleted IS NULL)
+            AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+          ORDER BY c.date_of_birth ASC, c.id ASC
+        `, [eventId, sampleParentRow.parent_id, ...qualifyingStatuses]);
+
+        const cNames = sampleChildren.map((c: any) => c.child_name).filter(Boolean);
+        if (cNames.length > 0) {
+          selectedChildNames = formatSelectedChildNames(cNames);
+        }
+      }
+
+      const renderedBody = resolveMessageTokens(body, {
+        parentName,
+        selectedChildNames,
+        childName: selectedChildNames,
+        eventName: eventTitle,
+        eventDate,
+        venueName,
+        venueAddress,
+        location: venueAddress,
+        passUrl: buildParentPassUrl(),
+        reviewUrl: buildParentStatusUrl(),
+        pickupTime: '4:00 PM',
+        supportContact: '+234 803 123 4567'
+      });
+
+      const renderedSubject = resolveMessageTokens(subject || '', {
+        parentName,
+        selectedChildNames,
+        childName: selectedChildNames,
+        eventName: eventTitle,
+        eventDate,
+        venueName,
+        venueAddress,
+        location: venueAddress
+      });
+
+      return res.json({
+        success: true,
+        preview: {
+          subject: renderedSubject,
+          body: renderedBody,
+          representativeParentName: parentName,
+          representativeChildName: selectedChildNames,
+          venueName,
+          venueAddress
+        }
+      });
+    }
+
     // Build the query based on the selected recipientGroup
     let groupCondition = '';
     if (recipientGroup === 'selected_children') {
@@ -9807,6 +9983,31 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
             AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
         `, deduplicatedParentIds);
       }
+    } else if (recipientGroup === 'selected_parents') {
+      const qualifyingStatuses = [...QUALIFYING_CHILD_STATUSES];
+      const qPlaceholders = qualifyingStatuses.map(() => '?').join(',');
+      rows = await query(`
+        SELECT 
+          p.id as parent_id,
+          p.full_name as parent_name,
+          p.phone_number,
+          u.email,
+          u.id as user_id,
+          c.id as child_id,
+          c.full_name as child_name,
+          e.id as entry_id,
+          e.status as child_status
+        FROM child_event_entries e
+        JOIN children c ON c.id = e.child_id
+        JOIN parent_profiles p ON p.id = c.parent_profile_id
+        JOIN users u ON u.id = p.user_id
+        WHERE e.event_id = ?
+          AND e.status IN (${qPlaceholders})
+          AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
+          AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+          AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
+        ORDER BY p.full_name ASC, c.date_of_birth ASC, c.id ASC
+      `, [eventId, ...qualifyingStatuses]);
     } else {
       let queryStr = `
         SELECT p.id as parent_id, p.full_name as parent_name, p.phone_number, u.email, u.id as user_id, c.id as child_id, c.full_name as child_name, e.id as entry_id
@@ -9870,7 +10071,79 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
 
     const isVolunteerAudience = recipientGroup === 'volunteers' || recipientGroup === 'specific_volunteers';
 
-    if (isVolunteerAudience) {
+    if (recipientGroup === 'selected_parents') {
+      const evRowFull = await queryOne('SELECT title, start_date, end_date, location FROM events WHERE id = ?', [eventId]);
+      const eventTitleFull = evRowFull?.title || eventTitle || 'The General Assembly';
+      const eventDateFull = evRowFull?.start_date ? formatEventDateString(evRowFull.start_date) : '';
+      const rawLocation = (evRowFull?.location || '').trim();
+      const venueName = rawLocation ? (rawLocation.split(',')[0]?.trim() || rawLocation) : (eventTitleFull || 'Auditorium');
+      const venueAddress = rawLocation || 'Koinonia Global Auditorium & Children Pavilion, Abuja';
+
+      const parentMap = new Map<string, {
+        parentId: string;
+        parentName: string;
+        email: string;
+        phone: string;
+        userId: string;
+        childNames: string[];
+      }>();
+
+      for (const row of rows) {
+        if (!parentMap.has(row.parent_id)) {
+          parentMap.set(row.parent_id, {
+            parentId: row.parent_id,
+            parentName: (row.parent_name || '').trim() || 'Parent',
+            email: (row.email || '').trim(),
+            phone: row.phone_number,
+            userId: row.user_id,
+            childNames: []
+          });
+        }
+        if (row.child_name) {
+          parentMap.get(row.parent_id)!.childNames.push(row.child_name);
+        }
+      }
+
+      for (const [, pInfo] of parentMap.entries()) {
+        const selectedChildNames = pInfo.childNames.length > 0 ? formatSelectedChildNames(pInfo.childNames) : 'your child';
+
+        const renderedBody = resolveMessageTokens(body, {
+          parentName: pInfo.parentName,
+          selectedChildNames,
+          childName: selectedChildNames,
+          eventName: eventTitleFull,
+          eventDate: eventDateFull,
+          venueName,
+          venueAddress,
+          location: venueAddress,
+          passUrl: buildParentPassUrl(),
+          reviewUrl: buildParentStatusUrl(),
+          pickupTime: '4:00 PM',
+          supportContact: '+234 803 123 4567'
+        });
+
+        const renderedSubject = resolveMessageTokens(subject || '', {
+          parentName: pInfo.parentName,
+          selectedChildNames,
+          childName: selectedChildNames,
+          eventName: eventTitleFull,
+          eventDate: eventDateFull,
+          venueName,
+          venueAddress,
+          location: venueAddress
+        });
+
+        messagesToSend.push({
+          parentId: pInfo.parentId,
+          parentName: pInfo.parentName,
+          email: pInfo.email,
+          phone: pInfo.phone,
+          userId: pInfo.userId,
+          subject: renderedSubject,
+          body: renderedBody
+        });
+      }
+    } else if (isVolunteerAudience) {
       const volunteerMap = new Map<string, any>();
       for (const row of rows) {
         const key = row.user_id || row.volunteer_id;
@@ -10157,21 +10430,64 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       const customReplyTo = settings?.replyToEmail || undefined;
 
       for (const msg of messagesToSend) {
-        if (msg.email) {
+        const recipientEmail = (msg.email || '').trim();
+        if (recipientEmail && recipientEmail.includes('@')) {
+          // Duplicate prevention check:
+          // If this parent already received a successful email delivery for this event, skip sending
+          let alreadySent = false;
+          if (msg.parentId) {
+            const existingSuccess = await queryOne(`
+              SELECT id FROM email_delivery_logs
+              WHERE event_id = ? AND parent_profile_id = ? AND status = 'sent'
+            `, [eventId, msg.parentId]);
+            if (existingSuccess) {
+              alreadySent = true;
+            }
+          }
+
+          if (alreadySent) {
+            continue;
+          }
+
+          const deliveryLogId = `edl-${crypto.randomUUID()}`;
+          const nowStr = new Date().toISOString();
+
           try {
             const res = await sendEmail({
-              to: msg.email,
+              to: recipientEmail,
               subject: msg.subject,
               text: msg.body,
               html: `<p>${msg.body.replace(/\n/g, '<br>')}</p>`,
               fromName: customFromName,
               replyTo: customReplyTo
             });
-            if (res.success) emailSentCount++;
-            else externalFailCount++;
-          } catch (err) {
+
+            if (res.success) {
+              emailSentCount++;
+              await execute(`
+                INSERT INTO email_delivery_logs (
+                  id, campaign_id, event_id, parent_profile_id, user_id, recipient_email,
+                  subject, provider, provider_message_id, status, sent_at, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', ?, ?, ?)
+              `, [deliveryLogId, logId, eventId, msg.parentId || null, msg.userId || null, recipientEmail, msg.subject, res.provider || 'email', res.id || null, nowStr, nowStr, nowStr]);
+            } else {
+              externalFailCount++;
+              await execute(`
+                INSERT INTO email_delivery_logs (
+                  id, campaign_id, event_id, parent_profile_id, user_id, recipient_email,
+                  subject, provider, error_message, status, failed_at, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'failed', ?, ?, ?)
+              `, [deliveryLogId, logId, eventId, msg.parentId || null, msg.userId || null, recipientEmail, msg.subject, res.provider || 'email', res.error || 'Email send failed', nowStr, nowStr, nowStr]);
+            }
+          } catch (err: any) {
             console.error('[Admin sendEmail failed]:', err);
             externalFailCount++;
+            await execute(`
+              INSERT INTO email_delivery_logs (
+                id, campaign_id, event_id, parent_profile_id, user_id, recipient_email,
+                subject, provider, error_message, status, failed_at, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'failed', ?, ?, ?)
+            `, [deliveryLogId, logId, eventId, msg.parentId || null, msg.userId || null, recipientEmail, msg.subject, 'email', err?.message || 'Send exception', nowStr, nowStr, nowStr]);
           }
         }
       }
@@ -10286,7 +10602,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     // 7. Async WhatsApp Queue Dispatch via notification_jobs (Phase 1B)
     let whatsappQueuedCount = 0;
     let whatsappEnqueueError: string | null = null;
-    if (activeChannels.includes('whatsapp')) {
+    if (activeChannels.includes('whatsapp') && recipientGroup !== 'selected_parents') {
       try {
         if (isChildSpecific) {
           // Child-specific messages: each selected child gets a distinct communication context

@@ -282,6 +282,7 @@ async function mapChildToFrontend(
     registeredForCurrentEvent: isRegisteredForCurrentEvent,
     currentEventId: currentEventId || null,
     entryId: entryRow?.id || null,
+    rawStatus: entryRow?.status || null,
     eventEligibility
   };
 }
@@ -397,6 +398,150 @@ router.get('/channel-access', async (req: AuthenticatedRequest, res: Response) =
       success: false,
       eligible: false,
       message: 'Failed to verify channel eligibility. Please try again.'
+    });
+  }
+});
+
+/**
+ * RESTRICTED VENUE ACCESS (Phase 5)
+ * Strict Server-Side Authorization:
+ * Only authenticated parents with at least one qualifying selected/approved child
+ * for the requested event are granted access to the full venue address.
+ */
+router.get('/venue-access', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    let parentProfile = req.parentProfile;
+    if (!parentProfile && req.user) {
+      parentProfile = await queryOne('SELECT * FROM parent_profiles WHERE user_id = ?', [req.user.id]);
+    }
+    if (!parentProfile) {
+      return res.status(403).json({
+        success: false,
+        eligible: false,
+        message: 'Parent profile required to access venue details.'
+      });
+    }
+
+    const currentEvent = await getCurrentEvent();
+    const eventId = currentEvent?.id || getCurrentEventId();
+    if (!eventId) {
+      return res.json({
+        success: true,
+        eligible: false,
+        message: 'No active event session found.'
+      });
+    }
+
+    const children = await query<any>(
+      `SELECT c.id, c.full_name, cee.status
+       FROM children c
+       JOIN child_event_entries cee ON cee.child_id = c.id AND cee.event_id = ? AND COALESCE(cee.is_deleted, 0) = 0
+       WHERE c.parent_profile_id = ?
+         AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+       ORDER BY c.date_of_birth ASC, c.created_at ASC, c.id ASC`,
+      [eventId, parentProfile.id]
+    );
+
+    const qualifyingChildren = children.filter((c: any) => QUALIFYING_CHILD_STATUSES.includes(c.status));
+    if (qualifyingChildren.length === 0) {
+      return res.json({
+        success: true,
+        eligible: false,
+        eventTitle: currentEvent?.title || 'Current Event',
+        message: 'Venue details are available only to parents and guardians of selected children for this event.'
+      });
+    }
+
+    const loc = currentEvent?.location || '';
+    let venueName = currentEvent?.title || 'Event Venue';
+    let venueAddress = loc;
+    if (loc && loc.includes(',')) {
+      venueName = loc.split(',')[0].trim();
+    }
+
+    return res.json({
+      success: true,
+      eligible: true,
+      eventTitle: currentEvent?.title || 'Current Event',
+      venueName,
+      venueAddress,
+      selectedChildrenCount: qualifyingChildren.length
+    });
+  } catch (err: any) {
+    console.error('[Parent Venue Access] Error checking venue access:', err);
+    return res.status(500).json({
+      success: false,
+      eligible: false,
+      message: 'Failed to verify venue eligibility. Please try again.'
+    });
+  }
+});
+
+router.get('/events/:eventId/venue-access', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    let parentProfile = req.parentProfile;
+    if (!parentProfile && req.user) {
+      parentProfile = await queryOne('SELECT * FROM parent_profiles WHERE user_id = ?', [req.user.id]);
+    }
+    if (!parentProfile) {
+      return res.status(403).json({
+        success: false,
+        eligible: false,
+        message: 'Parent profile required to access venue details.'
+      });
+    }
+
+    const { eventId } = req.params;
+    const event = await getEventById(eventId);
+    if (!event) {
+      return res.status(404).json({
+        success: false,
+        eligible: false,
+        message: 'Event not found.'
+      });
+    }
+
+    const children = await query<any>(
+      `SELECT c.id, c.full_name, cee.status
+       FROM children c
+       JOIN child_event_entries cee ON cee.child_id = c.id AND cee.event_id = ? AND COALESCE(cee.is_deleted, 0) = 0
+       WHERE c.parent_profile_id = ?
+         AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+       ORDER BY c.date_of_birth ASC, c.created_at ASC, c.id ASC`,
+      [eventId, parentProfile.id]
+    );
+
+    const qualifyingChildren = children.filter((c: any) => QUALIFYING_CHILD_STATUSES.includes(c.status));
+    if (qualifyingChildren.length === 0) {
+      return res.json({
+        success: true,
+        eligible: false,
+        eventTitle: event.title,
+        message: 'Venue details are available only to parents and guardians of selected children for this event.'
+      });
+    }
+
+    const loc = event.location || '';
+    let venueName = event.title || 'Event Venue';
+    let venueAddress = loc;
+    if (loc && loc.includes(',')) {
+      venueName = loc.split(',')[0].trim();
+    }
+
+    return res.json({
+      success: true,
+      eligible: true,
+      eventTitle: event.title,
+      venueName,
+      venueAddress,
+      selectedChildrenCount: qualifyingChildren.length
+    });
+  } catch (err: any) {
+    console.error('[Parent Event Venue Access] Error checking venue access:', err);
+    return res.status(500).json({
+      success: false,
+      eligible: false,
+      message: 'Failed to verify venue eligibility.'
     });
   }
 });
@@ -659,6 +804,20 @@ router.get('/home', async (req: AuthenticatedRequest, res: Response) => {
     Boolean(c.passReference || (c.pass && (c.pass.passCode || c.pass.passLocked)))
   ).length;
 
+  const isSelectedParent = currentEventId ? list.some(c => {
+    if (c.rawStatus && QUALIFYING_CHILD_STATUSES.includes(c.rawStatus as any)) return true;
+    const s = (c.status || '').toLowerCase().replace(/\s+/g, '_');
+    return ['selected', 'pass_ready', 'checked_in', 'inside', 'picked_up', 'checked_out'].includes(s);
+  }) : false;
+
+  let venueName: string | null = null;
+  let venueAddress: string | null = null;
+  if (isSelectedParent && currentEvent?.location) {
+    venueAddress = currentEvent.location;
+    const parts = currentEvent.location.split(',');
+    venueName = parts.length > 1 ? parts[0].trim() : (currentEvent.title || 'Event Venue');
+  }
+
   const activeEvent = currentEvent ? {
     id: currentEvent.id,
     title: currentEvent.title,
@@ -674,7 +833,12 @@ router.get('/home', async (req: AuthenticatedRequest, res: Response) => {
     dailyStartTime: currentEvent.daily_start_time,
     daily_end_time: currentEvent.daily_end_time,
     dailyEndTime: currentEvent.daily_end_time,
-    location: currentEvent.location,
+    location: isSelectedParent ? currentEvent.location : null,
+    venue_name: venueName,
+    venueName: venueName,
+    venue_address: venueAddress,
+    venueAddress: venueAddress,
+    venue_accessible: isSelectedParent,
     status: currentEvent.status
   } : null;
 
