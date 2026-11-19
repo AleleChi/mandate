@@ -2109,12 +2109,15 @@ export const api = {
           pending: number;
         };
         recipientGroups: Array<{ key: string; label: string; count: number }>;
+        venueVisibleToSelectedParents?: boolean;
         selectedParentsSummary?: {
           totalSelectedChildren: number;
           totalEligibleParents: number;
           validEmailCount: number;
           missingEmailCount: number;
           alreadyEmailedCount: number;
+          venueVisibleToSelectedParents?: boolean;
+          venueVisibility?: boolean;
         };
         channelEligibility?: {
           inApp: number;
@@ -2888,6 +2891,36 @@ export const api = {
       }>(`/api/admin/events/${eventId}/operations-test-override`, {
         method: 'POST',
         body: JSON.stringify(data)
+      });
+    },
+    async getEventVenueVisibility(eventId: string) {
+      return api.request<{
+        success: boolean;
+        eventId: string;
+        eventTitle: string;
+        showVenueToSelectedParents: boolean;
+        venueVisibleToSelectedParents: boolean;
+        releasedAt?: string | null;
+        releasedBy?: string | null;
+        updatedAt?: string | null;
+        updatedBy?: string | null;
+      }>(`/api/admin/events/${eventId}/venue-visibility`);
+    },
+    async setEventVenueVisibility(eventId: string, visible: boolean) {
+      return api.request<{
+        success: boolean;
+        eventId: string;
+        showVenueToSelectedParents: boolean;
+        venueVisibleToSelectedParents: boolean;
+        releasedAt?: string | null;
+        releasedBy?: string | null;
+        updatedAt?: string | null;
+        updatedBy?: string | null;
+        message: string;
+      }>(`/api/admin/events/${eventId}/venue-visibility`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visible, showVenueToSelectedParents: visible })
       });
     },
     async getOperationsAssistantReadiness(eventId?: string) {

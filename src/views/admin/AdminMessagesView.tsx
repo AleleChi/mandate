@@ -669,6 +669,8 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
     validEmailCount: number;
     missingEmailCount: number;
     alreadyEmailedCount: number;
+    venueVisibleToSelectedParents?: boolean;
+    venueVisibility?: boolean;
   } | null>(null);
 
   const toggleChannel = (channelId: string) => {
@@ -1232,6 +1234,14 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
     }
     if (selectedChannels.includes('email') && !subject.trim()) {
       showError('A subject is required for email delivery.');
+      return;
+    }
+
+    const RESTRICTED_VENUE_TOKEN_REGEX = /\{(Venue address|Venue name|Address)\}/i;
+    const hasVenueToken = RESTRICTED_VENUE_TOKEN_REGEX.test(body) || RESTRICTED_VENUE_TOKEN_REGEX.test(subject);
+    const isVenueVisible = Boolean(selectedParentsSummary?.venueVisibleToSelectedParents ?? selectedParentsSummary?.venueVisibility);
+    if (hasVenueToken && !isVenueVisible) {
+      showError('Cannot send message: Venue visibility is currently OFF for this event. Please remove the venue token ({Venue address} / {Venue name}) or enable "Show venue to selected parents" in Event Settings.');
       return;
     }
 
@@ -2639,9 +2649,21 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                     <span className="text-xs font-semibold text-amber-950 dark:text-amber-200 uppercase tracking-wider">
                       Selected Parents Audience Summary
                     </span>
-                    <span className="text-[11px] font-medium text-amber-800 dark:text-amber-300">
-                      Event: {events.find(e => e.id === selectedEventId)?.title || 'Current Event'}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {selectedParentsSummary?.venueVisibleToSelectedParents || selectedParentsSummary?.venueVisibility ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800/60 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          Venue: Visible to parents
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-200/80 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800/60">
+                          Venue: Hidden (OFF)
+                        </span>
+                      )}
+                      <span className="text-[11px] font-medium text-amber-800 dark:text-amber-300">
+                        Event: {events.find(e => e.id === selectedEventId)?.title || 'Current Event'}
+                      </span>
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
                     <div className="bg-white dark:bg-[#1E1E1B] p-2.5 rounded-lg border border-amber-200/60 dark:border-amber-900/30 shadow-2xs">
@@ -3118,6 +3140,20 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                   </div>
                 );
               })()}
+
+              {/* Venue Visibility Restriction Warning before Send */}
+              {(/\{(Venue address|Venue name|Address)\}/i.test(body) || /\{(Venue address|Venue name|Address)\}/i.test(subject)) &&
+                !Boolean(selectedParentsSummary?.venueVisibleToSelectedParents ?? selectedParentsSummary?.venueVisibility) && (
+                <div className="p-3 bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/70 dark:border-amber-900/40 rounded-lg text-xs text-amber-900 dark:text-amber-400 flex items-start space-x-2.5" data-testid="venue-visibility-block-warning">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <span className="font-semibold block">Venue Visibility is OFF for this event</span>
+                    <p className="text-amber-800 dark:text-amber-300 leading-relaxed">
+                      This message contains a venue token, but venue visibility is currently OFF. The send will be blocked by the server until you enable "Show venue to selected parents" in Event Settings, or remove the venue token.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Footer */}
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-4 border-t border-[#F4F3EF] dark:border-[#302E29]">

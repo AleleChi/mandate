@@ -68,6 +68,12 @@ interface EventData {
   operationsTestOverrideEnabledBy?: string | null;
   operationsTestOverrideEnabledAt?: string | null;
   operationsTestOverrideActive?: boolean;
+  showVenueToSelectedParents?: boolean;
+  venueVisibleToSelectedParents?: boolean;
+  venueVisibilityReleasedAt?: string | null;
+  venueVisibilityReleasedBy?: string | null;
+  venueVisibilityUpdatedAt?: string | null;
+  venueVisibilityUpdatedBy?: string | null;
 }
 
 const defaultAgeGroups: AgeGroup[] = [
@@ -113,6 +119,49 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
   const [submitting, setSubmitting] = useState(false);
   const [makeCurrentTargetEvent, setMakeCurrentTargetEvent] = useState<EventData | null>(null);
   const [isSettingCurrent, setIsSettingCurrent] = useState(false);
+
+  // Venue Visibility states
+  const [venueVisibilityTargetEvent, setVenueVisibilityTargetEvent] = useState<EventData | null>(null);
+  const [venueVisibilityLoadingEventId, setVenueVisibilityLoadingEventId] = useState<string | null>(null);
+  const [isUpdatingVenueVisibility, setIsUpdatingVenueVisibility] = useState(false);
+  const [formShowVenueToSelectedParents, setFormShowVenueToSelectedParents] = useState(false);
+
+  const handleToggleVenueVisibility = (event: EventData, nextVal: boolean) => {
+    if (nextVal) {
+      setVenueVisibilityTargetEvent(event);
+    } else {
+      handleConfirmVenueVisibility(event.id!, false);
+    }
+  };
+
+  const handleConfirmVenueVisibility = async (eventId: string, visible: boolean) => {
+    try {
+      setVenueVisibilityLoadingEventId(eventId);
+      setIsUpdatingVenueVisibility(true);
+      const res = await api.admin.setEventVenueVisibility(eventId, visible);
+      if (res.success) {
+        if (visible) {
+          showSuccess('Venue Address Published', 'Venue address is now visible to all parents with selected children.');
+        } else {
+          showSuccess('Venue Address Hidden', 'Venue address is now hidden from parents. They will see "Venue details will be shared here soon."');
+        }
+        setEvents(prev => prev.map(e => e.id === eventId ? {
+          ...e,
+          showVenueToSelectedParents: visible,
+          venueVisibleToSelectedParents: visible,
+          venueVisibilityReleasedAt: res.releasedAt || (visible ? new Date().toISOString() : e.venueVisibilityReleasedAt),
+          venueVisibilityUpdatedAt: res.updatedAt || new Date().toISOString()
+        } : e));
+      }
+    } catch (err: any) {
+      const parsed = extractApiError(err);
+      showError('Action Failed', parsed.message || 'Could not update venue visibility.');
+    } finally {
+      setVenueVisibilityLoadingEventId(null);
+      setIsUpdatingVenueVisibility(false);
+      setVenueVisibilityTargetEvent(null);
+    }
+  };
 
   // Event Testing Override state
   const [overrideDuration, setOverrideDuration] = useState<number>(60);
@@ -243,6 +292,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
         setFormAllowMultipleChildren(evData.allowMultipleChildren ?? true);
         setFormAllowSaveAndContinue(evData.allowSaveAndContinue ?? true);
         setFormAllowEditAfterSubmission(evData.allowEditAfterSubmission ?? false);
+        setFormShowVenueToSelectedParents(Boolean(evData.showVenueToSelectedParents || evData.venueVisibleToSelectedParents));
         setFormMinimumAge(evData.minimumAge !== undefined && evData.minimumAge !== null ? String(evData.minimumAge) : '');
         setFormMaximumAge(evData.maximumAge !== undefined && evData.maximumAge !== null ? String(evData.maximumAge) : '');
 
@@ -286,6 +336,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
     setFormAllowMultipleChildren(true);
     setFormAllowSaveAndContinue(true);
     setFormAllowEditAfterSubmission(false);
+    setFormShowVenueToSelectedParents(false);
     setFormMinimumAge('');
     setFormMaximumAge('');
 
@@ -521,6 +572,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
       allowMultipleChildren: formAllowMultipleChildren,
       allowSaveAndContinue: formAllowSaveAndContinue,
       allowEditAfterSubmission: formAllowEditAfterSubmission,
+      showVenueToSelectedParents: formShowVenueToSelectedParents,
       minimumAge: formMinimumAge !== '' ? parseInt(formMinimumAge, 10) : null,
       maximumAge: formMaximumAge !== '' ? parseInt(formMaximumAge, 10) : null,
       ageGroups: formAgeGroups
@@ -590,17 +642,18 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
     }
   };
 
-  const ToggleSwitch = ({ checked, onChange, label, description }: { checked: boolean; onChange: (v: boolean) => void; label: string; description: string }) => (
+  const ToggleSwitch = ({ checked, onChange, label, description, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; description?: string; disabled?: boolean }) => (
     <div className="flex items-center justify-between py-2 border-b border-[#EAE8E1]/60 last:border-0">
       <div className="flex flex-col space-y-0.5 max-w-sm">
-        <span className="text-xs font-semibold text-[#18181B]">{label}</span>
-        <span className="text-[10px] text-zinc-500 leading-normal">{description}</span>
+        <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">{label}</span>
+        {description && <span className="text-[10px] text-zinc-500 dark:text-[#A19D94] leading-normal">{description}</span>}
       </div>
       <button
         type="button"
-        onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-          checked ? 'bg-[#C59B27]' : 'bg-zinc-200'
+        disabled={disabled}
+        onClick={() => !disabled && onChange(!checked)}
+        className={`relative inline-flex h-5 w-9 shrink-0 ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+          checked ? 'bg-[#C59B27]' : 'bg-zinc-200 dark:bg-zinc-700'
         }`}
       >
         <span
@@ -888,6 +941,41 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                       </div>
                     </div>
                   )}
+
+                  {/* Venue Visibility Setting for Event */}
+                  <div 
+                    className="pt-4 border-t border-[#EAE8E1] dark:border-[#302F2A] flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                    data-component-version="admin-event-venue-visibility-v1"
+                    data-testid={`event-venue-visibility-${event.id}`}
+                  >
+                    <div className="space-y-1 max-w-xl">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3]">Venue Visibility</span>
+                        {event.showVenueToSelectedParents || event.venueVisibleToSelectedParents ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            Venue visible to selected parents
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-100 dark:bg-[#2A2926] text-zinc-600 dark:text-[#A19D94] border border-zinc-200 dark:border-[#383630]">
+                            Venue hidden (OFF)
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-zinc-500 dark:text-[#7A7570] leading-relaxed">
+                        Controls whether the confidential venue address is revealed to parents with selected children in their Parent Portal.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-3 shrink-0 self-start sm:self-center">
+                      <ToggleSwitch
+                        checked={Boolean(event.showVenueToSelectedParents || event.venueVisibleToSelectedParents)}
+                        onChange={(newVal) => handleToggleVenueVisibility(event, newVal)}
+                        label="Show venue to selected parents"
+                        disabled={venueVisibilityLoadingEventId === event.id}
+                      />
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1113,6 +1201,28 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                       label="Allow changes after submission"
                       description="Parents can update details while their registration is being reviewed."
                     />
+
+                    <div className="pt-3 border-t border-[#EAE8E1]/40 dark:border-[#302F2A]">
+                      <div className="mb-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#A19D94] dark:text-[#8E8A80]">
+                          Venue Visibility
+                        </span>
+                      </div>
+                      <ToggleSwitch
+                        checked={formShowVenueToSelectedParents}
+                        onChange={(val) => {
+                          if (val) {
+                            if (window.confirm("Publish this event's venue address to all eligible selected parents? They will be able to view it immediately in their parent portal.")) {
+                              setFormShowVenueToSelectedParents(true);
+                            }
+                          } else {
+                            setFormShowVenueToSelectedParents(false);
+                          }
+                        }}
+                        label="Show venue to selected parents"
+                        description="When ON, eligible selected parents can see the event address in their portal. When OFF, venue address is hidden."
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1536,6 +1646,45 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
                 className="px-4 py-2 text-xs font-semibold text-white bg-[#C59B27] hover:bg-[#b58c22] rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
               >
                 {isSettingCurrent ? <span>Updating...</span> : <span>Make current</span>}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Explicit Confirmation Modal for Publishing Venue Visibility */}
+      {venueVisibilityTargetEvent && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white dark:bg-[#1D1D1A] rounded-2xl max-w-md w-full p-6 shadow-xl border border-[#EAE8E1] dark:border-[#302F2A] space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="space-y-2">
+              <h3 className="text-base font-semibold text-[#18181B] dark:text-[#F0EBE3] leading-snug">
+                Publish venue address to selected parents?
+              </h3>
+              <p className="text-xs text-zinc-500 dark:text-[#A19D94] leading-relaxed font-normal">
+                Publish this event's venue address to all eligible selected parents? They will be able to view it immediately in their parent portal.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <Button
+                type="button"
+                disabled={isUpdatingVenueVisibility}
+                onClick={() => setVenueVisibilityTargetEvent(null)}
+                className="px-4 py-2 text-xs font-medium text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200/70 dark:hover:bg-zinc-700 rounded-xl transition-all cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={isUpdatingVenueVisibility}
+                onClick={() => handleConfirmVenueVisibility(venueVisibilityTargetEvent.id!, true)}
+                className="px-4 py-2 text-xs font-semibold text-white bg-[#C59B27] hover:bg-[#b58c22] rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                {isUpdatingVenueVisibility ? <span>Publishing...</span> : <span>Publish Venue Address</span>}
               </Button>
             </div>
           </div>
