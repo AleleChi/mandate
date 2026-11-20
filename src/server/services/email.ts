@@ -385,6 +385,7 @@ export async function sendEmailVerificationEmail(params: {
   parentEmail: string;
   parentFirstName?: string;
   verificationLink: string;
+  idempotencyKey?: string;
 }): Promise<SendEmailResult> {
   const subject = 'Confirm your email for Parent Access';
   const firstName = getFirstName(params.parentFirstName);
@@ -401,7 +402,7 @@ export async function sendEmailVerificationEmail(params: {
 
   const html = wrapHtmlTemplate(subject, bodyHtml, { label: 'Confirm email', url: params.verificationLink });
 
-  return sendEmail({ to: params.parentEmail, subject, html, text });
+  return sendEmail({ to: params.parentEmail, subject, html, text, idempotencyKey: params.idempotencyKey });
 }
 
 /**

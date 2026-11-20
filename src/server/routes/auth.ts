@@ -486,7 +486,7 @@ router.post('/test-email', optionalAuthMiddleware, async (req: AuthenticatedRequ
       }
     }
 
-    const { to } = req.body;
+    const { to, idempotencyKey } = req.body;
     if (!to) return res.status(400).json({ error: 'Recipient email address required' });
 
     const emailVal = await validateEmailAddress(to, true);
@@ -498,7 +498,8 @@ router.post('/test-email', optionalAuthMiddleware, async (req: AuthenticatedRequ
     const result = await sendEmailVerificationEmail({
       parentEmail: cleanTo,
       parentFirstName: 'Test Recipient',
-      verificationLink: buildPublicAppUrl('/parent/verify-email?token=test-token')
+      verificationLink: buildPublicAppUrl('/parent/verify-email?token=test-token'),
+      idempotencyKey: typeof idempotencyKey === 'string' ? idempotencyKey : undefined
     });
     if (!result.success) {
       return res.status(500).json({ error: result.error || 'We could not send the email right now. Please try again.' });
