@@ -11594,14 +11594,35 @@ router.get('/messages/selected-parents/email-delivery', async (req: Authenticate
     });
 
     // Retrieve original approved announcement subject and body from stored campaign log
-    const origLog = await queryOne<any>(`
-      SELECT subject, body FROM admin_message_logs
-      WHERE id = 'ea654919-3da5-4a3a-9e80-213fb8beed90'
-         OR (recipient_group = 'selected_parents' AND channel = 'email' AND status = 'sent')
-      ORDER BY created_at DESC LIMIT 1
-    `);
-    const campaignOriginalSubject = origLog?.subject || 'Important Event Details - The General Assembly';
-    const campaignOriginalBody = origLog?.body || '';
+    // Establish an exact, verifiable relationship to the active campaign in email_delivery_logs
+    const campaignSample = await queryOne<{ subject: string; event_id: string; created_at: string }>(`
+      SELECT subject, event_id, created_at
+      FROM email_delivery_logs
+      WHERE campaign_id = ?
+      ORDER BY created_at ASC
+      LIMIT 1
+    `, [activeCampaignId]);
+
+    let origLog: { id: string; subject: string; body: string; created_at: any } | null = null;
+    if (campaignSample && campaignSample.subject) {
+      origLog = await queryOne<any>(`
+        SELECT id, subject, body, created_at
+        FROM admin_message_logs
+        WHERE recipient_group = 'selected_parents'
+          AND channel = 'email'
+          AND subject = ?
+          AND (
+            id = 'ea654919-3da5-4a3a-9e80-213fb8beed90'
+            OR created_at <= ?
+          )
+        ORDER BY CASE WHEN id = 'ea654919-3da5-4a3a-9e80-213fb8beed90' THEN 0 ELSE 1 END, created_at DESC
+        LIMIT 1
+      `, [campaignSample.subject, new Date(new Date(campaignSample.created_at).getTime() + 10000).toISOString()]);
+    }
+
+    const campaignOriginalSubject = origLog?.subject || null;
+    const campaignOriginalBody = origLog?.body || null;
+    const isOriginalVerified = Boolean(origLog && origLog.subject && origLog.body);
 
     // 5. Apply filters
     let filtered = parentRecords;
@@ -11644,6 +11665,7 @@ router.get('/messages/selected-parents/email-delivery', async (req: Authenticate
       campaigns: availableCampaigns,
       campaignOriginalSubject,
       campaignOriginalBody,
+      isOriginalVerified,
       allEligibleParentIds,
       allFailedParentIds,
       summary: {
@@ -11788,16 +11810,35 @@ router.post('/messages/selected-parents/send-email', async (req: AuthenticatedRe
       });
     }
 
-    // 6. Resolve email template text - retrieve original approved announcement from stored campaign log
+    // 6. Resolve email template text - retrieve original approved announcement from verified campaign log
     let rawSubject = customSubject?.trim();
     let rawBody = customBody?.trim();
     if (!rawSubject || !rawBody) {
-      const origLog = await queryOne<any>(`
-        SELECT subject, body FROM admin_message_logs
-        WHERE id = 'ea654919-3da5-4a3a-9e80-213fb8beed90'
-           OR (recipient_group = 'selected_parents' AND channel = 'email' AND status = 'sent')
-        ORDER BY created_at DESC LIMIT 1
-      `);
+      const campaignSample = await queryOne<{ subject: string; event_id: string; created_at: string }>(`
+        SELECT subject, event_id, created_at
+        FROM email_delivery_logs
+        WHERE campaign_id = ?
+        ORDER BY created_at ASC
+        LIMIT 1
+      `, [campaignId]);
+
+      let origLog: { id: string; subject: string; body: string; created_at: any } | null = null;
+      if (campaignSample && campaignSample.subject) {
+        origLog = await queryOne<any>(`
+          SELECT id, subject, body, created_at
+          FROM admin_message_logs
+          WHERE recipient_group = 'selected_parents'
+            AND channel = 'email'
+            AND subject = ?
+            AND (
+              id = 'ea654919-3da5-4a3a-9e80-213fb8beed90'
+              OR created_at <= ?
+            )
+          ORDER BY CASE WHEN id = 'ea654919-3da5-4a3a-9e80-213fb8beed90' THEN 0 ELSE 1 END, created_at DESC
+          LIMIT 1
+        `, [campaignSample.subject, new Date(new Date(campaignSample.created_at).getTime() + 10000).toISOString()]);
+      }
+
       if (!rawSubject) rawSubject = origLog?.subject;
       if (!rawBody) rawBody = origLog?.body;
     }
@@ -11805,7 +11846,7 @@ router.post('/messages/selected-parents/send-email', async (req: AuthenticatedRe
     if (!rawSubject || !rawBody) {
       return res.status(400).json({
         success: false,
-        error: 'Announcement subject and body are required and could not be resolved from stored campaign.'
+        error: 'Cannot send retry: The original approved announcement content could not be verified for this campaign. To prevent sending unapproved or fallback messages, retry has been blocked.'
       });
     }
 
