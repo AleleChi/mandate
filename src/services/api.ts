@@ -137,6 +137,72 @@ export interface SelectedParentsSendResponse {
   error?: string;
 }
 
+export interface SelectedParentsEmailCampaign {
+  id: string;
+  name: string;
+  subject: string;
+  createdAt: string;
+  totalLogged: number;
+  sentCount: number;
+  deliveredCount: number;
+  failedCount: number;
+}
+
+export interface SelectedParentsEmailSummary {
+  totalEligibleParents: number;
+  acceptedCount: number;
+  deliveredCount: number;
+  failedCount: number;
+  pendingCount: number;
+  notSentCount: number;
+}
+
+export interface SelectedParentEmailDeliveryRow {
+  parentId: string;
+  userId?: string;
+  fullName: string;
+  firstName: string;
+  email: string | null;
+  phoneNumber: string | null;
+  totalRegisteredChildren: number;
+  selectedChildrenCount: number;
+  selectedRatioText: string;
+  selectedChildNames: string;
+  children: SelectedParentAudienceChild[];
+  campaignStatus: 'sent' | 'delivered' | 'failed' | 'queued' | 'sending' | 'bounced' | 'delayed' | 'not_sent';
+  providerMessageId: string | null;
+  errorMessage: string | null;
+  lastAttemptAt: string | null;
+  sentAt: string | null;
+  logId?: string | null;
+}
+
+export interface SelectedParentsEmailDeliveryResponse {
+  success: boolean;
+  eventId: string;
+  activeCampaignId: string;
+  campaigns: SelectedParentsEmailCampaign[];
+  summary: SelectedParentsEmailSummary;
+  parents: SelectedParentEmailDeliveryRow[];
+  pagination: SelectedParentsPagination;
+  error?: string;
+}
+
+export interface SelectedParentsEmailSendResponse {
+  success: boolean;
+  message: string;
+  campaignId: string;
+  queuedCount: number;
+  skippedCount: number;
+  invalidEmailCount?: number;
+  summary?: {
+    totalTargeted: number;
+    alreadyAcceptedSkipped: number;
+    queuedForDelivery: number;
+  };
+  error?: string;
+}
+
 export function extractApiError(err: any): { 
   message: string; 
   description: string; 
@@ -338,6 +404,82 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload)
     });
+  },
+
+  async getSelectedParentsEmailDelivery(eventId?: string, params?: {
+    campaignId?: string;
+    search?: string;
+    status?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
+    const q = new URLSearchParams();
+    if (eventId) q.append('eventId', eventId);
+    if (params?.campaignId) q.append('campaignId', params.campaignId);
+    if (params?.search) q.append('search', params.search);
+    if (params?.status) q.append('status', params.status);
+    if (params?.page) q.append('page', String(params.page));
+    if (params?.pageSize) q.append('pageSize', String(params.pageSize));
+    return api.request<SelectedParentsEmailDeliveryResponse>(`/api/admin/messages/selected-parents/email-delivery?${q.toString()}`);
+  },
+
+  async sendSelectedParentsEmail(payload: {
+    eventId?: string;
+    campaignId?: string;
+    targetScope?: 'selected' | 'failed_remaining' | 'all_eligible';
+    parentIds?: string[];
+    subject?: string;
+    body?: string;
+  }) {
+    return api.request<SelectedParentsEmailSendResponse>('/api/admin/messages/selected-parents/send-email', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async getSelectedParentsEmailProgress(campaignId?: string) {
+    const q = campaignId ? `?campaignId=${encodeURIComponent(campaignId)}` : '';
+    return api.request<{
+      success: boolean;
+      campaignId: string;
+      isActive: boolean;
+      progress: {
+        campaignId: string;
+        total: number;
+        processed: number;
+        sent: number;
+        failed: number;
+        skipped: number;
+        status: string;
+      };
+    }>(`/api/admin/messages/selected-parents/email-delivery/progress${q}`);
+  },
+
+  async downloadSelectedParentsEmailExport(eventId?: string, campaignId?: string): Promise<void> {
+    const q = new URLSearchParams();
+    if (eventId) q.append('eventId', eventId);
+    if (campaignId) q.append('campaignId', campaignId);
+    const qs = q.toString();
+    const url = buildApiUrl(`/api/admin/messages/selected-parents/email-delivery/export${qs ? `?${qs}` : ''}`);
+    const token = api.getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      throw new Error(`Export failed (${res.status})`);
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get('content-disposition') || '';
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    const filename = match ? match[1] : `selected-parents-email-delivery-${campaignId || 'ga-2026'}.csv`;
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(downloadUrl);
   },
 
   async getRegistrationStatus(eventId?: string) {

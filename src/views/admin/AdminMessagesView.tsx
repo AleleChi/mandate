@@ -32,6 +32,7 @@ import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoad
 import { safeStorage } from '../../utils/storage';
 import { buildFrontendParentStatusUrl, buildFrontendParentPassUrl, resolveMessageTokens } from '../../utils/urlHelper';
 import { SelectedParentsChannelTab } from '../../components/admin/messages/SelectedParentsChannelTab';
+import { SelectedParentsEmailDeliveryTab } from '../../components/admin/messages/SelectedParentsEmailDeliveryTab';
 
 interface AdminMessagesViewProps {
   onBackToOverview: () => void;
@@ -475,6 +476,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
 
   // Main navigation tabs: 'updates' = Inbox, 'broadcast' = Send Announcement, 'selected_parents' = Selected Parents
   const [activeTab, setActiveTab] = useState<'updates' | 'broadcast' | 'selected_parents'>('updates');
+  const [selectedParentsSubTab, setSelectedParentsSubTab] = useState<'whatsapp' | 'email'>('whatsapp');
 
   // Inbox state
   const [updates, setUpdates] = useState<any[]>([]);
@@ -2389,10 +2391,49 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
           </div>
         </div>
       ) : activeTab === 'selected_parents' ? (
-        <SelectedParentsChannelTab
-          selectedEventId={selectedEventId}
-          adminUser={adminUser}
-        />
+        <div className="space-y-6">
+          {/* Selected Parents Sub-Tabs: WhatsApp Invitations | Email Delivery */}
+          <div className="flex items-center space-x-2 border-b border-[#EAE8E1] dark:border-[#302E29] pb-3">
+            <button
+              id="subtab-selected-parents-whatsapp"
+              type="button"
+              onClick={() => setSelectedParentsSubTab('whatsapp')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center space-x-2 ${
+                selectedParentsSubTab === 'whatsapp'
+                  ? 'bg-[#18181B] dark:bg-[#F0EBE3] text-white dark:text-[#18181B] shadow-2xs'
+                  : 'bg-zinc-100 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] hover:bg-zinc-200 dark:hover:bg-[#2F2E2A]'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>WhatsApp Invitations</span>
+            </button>
+            <button
+              id="subtab-selected-parents-email"
+              type="button"
+              onClick={() => setSelectedParentsSubTab('email')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center space-x-2 ${
+                selectedParentsSubTab === 'email'
+                  ? 'bg-[#18181B] dark:bg-[#F0EBE3] text-white dark:text-[#18181B] shadow-2xs'
+                  : 'bg-zinc-100 dark:bg-[#262520] text-zinc-600 dark:text-[#B8B0A5] hover:bg-zinc-200 dark:hover:bg-[#2F2E2A]'
+              }`}
+            >
+              <Mail className="w-3.5 h-3.5" />
+              <span>Email Delivery</span>
+            </button>
+          </div>
+
+          {selectedParentsSubTab === 'whatsapp' ? (
+            <SelectedParentsChannelTab
+              selectedEventId={selectedEventId}
+              adminUser={adminUser}
+            />
+          ) : (
+            <SelectedParentsEmailDeliveryTab
+              selectedEventId={selectedEventId}
+              adminUser={adminUser}
+            />
+          )}
+        </div>
       ) : (
         /* 5. SEND ANNOUNCEMENT COMPOSER TAB */
         <div className="space-y-6">
@@ -2657,6 +2698,29 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                   </select>
                 </div>
               </div>
+
+              {/* Selected Parents Delivery Shortcut Card */}
+              {selectedGroup === 'selected_parents' && (
+                <div className="bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-fade-in">
+                  <div className="flex items-center space-x-2 text-zinc-700 dark:text-[#B8B0A5]">
+                    <Mail className="w-4 h-4 text-[#C59B27] shrink-0" />
+                    <span>
+                      Audience: <strong>Selected parents</strong>. To inspect recipient statuses, review previous delivery logs, or selectively send:
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('selected_parents');
+                      setSelectedParentsSubTab('email');
+                    }}
+                    className="px-3 py-1.5 bg-white dark:bg-[#1D1D1A] hover:bg-zinc-50 dark:hover:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] text-[#18181B] dark:text-[#F0EBE3] rounded-lg text-xs font-semibold shrink-0 cursor-pointer shadow-2xs flex items-center space-x-1"
+                  >
+                    <span>View Email Delivery Table</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-[#C59B27]" />
+                  </button>
+                </div>
+              )}
 
               {/* Selected Parents Audience Summary Card */}
               {selectedGroup === 'selected_parents' && (
