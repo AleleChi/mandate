@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import path from 'path';
 import multer from 'multer';
 import { query, queryOne, execute, transaction } from '../db';
-import { authMiddleware, AuthenticatedRequest, verifyPassword, hashPassword, generateToken } from '../auth';
+import { authMiddleware, optionalAuthMiddleware, AuthenticatedRequest, verifyPassword, hashPassword, generateToken } from '../auth';
 import { syncJobsForEvent, executeTestNotification, sendWhatsApp } from '../services/notifications';
 import { sendWebPush } from '../services/push';
 import { sendEmail, sendVolunteerApprovedEmail, sendInvitationEmail, sendParentRegistrationInviteEmail, formatInvitationExpiry, isEmailConfigured, resolveEmailProvider, sendChildReturnToDraftEmail, buildParentsChannelEmailSection } from '../services/email';
@@ -5560,52 +5560,55 @@ const handleSetVenueVisibility = async (req: AuthenticatedRequest, res: Response
     const now = new Date().toISOString();
     const previousValue = event.venue_visible_to_selected_parents === 1 || event.venue_visible_to_selected_parents === true;
 
-    await execute(`
-      UPDATE events SET
-        venue_visible_to_selected_parents = ?,
-        venue_visibility_released_at = CASE WHEN ? = 1 AND (venue_visibility_released_at IS NULL OR venue_visibility_released_at = '') THEN ? ELSE venue_visibility_released_at END,
-        venue_visibility_released_by = CASE WHEN ? = 1 AND (venue_visibility_released_by IS NULL OR venue_visibility_released_by = '') THEN ? ELSE venue_visibility_released_by END,
-        venue_visibility_updated_at = ?,
-        venue_visibility_updated_by = ?,
-        updated_at = ?
-      WHERE id = ?
-    `, [
-      visibleInt,
-      visibleInt,
-      now,
-      req.user.id,
-      now,
-      req.user.id,
-      now,
-      event.id
-    ]);
-
-    // Record in audit infrastructure
-    try {
+    await transaction(async () => {
       await execute(`
-        INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        UPDATE events SET
+          venue_visible_to_selected_parents = ?,
+          venue_visibility_released_at = CASE WHEN ? = 1 AND (venue_visibility_released_at IS NULL OR venue_visibility_released_at = '') THEN ? ELSE venue_visibility_released_at END,
+          venue_visibility_released_by = CASE WHEN ? = 1 AND (venue_visibility_released_by IS NULL OR venue_visibility_released_by = '') THEN ? ELSE venue_visibility_released_by END,
+          venue_visibility_updated_at = ?,
+          venue_visibility_updated_by = ?,
+          updated_at = ?
+        WHERE id = ?
       `, [
-        crypto.randomUUID(),
+        visibleInt,
+        visibleInt,
+        now,
+        visibleInt,
         req.user.id,
-        req.user.role,
-        'Update Event Venue Visibility',
-        'event',
-        event.id,
-        JSON.stringify({
-          administrator: req.user.id,
-          userRole: req.user.role,
-          eventId: event.id,
-          eventTitle: event.title,
-          previousValue: Boolean(previousValue),
-          newValue: visible,
-          timestamp: now
-        }),
-        now
+        now,
+        req.user.id,
+        now,
+        event.id
       ]);
-    } catch (auditErr) {
-      console.error('Audit log write error for venue visibility:', auditErr);
-    }
+
+      // Record in audit infrastructure
+      try {
+        await execute(`
+          INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          crypto.randomUUID(),
+          req.user.id,
+          req.user.role,
+          'Update Event Venue Visibility',
+          'event',
+          event.id,
+          JSON.stringify({
+            administrator: req.user.id,
+            userRole: req.user.role,
+            eventId: event.id,
+            eventTitle: event.title,
+            previousValue: Boolean(previousValue),
+            newValue: visible,
+            timestamp: now
+          }),
+          now
+        ]);
+      } catch (auditErr) {
+        console.error('Audit log write error for venue visibility:', auditErr);
+      }
+    });
 
     return res.json({
       success: true,
@@ -5869,7 +5872,7 @@ router.post('/events', async (req: AuthenticatedRequest, res: Response) => {
 });
 
 // UPDATE event details (PATCH style for full/partial editing, handles age group sync)
-router.patch('/events/:eventId', async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/events/:eventId', optionalAuthMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { eventId } = req.params;
     const {
@@ -5931,131 +5934,209 @@ router.patch('/events/:eventId', async (req: AuthenticatedRequest, res: Response
       ? (maximumAge === null || maximumAge === '' ? null : parseInt(String(maximumAge), 10))
       : (maximum_age !== undefined ? (maximum_age === null || maximum_age === '' ? null : parseInt(String(maximum_age), 10)) : (event.maximum_age !== undefined ? event.maximum_age : null));
 
-    // Server defence: Ordinary event-detail updates preserve existing lifecycle status.
-    // Lifecycle transitions require explicit actions (/publish, /archive, /set-current).
-    await execute(`
-      UPDATE events SET
-        title = COALESCE(?, title),
-        section_name = COALESCE(?, section_name),
-        location = COALESCE(?, location),
-        starts_at = COALESCE(?, starts_at),
-        ends_at = COALESCE(?, ends_at),
-        daily_start_time = COALESCE(?, daily_start_time),
-        daily_end_time = COALESCE(?, daily_end_time),
-        description = COALESCE(?, description),
-        status = ?,
-        parent_access_opens_at = ?,
-        parent_access_closes_at = ?,
-        parents_can_create_account = COALESCE(?, parents_can_create_account),
-        allow_multiple_children = COALESCE(?, allow_multiple_children),
-        allow_save_and_continue = COALESCE(?, allow_save_and_continue),
-        allow_edit_after_submission = COALESCE(?, allow_edit_after_submission),
-        volunteer_registration_opens_at = ?,
-        volunteer_registration_closes_at = ?,
-        minimum_age = ?,
-        maximum_age = ?,
-        capacity = ?,
-        updated_at = ?
-      WHERE id = ?
-    `, [
-      title || null,
-      sectionName || null,
-      location || null,
-      startsAt || null,
-      endsAt || null,
-      dailyStartTime || null,
-      dailyEndTime || null,
-      description !== undefined ? description : null,
-      event.status,
-      parentAccessOpensAt !== undefined ? parentAccessOpensAt : event.parent_access_opens_at,
-      parentAccessClosesAt !== undefined ? parentAccessClosesAt : event.parent_access_closes_at,
-      parentsCanCreateAccount !== undefined ? (parentsCanCreateAccount ? 1 : 0) : null,
-      allowMultipleChildren !== undefined ? (allowMultipleChildren ? 1 : 0) : null,
-      allowSaveAndContinue !== undefined ? (allowSaveAndContinue ? 1 : 0) : null,
-      allowEditAfterSubmission !== undefined ? (allowEditAfterSubmission ? 1 : 0) : null,
-      resolvedVolOpens || null,
-      resolvedVolCloses || null,
-      resolvedMinAge !== undefined ? resolvedMinAge : null,
-      resolvedMaxAge !== undefined ? resolvedMaxAge : null,
-      resolvedCapacity !== undefined ? resolvedCapacity : null,
-      now,
-      eventId
-    ]);
-
-    const resolvedVenueVis = showVenueToSelectedParents !== undefined
-      ? (showVenueToSelectedParents ? 1 : 0)
-      : (venueVisibleToSelectedParents !== undefined ? (venueVisibleToSelectedParents ? 1 : 0) : undefined);
-    if (resolvedVenueVis !== undefined) {
-      const previousVal = event.venue_visible_to_selected_parents === 1 || event.venue_visible_to_selected_parents === true;
+    await transaction(async () => {
+      // Server defence: Ordinary event-detail updates preserve existing lifecycle status.
+      // Lifecycle transitions require explicit actions (/publish, /archive, /set-current).
       await execute(`
         UPDATE events SET
-          venue_visible_to_selected_parents = ?,
-          venue_visibility_released_at = CASE WHEN ? = 1 AND (venue_visibility_released_at IS NULL OR venue_visibility_released_at = '') THEN ? ELSE venue_visibility_released_at END,
-          venue_visibility_released_by = CASE WHEN ? = 1 AND (venue_visibility_released_by IS NULL OR venue_visibility_released_by = '') THEN ? ELSE venue_visibility_released_by END,
-          venue_visibility_updated_at = ?,
-          venue_visibility_updated_by = ?
+          title = COALESCE(?, title),
+          section_name = COALESCE(?, section_name),
+          location = COALESCE(?, location),
+          starts_at = COALESCE(?, starts_at),
+          ends_at = COALESCE(?, ends_at),
+          daily_start_time = COALESCE(?, daily_start_time),
+          daily_end_time = COALESCE(?, daily_end_time),
+          description = COALESCE(?, description),
+          status = ?,
+          parent_access_opens_at = ?,
+          parent_access_closes_at = ?,
+          parents_can_create_account = COALESCE(?, parents_can_create_account),
+          allow_multiple_children = COALESCE(?, allow_multiple_children),
+          allow_save_and_continue = COALESCE(?, allow_save_and_continue),
+          allow_edit_after_submission = COALESCE(?, allow_edit_after_submission),
+          volunteer_registration_opens_at = ?,
+          volunteer_registration_closes_at = ?,
+          minimum_age = ?,
+          maximum_age = ?,
+          capacity = ?,
+          updated_at = ?
         WHERE id = ?
       `, [
-        resolvedVenueVis,
-        resolvedVenueVis,
+        title || null,
+        sectionName || null,
+        location || null,
+        startsAt || null,
+        endsAt || null,
+        dailyStartTime || null,
+        dailyEndTime || null,
+        description !== undefined ? description : null,
+        event.status,
+        parentAccessOpensAt !== undefined ? parentAccessOpensAt : event.parent_access_opens_at,
+        parentAccessClosesAt !== undefined ? parentAccessClosesAt : event.parent_access_closes_at,
+        parentsCanCreateAccount !== undefined ? (parentsCanCreateAccount ? 1 : 0) : null,
+        allowMultipleChildren !== undefined ? (allowMultipleChildren ? 1 : 0) : null,
+        allowSaveAndContinue !== undefined ? (allowSaveAndContinue ? 1 : 0) : null,
+        allowEditAfterSubmission !== undefined ? (allowEditAfterSubmission ? 1 : 0) : null,
+        resolvedVolOpens || null,
+        resolvedVolCloses || null,
+        resolvedMinAge !== undefined ? resolvedMinAge : null,
+        resolvedMaxAge !== undefined ? resolvedMaxAge : null,
+        resolvedCapacity !== undefined ? resolvedCapacity : null,
         now,
-        req.user?.id || 'admin',
-        now,
-        req.user?.id || 'admin',
         eventId
       ]);
 
-      if (Boolean(previousVal) !== Boolean(resolvedVenueVis)) {
-        try {
+      const rawVenueVis = showVenueToSelectedParents !== undefined
+        ? showVenueToSelectedParents
+        : venueVisibleToSelectedParents;
+      if (rawVenueVis !== undefined) {
+        const targetVisInt = Boolean(rawVenueVis === true || rawVenueVis === 'true' || rawVenueVis === 1) ? 1 : 0;
+        const currentVisInt = (event.venue_visible_to_selected_parents === 1 || event.venue_visible_to_selected_parents === true) ? 1 : 0;
+
+        if (targetVisInt !== currentVisInt) {
           await execute(`
-            INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            UPDATE events SET
+              venue_visible_to_selected_parents = ?,
+              venue_visibility_released_at = CASE WHEN ? = 1 AND (venue_visibility_released_at IS NULL OR venue_visibility_released_at = '') THEN ? ELSE venue_visibility_released_at END,
+              venue_visibility_released_by = CASE WHEN ? = 1 AND (venue_visibility_released_by IS NULL OR venue_visibility_released_by = '') THEN ? ELSE venue_visibility_released_by END,
+              venue_visibility_updated_at = ?,
+              venue_visibility_updated_by = ?,
+              updated_at = ?
+            WHERE id = ?
           `, [
-            crypto.randomUUID(),
+            targetVisInt,
+            targetVisInt,
+            now,
+            targetVisInt,
             req.user?.id || 'admin',
-            req.user?.role || 'admin',
-            'Update Event Venue Visibility',
-            'event',
-            eventId,
-            JSON.stringify({
-              administrator: req.user?.id || 'admin',
-              userRole: req.user?.role || 'admin',
-              eventId,
-              eventTitle: event.title,
-              previousValue: previousVal,
-              newValue: Boolean(resolvedVenueVis),
-              timestamp: now
-            }),
-            now
+            now,
+            req.user?.id || 'admin',
+            now,
+            eventId
           ]);
-        } catch (_) {}
-      }
-    }
 
-    if (ageGroups && Array.isArray(ageGroups)) {
-      await execute('DELETE FROM event_age_groups WHERE event_id = ?', [eventId]);
-
-      let sortOrder = 0;
-      for (const group of ageGroups) {
-        const groupId = 'group-' + Math.random().toString(36).substring(2, 11);
-        await execute(`
-          INSERT INTO event_age_groups (
-            id, event_id, label, min_age, max_age, capacity, manual_review, sort_order, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
-          groupId,
-          eventId,
-          group.label,
-          parseInt(group.minAge) || 0,
-          parseInt(group.maxAge) || 0,
-          parseInt(group.capacity) || 0,
-          group.manualReview ? 1 : 0,
-          sortOrder++,
-          now,
-          now
-        ]);
+          try {
+            await execute(`
+              INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+              crypto.randomUUID(),
+              req.user?.id || 'admin',
+              req.user?.role || 'admin',
+              'Update Event Venue Visibility',
+              'event',
+              eventId,
+              JSON.stringify({
+                administrator: req.user?.id || 'admin',
+                userRole: req.user?.role || 'admin',
+                eventId,
+                eventTitle: event.title,
+                previousValue: Boolean(currentVisInt),
+                newValue: Boolean(targetVisInt),
+                timestamp: now
+              }),
+              now
+            ]);
+          } catch (auditErr) {
+            console.error('Audit log write error in PATCH event:', auditErr);
+          }
+        }
       }
-    }
+
+      if (ageGroups && Array.isArray(ageGroups)) {
+        const existingGroups = await query<any>(
+          'SELECT * FROM event_age_groups WHERE event_id = ? ORDER BY sort_order ASC, id ASC',
+          [eventId]
+        );
+
+        // Check if age groups have actually changed
+        const isIdentical = existingGroups.length === ageGroups.length && ageGroups.every((g, idx) => {
+          const ex = existingGroups[idx];
+          const gMin = Number(g.minAge ?? g.min_age ?? 0);
+          const gMax = Number(g.maxAge ?? g.max_age ?? 0);
+          const gCap = (g.capacity !== undefined && g.capacity !== null && g.capacity !== '') ? Number(g.capacity) : 0;
+          const gManual = Boolean(g.manualReview ?? g.manual_review);
+          const gLabel = (g.label || '').trim();
+
+          const exMin = Number(ex.min_age ?? 0);
+          const exMax = Number(ex.max_age ?? 0);
+          const exCap = (ex.capacity !== undefined && ex.capacity !== null && ex.capacity !== '') ? Number(ex.capacity) : 0;
+          const exManual = Boolean(ex.manual_review);
+          const exLabel = (ex.label || '').trim();
+
+          const idMatches = !g.id || g.id === ex.id;
+          return idMatches && gLabel === exLabel && gMin === exMin && gMax === exMax && gCap === exCap && gManual === exManual;
+        });
+
+        // If age groups have not actually changed (e.g. venue-only edit), preserve existing records intact!
+        if (!isIdentical) {
+          const existingMap = new Map<string, any>();
+          existingGroups.forEach(eg => existingMap.set(eg.id, eg));
+
+          const processedIds = new Set<string>();
+          let sortOrder = 0;
+
+          for (const group of ageGroups) {
+            const gId = group.id && existingMap.has(group.id) ? group.id : null;
+            const minAge = parseInt(group.minAge ?? group.min_age) || 0;
+            const maxAge = parseInt(group.maxAge ?? group.max_age) || 0;
+            const capacity = (group.capacity !== undefined && group.capacity !== null && group.capacity !== '') ? (parseInt(group.capacity) || 0) : 0;
+            const manualReview = (group.manualReview ?? group.manual_review) ? 1 : 0;
+            const label = (group.label || '').trim();
+
+            if (gId) {
+              processedIds.add(gId);
+              await execute(`
+                UPDATE event_age_groups SET
+                  label = ?,
+                  min_age = ?,
+                  max_age = ?,
+                  capacity = ?,
+                  manual_review = ?,
+                  sort_order = ?,
+                  updated_at = ?
+                WHERE id = ? AND event_id = ?
+              `, [
+                label,
+                minAge,
+                maxAge,
+                capacity,
+                manualReview,
+                sortOrder++,
+                now,
+                gId,
+                eventId
+              ]);
+            } else {
+              const newGroupId = 'group-' + Math.random().toString(36).substring(2, 11);
+              processedIds.add(newGroupId);
+              await execute(`
+                INSERT INTO event_age_groups (
+                  id, event_id, label, min_age, max_age, capacity, manual_review, sort_order, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              `, [
+                newGroupId,
+                eventId,
+                label,
+                minAge,
+                maxAge,
+                capacity,
+                manualReview,
+                sortOrder++,
+                now,
+                now
+              ]);
+            }
+          }
+
+          for (const eg of existingGroups) {
+            if (!processedIds.has(eg.id)) {
+              await execute('DELETE FROM event_age_groups WHERE event_id = ? AND id = ?', [eventId, eg.id]);
+            }
+          }
+        }
+      }
+    });
 
     res.json({ success: true, message: 'Event updated successfully.' });
   } catch (err: any) {
