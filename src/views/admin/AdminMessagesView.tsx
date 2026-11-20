@@ -673,6 +673,10 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
     venueVisibility?: boolean;
   } | null>(null);
 
+  // Campaign idempotency identifier per composition session
+  const [composerCampaignId, setComposerCampaignId] = useState<string>(() => 'cmp_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8));
+  const [campaignAlreadyEmailed, setCampaignAlreadyEmailed] = useState<number | null>(null);
+
   const toggleChannel = (channelId: string) => {
     setSelectedChannels(prev => {
       if (prev.includes(channelId)) {
@@ -969,26 +973,33 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
     setPreviewLoading(true);
     try {
       const res = await api.admin.previewMessage({
+        eventId: selectedEventId,
         recipientGroup: selectedGroup,
         messageType: selectedType,
         channel: selectedChannels.includes('email') ? 'email' : (selectedChannels.includes('whatsapp') ? 'whatsapp' : 'in_app'),
         subject,
         body,
+        campaignId: composerCampaignId,
         selectedParentIds: selectedGroup === 'specific_parents' ? selectedParentIds : undefined,
         selectedChildId: activePreviewChildId || undefined,
         selectedVolunteerIds: selectedGroup === 'specific_volunteers' ? selectedVolunteerIds : undefined
       });
-      if (res.success && res.preview) {
-        setPreviewSubject(res.preview.subject);
-        setPreviewBody(res.preview.body);
-        setPreviewRepresentativeParent(res.preview.representativeParentName || null);
-        setPreviewRepresentativeVolunteer(res.preview.representativeVolunteerName || null);
-        const previewData = res.preview as any;
-        if (previewData.representativeTeam) {
-          setPreviewRepresentativeTeam(previewData.representativeTeam);
+      if (res.success) {
+        if (typeof res.campaignAlreadyEmailedCount === 'number') {
+          setCampaignAlreadyEmailed(res.campaignAlreadyEmailedCount);
         }
-        if (previewData.representativeLocation) {
-          setPreviewRepresentativeLocation(previewData.representativeLocation);
+        if (res.preview) {
+          setPreviewSubject(res.preview.subject);
+          setPreviewBody(res.preview.body);
+          setPreviewRepresentativeParent(res.preview.representativeParentName || null);
+          setPreviewRepresentativeVolunteer(res.preview.representativeVolunteerName || null);
+          const previewData = res.preview as any;
+          if (previewData.representativeTeam) {
+            setPreviewRepresentativeTeam(previewData.representativeTeam);
+          }
+          if (previewData.representativeLocation) {
+            setPreviewRepresentativeLocation(previewData.representativeLocation);
+          }
         }
       }
     } catch (err) {
@@ -1306,6 +1317,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
     try {
       const isCurrentChildSpecific = isChildSpecificMessageType(selectedType, body, subject);
       const res = await api.admin.sendMessage({
+        campaignId: composerCampaignId,
         recipientGroup: selectedGroup,
         messageType: selectedType,
         channels: selectedChannels,
@@ -1320,6 +1332,10 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
       });
       
       if (res.success) {
+        // Reset composer campaign identity for next distinct campaign
+        setComposerCampaignId('cmp_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8));
+        setCampaignAlreadyEmailed(null);
+
         setDispatchSummary({
           ...res.summary,
           whatsappQueued: res.queued?.whatsapp ?? res.whatsappQueued,
@@ -2693,7 +2709,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                     <div className="bg-white dark:bg-[#1E1E1B] p-2.5 rounded-lg border border-amber-200/60 dark:border-amber-900/30 shadow-2xs">
                       <span className="text-[10px] text-amber-700 dark:text-amber-400 block">Already Emailed</span>
                       <span className="text-base font-bold text-amber-700 dark:text-amber-400">
-                        {selectedParentsSummary?.alreadyEmailedCount ?? 0}
+                        {campaignAlreadyEmailed !== null ? campaignAlreadyEmailed : (selectedParentsSummary?.alreadyEmailedCount ?? 0)}
                       </span>
                     </div>
                   </div>

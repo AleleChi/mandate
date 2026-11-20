@@ -2171,6 +2171,7 @@ export const api = {
       }>(`/api/admin/messages${qs}`);
     },
     async previewMessage(payload: {
+      eventId?: string;
       recipientGroup: string;
       messageType: string;
       channel: string;
@@ -2179,9 +2180,14 @@ export const api = {
       selectedParentIds?: string[];
       selectedChildId?: string;
       selectedVolunteerIds?: string[];
+      campaignId?: string;
     }) {
       return api.request<{
         success: boolean;
+        campaignKey?: string;
+        campaignAlreadyEmailedCount?: number;
+        venueVisibilityOff?: boolean;
+        warning?: string;
         preview: {
           subject: string;
           body: string;
@@ -2215,6 +2221,8 @@ export const api = {
       body: string;
       confirmed: boolean;
       eventId?: string;
+      campaignId?: string;
+      campaignKey?: string;
       selectedParentIds?: string[];
       selectedChildIds?: string[];
       selectedVolunteerIds?: string[];
@@ -2222,6 +2230,7 @@ export const api = {
       return api.request<{
         success: boolean;
         campaignId?: string;
+        campaignKey?: string;
         recipientsCount?: number;
         whatsappQueued?: number;
         whatsappSkipped?: number;
