@@ -267,7 +267,7 @@ export function resolveMessageTokens(template: string, context: RecipientTokenCo
   const eDate = (context.eventDate || '').trim();
   const pLink = context.passUrl || buildParentPassUrl();
   const rLink = context.reviewUrl || buildParentStatusUrl();
-  const pTime = (context.pickupTime || '').trim() || '4:00 PM';
+  const pTime = (context.pickupTime || '').trim();
   const sContact = (context.supportContact || '').trim() || (process.env.SUPPORT_PHONE_NUMBER?.trim() || '');
 
   let result = template

@@ -171,7 +171,8 @@ export async function getSelectedParentsAudience(
     selectedCount?: string; // 'all' | '1' | '2_plus'
     ageGroup?: string; // 'all' | age group label
     page?: number;
-    pageSize?: number;
+    pageSize?: number | null;
+    unpaginated?: boolean;
   }
 ): Promise<SelectedParentsAudienceResult> {
   const event = await queryOne<{ id: string; title: string }>(
@@ -490,12 +491,17 @@ export async function getSelectedParentsAudience(
   };
 
   // Pagination calculation
-  const page = Math.max(1, Number(options?.page) || 1);
-  const pageSize = Math.max(1, Number(options?.pageSize) || 25);
+  const isUnpaginated = Boolean(
+    options?.unpaginated ||
+    options?.pageSize === null ||
+    (options?.pageSize !== undefined && Number(options.pageSize) <= 0)
+  );
+  const page = isUnpaginated ? 1 : Math.max(1, Number(options?.page) || 1);
+  const pageSize = isUnpaginated ? (filtered.length || 1) : Math.max(1, Number(options?.pageSize) || 25);
   const totalRecords = filtered.length;
-  const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
+  const totalPages = isUnpaginated ? 1 : Math.max(1, Math.ceil(totalRecords / pageSize));
   const start = (page - 1) * pageSize;
-  const pagedParents = filtered.slice(start, start + pageSize);
+  const pagedParents = isUnpaginated ? filtered : filtered.slice(start, start + pageSize);
 
   return {
     eventId,
@@ -511,6 +517,15 @@ export async function getSelectedParentsAudience(
       totalPages
     }
   };
+}
+
+/**
+ * Authoritative accessor for the COMPLETE, unpaginated audience of parents
+ * with at least one qualifying child selected for the event.
+ */
+export async function getCompleteSelectedParentsAudience(eventId: string): Promise<SelectedParentRecord[]> {
+  const result = await getSelectedParentsAudience(eventId, { unpaginated: true });
+  return result.parents;
 }
 
 /**

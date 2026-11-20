@@ -19,11 +19,12 @@ function normalizeOptionalText(val: unknown): string | null {
   const trimmed = String(val).trim();
   return trimmed.length > 0 ? trimmed : null;
 }
-import { recordChannelInvitationSent, QUALIFYING_CHILD_STATUSES } from '../services/selectedParentsChannelService';
+import { recordChannelInvitationSent, QUALIFYING_CHILD_STATUSES, getCompleteSelectedParentsAudience } from '../services/selectedParentsChannelService';
 import {
   sendPacedEmailWithBackoff,
   runPacedBroadcast,
   getCampaignProgress,
+  getDurableCampaignProgress,
   isCampaignActive
 } from '../services/emailBroadcastService';
 
@@ -8664,9 +8665,7 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
                 parentName: 'Parents',
                 childName: 'your children',
                 reviewUrl: buildParentStatusUrl(),
-                passUrl: buildParentPassUrl(),
-                pickupTime: '4:00 PM',
-                supportContact: '+234 803 123 4567'
+                passUrl: buildParentPassUrl()
               }
             );
       }
@@ -9994,9 +9993,7 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
         venueAddress,
         location: venueAddress,
         passUrl: buildParentPassUrl(),
-        reviewUrl: buildParentStatusUrl(),
-        pickupTime: '4:00 PM',
-        supportContact: '+234 803 123 4567'
+        reviewUrl: buildParentStatusUrl()
       });
 
       const renderedSubject = resolveMessageTokens(subject || '', {
@@ -10364,6 +10361,13 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     } else if (recipientGroup === 'selected_parents') {
       const qualifyingStatuses = [...QUALIFYING_CHILD_STATUSES];
       const qPlaceholders = qualifyingStatuses.map(() => '?').join(',');
+      let parentFilterSql = '';
+      const filterParams: any[] = [eventId, ...qualifyingStatuses];
+      if (Array.isArray(req.body.selectedParentIds) && req.body.selectedParentIds.length > 0) {
+        const pPlaceholders = req.body.selectedParentIds.map(() => '?').join(',');
+        parentFilterSql = ` AND p.id IN (${pPlaceholders})`;
+        filterParams.push(...req.body.selectedParentIds);
+      }
       rows = await query(`
         SELECT 
           p.id as parent_id,
@@ -10381,11 +10385,12 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
         JOIN users u ON u.id = p.user_id
         WHERE e.event_id = ?
           AND e.status IN (${qPlaceholders})
+          ${parentFilterSql}
           AND (e.is_deleted = 0 OR e.is_deleted IS NULL)
           AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
           AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
         ORDER BY p.full_name ASC, c.date_of_birth ASC, c.id ASC
-      `, [eventId, ...qualifyingStatuses]);
+      `, filterParams);
     } else {
       let queryStr = `
         SELECT p.id as parent_id, p.full_name as parent_name, p.phone_number, u.email, u.id as user_id, c.id as child_id, c.full_name as child_name, e.id as entry_id
@@ -10500,9 +10505,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
           venueAddress,
           location: venueAddress,
           passUrl: buildParentPassUrl(),
-          reviewUrl: buildParentStatusUrl(),
-          pickupTime: '4:00 PM',
-          supportContact: '+234 803 123 4567'
+          reviewUrl: buildParentStatusUrl()
         });
 
         const renderedSubject = resolveMessageTokens(subject || '', {
@@ -11382,6 +11385,7 @@ router.get('/messages/selected-parents', async (req: AuthenticatedRequest, res: 
     const ageGroup = typeof req.query.ageGroup === 'string' ? req.query.ageGroup : undefined;
     const page = req.query.page ? parseInt(req.query.page as string, 10) : undefined;
     const pageSize = req.query.pageSize ? parseInt(req.query.pageSize as string, 10) : undefined;
+    const unpaginated = req.query.unpaginated === 'true';
 
     const result = await getSelectedParentsAudience(eventId, {
       search,
@@ -11390,7 +11394,8 @@ router.get('/messages/selected-parents', async (req: AuthenticatedRequest, res: 
       selectedCount,
       ageGroup,
       page,
-      pageSize
+      pageSize,
+      unpaginated
     });
 
     return res.json({ success: true, ...result });
@@ -11503,9 +11508,10 @@ router.get('/messages/selected-parents/email-delivery', async (req: Authenticate
       ? reqCampaignId
       : (campaignMap.has(DEFAULT_CAMPAIGN_ID) ? DEFAULT_CAMPAIGN_ID : availableCampaigns[0]?.id || DEFAULT_CAMPAIGN_ID);
 
-    // 2. Fetch authoritative eligible parents (566 unique selected parents)
-    const audience = await getSelectedParentsAudience(eventId);
-    const eligibleParents = audience.parents || [];
+    // 2. Fetch authoritative eligible parents (all 566 unique selected families)
+    const eligibleParents = await getCompleteSelectedParentsAudience(eventId);
+    const allEligibleParentIds = eligibleParents.map((p) => p.parentId);
+    const allFailedParentIds: string[] = [];
 
     // 3. Fetch delivery logs for the active campaign
     const deliveryLogs = await query<any>(`
@@ -11553,11 +11559,18 @@ router.get('/messages/selected-parents/email-delivery', async (req: Authenticate
         sentAt = log.sent_at || null;
       }
 
-      if (status === 'delivered') deliveredCount++;
-      else if (status === 'sent') acceptedCount++;
-      else if (status === 'failed') failedCount++;
-      else if (status === 'queued' || status === 'sending') pendingCount++;
-      else notSentCount++;
+      if (status === 'delivered') {
+        deliveredCount++;
+      } else if (status === 'sent') {
+        acceptedCount++;
+      } else if (status === 'failed') {
+        failedCount++;
+        allFailedParentIds.push(p.parentId);
+      } else if (status === 'queued' || status === 'sending') {
+        pendingCount++;
+      } else {
+        notSentCount++;
+      }
 
       return {
         parentId: p.parentId,
@@ -11579,6 +11592,16 @@ router.get('/messages/selected-parents/email-delivery', async (req: Authenticate
         logId: log?.id || null
       };
     });
+
+    // Retrieve original approved announcement subject and body from stored campaign log
+    const origLog = await queryOne<any>(`
+      SELECT subject, body FROM admin_message_logs
+      WHERE id = 'ea654919-3da5-4a3a-9e80-213fb8beed90'
+         OR (recipient_group = 'selected_parents' AND channel = 'email' AND status = 'sent')
+      ORDER BY created_at DESC LIMIT 1
+    `);
+    const campaignOriginalSubject = origLog?.subject || 'Important Event Details - The General Assembly';
+    const campaignOriginalBody = origLog?.body || '';
 
     // 5. Apply filters
     let filtered = parentRecords;
@@ -11619,6 +11642,10 @@ router.get('/messages/selected-parents/email-delivery', async (req: Authenticate
       eventId,
       activeCampaignId,
       campaigns: availableCampaigns,
+      campaignOriginalSubject,
+      campaignOriginalBody,
+      allEligibleParentIds,
+      allFailedParentIds,
       summary: {
         totalEligibleParents: eligibleParents.length,
         acceptedCount,
@@ -11649,22 +11676,14 @@ router.get('/messages/selected-parents/email-delivery/progress', async (req: Aut
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   try {
     const campaignId = (req.query.campaignId as string) || 'cmp_event-ga-2026_general_anno_important-event-details-_c3c41590';
-    const progress = getCampaignProgress(campaignId);
-    const active = isCampaignActive(campaignId);
+    const progress = await getDurableCampaignProgress(campaignId);
+    const active = isCampaignActive(campaignId) || progress.status === 'running';
 
     return res.json({
       success: true,
       campaignId,
       isActive: active,
-      progress: progress || {
-        campaignId,
-        total: 0,
-        processed: 0,
-        sent: 0,
-        failed: 0,
-        skipped: 0,
-        status: 'idle'
-      }
+      progress
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message || 'Failed to get progress' });
@@ -11708,9 +11727,8 @@ router.post('/messages/selected-parents/send-email', async (req: AuthenticatedRe
       ? (rawLoc || 'Koinonia Global Auditorium & Children Pavilion, Abuja')
       : '[Venue address hidden]';
 
-    // 2. Fetch authoritative eligible parents
-    const audience = await getSelectedParentsAudience(eventId);
-    const eligibleParents = audience.parents || [];
+    // 2. Fetch authoritative eligible parents (all 566 unique families)
+    const eligibleParents = await getCompleteSelectedParentsAudience(eventId);
 
     // 3. Query existing accepted delivery logs for campaign duplicate prevention
     const existingAccepted = await query<any>(`
@@ -11770,25 +11788,26 @@ router.post('/messages/selected-parents/send-email', async (req: AuthenticatedRe
       });
     }
 
-    // 6. Resolve email template text
-    const defaultSubject = 'Important Event Details - The General Assembly';
-    const defaultBody = `Dear {Parent name},
+    // 6. Resolve email template text - retrieve original approved announcement from stored campaign log
+    let rawSubject = customSubject?.trim();
+    let rawBody = customBody?.trim();
+    if (!rawSubject || !rawBody) {
+      const origLog = await queryOne<any>(`
+        SELECT subject, body FROM admin_message_logs
+        WHERE id = 'ea654919-3da5-4a3a-9e80-213fb8beed90'
+           OR (recipient_group = 'selected_parents' AND channel = 'email' AND status = 'sent')
+        ORDER BY created_at DESC LIMIT 1
+      `);
+      if (!rawSubject) rawSubject = origLog?.subject;
+      if (!rawBody) rawBody = origLog?.body;
+    }
 
-We look forward to welcoming {Child name} to {Event name}.
-
-Date: {Event date}
-Venue: {Venue address}
-
-Please ensure you have your child's access pass ready upon arrival:
-{Pass link}
-
-If you need to review your registration status:
-{Review link}
-
-Koinonia Children & Teens Ministry`;
-
-    const rawSubject = customSubject?.trim() || defaultSubject;
-    const rawBody = customBody?.trim() || defaultBody;
+    if (!rawSubject || !rawBody) {
+      return res.status(400).json({
+        success: false,
+        error: 'Announcement subject and body are required and could not be resolved from stored campaign.'
+      });
+    }
 
     // Fetch custom sender settings
     const settings = await queryOne<any>(`
@@ -11821,9 +11840,7 @@ Koinonia Children & Teens Ministry`;
         venueAddress,
         location: venueAddress,
         passUrl: buildParentPassUrl(),
-        reviewUrl: buildParentStatusUrl(),
-        pickupTime: '4:00 PM',
-        supportContact: '+234 803 123 4567'
+        reviewUrl: buildParentStatusUrl()
       });
 
       return {
@@ -11836,7 +11853,42 @@ Koinonia Children & Teens Ministry`;
       };
     });
 
-    // 8. Launch background paced broadcast (paced at 4.5 req/sec with automatic 429 backoff)
+    // 8. Persist targeted recipients in email_delivery_logs with status 'queued' for restart durability
+    const nowStr = new Date().toISOString();
+    for (const item of broadcastRecipients) {
+      const existing = await queryOne<any>(
+        `SELECT id, status FROM email_delivery_logs WHERE campaign_id = ? AND (parent_profile_id = ? OR recipient_email = ?) LIMIT 1`,
+        [campaignId, item.parentId || null, item.email]
+      );
+      if (existing) {
+        if (existing.status !== 'sent' && existing.status !== 'delivered') {
+          await execute(
+            `UPDATE email_delivery_logs SET status = 'queued', updated_at = ? WHERE id = ?`,
+            [nowStr, existing.id]
+          );
+        }
+      } else {
+        await execute(
+          `INSERT INTO email_delivery_logs (
+             id, campaign_id, event_id, parent_profile_id, user_id, recipient_email,
+             subject, provider, status, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, 'resend', 'queued', ?, ?)`,
+          [
+            `edl-${crypto.randomUUID()}`,
+            campaignId,
+            eventId,
+            item.parentId || null,
+            item.userId || null,
+            item.email,
+            item.subject,
+            nowStr,
+            nowStr
+          ]
+        );
+      }
+    }
+
+    // 9. Launch background paced broadcast (paced at 4.5 req/sec with automatic 429 backoff)
     runPacedBroadcast({
       campaignId,
       eventId,
@@ -11875,8 +11927,7 @@ router.get('/messages/selected-parents/email-delivery/export', async (req: Authe
     const eventId = await resolveAdminEventId(rawEventId) || rawEventId || 'event-ga-2026';
     const campaignId = (req.query.campaignId as string) || 'cmp_event-ga-2026_general_anno_important-event-details-_c3c41590';
 
-    const audience = await getSelectedParentsAudience(eventId);
-    const eligibleParents = audience.parents || [];
+    const eligibleParents = await getCompleteSelectedParentsAudience(eventId);
 
     const deliveryLogs = await query<any>(`
       SELECT parent_profile_id, recipient_email, provider_message_id, status, error_message, sent_at, failed_at, created_at, updated_at

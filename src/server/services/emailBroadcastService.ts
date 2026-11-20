@@ -38,6 +38,60 @@ export function isCampaignActive(campaignId: string): boolean {
 }
 
 /**
+ * Database-backed campaign progress query.
+ * Fully durable across server restarts.
+ */
+export async function getDurableCampaignProgress(campaignId: string): Promise<BroadcastProgress> {
+  const inMemory = activeCampaigns.get(campaignId);
+  const isRunning = Boolean(inMemory && inMemory.status === 'running');
+
+  // Query database state from email_delivery_logs
+  const logStats = await queryOne<any>(`
+    SELECT 
+      COUNT(*) as total,
+      SUM(CASE WHEN status IN ('sent', 'delivered') THEN 1 ELSE 0 END) as sent,
+      SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+      SUM(CASE WHEN status = 'sending' THEN 1 ELSE 0 END) as sending,
+      SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) as queued,
+      MIN(created_at) as started_at,
+      MAX(updated_at) as last_updated
+    FROM email_delivery_logs
+    WHERE campaign_id = ?
+  `, [campaignId]);
+
+  const total = Number(logStats?.total || inMemory?.total || 0);
+  const sent = Number(logStats?.sent || inMemory?.sent || 0);
+  const failed = Number(logStats?.failed || inMemory?.failed || 0);
+  const sending = Number(logStats?.sending || 0);
+  const queued = Number(logStats?.queued || 0);
+  const processed = sent + failed;
+
+  let status: 'idle' | 'running' | 'completed' | 'error' = 'idle';
+  if (isRunning || sending > 0 || queued > 0) {
+    status = 'running';
+  } else if (inMemory?.status === 'error') {
+    status = 'error';
+  } else if (total > 0 && processed >= total) {
+    status = 'completed';
+  } else if (processed > 0) {
+    status = inMemory?.status || 'completed';
+  }
+
+  return {
+    campaignId,
+    total: inMemory?.total || total,
+    processed,
+    sent,
+    failed,
+    skipped: inMemory?.skipped || 0,
+    status,
+    startedAt: inMemory?.startedAt || logStats?.started_at || undefined,
+    finishedAt: inMemory?.finishedAt || undefined,
+    lastError: inMemory?.lastError || undefined
+  };
+}
+
+/**
  * Utility sleep helper
  */
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -292,6 +346,16 @@ export async function runPacedBroadcast(options: {
   (async () => {
     try {
       console.log(`[EmailBroadcast] Starting paced broadcast for campaign ${campaignId}. Total recipients: ${recipients.length}`);
+
+      // Reset any lingering 'sending' status from previous server crash/interruption
+      await execute(
+        `UPDATE email_delivery_logs
+         SET status = 'queued', updated_at = ?
+         WHERE campaign_id = ? AND status = 'sending'`,
+        [new Date().toISOString(), campaignId]
+      ).catch((err) => {
+        console.warn('[EmailBroadcast] Could not reset lingering sending records:', err?.message || err);
+      });
 
       for (let i = 0; i < recipients.length; i++) {
         const r = recipients[i];
