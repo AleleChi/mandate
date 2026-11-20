@@ -155,6 +155,21 @@ export interface SelectedParentsEmailSummary {
   failedCount: number;
   pendingCount: number;
   notSentCount: number;
+  previouslyContactedCount?: number;
+  notYetContactedCount?: number;
+  totalEmailsSent?: number;
+}
+
+export interface SelectedParentEmailDeliveryHistoryItem {
+  id: string;
+  roundId?: string;
+  sendRound?: number;
+  status: 'sent' | 'delivered' | 'failed' | 'queued' | 'sending' | 'bounced' | 'delayed' | 'not_sent';
+  providerMessageId?: string | null;
+  errorMessage?: string | null;
+  sentAt?: string | null;
+  failedAt?: string | null;
+  createdAt: string;
 }
 
 export interface SelectedParentEmailDeliveryRow {
@@ -173,7 +188,12 @@ export interface SelectedParentEmailDeliveryRow {
   providerMessageId: string | null;
   errorMessage: string | null;
   lastAttemptAt: string | null;
+  lastSentAt?: string | null;
   sentAt: string | null;
+  sendCount?: number;
+  totalAttempts?: number;
+  canSendAgain?: boolean;
+  history?: SelectedParentEmailDeliveryHistoryItem[];
   logId?: string | null;
 }
 
@@ -186,6 +206,7 @@ export interface SelectedParentsEmailDeliveryResponse {
   campaignOriginalBody?: string;
   isOriginalVerified?: boolean;
   allEligibleParentIds?: string[];
+  filteredParentIds?: string[];
   allFailedParentIds?: string[];
   summary: SelectedParentsEmailSummary;
   parents: SelectedParentEmailDeliveryRow[];
@@ -433,8 +454,10 @@ export const api = {
   async sendSelectedParentsEmail(payload: {
     eventId?: string;
     campaignId?: string;
+    sendMode?: 'retry_uncontacted' | 'send_again';
     targetScope?: 'selected' | 'failed_remaining' | 'all_eligible';
     parentIds?: string[];
+    roundId?: string;
     subject?: string;
     body?: string;
   }) {
@@ -442,6 +465,21 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload)
     });
+  },
+
+  async getSelectedParentEmailHistory(parentId: string, campaignId?: string) {
+    const q = campaignId ? `?campaignId=${encodeURIComponent(campaignId)}` : '';
+    return api.request<{
+      success: boolean;
+      parent: {
+        id: string;
+        fullName: string;
+        email: string;
+        phoneNumber?: string;
+      };
+      campaignId: string;
+      history: SelectedParentEmailDeliveryHistoryItem[];
+    }>(`/api/admin/messages/selected-parents/email-delivery/parent/${encodeURIComponent(parentId)}/history${q}`);
   },
 
   async getSelectedParentsEmailProgress(campaignId?: string) {

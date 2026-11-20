@@ -15,14 +15,16 @@ import {
   RefreshCw,
   ExternalLink,
   ShieldCheck,
-  AlertCircle
+  AlertCircle,
+  History
 } from 'lucide-react';
 import {
   api,
   extractApiError,
   SelectedParentEmailDeliveryRow,
   SelectedParentsEmailCampaign,
-  SelectedParentsEmailSummary
+  SelectedParentsEmailSummary,
+  SelectedParentEmailDeliveryHistoryItem
 } from '../../../services/api';
 import { useNotification } from '../../../context/NotificationContext';
 import { AdminSelectionCheckbox } from '../../common/AdminSelectionCheckbox';
@@ -44,14 +46,19 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
   const [refreshing, setRefreshing] = useState(false);
   const [parents, setParents] = useState<SelectedParentEmailDeliveryRow[]>([]);
   const [campaigns, setCampaigns] = useState<SelectedParentsEmailCampaign[]>([]);
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>(
+    'cmp_event-ga-2026_general_anno_important-event-details-_c3c41590'
+  );
   const [summary, setSummary] = useState<SelectedParentsEmailSummary>({
     totalEligibleParents: 0,
     acceptedCount: 0,
     deliveredCount: 0,
     failedCount: 0,
     pendingCount: 0,
-    notSentCount: 0
+    notSentCount: 0,
+    previouslyContactedCount: 0,
+    notYetContactedCount: 0,
+    totalEmailsSent: 0
   });
 
   // Pagination
@@ -68,6 +75,7 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
   const [selectedParentIds, setSelectedParentIds] = useState<string[]>([]);
   const [selectionScopeMenuOpen, setSelectionScopeMenuOpen] = useState(false);
   const [allEligibleParentIds, setAllEligibleParentIds] = useState<string[]>([]);
+  const [filteredParentIds, setFilteredParentIds] = useState<string[]>([]);
   const [allFailedParentIds, setAllFailedParentIds] = useState<string[]>([]);
   const [campaignOriginalSubject, setCampaignOriginalSubject] = useState<string>('');
   const [campaignOriginalBody, setCampaignOriginalBody] = useState<string>('');
@@ -76,12 +84,15 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
   const [detailDrawerParent, setDetailDrawerParent] = useState<SelectedParentEmailDeliveryRow | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmModalData, setConfirmModalData] = useState<{
+    sendMode: 'retry_uncontacted' | 'send_again';
     targetScope: 'selected' | 'failed_remaining' | 'all_eligible';
-    targetCount: number;
-    alreadyAcceptedCount: number;
-    toSendCount: number;
-    parentIds?: string[];
     title: string;
+    parentsSelected: number;
+    previouslyContacted: number;
+    notYetContacted: number;
+    emailsToSend: number;
+    parentIds?: string[];
+    singleParentName?: string;
   } | null>(null);
   const [isSending, setIsSending] = useState(false);
 
@@ -114,6 +125,7 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
         setSummary(res.summary);
         setCampaigns(res.campaigns || []);
         if (res.allEligibleParentIds) setAllEligibleParentIds(res.allEligibleParentIds);
+        if (res.filteredParentIds) setFilteredParentIds(res.filteredParentIds);
         if (res.allFailedParentIds) setAllFailedParentIds(res.allFailedParentIds);
         if (res.campaignOriginalSubject) setCampaignOriginalSubject(res.campaignOriginalSubject);
         if (res.campaignOriginalBody) setCampaignOriginalBody(res.campaignOriginalBody);
@@ -166,7 +178,7 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
         } else if (activeProgress?.isActive) {
           // Finished
           setActiveProgress(null);
-          showSuccess('Background email delivery completed.');
+          showSuccess('Sending emails completed.');
           fetchData(true);
         }
       } catch {
@@ -179,7 +191,7 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
     return () => clearInterval(interval);
   }, [selectedCampaignId, activeProgress?.isActive]);
 
-  // Selection helpers
+  // Selection helpers - support select across all pages
   const handleToggleParent = (parentId: string) => {
     setSelectedParentIds((prev) =>
       prev.includes(parentId) ? prev.filter((id) => id !== parentId) : [...prev, parentId]
@@ -193,12 +205,8 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
   };
 
   const handleSelectAllEligible = () => {
-    if (allEligibleParentIds.length > 0) {
-      setSelectedParentIds(allEligibleParentIds);
-    } else {
-      const pageIds = parents.map((p) => p.parentId);
-      setSelectedParentIds((prev) => Array.from(new Set([...prev, ...pageIds])));
-    }
+    const allTargets = filteredParentIds.length > 0 ? filteredParentIds : (allEligibleParentIds.length > 0 ? allEligibleParentIds : parents.map((p) => p.parentId));
+    setSelectedParentIds(allTargets);
     setSelectionScopeMenuOpen(false);
   };
 
@@ -217,66 +225,111 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
     setSelectionScopeMenuOpen(false);
   };
 
-  // Open Confirmation Modal for "Try sending again"
-  const handleOpenRetryFailedModal = () => {
-    const toSend = Math.max(0, summary.totalEligibleParents - (summary.acceptedCount + summary.deliveredCount));
+  // Open Confirmation Modal for Option A: "Send to parents not yet contacted"
+  const handleOpenSendUncontactedModal = () => {
+    const total = summary.totalEligibleParents || 566;
+    const contacted = summary.previouslyContactedCount ?? (summary.acceptedCount + summary.deliveredCount);
+    const notContacted = Math.max(0, total - contacted);
+
     setConfirmModalData({
+      sendMode: 'retry_uncontacted',
       targetScope: 'failed_remaining',
-      targetCount: summary.totalEligibleParents,
-      alreadyAcceptedCount: summary.acceptedCount + summary.deliveredCount,
-      toSendCount: toSend,
-      title: "Try sending again to parents who haven't received it"
+      title: 'Send to Parents Not Yet Contacted',
+      parentsSelected: total,
+      previouslyContacted: contacted,
+      notYetContacted: notContacted,
+      emailsToSend: notContacted
     });
     setShowConfirmModal(true);
   };
 
-  // Open Confirmation Modal for "Send to Selected"
-  const handleOpenSendSelectedModal = () => {
+  // Open Confirmation Modal for Option B: "Send again to all eligible parents"
+  const handleOpenSendAgainAllModal = () => {
+    const total = summary.totalEligibleParents || 566;
+    const contacted = summary.previouslyContactedCount ?? (summary.acceptedCount + summary.deliveredCount);
+    const notContacted = Math.max(0, total - contacted);
+
+    setConfirmModalData({
+      sendMode: 'send_again',
+      targetScope: 'all_eligible',
+      parentIds: allEligibleParentIds.length > 0 ? allEligibleParentIds : undefined,
+      title: 'Send Announcement Again',
+      parentsSelected: total,
+      previouslyContacted: contacted,
+      notYetContacted: notContacted,
+      emailsToSend: total
+    });
+    setShowConfirmModal(true);
+  };
+
+  // Open Confirmation Modal for "Send again to selected parents"
+  const handleOpenSendAgainSelectedModal = () => {
     if (selectedParentIds.length === 0) return;
-    const selectedRows = parents.filter((p) => selectedParentIds.includes(p.parentId));
-    const alreadyAccepted = selectedRows.filter((p) => p.campaignStatus === 'sent' || p.campaignStatus === 'delivered').length;
-    const toSend = selectedParentIds.length - alreadyAccepted;
+    const selectedIdSet = new Set(selectedParentIds);
+    const selectedRows = parents.filter((p) => selectedIdSet.has(p.parentId));
+
+    let contacted = 0;
+    if (selectedParentIds.length === allEligibleParentIds.length) {
+      contacted = summary.previouslyContactedCount ?? (summary.acceptedCount + summary.deliveredCount);
+    } else {
+      contacted = selectedRows.filter(
+        (p) => (p.sendCount || 0) > 0 || p.campaignStatus === 'sent' || p.campaignStatus === 'delivered'
+      ).length;
+    }
+    const notContacted = Math.max(0, selectedParentIds.length - contacted);
 
     setConfirmModalData({
+      sendMode: 'send_again',
       targetScope: 'selected',
-      targetCount: selectedParentIds.length,
-      alreadyAcceptedCount: alreadyAccepted,
-      toSendCount: Math.max(0, toSend),
       parentIds: selectedParentIds,
-      title: `Send Announcement to ${selectedParentIds.length} Selected Parents`
+      title: 'Send Announcement Again',
+      parentsSelected: selectedParentIds.length,
+      previouslyContacted: contacted,
+      notYetContacted: notContacted,
+      emailsToSend: selectedParentIds.length
     });
     setShowConfirmModal(true);
   };
 
-  // Open Confirmation Modal for single parent retry
-  const handleOpenSingleSendModal = (parent: SelectedParentEmailDeliveryRow) => {
-    const isAccepted = parent.campaignStatus === 'sent' || parent.campaignStatus === 'delivered';
+  // Open Confirmation Modal for single parent repeat send
+  const handleOpenSingleSendAgainModal = (parent: SelectedParentEmailDeliveryRow) => {
+    const isContacted = (parent.sendCount || 0) > 0 || parent.campaignStatus === 'sent' || parent.campaignStatus === 'delivered';
     setConfirmModalData({
+      sendMode: 'send_again',
       targetScope: 'selected',
-      targetCount: 1,
-      alreadyAcceptedCount: isAccepted ? 1 : 0,
-      toSendCount: isAccepted ? 0 : 1,
       parentIds: [parent.parentId],
-      title: `Send Announcement to ${parent.fullName}`
+      singleParentName: parent.fullName,
+      title: isContacted ? 'Send Announcement Again' : `Send Announcement to ${parent.fullName}`,
+      parentsSelected: 1,
+      previouslyContacted: isContacted ? 1 : 0,
+      notYetContacted: isContacted ? 0 : 1,
+      emailsToSend: 1
     });
     setShowConfirmModal(true);
+  };
+
+  // Open History Drawer
+  const handleOpenHistoryDrawer = (parent: SelectedParentEmailDeliveryRow) => {
+    setDetailDrawerParent(parent);
   };
 
   // Execute Confirmed Send
   const handleExecuteSend = async () => {
-    if (!confirmModalData) return;
+    if (!confirmModalData || isSending) return;
     setIsSending(true);
 
     try {
       const res = await api.sendSelectedParentsEmail({
         eventId: selectedEventId,
         campaignId: selectedCampaignId,
+        sendMode: confirmModalData.sendMode,
         targetScope: confirmModalData.targetScope,
-        parentIds: confirmModalData.parentIds
+        parentIds: confirmModalData.parentIds,
+        roundId: `rnd_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
       });
 
       if (res.success) {
-        showSuccess(res.message || 'Paced email delivery initiated.');
+        showSuccess(res.message || 'Sending emails in background.');
         setShowConfirmModal(false);
         setConfirmModalData(null);
         setSelectedParentIds([]);
@@ -291,11 +344,11 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
         });
         fetchData(true);
       } else {
-        showError(res.error || 'Failed to dispatch emails.');
+        showError(res.error || "Couldn't send emails");
       }
     } catch (err: any) {
       const apiErr = extractApiError(err);
-      showError(apiErr.message || 'Dispatch request failed');
+      showError(apiErr.message || "Couldn't send emails");
     } finally {
       setIsSending(false);
     }
@@ -310,6 +363,10 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
       showError('Failed to export CSV.');
     }
   };
+
+  const unsentCount = Math.max(0, summary.totalEligibleParents - (summary.acceptedCount + summary.deliveredCount));
+  const isAllPageSelected = parents.length > 0 && parents.every((p) => selectedParentIds.includes(p.parentId));
+  const totalEligible = summary.totalEligibleParents || 566;
 
   return (
     <div className="space-y-6">
@@ -328,11 +385,11 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
           </div>
         </div>
 
-        {/* Sent */}
+        {/* Email Sent */}
         <div className="bg-white dark:bg-[#1D1D1A] border border-emerald-200/70 dark:border-emerald-900/40 rounded-xl p-3.5 shadow-2xs bg-emerald-50/20 dark:bg-emerald-950/10">
           <div className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1">
             <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-            <span>Sent</span>
+            <span>Email Sent</span>
           </div>
           <div className="text-xl font-bold text-emerald-900 dark:text-emerald-300 mt-1">
             {summary.acceptedCount}
@@ -342,11 +399,11 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
           </div>
         </div>
 
-        {/* Delivered */}
+        {/* Email Delivered */}
         <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl p-3.5 shadow-2xs">
           <div className="text-[11px] font-semibold text-teal-700 dark:text-teal-400 uppercase tracking-wider flex items-center gap-1">
             <CheckCircle2 className="w-3 h-3 text-teal-600 dark:text-teal-400" />
-            <span>Delivered</span>
+            <span>Email Delivered</span>
           </div>
           <div className="text-xl font-bold text-teal-800 dark:text-teal-300 mt-1">
             {summary.deliveredCount}
@@ -366,15 +423,15 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
             {summary.failedCount}
           </div>
           <div className="text-[10px] text-rose-700/80 dark:text-red-400/80 mt-0.5">
-            Rate limit (429) or error
+            Rate limit or temporary error
           </div>
         </div>
 
-        {/* Sending */}
+        {/* Sending Emails */}
         <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl p-3.5 shadow-2xs">
           <div className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1">
             <Clock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-            <span>Sending</span>
+            <span>Sending Emails</span>
           </div>
           <div className="text-xl font-bold text-amber-800 dark:text-amber-300 mt-1">
             {summary.pendingCount}
@@ -419,15 +476,15 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
             />
           </div>
           <div className="flex items-center justify-between text-[11px] text-amber-800 dark:text-amber-300">
-            <span>Sent: {activeProgress.sent} &bull; Couldn't send: {activeProgress.failed} &bull; Skipped: {activeProgress.skipped}</span>
-            <span>Rate-limit safe pacing active</span>
+            <span>Email sent: {activeProgress.sent} &bull; Couldn't send: {activeProgress.failed} &bull; Skipped: {activeProgress.skipped}</span>
+            <span>Reliable background sending active</span>
           </div>
         </div>
       )}
 
-      {/* 2. ANNOUNCEMENT SELECTOR & CONTROLS CARD */}
+      {/* 2. ANNOUNCEMENT SELECTOR & TWO CLEAR SENDING OPTIONS */}
       <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-4 shadow-2xs space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-[#EAE8E1] dark:border-[#302E29]">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-[#EAE8E1] dark:border-[#302E29]">
           {/* Announcement Selector */}
           <div className="flex items-center space-x-2">
             <span className="text-xs font-semibold text-zinc-500 dark:text-[#7A7570] shrink-0">Announcement:</span>
@@ -447,27 +504,35 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
             </select>
           </div>
 
-          {/* Quick Action Buttons */}
+          {/* TWO CLEAR SENDING OPTIONS */}
           <div className="flex flex-wrap items-center gap-2">
-            {/* Try sending again (Primary Action) */}
-            {(() => {
-              const unsentCount = Math.max(0, summary.totalEligibleParents - (summary.acceptedCount + summary.deliveredCount));
-              return (
-                <button
-                  type="button"
-                  onClick={handleOpenRetryFailedModal}
-                  disabled={unsentCount === 0 || isSending}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all shadow-2xs cursor-pointer ${
-                    unsentCount > 0 && !isSending
-                      ? 'bg-[#C59B27] hover:bg-[#B38A22] text-[#18181B]'
-                      : 'bg-zinc-100 dark:bg-[#262520] text-zinc-400 dark:text-[#7A7570] cursor-not-allowed'
-                  }`}
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Try sending again ({unsentCount})</span>
-                </button>
-              );
-            })()}
+            {/* Option A: Send to parents not yet contacted (Safe uncontacted retry) */}
+            <button
+              type="button"
+              onClick={handleOpenSendUncontactedModal}
+              disabled={unsentCount === 0 || isSending}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all shadow-2xs cursor-pointer ${
+                unsentCount > 0 && !isSending
+                  ? 'bg-zinc-100 hover:bg-zinc-200 dark:bg-[#2A2925] dark:hover:bg-[#32312C] text-[#18181B] dark:text-[#F0EBE3] border border-[#EAE8E1] dark:border-[#3A3835]'
+                  : 'bg-zinc-100 dark:bg-[#262520] text-zinc-400 dark:text-[#7A7570] cursor-not-allowed opacity-60'
+              }`}
+              title="Send only to parents who have not received this announcement yet"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-zinc-500" />
+              <span>Send to parents not yet contacted ({unsentCount})</span>
+            </button>
+
+            {/* Option B: Send again to all parents (Deliberate administrator repeat send) */}
+            <button
+              type="button"
+              onClick={handleOpenSendAgainAllModal}
+              disabled={isSending || totalEligible === 0}
+              className="px-3.5 py-1.5 bg-[#C59B27] hover:bg-[#B38A22] text-[#18181B] rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-all shadow-2xs cursor-pointer"
+              title="Deliberately send this announcement again to all eligible parents"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>Send again to all parents ({totalEligible})</span>
+            </button>
 
             {/* Export CSV */}
             <button
@@ -520,10 +585,10 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
             <span className="text-[11px] text-zinc-400 dark:text-[#7A7570] mr-1">Status:</span>
             {[
               { id: 'all', label: 'All' },
-              { id: 'failed', label: `Couldn't Send (${summary.failedCount})` },
-              { id: 'sent', label: `Sent (${summary.acceptedCount})` },
-              { id: 'delivered', label: `Delivered (${summary.deliveredCount})` },
-              { id: 'not_sent', label: 'Not Sent' }
+              { id: 'sent', label: `Email sent (${summary.acceptedCount})` },
+              { id: 'delivered', label: `Email delivered (${summary.deliveredCount})` },
+              { id: 'failed', label: `Couldn't send (${summary.failedCount})` },
+              { id: 'not_sent', label: `Not sent (${summary.notSentCount})` }
             ].map((f) => (
               <button
                 key={f.id}
@@ -544,7 +609,7 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
           </div>
         </div>
 
-        {/* 4. SELECTION CONTROLS BAR */}
+        {/* 4. SELECTION CONTROLS BAR (ACROSS ALL PAGES) */}
         <div className="flex flex-wrap items-center justify-between pt-3 border-t border-[#EAE8E1] dark:border-[#302E29] gap-2 text-xs">
           <div className="flex items-center space-x-2">
             <div className="relative">
@@ -553,24 +618,24 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
                 onClick={() => setSelectionScopeMenuOpen((v) => !v)}
                 className="bg-zinc-50 dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl px-2.5 py-1 text-xs text-zinc-700 dark:text-[#B8B0A5] hover:text-[#18181B] dark:hover:text-[#F0EBE3] flex items-center space-x-1 cursor-pointer"
               >
-                <span>Select</span>
+                <span>Select options</span>
                 <ChevronDown className="w-3.5 h-3.5" />
               </button>
               {selectionScopeMenuOpen && (
-                <div className="absolute left-0 top-full mt-1 w-52 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl shadow-lg z-20 py-1 text-xs">
+                <div className="absolute left-0 top-full mt-1 w-60 bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-xl shadow-lg z-20 py-1 text-xs">
                   <button
                     type="button"
                     onClick={handleSelectPage}
                     className="w-full text-left px-3 py-1.5 hover:bg-zinc-50 dark:hover:bg-[#262520] cursor-pointer"
                   >
-                    Select page ({parents.length})
+                    Select visible on page ({parents.length})
                   </button>
                   <button
                     type="button"
                     onClick={handleSelectAllEligible}
-                    className="w-full text-left px-3 py-1.5 hover:bg-zinc-50 dark:hover:bg-[#262520] cursor-pointer font-medium"
+                    className="w-full text-left px-3 py-1.5 hover:bg-zinc-50 dark:hover:bg-[#262520] cursor-pointer font-bold text-[#8C6D1F] dark:text-[#C59B27]"
                   >
-                    Select all {summary.totalEligibleParents} parents
+                    Select all {filteredParentIds.length || totalRecords} eligible parents
                   </button>
                   <button
                     type="button"
@@ -590,28 +655,38 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
               )}
             </div>
 
-            <span className="text-zinc-500 dark:text-[#7A7570]">
-              {selectedParentIds.length} of {totalRecords} selected
-            </span>
+            <button
+              type="button"
+              onClick={handleSelectAllEligible}
+              className="text-xs text-[#8C6D1F] dark:text-[#C59B27] hover:underline font-semibold cursor-pointer"
+            >
+              Select all {totalRecords} parents
+            </button>
+
+            {selectedParentIds.length > 0 && (
+              <span className="text-zinc-600 dark:text-[#D5CEBF] font-medium ml-1">
+                &bull; {selectedParentIds.length} of {totalRecords} selected
+              </span>
+            )}
           </div>
 
           {selectedParentIds.length > 0 && (
             <div className="flex items-center space-x-2">
               <button
                 type="button"
-                onClick={handleOpenSendSelectedModal}
+                onClick={handleOpenSendAgainSelectedModal}
                 disabled={isSending}
-                className="px-3 py-1 bg-[#C59B27] hover:bg-[#B38A22] text-[#18181B] rounded-xl text-xs font-semibold flex items-center space-x-1 transition-all cursor-pointer"
+                className="px-3 py-1 bg-[#C59B27] hover:bg-[#B38A22] text-[#18181B] rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-all shadow-2xs cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>Send to Selected ({selectedParentIds.length})</span>
+                <span>Send again to selected ({selectedParentIds.length})</span>
               </button>
               <button
                 type="button"
                 onClick={handleClearSelection}
-                className="text-xs text-zinc-400 dark:text-[#7A7570] hover:underline cursor-pointer"
+                className="text-xs text-zinc-400 dark:text-[#7A7570] hover:underline cursor-pointer ml-1"
               >
-                Clear
+                Clear selection
               </button>
             </div>
           )}
@@ -620,6 +695,20 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
 
       {/* 5. PARENT EMAIL DELIVERY TABLE */}
       <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl shadow-2xs overflow-hidden">
+        {/* Banner when page is fully selected, offering select all 566 */}
+        {isAllPageSelected && selectedParentIds.length < (filteredParentIds.length || totalRecords) && (
+          <div className="bg-[#C59B27]/10 dark:bg-[#C59B27]/20 border-b border-[#C59B27]/30 py-2.5 px-4 text-xs text-center text-zinc-800 dark:text-[#F0EBE3]">
+            <span>All {parents.length} parents on this page are selected. </span>
+            <button
+              type="button"
+              onClick={handleSelectAllEligible}
+              className="font-bold underline text-[#8C6D1F] dark:text-[#C59B27] hover:text-[#735818] cursor-pointer ml-1"
+            >
+              Select all {filteredParentIds.length || totalRecords} eligible parents across every page
+            </button>
+          </div>
+        )}
+
         {loading ? (
           <div className="p-12 flex flex-col items-center justify-center space-y-3">
             <KoinoniaInlineLoader />
@@ -641,18 +730,19 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
                   <th className="py-3 px-4 w-10">
                     <input
                       type="checkbox"
-                      checked={parents.length > 0 && parents.every((p) => selectedParentIds.includes(p.parentId))}
+                      checked={isAllPageSelected}
                       onChange={(e) => {
                         if (e.target.checked) handleSelectPage();
                         else handleClearSelection();
                       }}
                       className="rounded border-[#EAE8E1] dark:border-[#3A3835] text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
+                      title="Select all on this page"
                     />
                   </th>
                   <th className="py-3 px-4 font-semibold uppercase tracking-wider text-[10px]">Parent & Family</th>
                   <th className="py-3 px-4 font-semibold uppercase tracking-wider text-[10px]">Email Address</th>
-                  <th className="py-3 px-4 font-semibold uppercase tracking-wider text-[10px]">Status</th>
-                  <th className="py-3 px-4 font-semibold uppercase tracking-wider text-[10px]">Last Attempt</th>
+                  <th className="py-3 px-4 font-semibold uppercase tracking-wider text-[10px]">Email Status & History</th>
+                  <th className="py-3 px-4 font-semibold uppercase tracking-wider text-[10px]">Last Sent</th>
                   <th className="py-3 px-4 font-semibold uppercase tracking-wider text-[10px] text-right">Actions</th>
                 </tr>
               </thead>
@@ -663,6 +753,8 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
                   const isDelivered = parent.campaignStatus === 'delivered';
                   const isFailed = parent.campaignStatus === 'failed';
                   const isPending = parent.campaignStatus === 'queued' || parent.campaignStatus === 'sending';
+                  const sendCount = parent.sendCount || 0;
+                  const totalAttempts = parent.totalAttempts || parent.history?.length || (parent.campaignStatus !== 'not_sent' ? 1 : 0);
 
                   return (
                     <tr
@@ -671,7 +763,7 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
                         isSelected ? 'bg-[#C59B27]/5 dark:bg-[#C59B27]/10' : ''
                       }`}
                     >
-                      {/* Checkbox */}
+                      {/* Checkbox - Working for EVERY eligible parent */}
                       <td className="py-3 px-4">
                         <input
                           type="checkbox"
@@ -706,84 +798,119 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
                         )}
                       </td>
 
-                      {/* Status */}
+                      {/* Email Status & History */}
                       <td className="py-3 px-4">
-                        {isDelivered ? (
-                          <span className="inline-flex items-center gap-1 bg-teal-50 dark:bg-teal-950/30 text-teal-800 dark:text-teal-400 border border-teal-200 dark:border-teal-900/50 px-2 py-0.5 rounded-full text-[11px] font-semibold">
-                            <CheckCircle2 className="w-3 h-3 text-teal-600 dark:text-teal-400" />
-                            Delivered
-                          </span>
-                        ) : isSent ? (
-                          <span className="inline-flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/50 px-2 py-0.5 rounded-full text-[11px] font-semibold" title={parent.providerMessageId || 'Sent'}>
-                            <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                            Sent
-                          </span>
-                        ) : isFailed ? (
-                          <span
-                            className="inline-flex items-center gap-1 bg-rose-50 dark:bg-rose-950/30 text-rose-800 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50 px-2 py-0.5 rounded-full text-[11px] font-semibold"
-                            title={parent.errorMessage || "Couldn't send — please try again"}
-                          >
-                            <AlertTriangle className="w-3 h-3 text-rose-600 dark:text-rose-400" />
-                            Couldn't send
-                          </span>
-                        ) : isPending ? (
-                          <span className="inline-flex items-center gap-1 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200 dark:border-amber-900/50 px-2 py-0.5 rounded-full text-[11px] font-semibold">
-                            <Clock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                            Sending...
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 bg-zinc-100 dark:bg-[#262520] text-zinc-600 dark:text-[#7A7570] border border-zinc-200 dark:border-[#3A3835] px-2 py-0.5 rounded-full text-[11px] font-medium">
-                            Not sent
-                          </span>
-                        )}
+                        <div>
+                          {isDelivered ? (
+                            <span className="inline-flex items-center gap-1 bg-teal-50 dark:bg-teal-950/30 text-teal-800 dark:text-teal-400 border border-teal-200 dark:border-teal-900/50 px-2 py-0.5 rounded-full text-[11px] font-semibold">
+                              <CheckCircle2 className="w-3 h-3 text-teal-600 dark:text-teal-400" />
+                              Email delivered
+                            </span>
+                          ) : isSent ? (
+                            <span className="inline-flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/50 px-2 py-0.5 rounded-full text-[11px] font-semibold" title={parent.providerMessageId || 'Email sent'}>
+                              <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                              Email sent
+                            </span>
+                          ) : isFailed ? (
+                            <span
+                              className="inline-flex items-center gap-1 bg-rose-50 dark:bg-rose-950/30 text-rose-800 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50 px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                              title={parent.errorMessage || "Couldn't send"}
+                            >
+                              <AlertTriangle className="w-3 h-3 text-rose-600 dark:text-rose-400" />
+                              Couldn't send
+                            </span>
+                          ) : isPending ? (
+                            <span className="inline-flex items-center gap-1 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200 dark:border-amber-900/50 px-2 py-0.5 rounded-full text-[11px] font-semibold">
+                              <Clock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                              Sending emails...
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 bg-zinc-100 dark:bg-[#262520] text-zinc-600 dark:text-[#7A7570] border border-zinc-200 dark:border-[#3A3835] px-2 py-0.5 rounded-full text-[11px] font-medium">
+                              Not sent
+                            </span>
+                          )}
+
+                          {/* Number of times sent & View history button */}
+                          <div className="flex items-center gap-2 mt-1">
+                            {sendCount > 0 ? (
+                              <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-zinc-100 dark:bg-[#2A2925] text-zinc-700 dark:text-[#D5CEBF]">
+                                Sent {sendCount} {sendCount === 1 ? 'time' : 'times'}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-zinc-400 dark:text-[#7A7570]">
+                                Not sent yet
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenHistoryDrawer(parent)}
+                              className="text-[10px] text-[#8C6D1F] dark:text-[#C59B27] hover:underline font-medium cursor-pointer"
+                            >
+                              View history ({totalAttempts})
+                            </button>
+                          </div>
+                        </div>
+
                         {parent.errorMessage && (
                           <div className="text-[10px] text-rose-600 dark:text-rose-400 truncate max-w-xs mt-0.5" title={parent.errorMessage}>
                             {parent.errorMessage.toLowerCase().includes('429') || parent.errorMessage.toLowerCase().includes('rate limit')
-                              ? "Couldn't send — please try again"
+                              ? "Delivery delayed by email rate limit"
                               : parent.errorMessage}
                           </div>
                         )}
                       </td>
 
-                      {/* Last Attempt */}
+                      {/* Date & Time Last Sent */}
                       <td className="py-3 px-4 text-zinc-500 dark:text-[#7A7570] text-[11px] whitespace-nowrap">
-                        {parent.lastAttemptAt ? (
-                          new Date(parent.lastAttemptAt).toLocaleTimeString([], {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })
+                        {parent.lastSentAt ? (
+                          <div>
+                            <div className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">
+                              {new Date(parent.lastSentAt).toLocaleDateString([], { month: 'short', day: 'numeric' })},{' '}
+                              {new Date(parent.lastSentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                            <div className="text-[10px] text-emerald-600 dark:text-emerald-400">Delivered</div>
+                          </div>
+                        ) : parent.lastAttemptAt ? (
+                          <div>
+                            <div className="text-zinc-600 dark:text-[#B8B0A5]">
+                              {new Date(parent.lastAttemptAt).toLocaleDateString([], { month: 'short', day: 'numeric' })},{' '}
+                              {new Date(parent.lastAttemptAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                            <div className="text-[10px] text-rose-500">Attempted</div>
+                          </div>
                         ) : (
-                          '—'
+                          <span className="text-zinc-400">—</span>
                         )}
                       </td>
 
-                      {/* Row Actions */}
+                      {/* Actions */}
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end space-x-1.5">
-                          {/* Details Button */}
+                          {/* View Email History */}
                           <button
                             type="button"
-                            onClick={() => setDetailDrawerParent(parent)}
+                            onClick={() => handleOpenHistoryDrawer(parent)}
                             className="p-1.5 bg-zinc-50 dark:bg-[#21211E] hover:bg-zinc-100 dark:hover:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] text-zinc-600 dark:text-[#B8B0A5] rounded-lg transition-all cursor-pointer"
-                            title="View delivery details"
+                            title="View email history"
                           >
                             <Eye className="w-3.5 h-3.5" />
                           </button>
 
-                          {/* Retry / Send Single */}
+                          {/* Send Again - Working for ANY parent regardless of prior status */}
                           <button
                             type="button"
-                            onClick={() => handleOpenSingleSendModal(parent)}
+                            onClick={() => handleOpenSingleSendAgainModal(parent)}
                             disabled={isSending}
-                            className={`px-2 py-1 rounded-lg text-[11px] font-medium transition-all flex items-center space-x-1 cursor-pointer ${
-                              isSent || isDelivered
-                                ? 'bg-zinc-100 dark:bg-[#262520] text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600'
-                                : 'bg-[#C59B27]/10 dark:bg-[#C59B27]/20 text-[#8C6D1F] dark:text-[#C59B27] hover:bg-[#C59B27]/20 border border-[#C59B27]/30'
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all flex items-center space-x-1 cursor-pointer ${
+                              sendCount > 0 || isSent || isDelivered
+                                ? 'bg-[#C59B27]/15 hover:bg-[#C59B27]/25 text-[#8C6D1F] dark:text-[#C59B27] border border-[#C59B27]/30 shadow-2xs'
+                                : isFailed
+                                ? 'bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900/40'
+                                : 'bg-[#C59B27] hover:bg-[#B38A22] text-[#18181B] shadow-2xs'
                             }`}
                           >
-                            <span>{isFailed ? 'Try again' : isSent || isDelivered ? 'Sent' : 'Send'}</span>
+                            <Send className="w-3 h-3" />
+                            <span>{sendCount > 0 || isSent || isDelivered ? 'Send again' : isFailed ? 'Try again' : 'Send email'}</span>
                           </button>
                         </div>
                       </td>
@@ -827,7 +954,7 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
         )}
       </div>
 
-      {/* 7. CONFIRMATION MODAL */}
+      {/* 7. SEND CONFIRMATION MODAL (REQUIREMENT 4) */}
       {showConfirmModal && confirmModalData && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-xl">
@@ -841,7 +968,7 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
                     {confirmModalData.title}
                   </h3>
                   <p className="text-xs text-zinc-400 dark:text-[#7A7570]">
-                    Review recipient counts before sending
+                    Review details before sending
                   </p>
                 </div>
               </div>
@@ -870,59 +997,58 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
                   </span>
                 )}
               </div>
+              <div className="font-semibold text-[#18181B] dark:text-[#F0EBE3] pb-1 border-b border-[#EAE8E1] dark:border-[#3A3835]">
+                {campaignOriginalSubject || 'Important Event Details – The General Assembly'}
+              </div>
               {campaignOriginalBody ? (
-                <>
-                  <div className="font-semibold text-[#18181B] dark:text-[#F0EBE3] pb-1 border-b border-[#EAE8E1] dark:border-[#3A3835]">
-                    {campaignOriginalSubject || 'Announcement'}
-                  </div>
-                  <div className="max-h-36 overflow-y-auto whitespace-pre-wrap font-sans text-[11px] text-zinc-600 dark:text-[#B8B0A5] leading-relaxed p-2.5 bg-white dark:bg-[#1D1D1A] rounded-lg border border-[#EAE8E1] dark:border-[#302E29]">
-                    {campaignOriginalBody}
-                  </div>
-                </>
+                <div className="max-h-36 overflow-y-auto whitespace-pre-wrap font-sans text-[11px] text-zinc-600 dark:text-[#B8B0A5] leading-relaxed p-2.5 bg-white dark:bg-[#1D1D1A] rounded-lg border border-[#EAE8E1] dark:border-[#302E29]">
+                  {campaignOriginalBody}
+                </div>
               ) : (
                 <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 rounded-lg text-rose-800 dark:text-rose-300 text-xs">
-                  Original approved announcement content could not be verified for this campaign. Retry sending is blocked until content is verified.
+                  Original approved announcement content could not be verified for this campaign. Sending is blocked until content is verified.
                 </div>
               )}
             </div>
 
-            {/* Reconciliation breakdown */}
+            {/* Reconciliation breakdown matching User Requirement 4 */}
             <div className="space-y-2 text-xs">
               <div className="flex items-center justify-between py-1.5 border-b border-[#EAE8E1] dark:border-[#302E29]">
-                <span className="text-zinc-600 dark:text-[#B8B0A5]">Selected parents:</span>
-                <span className="font-bold text-[#18181B] dark:text-[#F0EBE3]">{confirmModalData.targetCount}</span>
+                <span className="text-zinc-600 dark:text-[#B8B0A5]">Parents selected:</span>
+                <span className="font-bold text-[#18181B] dark:text-[#F0EBE3]">{confirmModalData.parentsSelected}</span>
               </div>
               <div className="flex items-center justify-between py-1.5 border-b border-[#EAE8E1] dark:border-[#302E29]">
-                <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  Already sent (Protected from duplicates):
-                </span>
-                <span className="font-bold text-emerald-700 dark:text-emerald-400">
-                  {confirmModalData.alreadyAcceptedCount}
+                <span className="text-zinc-600 dark:text-[#B8B0A5]">Previously contacted:</span>
+                <span className="font-semibold text-zinc-700 dark:text-[#D5CEBF]">
+                  {confirmModalData.previouslyContacted}
                 </span>
               </div>
-              {confirmModalData.targetScope === 'failed_remaining' && (
-                <div className="flex items-center justify-between py-1 border-b border-[#EAE8E1] dark:border-[#302E29] text-[11px] text-zinc-500 dark:text-[#7A7570]">
-                  <span>Previous attempt couldn't send: {summary.failedCount} &bull; Not yet attempted: {summary.notSentCount}</span>
-                  <span className="text-zinc-400">Total remaining: {confirmModalData.toSendCount}</span>
-                </div>
-              )}
+              <div className="flex items-center justify-between py-1.5 border-b border-[#EAE8E1] dark:border-[#302E29]">
+                <span className="text-zinc-600 dark:text-[#B8B0A5]">Not yet contacted:</span>
+                <span className="font-semibold text-zinc-700 dark:text-[#D5CEBF]">
+                  {confirmModalData.notYetContacted}
+                </span>
+              </div>
               <div className="flex items-center justify-between py-1.5 pt-2 font-semibold">
                 <span className="text-[#18181B] dark:text-[#F0EBE3]">Emails to send:</span>
-                <span className="text-base font-bold text-[#C59B27]">{confirmModalData.toSendCount}</span>
+                <span className="text-base font-bold text-[#C59B27]">{confirmModalData.emailsToSend}</span>
               </div>
             </div>
 
-            {/* Safety Guarantee Callout */}
-            <div className="bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 rounded-xl p-3 text-[11px] text-emerald-900 dark:text-emerald-300 leading-relaxed space-y-1">
-              <div className="font-semibold flex items-center gap-1">
-                <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                <span>Delivery & Duplicate Protection</span>
+            {/* Clear Warning Notice when previously contacted parents are included */}
+            {confirmModalData.sendMode === 'send_again' && confirmModalData.previouslyContacted > 0 && (
+              <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 rounded-xl p-3 text-xs text-amber-900 dark:text-amber-300 leading-relaxed space-y-1">
+                <div className="font-bold flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span>Important Notice</span>
+                </div>
+                <div>
+                  {confirmModalData.parentsSelected === 1
+                    ? 'This parent has already received this announcement. Do you want to send it to them again?'
+                    : 'Some of these parents have already received this announcement. Do you want to send it to them again?'}
+                </div>
               </div>
-              <div>
-                Emails will be delivered safely in the background with duplicate protection. Parents who have already received this announcement will not be emailed again.
-              </div>
-            </div>
+            )}
 
             {/* Action Buttons */}
             <div className="flex items-center justify-end space-x-2 pt-2">
@@ -937,9 +1063,9 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
               <button
                 type="button"
                 onClick={handleExecuteSend}
-                disabled={isSending || confirmModalData.toSendCount === 0 || !campaignOriginalBody}
+                disabled={isSending || confirmModalData.emailsToSend === 0 || !campaignOriginalBody}
                 className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center space-x-1.5 cursor-pointer ${
-                  confirmModalData.toSendCount > 0 && !isSending && Boolean(campaignOriginalBody)
+                  confirmModalData.emailsToSend > 0 && !isSending && Boolean(campaignOriginalBody)
                     ? 'bg-[#C59B27] hover:bg-[#B38A22] text-[#18181B] shadow-2xs'
                     : 'bg-zinc-100 dark:bg-[#262520] text-zinc-400 dark:text-[#7A7570] cursor-not-allowed'
                 }`}
@@ -947,12 +1073,17 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
                 {isSending ? (
                   <>
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Preparing to send...</span>
+                    <span>Sending emails...</span>
+                  </>
+                ) : confirmModalData.sendMode === 'send_again' ? (
+                  <>
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Yes, Send Again</span>
                   </>
                 ) : (
                   <>
                     <Send className="w-3.5 h-3.5" />
-                    <span>Send {confirmModalData.toSendCount} Emails</span>
+                    <span>Send to Remaining ({confirmModalData.emailsToSend})</span>
                   </>
                 )}
               </button>
@@ -961,17 +1092,17 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
         </div>
       )}
 
-      {/* 8. PARENT DETAILS DRAWER */}
+      {/* 8. EMAIL HISTORY DRAWER (REQUIREMENT 3) */}
       {detailDrawerParent && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-2xs flex justify-end z-50 animate-fade-in">
-          <div className="bg-white dark:bg-[#1D1D1A] border-l border-[#EAE8E1] dark:border-[#302E29] w-full max-w-md h-full p-6 overflow-y-auto space-y-6 shadow-2xl">
+          <div className="bg-white dark:bg-[#1D1D1A] border-l border-[#EAE8E1] dark:border-[#302E29] w-full max-w-lg h-full p-6 overflow-y-auto space-y-6 shadow-2xl">
             <div className="flex items-center justify-between pb-4 border-b border-[#EAE8E1] dark:border-[#302E29]">
               <div>
                 <h3 className="text-sm font-bold text-[#18181B] dark:text-[#F0EBE3]">
                   {detailDrawerParent.fullName}
                 </h3>
                 <p className="text-xs text-zinc-400 dark:text-[#7A7570]">
-                  Delivery Log & Recipient Details
+                  Full Email Delivery History
                 </p>
               </div>
               <button
@@ -983,51 +1114,91 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
               </button>
             </div>
 
-            {/* Status overview */}
-            <div className="space-y-3">
-              <div className="text-[11px] font-semibold text-zinc-500 dark:text-[#7A7570] uppercase tracking-wider">
-                Current Campaign Delivery Status
-              </div>
-              <div className="bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3.5 space-y-2 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-500 dark:text-[#7A7570]">Status:</span>
-                  <span className="font-bold uppercase tracking-wider">{detailDrawerParent.campaignStatus}</span>
+            {/* Summary statistics */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3">
+                <div className="text-[10px] uppercase font-semibold text-zinc-400 dark:text-[#7A7570]">Times Sent</div>
+                <div className="text-lg font-bold text-[#18181B] dark:text-[#F0EBE3] mt-0.5">
+                  {detailDrawerParent.sendCount || 0}
                 </div>
-                {detailDrawerParent.providerMessageId && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-zinc-500 dark:text-[#7A7570]">Provider Message ID:</span>
-                    <span className="font-mono text-[11px] text-zinc-800 dark:text-[#F0EBE3]">
-                      {detailDrawerParent.providerMessageId}
-                    </span>
-                  </div>
-                )}
-                {detailDrawerParent.lastAttemptAt && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-zinc-500 dark:text-[#7A7570]">Last Attempt:</span>
-                    <span>{new Date(detailDrawerParent.lastAttemptAt).toLocaleString()}</span>
-                  </div>
-                )}
-                {detailDrawerParent.sentAt && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-zinc-500 dark:text-[#7A7570]">Sent At:</span>
-                    <span>{new Date(detailDrawerParent.sentAt).toLocaleString()}</span>
-                  </div>
-                )}
+              </div>
+              <div className="bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl p-3">
+                <div className="text-[10px] uppercase font-semibold text-zinc-400 dark:text-[#7A7570]">Total Attempts</div>
+                <div className="text-lg font-bold text-[#18181B] dark:text-[#F0EBE3] mt-0.5">
+                  {detailDrawerParent.totalAttempts || detailDrawerParent.history?.length || 0}
+                </div>
               </div>
             </div>
 
-            {/* Error Message if Failed */}
-            {detailDrawerParent.errorMessage && (
-              <div className="bg-rose-50/70 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 rounded-xl p-3.5 space-y-1 text-xs">
-                <div className="font-semibold text-rose-800 dark:text-rose-400 flex items-center gap-1.5">
-                  <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
-                  <span>Provider Error Recorded</span>
-                </div>
-                <div className="text-rose-700 dark:text-rose-300 font-mono text-[11px] break-all">
-                  {detailDrawerParent.errorMessage}
-                </div>
+            {/* Email History Timeline */}
+            <div className="space-y-3">
+              <div className="text-[11px] font-semibold text-zinc-500 dark:text-[#7A7570] uppercase tracking-wider flex items-center gap-1.5">
+                <History className="w-3.5 h-3.5 text-[#C59B27]" />
+                <span>Delivery Attempts History</span>
               </div>
-            )}
+
+              {detailDrawerParent.history && detailDrawerParent.history.length > 0 ? (
+                <div className="space-y-2.5">
+                  {detailDrawerParent.history.map((item, idx) => (
+                    <div
+                      key={item.id || idx}
+                      className="p-3.5 bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl space-y-2 text-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-zinc-700 dark:text-[#D5CEBF]">
+                          Attempt #{detailDrawerParent.history!.length - idx}
+                          {item.sendRound ? ` (Round ${item.sendRound})` : ''}
+                        </span>
+                        {item.status === 'delivered' ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-teal-50 text-teal-800 border border-teal-200">
+                            Email delivered
+                          </span>
+                        ) : item.status === 'sent' ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                            Email sent
+                          </span>
+                        ) : item.status === 'failed' ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-50 text-rose-800 border border-rose-200">
+                            Couldn't send
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                            {item.status}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="text-[11px] text-zinc-500 dark:text-[#7A7570]">
+                        Date & Time:{' '}
+                        <span className="font-medium text-zinc-700 dark:text-[#D5CEBF]">
+                          {item.sentAt || item.failedAt || item.createdAt
+                            ? new Date(item.sentAt || item.failedAt || item.createdAt).toLocaleString()
+                            : '—'}
+                        </span>
+                      </div>
+
+                      {item.providerMessageId && (
+                        <div className="text-[10px] text-zinc-500 font-mono truncate">
+                          ID: {item.providerMessageId}
+                        </div>
+                      )}
+
+                      {item.errorMessage && (
+                        <div className="p-2 bg-rose-50/80 dark:bg-rose-950/30 border border-rose-200/80 rounded-lg text-rose-700 dark:text-rose-400 text-[11px]">
+                          {item.errorMessage.toLowerCase().includes('429') || item.errorMessage.toLowerCase().includes('rate limit')
+                            ? 'Delivery delayed by email provider rate limit (automatic backoff handled)'
+                            : item.errorMessage}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-4 bg-zinc-50 dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl text-center text-xs text-zinc-400">
+                  No previous email attempts recorded for this parent.
+                </div>
+              )}
+            </div>
 
             {/* Contact Details */}
             <div className="space-y-3">
@@ -1090,15 +1261,17 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
                 onClick={() => {
                   const target = detailDrawerParent;
                   setDetailDrawerParent(null);
-                  handleOpenSingleSendModal(target);
+                  handleOpenSingleSendAgainModal(target);
                 }}
-                className="w-full py-2 bg-[#C59B27] hover:bg-[#B38A22] text-[#18181B] rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 transition-all shadow-2xs cursor-pointer"
+                className="w-full py-2 bg-[#C59B27] hover:bg-[#B38A22] text-[#18181B] rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-all shadow-2xs cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5" />
                 <span>
-                  {detailDrawerParent.campaignStatus === 'failed'
-                    ? 'Retry Email to This Parent'
-                    : 'Dispatch Email to This Parent'}
+                  {(detailDrawerParent.sendCount || 0) > 0 || detailDrawerParent.campaignStatus === 'sent' || detailDrawerParent.campaignStatus === 'delivered'
+                    ? 'Send announcement again'
+                    : detailDrawerParent.campaignStatus === 'failed'
+                    ? 'Try sending again'
+                    : 'Send email'}
                 </span>
               </button>
             </div>
