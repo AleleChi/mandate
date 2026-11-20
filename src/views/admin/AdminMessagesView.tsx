@@ -5,6 +5,7 @@ import {
   Save, 
   Eye, 
   CheckCircle, 
+  CheckCircle2, 
   Loader2, 
   Mail, 
   Phone, 
@@ -25,7 +26,7 @@ import {
   Bell,
   Smartphone
 } from 'lucide-react';
-import { api, extractApiError } from '../../services/api';
+import { api, extractApiError, SelectedParentEmailDeliveryRow } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
@@ -284,6 +285,8 @@ export function calculateEffectiveEligibility(params: {
   channelEligibility: any;
   whatsappEnabled: boolean;
   selectedParentsSummary?: any;
+  selectedParentIds?: string[];
+  selectedParentsAudience?: SelectedParentEmailDeliveryRow[];
 }) {
   const {
     selectedGroup,
@@ -294,16 +297,32 @@ export function calculateEffectiveEligibility(params: {
     eventVolunteers,
     channelEligibility,
     whatsappEnabled,
-    selectedParentsSummary
+    selectedParentsSummary,
+    selectedParentIds,
+    selectedParentsAudience
   } = params;
 
   if (selectedGroup === 'selected_parents') {
+    if (selectedParentIds && selectedParentIds.length > 0) {
+      const selectedSet = new Set(selectedParentIds);
+      const chosen = (selectedParentsAudience || []).filter(p => selectedSet.has(p.parentId));
+      const emailCount = chosen.length > 0
+        ? chosen.filter(p => !!p.email && p.email.includes('@')).length
+        : selectedParentIds.length;
+      return {
+        inApp: chosen.length || selectedParentIds.length,
+        push: chosen.length || selectedParentIds.length,
+        email: emailCount,
+        whatsappNumbers: chosen.filter(p => !!p.phoneNumber).length,
+        whatsappOptedIn: whatsappEnabled ? chosen.filter(p => !!p.phoneNumber).length : 0
+      };
+    }
     return {
-      inApp: selectedParentsSummary?.totalEligibleParents ?? (channelEligibility?.inApp ?? 0),
-      push: channelEligibility?.push ?? 0,
-      email: selectedParentsSummary?.validEmailCount ?? (channelEligibility?.email ?? 0),
-      whatsappNumbers: channelEligibility?.whatsappNumbers ?? 0,
-      whatsappOptedIn: whatsappEnabled ? (channelEligibility?.whatsappOptedIn ?? 0) : 0
+      inApp: 0,
+      push: 0,
+      email: 0,
+      whatsappNumbers: 0,
+      whatsappOptedIn: 0
     };
   }
 
@@ -545,6 +564,12 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
   }>>([]);
   const [selectedVolunteerIds, setSelectedVolunteerIds] = useState<string[]>([]);
   const [volunteerSearchQuery, setVolunteerSearchQuery] = useState('');
+  // Selected Parents Audience Picker states
+  const [selectedParentsAudience, setSelectedParentsAudience] = useState<SelectedParentEmailDeliveryRow[]>([]);
+  const [selectedParentsAudienceLoading, setSelectedParentsAudienceLoading] = useState(false);
+  const [selectedParentsAudienceSearch, setSelectedParentsAudienceSearch] = useState('');
+  const [selectedParentsPage, setSelectedParentsPage] = useState(1);
+  const SELECTED_PARENTS_PAGE_SIZE = 10;
   const [previewRepresentativeVolunteer, setPreviewRepresentativeVolunteer] = useState<string | null>(null);
   const [previewRepresentativeTeam, setPreviewRepresentativeTeam] = useState<string | null>(null);
   const [previewRepresentativeLocation, setPreviewRepresentativeLocation] = useState<string | null>(null);
@@ -982,7 +1007,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
         subject,
         body,
         campaignId: composerCampaignId,
-        selectedParentIds: selectedGroup === 'specific_parents' ? selectedParentIds : undefined,
+        selectedParentIds: (selectedGroup === 'specific_parents' || selectedGroup === 'selected_parents') ? selectedParentIds : undefined,
         selectedChildId: activePreviewChildId || undefined,
         selectedVolunteerIds: selectedGroup === 'specific_volunteers' ? selectedVolunteerIds : undefined
       });
@@ -1137,6 +1162,69 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
     }
   };
 
+  const loadSelectedParentsAudience = async () => {
+    setSelectedParentsAudienceLoading(true);
+    try {
+      const res = await api.getSelectedParentsEmailDelivery(selectedEventId, { pageSize: 600 });
+      if (res.success && res.parents) {
+        setSelectedParentsAudience(res.parents);
+      }
+    } catch (e) {
+      console.error('Failed to load selected parents audience', e);
+    } finally {
+      setSelectedParentsAudienceLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedGroup === 'selected_parents') {
+      loadSelectedParentsAudience();
+    }
+  }, [selectedGroup, selectedEventId]);
+
+  const filteredSelectedParents = useMemo(() => {
+    if (!selectedParentsAudienceSearch.trim()) return selectedParentsAudience;
+    const q = selectedParentsAudienceSearch.toLowerCase().trim();
+    return selectedParentsAudience.filter(p =>
+      p.fullName.toLowerCase().includes(q) ||
+      (p.email || '').toLowerCase().includes(q) ||
+      (p.selectedChildNames || '').toLowerCase().includes(q) ||
+      (p.phoneNumber || '').includes(q)
+    );
+  }, [selectedParentsAudience, selectedParentsAudienceSearch]);
+
+  const pagedSelectedParents = useMemo(() => {
+    const start = (selectedParentsPage - 1) * SELECTED_PARENTS_PAGE_SIZE;
+    return filteredSelectedParents.slice(start, start + SELECTED_PARENTS_PAGE_SIZE);
+  }, [filteredSelectedParents, selectedParentsPage]);
+
+  const totalSelectedParentsPages = Math.ceil(filteredSelectedParents.length / SELECTED_PARENTS_PAGE_SIZE) || 1;
+
+  const handleSelectSelectedParentsPage = () => {
+    const pageIds = pagedSelectedParents.map(p => p.parentId);
+    setSelectedParentIds(prev => Array.from(new Set([...prev, ...pageIds])));
+  };
+
+  const handleSelectAllSelectedParents = () => {
+    const allIds = selectedParentsAudience.map(p => p.parentId);
+    setSelectedParentIds(allIds);
+  };
+
+  const handleSelectFailedSelectedParents = () => {
+    const failedIds = selectedParentsAudience.filter(p => p.campaignStatus === 'failed').map(p => p.parentId);
+    setSelectedParentIds(failedIds);
+  };
+
+  const handleClearSelectedParents = () => {
+    setSelectedParentIds([]);
+  };
+
+  const toggleSelectSelectedParent = (parentId: string) => {
+    setSelectedParentIds(prev =>
+      prev.includes(parentId) ? prev.filter(id => id !== parentId) : [...prev, parentId]
+    );
+  };
+
   // Template / token handlers
   const handleGroupChange = (group: string) => {
     const wasVol = isVolunteerAudience(selectedGroup);
@@ -1165,9 +1253,55 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
 
     if (group === 'selected_parents') {
       setSelectedChannels(['email']);
+      loadSelectedParentsAudience();
       if (!subject || subject.startsWith('Important Event Details') || !body) {
-        setSubject('Important Event Details – {Event name}');
-        setBody('Dear {Parent name},\n\nWe are pleased to inform you that {Selected child name(s)} has/have been selected for {Event name}.\n\nPlease find the venue details below:\n\n**Event:** {Event name}\n**Venue:** {Venue name}\n**Address:** {Venue address}\n\nPlease take note of these details and make the necessary arrangements for your child\'s participation.\n\nWarm regards,\nThe Koinonia Children & Teens Team');
+        setSubject('Important Event Details - The General Assembly');
+        setBody(`Dear Parents,
+
+The General Assembly 2026 has begun, and the Children & Teens session takes place tomorrow, Saturday, November 21, 2026.
+
+As you prepare for tomorrow's session, please take note of the venue, session time and instructions for accessing and saving your child's event pass.
+
+EVENT DETAILS
+
+Date: Saturday, November 21, 2026
+Time: 8:00 AM – 1:00 PM
+Venue: Hillside Event Centre, Mabushi, by Ministers Hill, Abuja.
+
+HOW TO ACCESS AND SAVE YOUR CHILD'S PASS
+
+To make the check-in process easier, please save your child's pass before arriving at the venue.
+
+Visit the Children & Teens Portal: https://kgachildren.koinoniageneralassembly.com/
+
+Log in using the account you used to register your child.
+
+Select Passes from the menu.
+
+Tap View pass for your selected child. If the pass is locked, tap to unlock it and complete the required security verification.
+
+Tap Save pass to download a copy to your phone.
+
+If you have more than one selected child, please save each child's pass separately.
+
+VIEW THE EVENT VENUE IN YOUR PORTAL
+
+You can also find the venue address directly in your Children & Teens Portal.
+
+Simply log in at https://kgachildren.koinoniageneralassembly.com/ and check your parent dashboard for the event venue details.
+
+IMPORTANT REMINDERS
+
+Keep your child's saved pass accessible on your phone for check-in.
+
+Ensure you have saved the pass before arriving at the venue.
+
+Do not share your child's pass with unauthorised persons.
+
+We look forward to welcoming your children tomorrow!
+
+Warm regards,
+Koinonia Children & Teens Team`);
       }
     }
   };
@@ -1258,7 +1392,12 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
       return;
     }
 
-    if (selectedGroup === 'specific_parents') {
+    if (selectedGroup === 'selected_parents') {
+      if (selectedParentIds.length === 0) {
+        showError("Please select at least one parent recipient, or click 'Select all'.");
+        return;
+      }
+    } else if (selectedGroup === 'specific_parents') {
       if (selectedParentIds.length === 0) {
         showError('Please select at least one parent recipient.');
         return;
@@ -1328,7 +1467,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
         body,
         confirmed: true,
         eventId: selectedEventId,
-        selectedParentIds: selectedGroup === 'specific_parents' ? selectedParentIds : undefined,
+        selectedParentIds: (selectedGroup === 'specific_parents' || selectedGroup === 'selected_parents') ? selectedParentIds : undefined,
         selectedChildIds: (selectedGroup === 'specific_parents' && isCurrentChildSpecific) ? selectedChildIds : undefined,
         selectedVolunteerIds: selectedGroup === 'specific_volunteers' ? selectedVolunteerIds : undefined
       });
@@ -1437,10 +1576,14 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
     eventVolunteers,
     channelEligibility,
     whatsappEnabled,
-    selectedParentsSummary
+    selectedParentsSummary,
+    selectedParentIds,
+    selectedParentsAudience
   });
 
-  const activeGroupRecipients = isSpecificParents
+  const activeGroupRecipients = selectedGroup === 'selected_parents'
+    ? selectedParentIds.length
+    : isSpecificParents
     ? (isChildSpecific ? selectedChildrenList.length : selectedParentIds.length)
     : isSpecificVolunteers
     ? selectedVolunteerIds.length
@@ -1475,6 +1618,9 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
   }, [isChildSpecific, isSpecificParents, selectedParentsList, selectedChildIds, whatsappEnabled]);
 
   const confirmModalTitle = useMemo(() => {
+    if (selectedGroup === 'selected_parents') {
+      return `Send announcement to ${selectedParentIds.length} selected parent${selectedParentIds.length === 1 ? '' : 's'}?`;
+    }
     if (isChildSpecific && isSpecificParents && selectedChildrenList.length > 0) {
       const formattedType = selectedType === 'pass_update' || selectedType === 'pass_ready'
         ? 'pass update'
@@ -1492,7 +1638,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
       return `Send announcement to ${selectedVolunteerIds.length} volunteer${selectedVolunteerIds.length === 1 ? '' : 's'}?`;
     }
     return isWhatsAppOnly ? 'Send WhatsApp announcement?' : 'Send announcement?';
-  }, [isChildSpecific, isSpecificParents, isSpecificVolunteers, selectedChildrenList.length, selectedVolunteerIds.length, selectedType, isWhatsAppOnly]);
+  }, [selectedGroup, isChildSpecific, isSpecificParents, isSpecificVolunteers, selectedChildrenList.length, selectedParentIds.length, selectedVolunteerIds.length, selectedType, isWhatsAppOnly]);
 
   const representativeParent = isSpecificParents
     ? selectedParentsList[0]
@@ -2640,21 +2786,30 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                     className="w-full bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-lg px-3 py-2 text-xs text-[#18181B] dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27]/20 transition-colors shadow-2xs cursor-pointer"
                   >
                     {recipientGroups.map(group => {
+                      if (group.key === 'specific_volunteers') {
+                        return (
+                          <option key={group.key} value={group.key}>
+                            Choose volunteers ({eventVolunteers.length} available)
+                          </option>
+                        );
+                      }
+                      if (group.key === 'selected_parents') {
+                        const count = selectedParentsSummary?.totalEligibleParents ?? 566;
+                        return (
+                          <option key={group.key} value={group.key}>
+                            Selected parents ({count} available)
+                          </option>
+                        );
+                      }
                       let groupLabel = group.key === 'all_parents' ? 'All current-event parents' : group.label;
                       let count = group.count;
-                      if (group.key === 'selected_parents') {
-                        groupLabel = 'Selected parents';
-                        count = selectedParentsSummary?.totalEligibleParents ?? group.count;
-                      } else if (group.key === 'specific_parents') {
+                      if (group.key === 'specific_parents') {
                         groupLabel = 'Specific parents (manual)';
                         count = selectedParentIds.length;
-                      } else if (group.key === 'specific_volunteers') {
-                        groupLabel = 'Selected volunteers';
-                        count = selectedVolunteerIds.length;
                       }
-                      const unitLabel = (group.key === 'selected_parents' || group.key === 'specific_parents' || group.key === 'all_parents')
+                      const unitLabel = (group.key === 'specific_parents' || group.key === 'all_parents')
                         ? (count === 1 ? 'parent' : 'parents')
-                        : (group.key === 'specific_volunteers' || group.key === 'volunteers')
+                        : (group.key === 'volunteers')
                         ? (count === 1 ? 'volunteer' : 'volunteers')
                         : (count === 1 ? 'contact' : 'contacts');
                       return (
@@ -2777,6 +2932,192 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                       </span>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* Selected parents searchable multi-select */}
+              {selectedGroup === 'selected_parents' && (
+                <div className="space-y-2.5 pt-1">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1">
+                    <div className="text-[11px] font-semibold text-zinc-700 dark:text-[#B8B0A5] uppercase tracking-wider">
+                      Recipients
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-[11px]">
+                      <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">
+                        {selectedParentsAudience.length > 0 ? selectedParentsAudience.length : (selectedParentsSummary?.totalEligibleParents ?? 566)} parents available · {selectedParentIds.length} selected
+                      </span>
+                      <span className="text-zinc-300 dark:text-[#4A4844]">·</span>
+                      <button
+                        type="button"
+                        onClick={handleSelectSelectedParentsPage}
+                        className="text-zinc-600 dark:text-[#B8B0A5] hover:text-zinc-900 dark:hover:text-[#F0EBE3] cursor-pointer font-medium"
+                      >
+                        Select page ({pagedSelectedParents.length})
+                      </button>
+                      <span className="text-zinc-300 dark:text-[#4A4844]">·</span>
+                      <button
+                        type="button"
+                        onClick={handleSelectAllSelectedParents}
+                        className="text-[#C59B27] hover:text-[#9E7A1C] cursor-pointer font-semibold"
+                      >
+                        Select all {selectedParentsAudience.length > 0 ? selectedParentsAudience.length : 566} parents
+                      </button>
+                      <span className="text-zinc-300 dark:text-[#4A4844]">·</span>
+                      <button
+                        type="button"
+                        onClick={handleSelectFailedSelectedParents}
+                        className="text-rose-600 dark:text-rose-400 hover:text-rose-700 cursor-pointer font-medium"
+                      >
+                        Select couldn&apos;t send ({selectedParentsAudience.filter(p => p.campaignStatus === 'failed').length || 396})
+                      </button>
+                      <span className="text-zinc-300 dark:text-[#4A4844]">·</span>
+                      <button
+                        type="button"
+                        onClick={handleClearSelectedParents}
+                        className="text-zinc-400 dark:text-[#7A7570] hover:text-zinc-700 dark:hover:text-[#B8B0A5] cursor-pointer"
+                      >
+                        Clear selection
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Search input */}
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-zinc-400 dark:text-[#7A7570] absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={selectedParentsAudienceSearch}
+                      onChange={(e) => {
+                        setSelectedParentsAudienceSearch(e.target.value);
+                        setSelectedParentsPage(1);
+                      }}
+                      placeholder="Search parents by name, child name, email or phone..."
+                      className="w-full pl-8 pr-8 py-2 bg-white dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-lg text-xs text-[#18181B] dark:text-[#F0EBE3] placeholder:text-zinc-400 dark:placeholder:text-[#7A7570] focus:outline-none focus:border-[#C59B27] focus:ring-1 focus:ring-[#C59B27]/20 transition-colors shadow-2xs"
+                    />
+                    {selectedParentsAudienceSearch && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedParentsAudienceSearch('');
+                          setSelectedParentsPage(1);
+                        }}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-[#7A7570] hover:text-zinc-600 dark:hover:text-[#F0EBE3] cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Parent list */}
+                  <div className="max-h-72 overflow-y-auto divide-y divide-[#F4F3EF] dark:divide-[#302E29] border border-[#EAE8E1] dark:border-[#302E29] rounded-lg bg-white dark:bg-[#1D1D1A]">
+                    {selectedParentsAudienceLoading ? (
+                      <div className="p-6 text-center text-xs text-zinc-500 dark:text-[#7A7570]">
+                        Loading eligible parents...
+                      </div>
+                    ) : filteredSelectedParents.length === 0 ? (
+                      <div className="p-4 text-center text-xs text-zinc-400 dark:text-[#7A7570]">
+                        No parents match &quot;{selectedParentsAudienceSearch}&quot;
+                      </div>
+                    ) : (
+                      pagedSelectedParents.map((parent) => {
+                        const isSelected = selectedParentIds.includes(parent.parentId);
+                        const isSent = parent.campaignStatus === 'sent';
+                        const isDelivered = parent.campaignStatus === 'delivered';
+                        const isFailed = parent.campaignStatus === 'failed';
+                        const isPending = parent.campaignStatus === 'queued' || parent.campaignStatus === 'sending';
+
+                        return (
+                          <div
+                            key={parent.parentId}
+                            className={`p-3 hover:bg-[#FAF9F6] dark:hover:bg-[#21211E] transition-colors ${
+                              isSelected ? 'bg-[#C59B27]/5 dark:bg-[#C59B27]/10' : ''
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <label className="flex items-center space-x-3 min-w-0 flex-1 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => toggleSelectSelectedParent(parent.parentId)}
+                                  className="rounded border-zinc-300 dark:border-[#3A3835] text-[#C59B27] focus:ring-[#C59B27] cursor-pointer"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center space-x-2">
+                                    <span className="text-xs font-semibold text-[#18181B] dark:text-[#F0EBE3] truncate">
+                                      {parent.fullName}
+                                    </span>
+                                    <span className="text-[10px] font-medium bg-zinc-100 dark:bg-[#262520] text-zinc-700 dark:text-[#B8B0A5] px-1.5 py-0.5 rounded">
+                                      {parent.selectedRatioText}
+                                    </span>
+                                  </div>
+                                  <div className="text-[11px] text-zinc-500 dark:text-[#7A7570] truncate mt-0.5">
+                                    <span>{parent.selectedChildNames}</span>
+                                    {parent.email && <span> · <span className="font-mono text-[10px]">{parent.email}</span></span>}
+                                    {parent.phoneNumber && <span> · <span className="font-mono text-[10px]">{parent.phoneNumber}</span></span>}
+                                  </div>
+                                </div>
+                              </label>
+
+                              <div className="shrink-0">
+                                {isDelivered ? (
+                                  <span className="inline-flex items-center gap-1 bg-teal-50 dark:bg-teal-950/30 text-teal-800 dark:text-teal-400 border border-teal-200 dark:border-teal-900/50 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                                    <CheckCircle2 className="w-3 h-3 text-teal-600 dark:text-teal-400" />
+                                    Delivered
+                                  </span>
+                                ) : isSent ? (
+                                  <span className="inline-flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/50 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                                    <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                                    Sent
+                                  </span>
+                                ) : isFailed ? (
+                                  <span className="inline-flex items-center gap-1 bg-rose-50 dark:bg-rose-950/30 text-rose-800 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50 px-2 py-0.5 rounded-full text-[10px] font-semibold" title={parent.errorMessage || "Couldn't send — please try again"}>
+                                    <AlertTriangle className="w-3 h-3 text-rose-600 dark:text-rose-400" />
+                                    Couldn&apos;t send
+                                  </span>
+                                ) : isPending ? (
+                                  <span className="inline-flex items-center gap-1 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200 dark:border-amber-900/50 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                                    <Clock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                                    Sending...
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 bg-zinc-100 dark:bg-[#262520] text-zinc-600 dark:text-[#7A7570] border border-zinc-200 dark:border-[#3A3835] px-2 py-0.5 rounded-full text-[10px] font-medium">
+                                    Not sent
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Pagination controls */}
+                  {totalSelectedParentsPages > 1 && (
+                    <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-[#7A7570] px-1 pt-1">
+                      <span>
+                        Page {selectedParentsPage} of {totalSelectedParentsPages} ({filteredSelectedParents.length} parents)
+                      </span>
+                      <div className="flex items-center space-x-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedParentsPage(p => Math.max(1, p - 1))}
+                          disabled={selectedParentsPage <= 1}
+                          className="px-2 py-1 border border-[#EAE8E1] dark:border-[#3A3835] rounded-md disabled:opacity-40 disabled:cursor-not-allowed hover:bg-zinc-50 dark:hover:bg-[#262520] cursor-pointer"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedParentsPage(p => Math.min(totalSelectedParentsPages, p + 1))}
+                          disabled={selectedParentsPage >= totalSelectedParentsPages}
+                          className="px-2 py-1 border border-[#EAE8E1] dark:border-[#3A3835] rounded-md disabled:opacity-40 disabled:cursor-not-allowed hover:bg-zinc-50 dark:hover:bg-[#262520] cursor-pointer"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -2954,7 +3295,7 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
                     </div>
                     <div className="flex items-center space-x-2 text-[11px]">
                       <span className="font-semibold text-zinc-800 dark:text-[#F0EBE3]">
-                        {selectedVolunteerIds.length} selected
+                        {selectedVolunteerIds.length} of {eventVolunteers.length} selected
                       </span>
                       <span className="text-zinc-300 dark:text-[#4A4844]">·</span>
                       <button
@@ -3883,7 +4224,9 @@ export function AdminMessagesView({ onBackToOverview, onNavigate, adminUser }: A
               <div className="bg-[#FAF9F6] dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-lg p-3.5 space-y-2">
                 <div className="flex items-center justify-between flex-wrap gap-1">
                   <span className="font-semibold text-zinc-900 dark:text-[#F0EBE3]">
-                    {isSpecificParents
+                    {selectedGroup === 'selected_parents'
+                       ? `${selectedParentIds.length} selected parent${selectedParentIds.length === 1 ? '' : 's'}`
+                       : isSpecificParents
                        ? (isChildSpecific
                            ? `${selectedChildrenList.length} child update${selectedChildrenList.length === 1 ? '' : 's'} across ${selectedParentIds.length} parent${selectedParentIds.length === 1 ? '' : 's'}`
                            : `${selectedParentIds.length} parent${selectedParentIds.length === 1 ? '' : 's'} selected`)

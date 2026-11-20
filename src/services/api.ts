@@ -182,6 +182,10 @@ export interface SelectedParentsEmailDeliveryResponse {
   eventId: string;
   activeCampaignId: string;
   campaigns: SelectedParentsEmailCampaign[];
+  campaignOriginalSubject?: string;
+  campaignOriginalBody?: string;
+  allEligibleParentIds?: string[];
+  allFailedParentIds?: string[];
   summary: SelectedParentsEmailSummary;
   parents: SelectedParentEmailDeliveryRow[];
   pagination: SelectedParentsPagination;
@@ -381,6 +385,7 @@ export const api = {
     ageGroup?: string;
     page?: number;
     pageSize?: number;
+    unpaginated?: boolean;
   }) {
     const q = new URLSearchParams();
     q.append('eventId', eventId);
@@ -391,6 +396,7 @@ export const api = {
     if (params?.ageGroup) q.append('ageGroup', params.ageGroup);
     if (params?.page) q.append('page', String(params.page));
     if (params?.pageSize) q.append('pageSize', String(params.pageSize));
+    if (params?.unpaginated) q.append('unpaginated', 'true');
     return api.request<SelectedParentsAudienceResponse>(`/api/admin/messages/selected-parents?${q.toString()}`);
   },
 
