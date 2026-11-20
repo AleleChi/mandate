@@ -93,6 +93,7 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
     emailsToSend: number;
     parentIds?: string[];
     singleParentName?: string;
+    actionRoundId: string;
   } | null>(null);
   const [isSending, setIsSending] = useState(false);
 
@@ -225,6 +226,9 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
     setSelectionScopeMenuOpen(false);
   };
 
+  // Stable action ID generator per confirmed sending action session
+  const generateStableActionId = () => `rnd_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
   // Open Confirmation Modal for Option A: "Send to parents not yet contacted"
   const handleOpenSendUncontactedModal = () => {
     const total = summary.totalEligibleParents || 566;
@@ -238,7 +242,8 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
       parentsSelected: total,
       previouslyContacted: contacted,
       notYetContacted: notContacted,
-      emailsToSend: notContacted
+      emailsToSend: notContacted,
+      actionRoundId: generateStableActionId()
     });
     setShowConfirmModal(true);
   };
@@ -257,7 +262,8 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
       parentsSelected: total,
       previouslyContacted: contacted,
       notYetContacted: notContacted,
-      emailsToSend: total
+      emailsToSend: total,
+      actionRoundId: generateStableActionId()
     });
     setShowConfirmModal(true);
   };
@@ -286,7 +292,8 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
       parentsSelected: selectedParentIds.length,
       previouslyContacted: contacted,
       notYetContacted: notContacted,
-      emailsToSend: selectedParentIds.length
+      emailsToSend: selectedParentIds.length,
+      actionRoundId: generateStableActionId()
     });
     setShowConfirmModal(true);
   };
@@ -303,7 +310,8 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
       parentsSelected: 1,
       previouslyContacted: isContacted ? 1 : 0,
       notYetContacted: isContacted ? 0 : 1,
-      emailsToSend: 1
+      emailsToSend: 1,
+      actionRoundId: generateStableActionId()
     });
     setShowConfirmModal(true);
   };
@@ -325,7 +333,7 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
         sendMode: confirmModalData.sendMode,
         targetScope: confirmModalData.targetScope,
         parentIds: confirmModalData.parentIds,
-        roundId: `rnd_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+        roundId: confirmModalData.actionRoundId
       });
 
       if (res.success) {
