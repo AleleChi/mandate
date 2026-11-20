@@ -184,6 +184,7 @@ export interface SelectedParentsEmailDeliveryResponse {
   campaigns: SelectedParentsEmailCampaign[];
   campaignOriginalSubject?: string;
   campaignOriginalBody?: string;
+  isOriginalVerified?: boolean;
   allEligibleParentIds?: string[];
   allFailedParentIds?: string[];
   summary: SelectedParentsEmailSummary;

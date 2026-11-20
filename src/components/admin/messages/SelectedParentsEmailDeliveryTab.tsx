@@ -219,12 +219,12 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
 
   // Open Confirmation Modal for "Try sending again"
   const handleOpenRetryFailedModal = () => {
-    const failedTotal = summary.failedCount;
+    const toSend = Math.max(0, summary.totalEligibleParents - (summary.acceptedCount + summary.deliveredCount));
     setConfirmModalData({
       targetScope: 'failed_remaining',
       targetCount: summary.totalEligibleParents,
       alreadyAcceptedCount: summary.acceptedCount + summary.deliveredCount,
-      toSendCount: failedTotal,
+      toSendCount: toSend,
       title: "Try sending again to parents who haven't received it"
     });
     setShowConfirmModal(true);
@@ -450,19 +450,24 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
           {/* Quick Action Buttons */}
           <div className="flex flex-wrap items-center gap-2">
             {/* Try sending again (Primary Action) */}
-            <button
-              type="button"
-              onClick={handleOpenRetryFailedModal}
-              disabled={summary.failedCount === 0 || isSending}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all shadow-2xs cursor-pointer ${
-                summary.failedCount > 0 && !isSending
-                  ? 'bg-[#C59B27] hover:bg-[#B38A22] text-[#18181B]'
-                  : 'bg-zinc-100 dark:bg-[#262520] text-zinc-400 dark:text-[#7A7570] cursor-not-allowed'
-              }`}
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Try sending again ({summary.failedCount})</span>
-            </button>
+            {(() => {
+              const unsentCount = Math.max(0, summary.totalEligibleParents - (summary.acceptedCount + summary.deliveredCount));
+              return (
+                <button
+                  type="button"
+                  onClick={handleOpenRetryFailedModal}
+                  disabled={unsentCount === 0 || isSending}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all shadow-2xs cursor-pointer ${
+                    unsentCount > 0 && !isSending
+                      ? 'bg-[#C59B27] hover:bg-[#B38A22] text-[#18181B]'
+                      : 'bg-zinc-100 dark:bg-[#262520] text-zinc-400 dark:text-[#7A7570] cursor-not-allowed'
+                  }`}
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Try sending again ({unsentCount})</span>
+                </button>
+              );
+            })()}
 
             {/* Export CSV */}
             <button
@@ -855,33 +860,53 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
                 <span className="text-[11px] font-semibold text-zinc-500 dark:text-[#7A7570] uppercase tracking-wider">
                   Announcement Preview
                 </span>
-                <span className="text-[10px] text-zinc-400 dark:text-[#7A7570]">
-                  Approved Leadership Text
-                </span>
+                {campaignOriginalBody ? (
+                  <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-medium">
+                    Verified Approved Content
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold">
+                    Unverified Content
+                  </span>
+                )}
               </div>
-              <div className="font-semibold text-[#18181B] dark:text-[#F0EBE3] pb-1 border-b border-[#EAE8E1] dark:border-[#3A3835]">
-                {campaignOriginalSubject || 'Important Event Details - The General Assembly'}
-              </div>
-              <div className="max-h-36 overflow-y-auto whitespace-pre-wrap font-sans text-[11px] text-zinc-600 dark:text-[#B8B0A5] leading-relaxed p-2.5 bg-white dark:bg-[#1D1D1A] rounded-lg border border-[#EAE8E1] dark:border-[#302E29]">
-                {campaignOriginalBody || `Dear Parents,\n\nThe General Assembly 2026 has begun, and the Children & Teens session takes place tomorrow, Saturday, November 21, 2026.\n\nAs you prepare for tomorrow's session, please take note of the venue, session time and instructions for accessing and saving your child's event pass.\n\nEVENT DETAILS\n\nDate: Saturday, November 21, 2026\nTime: 8:00 AM – 1:00 PM\nVenue: Hillside Event Centre, Mabushi, by Ministers Hill, Abuja.\n\nHOW TO ACCESS AND SAVE YOUR CHILD'S PASS\n\nTo make the check-in process easier, please save your child's pass before arriving at the venue.\n\nVisit the Children & Teens Portal: https://kgachildren.koinoniageneralassembly.com/\n\nLog in using the account you used to register your child.\n\nSelect Passes from the menu.\n\nTap View pass for your selected child. If the pass is locked, tap to unlock it and complete the required security verification.\n\nTap Save pass to download a copy to your phone.\n\nIf you have more than one selected child, please save each child's pass separately.\n\nVIEW THE EVENT VENUE IN YOUR PORTAL\n\nYou can also find the venue address directly in your Children & Teens Portal.\n\nSimply log in at https://kgachildren.koinoniageneralassembly.com/ and check your parent dashboard for the event venue details.\n\nIMPORTANT REMINDERS\n\nKeep your child's saved pass accessible on your phone for check-in.\n\nEnsure you have saved the pass before arriving at the venue.\n\nDo not share your child's pass with unauthorised persons.\n\nWe look forward to welcoming your children tomorrow!\n\nWarm regards,\nKoinonia Children & Teens Team`}
-              </div>
+              {campaignOriginalBody ? (
+                <>
+                  <div className="font-semibold text-[#18181B] dark:text-[#F0EBE3] pb-1 border-b border-[#EAE8E1] dark:border-[#3A3835]">
+                    {campaignOriginalSubject || 'Announcement'}
+                  </div>
+                  <div className="max-h-36 overflow-y-auto whitespace-pre-wrap font-sans text-[11px] text-zinc-600 dark:text-[#B8B0A5] leading-relaxed p-2.5 bg-white dark:bg-[#1D1D1A] rounded-lg border border-[#EAE8E1] dark:border-[#302E29]">
+                    {campaignOriginalBody}
+                  </div>
+                </>
+              ) : (
+                <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 rounded-lg text-rose-800 dark:text-rose-300 text-xs">
+                  Original approved announcement content could not be verified for this campaign. Retry sending is blocked until content is verified.
+                </div>
+              )}
             </div>
 
             {/* Reconciliation breakdown */}
             <div className="space-y-2 text-xs">
               <div className="flex items-center justify-between py-1.5 border-b border-[#EAE8E1] dark:border-[#302E29]">
-                <span className="text-zinc-600 dark:text-[#B8B0A5]">Selected / Targeted Recipients:</span>
+                <span className="text-zinc-600 dark:text-[#B8B0A5]">Selected parents:</span>
                 <span className="font-bold text-[#18181B] dark:text-[#F0EBE3]">{confirmModalData.targetCount}</span>
               </div>
               <div className="flex items-center justify-between py-1.5 border-b border-[#EAE8E1] dark:border-[#302E29]">
                 <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
                   <ShieldCheck className="w-3.5 h-3.5" />
-                  Already Sent (Skipped safely):
+                  Already sent (Protected from duplicates):
                 </span>
                 <span className="font-bold text-emerald-700 dark:text-emerald-400">
                   {confirmModalData.alreadyAcceptedCount}
                 </span>
               </div>
+              {confirmModalData.targetScope === 'failed_remaining' && (
+                <div className="flex items-center justify-between py-1 border-b border-[#EAE8E1] dark:border-[#302E29] text-[11px] text-zinc-500 dark:text-[#7A7570]">
+                  <span>Previous attempt couldn't send: {summary.failedCount} &bull; Not yet attempted: {summary.notSentCount}</span>
+                  <span className="text-zinc-400">Total remaining: {confirmModalData.toSendCount}</span>
+                </div>
+              )}
               <div className="flex items-center justify-between py-1.5 pt-2 font-semibold">
                 <span className="text-[#18181B] dark:text-[#F0EBE3]">Emails to send:</span>
                 <span className="text-base font-bold text-[#C59B27]">{confirmModalData.toSendCount}</span>
@@ -892,10 +917,10 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
             <div className="bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 rounded-xl p-3 text-[11px] text-emerald-900 dark:text-emerald-300 leading-relaxed space-y-1">
               <div className="font-semibold flex items-center gap-1">
                 <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                <span>Provider Rate Limit & Duplicate Protection</span>
+                <span>Delivery & Duplicate Protection</span>
               </div>
               <div>
-                Emails are sent in the background paced at 4.5 requests/sec, well below Resend's 10 req/sec limit. Any parent who has already received this announcement will not receive a duplicate email.
+                Emails will be delivered safely in the background with duplicate protection. Parents who have already received this announcement will not be emailed again.
               </div>
             </div>
 
@@ -912,9 +937,9 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
               <button
                 type="button"
                 onClick={handleExecuteSend}
-                disabled={isSending || confirmModalData.toSendCount === 0}
+                disabled={isSending || confirmModalData.toSendCount === 0 || !campaignOriginalBody}
                 className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center space-x-1.5 cursor-pointer ${
-                  confirmModalData.toSendCount > 0 && !isSending
+                  confirmModalData.toSendCount > 0 && !isSending && Boolean(campaignOriginalBody)
                     ? 'bg-[#C59B27] hover:bg-[#B38A22] text-[#18181B] shadow-2xs'
                     : 'bg-zinc-100 dark:bg-[#262520] text-zinc-400 dark:text-[#7A7570] cursor-not-allowed'
                 }`}
@@ -927,7 +952,7 @@ export const SelectedParentsEmailDeliveryTab: React.FC<SelectedParentsEmailDeliv
                 ) : (
                   <>
                     <Send className="w-3.5 h-3.5" />
-                    <span>Confirm & Send {confirmModalData.toSendCount} Emails</span>
+                    <span>Send {confirmModalData.toSendCount} Emails</span>
                   </>
                 )}
               </button>

@@ -2968,7 +2968,7 @@ Koinonia Children & Teens Team`);
                         onClick={handleSelectFailedSelectedParents}
                         className="text-rose-600 dark:text-rose-400 hover:text-rose-700 cursor-pointer font-medium"
                       >
-                        Select couldn&apos;t send ({selectedParentsAudience.filter(p => p.campaignStatus === 'failed').length || 396})
+                        Select couldn&apos;t send ({selectedParentsAudience.filter(p => p.campaignStatus === 'failed').length || 394})
                       </button>
                       <span className="text-zinc-300 dark:text-[#4A4844]">·</span>
                       <button
