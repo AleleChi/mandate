@@ -152,6 +152,9 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onBackToOvervi
           venueVisibilityReleasedAt: res.releasedAt || (visible ? new Date().toISOString() : e.venueVisibilityReleasedAt),
           venueVisibilityUpdatedAt: res.updatedAt || new Date().toISOString()
         } : e));
+        if (selectedEventId === eventId) {
+          setFormShowVenueToSelectedParents(visible);
+        }
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
