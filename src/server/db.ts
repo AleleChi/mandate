@@ -575,6 +575,8 @@ function initSqliteSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_email_delivery_campaign ON email_delivery_logs(campaign_id);
     CREATE INDEX IF NOT EXISTS idx_email_delivery_email ON email_delivery_logs(recipient_email);
     CREATE INDEX IF NOT EXISTS idx_email_delivery_round ON email_delivery_logs(round_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_email_delivery_round_parent ON email_delivery_logs(round_id, parent_profile_id) WHERE round_id IS NOT NULL AND parent_profile_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_email_delivery_round_email ON email_delivery_logs(round_id, recipient_email) WHERE round_id IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS volunteer_profiles (
       id TEXT PRIMARY KEY,
@@ -2630,6 +2632,8 @@ async function initPostgresSchema(pool: any) {
       CREATE INDEX IF NOT EXISTS idx_email_delivery_campaign ON email_delivery_logs(campaign_id);
       CREATE INDEX IF NOT EXISTS idx_email_delivery_email ON email_delivery_logs(recipient_email);
       CREATE INDEX IF NOT EXISTS idx_email_delivery_round ON email_delivery_logs(round_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_email_delivery_round_parent ON email_delivery_logs(round_id, parent_profile_id) WHERE round_id IS NOT NULL AND parent_profile_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_email_delivery_round_email ON email_delivery_logs(round_id, recipient_email) WHERE round_id IS NOT NULL;
 
       CREATE TABLE IF NOT EXISTS volunteer_profiles (
         id VARCHAR(64) PRIMARY KEY,

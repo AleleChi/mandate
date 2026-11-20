@@ -25,7 +25,8 @@ import {
   runPacedBroadcast,
   getCampaignProgress,
   getDurableCampaignProgress,
-  isCampaignActive
+  isCampaignActive,
+  resumeInterruptedEmailBroadcasts
 } from '../services/emailBroadcastService';
 
 function formatEventDateString(dateStr: string | null | undefined): string {
@@ -11522,6 +11523,12 @@ router.get('/messages/selected-parents/email-delivery', async (req: Authenticate
       ORDER BY created_at DESC
     `, [activeCampaignId]);
 
+    // Check for any queued or interrupted delivery records and resume safely if idle
+    const hasQueuedOrInterrupted = deliveryLogs.some((l: any) => l.status === 'queued' || l.status === 'sending');
+    if (hasQueuedOrInterrupted && !isCampaignActive(activeCampaignId)) {
+      resumeInterruptedEmailBroadcasts().catch((e) => console.warn('[DeliveryView] Auto-resume notice:', e));
+    }
+
     const logsByParent = new Map<string, any[]>();
     const logsByEmail = new Map<string, any[]>();
     let totalEmailsSent = 0;
@@ -12061,25 +12068,38 @@ router.post('/messages/selected-parents/send-email', async (req: AuthenticatedRe
       const normEmail = p.email!.trim();
 
       // Always create a separate, discrete history record for this sending attempt
-      await execute(
-        `INSERT INTO email_delivery_logs (
-           id, campaign_id, round_id, send_round, event_id, parent_profile_id, user_id, recipient_email,
-           subject, provider, status, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'resend', 'queued', ?, ?)`,
-        [
-          deliveryLogId,
-          campaignId,
-          roundId,
-          sendRound,
-          eventId,
-          p.parentId,
-          p.userId || null,
-          normEmail,
-          renderedSubject,
-          nowStr,
-          nowStr
-        ]
-      );
+      try {
+        await execute(
+          `INSERT INTO email_delivery_logs (
+             id, campaign_id, round_id, send_round, event_id, parent_profile_id, user_id, recipient_email,
+             subject, provider, status, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'resend', 'queued', ?, ?)`,
+          [
+            deliveryLogId,
+            campaignId,
+            roundId,
+            sendRound,
+            eventId,
+            p.parentId,
+            p.userId || null,
+            normEmail,
+            renderedSubject,
+            nowStr,
+            nowStr
+          ]
+        );
+      } catch (insertErr: any) {
+        // Enforce duplicate protection: if this recipient was already inserted for this sending round, skip gracefully
+        if (
+          insertErr?.code === '23505' ||
+          String(insertErr?.message || '').toLowerCase().includes('unique')
+        ) {
+          console.warn(`[EmailSend] Duplicate record ignored by database constraint for round ${roundId}, recipient ${normEmail}`);
+          skippedInRoundCount++;
+          continue;
+        }
+        throw insertErr;
+      }
 
       broadcastRecipients.push({
         parentId: p.parentId,

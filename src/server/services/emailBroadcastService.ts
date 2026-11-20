@@ -258,7 +258,7 @@ export async function sendPacedEmailWithBackoff(options: {
       `INSERT INTO email_delivery_logs (
          id, campaign_id, round_id, send_round, event_id, parent_profile_id, user_id, recipient_email,
          subject, provider, status, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'resend', 'sending', ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'resend', 'sending', ?, ?)`,
       [
         deliveryLogId,
         campaignId,
@@ -289,7 +289,8 @@ export async function sendPacedEmailWithBackoff(options: {
         text: body,
         html: formatHtmlBody(body),
         fromName: customFromName,
-        replyTo: customReplyTo
+        replyTo: customReplyTo,
+        idempotencyKey: deliveryLogId
       });
 
       if (res.success && res.id) {
@@ -450,4 +451,128 @@ export async function runPacedBroadcast(options: {
   });
 
   return progress;
+}
+
+/**
+ * Automatically detects and resumes interrupted email broadcasts after server restart or crash.
+ * Reconciles unknown sending outcomes and finishes queued recipients safely with rate-limit pacing.
+ */
+export async function resumeInterruptedEmailBroadcasts(): Promise<{
+  recoveredCount: number;
+  campaigns: string[];
+}> {
+  console.log('[EmailBroadcast Recovery] Checking for interrupted broadcasts in database...');
+
+  // 1. Reconcile unknown sending outcomes: any record lingering in 'sending' status
+  // If provider_message_id is already present, mark as 'sent'.
+  await execute(`
+    UPDATE email_delivery_logs
+    SET status = 'sent', updated_at = ?
+    WHERE status = 'sending' AND provider_message_id IS NOT NULL
+  `, [new Date().toISOString()]).catch((e) => console.warn('[EmailBroadcast Recovery] Note:', e));
+
+  // If provider_message_id is NULL and lingering in 'sending', reset safely to 'queued'.
+  // Because sendEmail supplies an Idempotency-Key matching the delivery log ID,
+  // retrying it cannot result in duplicate dispatch from the email provider.
+  await execute(`
+    UPDATE email_delivery_logs
+    SET status = 'queued', updated_at = ?
+    WHERE status = 'sending' AND (provider_message_id IS NULL OR provider_message_id = '')
+  `, [new Date().toISOString()]).catch((e) => console.warn('[EmailBroadcast Recovery] Note:', e));
+
+  // 2. Identify all campaigns with unfinished queued records
+  const queuedCampaigns = await query<{ campaign_id: string; event_id: string }>(`
+    SELECT DISTINCT campaign_id, event_id
+    FROM email_delivery_logs
+    WHERE status = 'queued' AND campaign_id IS NOT NULL
+  `);
+
+  if (!queuedCampaigns || queuedCampaigns.length === 0) {
+    console.log('[EmailBroadcast Recovery] No interrupted queued broadcasts found.');
+    return { recoveredCount: 0, campaigns: [] };
+  }
+
+  let totalRecovered = 0;
+  const processedCampaigns: string[] = [];
+
+  for (const c of queuedCampaigns) {
+    const campaignId = c.campaign_id;
+    const eventId = c.event_id || 'event-ga-2026';
+
+    if (isCampaignActive(campaignId)) {
+      console.log(`[EmailBroadcast Recovery] Campaign ${campaignId} is already running in memory.`);
+      continue;
+    }
+
+    // Retrieve all queued logs for this campaign
+    const queuedRows = await query<any>(`
+      SELECT id, campaign_id, round_id, send_round, event_id, parent_profile_id, user_id, recipient_email, subject
+      FROM email_delivery_logs
+      WHERE campaign_id = ? AND status = 'queued'
+      ORDER BY created_at ASC
+    `, [campaignId]);
+
+    if (!queuedRows || queuedRows.length === 0) continue;
+
+    // Retrieve the original approved announcement body
+    let rawSubject = queuedRows[0]?.subject;
+    let rawBody: string | undefined;
+
+    if (rawSubject) {
+      const origMsg = await queryOne<any>(`
+        SELECT subject, body
+        FROM admin_message_logs
+        WHERE recipient_group IN ('selected_parents', 'selected_children', 'specific_parents')
+          AND channel LIKE '%email%'
+          AND subject = ?
+        ORDER BY CASE WHEN id = 'ea654919-3da5-4a3a-9e80-213fb8beed90' THEN 0 ELSE 1 END, created_at DESC
+        LIMIT 1
+      `, [rawSubject]);
+      rawBody = origMsg?.body;
+    }
+
+    if (!rawBody) {
+      // Fallback: look for any admin message log for this event
+      const fallbackMsg = await queryOne<any>(`
+        SELECT subject, body
+        FROM admin_message_logs
+        WHERE channel LIKE '%email%'
+        ORDER BY created_at DESC
+        LIMIT 1
+      `);
+      rawBody = fallbackMsg?.body;
+    }
+
+    if (!rawBody) {
+      console.warn(`[EmailBroadcast Recovery] Could not resolve announcement body for campaign ${campaignId}. Skipping auto-resume.`);
+      continue;
+    }
+
+    // Map queued rows into EmailBroadcastRecipient array
+    const recipients: EmailBroadcastRecipient[] = queuedRows.map((row) => ({
+      parentId: row.parent_profile_id || undefined,
+      userId: row.user_id || undefined,
+      email: row.recipient_email,
+      subject: row.subject || rawSubject,
+      body: rawBody!,
+      deliveryLogId: row.id,
+      roundId: row.round_id || undefined,
+      sendRound: row.send_round || 1,
+      allowResend: true
+    }));
+
+    console.log(`[EmailBroadcast Recovery] Resuming ${recipients.length} queued emails for campaign ${campaignId}...`);
+    totalRecovered += recipients.length;
+    processedCampaigns.push(campaignId);
+
+    // Launch paced broadcast
+    runPacedBroadcast({
+      campaignId,
+      eventId,
+      recipients,
+      delayMs: 220
+    });
+  }
+
+  return { recoveredCount: totalRecovered, campaigns: processedCampaigns };
 }

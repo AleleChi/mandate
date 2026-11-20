@@ -47,6 +47,7 @@ import { parentMessagesRouter, volunteerMessagesRouter, adminMessagesRouter } fr
 import { parentAnnouncementsRouter, volunteerAnnouncementsRouter, adminAnnouncementsRouter } from './src/server/routes/announcements';
 import { applicationRemindersRouter } from './src/server/routes/applicationReminders';
 import { isEmailConfigured, resolveEmailProvider } from './src/server/services/email';
+import { resumeInterruptedEmailBroadcasts } from './src/server/services/emailBroadcastService';
 
 async function startServer() {
   const app = express();
@@ -378,6 +379,11 @@ async function startServer() {
     if (!emailConfigured) {
       console.warn('[Email Service Warning] Outgoing transactional emails will NOT deliver. Set EMAIL_FROM_ADDRESS and either RESEND_API_KEY (for Resend) or ZEPTOMAIL_SEND_TOKEN (for ZeptoMail) in Render environment variables.');
     }
+
+    // Automatically resume any interrupted email broadcasts on boot
+    resumeInterruptedEmailBroadcasts().catch((err) => {
+      console.error('[Startup] Interrupted email broadcast resume error:', err);
+    });
 
     // Validate canonical public application URL configuration
     try {

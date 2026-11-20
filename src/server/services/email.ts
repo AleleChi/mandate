@@ -14,6 +14,8 @@ export interface SendEmailOptions {
   fromName?: string;
   fromAddress?: string;
   replyTo?: string;
+  idempotencyKey?: string;
+  headers?: Record<string, string>;
 }
 
 export interface SendEmailResult {
@@ -190,13 +192,21 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
       }
 
       const resend = new Resend(apiKey);
+      const reqHeaders: Record<string, string> = {
+        ...(options.headers || {})
+      };
+      if (options.idempotencyKey) {
+        reqHeaders['Idempotency-Key'] = options.idempotencyKey;
+      }
+
       const { data, error } = await resend.emails.send({
         from: fullFrom,
         to: options.to,
         subject: options.subject,
         html: options.html || options.text || options.subject,
         text: options.text || options.subject,
-        replyTo
+        replyTo,
+        ...(Object.keys(reqHeaders).length > 0 ? { headers: reqHeaders } : {})
       });
 
       if (error) {
