@@ -25,6 +25,7 @@ export interface EventRow {
   minimum_age?: number | null;
   maximum_age?: number | null;
   capacity?: number;
+  venue_visible_to_selected_parents?: number | boolean;
   created_at?: string;
   updated_at?: string;
   archived_at?: string;

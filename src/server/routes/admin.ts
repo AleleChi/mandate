@@ -20,6 +20,12 @@ function normalizeOptionalText(val: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 import { recordChannelInvitationSent, QUALIFYING_CHILD_STATUSES } from '../services/selectedParentsChannelService';
+import {
+  sendPacedEmailWithBackoff,
+  runPacedBroadcast,
+  getCampaignProgress,
+  isCampaignActive
+} from '../services/emailBroadcastService';
 
 function formatEventDateString(dateStr: string | null | undefined): string {
   if (!dateStr) return '';
@@ -10821,74 +10827,33 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
         campaignId: req.body.campaignId || req.body.campaignKey || req.body.idempotencyKey
       });
 
-      for (const msg of messagesToSend) {
+      for (let i = 0; i < messagesToSend.length; i++) {
+        const msg = messagesToSend[i];
         const recipientEmail = (msg.email || '').trim();
         if (recipientEmail && recipientEmail.includes('@')) {
-          // Campaign-specific duplicate prevention check:
-          // A recipient must not receive the same campaign twice, but remains eligible for separate campaigns.
-          // Retrying a partially sent campaign skips already-delivered recipients.
-          let alreadySent = false;
-          if (msg.parentId) {
-            const existingSuccess = await queryOne(`
-              SELECT id FROM email_delivery_logs
-              WHERE campaign_id = ? AND parent_profile_id = ? AND status = 'sent'
-            `, [emailCampaignKey, msg.parentId]);
-            if (existingSuccess) {
-              alreadySent = true;
+          const outcome = await sendPacedEmailWithBackoff({
+            campaignId: emailCampaignKey,
+            eventId,
+            parentId: msg.parentId,
+            userId: msg.userId,
+            recipientEmail,
+            subject: msg.subject,
+            body: msg.body,
+            customFromName,
+            customReplyTo
+          });
+
+          if (outcome.success) {
+            if (!outcome.skipped) {
+              emailSentCount++;
             }
           } else {
-            const existingSuccess = await queryOne(`
-              SELECT id FROM email_delivery_logs
-              WHERE campaign_id = ? AND recipient_email = ? AND status = 'sent'
-            `, [emailCampaignKey, recipientEmail]);
-            if (existingSuccess) {
-              alreadySent = true;
-            }
-          }
-
-          if (alreadySent) {
-            continue;
-          }
-
-          const deliveryLogId = `edl-${crypto.randomUUID()}`;
-          const nowStr = new Date().toISOString();
-
-          try {
-            const res = await sendEmail({
-              to: recipientEmail,
-              subject: msg.subject,
-              text: msg.body,
-              html: `<p>${msg.body.replace(/\n/g, '<br>')}</p>`,
-              fromName: customFromName,
-              replyTo: customReplyTo
-            });
-
-            if (res.success) {
-              emailSentCount++;
-              await execute(`
-                INSERT INTO email_delivery_logs (
-                  id, campaign_id, event_id, parent_profile_id, user_id, recipient_email,
-                  subject, provider, provider_message_id, status, sent_at, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', ?, ?, ?)
-              `, [deliveryLogId, emailCampaignKey, eventId, msg.parentId || null, msg.userId || null, recipientEmail, msg.subject, res.provider || 'email', res.id || null, nowStr, nowStr, nowStr]);
-            } else {
-              externalFailCount++;
-              await execute(`
-                INSERT INTO email_delivery_logs (
-                  id, campaign_id, event_id, parent_profile_id, user_id, recipient_email,
-                  subject, provider, error_message, status, failed_at, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'failed', ?, ?, ?)
-              `, [deliveryLogId, emailCampaignKey, eventId, msg.parentId || null, msg.userId || null, recipientEmail, msg.subject, res.provider || 'email', res.error || 'Email send failed', nowStr, nowStr, nowStr]);
-            }
-          } catch (err: any) {
-            console.error('[Admin sendEmail failed]:', err);
             externalFailCount++;
-            await execute(`
-              INSERT INTO email_delivery_logs (
-                id, campaign_id, event_id, parent_profile_id, user_id, recipient_email,
-                subject, provider, error_message, status, failed_at, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'failed', ?, ?, ?)
-            `, [deliveryLogId, emailCampaignKey, eventId, msg.parentId || null, msg.userId || null, recipientEmail, msg.subject, 'email', err?.message || 'Send exception', nowStr, nowStr, nowStr]);
+          }
+
+          // Pacing delay between consecutive requests to stay strictly below Resend 10 req/sec limit
+          if (i < messagesToSend.length - 1) {
+            await new Promise(r => setTimeout(r, 220));
           }
         }
       }
@@ -11468,6 +11433,511 @@ router.post('/messages/selected-parents/send', async (req: AuthenticatedRequest,
       success: false,
       error: err.message || 'Failed to dispatch channel invitations'
     });
+  }
+});
+
+// GET /api/admin/messages/selected-parents/email-delivery - Get email delivery statuses & campaigns
+router.get('/messages/selected-parents/email-delivery', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const rawEventId = (req.query.eventId as string) || undefined;
+    const eventId = await resolveAdminEventId(rawEventId) || rawEventId || 'event-ga-2026';
+    const reqCampaignId = typeof req.query.campaignId === 'string' ? req.query.campaignId.trim() : '';
+    const search = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
+    const statusFilter = typeof req.query.status === 'string' ? req.query.status.trim().toLowerCase() : 'all';
+    const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+    const pageSize = Math.max(1, Math.min(200, parseInt(req.query.pageSize as string, 10) || 25));
+
+    // 1. Fetch available campaigns from email_delivery_logs & admin_message_logs
+    const distinctCampaigns = await query<any>(`
+      SELECT 
+        campaign_id as id,
+        MAX(subject) as subject,
+        MIN(created_at) as created_at,
+        COUNT(*) as total_logged,
+        SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) as sent_count,
+        SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) as delivered_count,
+        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_count
+      FROM email_delivery_logs
+      WHERE campaign_id IS NOT NULL AND (event_id = ? OR event_id IS NULL)
+      GROUP BY campaign_id
+      ORDER BY MIN(created_at) DESC
+    `, [eventId]);
+
+    // Ensure known production campaigns are represented with human titles
+    const campaignMap = new Map<string, any>();
+    for (const c of distinctCampaigns) {
+      let displayName = c.subject || c.id;
+      if (c.id === 'cmp_event-ga-2026_general_anno_important-event-details-_c3c41590') {
+        displayName = 'Important Event Details - The General Assembly';
+      }
+      campaignMap.set(c.id, {
+        id: c.id,
+        name: displayName,
+        subject: c.subject || displayName,
+        createdAt: c.created_at,
+        totalLogged: Number(c.total_logged || 0),
+        sentCount: Number(c.sent_count || 0),
+        deliveredCount: Number(c.delivered_count || 0),
+        failedCount: Number(c.failed_count || 0)
+      });
+    }
+
+    // Default primary campaign key
+    const DEFAULT_CAMPAIGN_ID = 'cmp_event-ga-2026_general_anno_important-event-details-_c3c41590';
+    if (!campaignMap.has(DEFAULT_CAMPAIGN_ID)) {
+      campaignMap.set(DEFAULT_CAMPAIGN_ID, {
+        id: DEFAULT_CAMPAIGN_ID,
+        name: 'Important Event Details - The General Assembly',
+        subject: 'Important Event Details - The General Assembly',
+        createdAt: new Date().toISOString(),
+        totalLogged: 0,
+        sentCount: 0,
+        deliveredCount: 0,
+        failedCount: 0
+      });
+    }
+
+    const availableCampaigns = Array.from(campaignMap.values());
+    const activeCampaignId = reqCampaignId && campaignMap.has(reqCampaignId)
+      ? reqCampaignId
+      : (campaignMap.has(DEFAULT_CAMPAIGN_ID) ? DEFAULT_CAMPAIGN_ID : availableCampaigns[0]?.id || DEFAULT_CAMPAIGN_ID);
+
+    // 2. Fetch authoritative eligible parents (566 unique selected parents)
+    const audience = await getSelectedParentsAudience(eventId);
+    const eligibleParents = audience.parents || [];
+
+    // 3. Fetch delivery logs for the active campaign
+    const deliveryLogs = await query<any>(`
+      SELECT id, parent_profile_id, user_id, recipient_email, subject, provider, provider_message_id,
+             status, error_message, sent_at, failed_at, created_at, updated_at
+      FROM email_delivery_logs
+      WHERE campaign_id = ?
+      ORDER BY created_at DESC
+    `, [activeCampaignId]);
+
+    const logsByParent = new Map<string, any>();
+    const logsByEmail = new Map<string, any>();
+    for (const log of deliveryLogs) {
+      if (log.parent_profile_id && !logsByParent.has(log.parent_profile_id)) {
+        logsByParent.set(log.parent_profile_id, log);
+      }
+      const normEmail = (log.recipient_email || '').toLowerCase().trim();
+      if (normEmail && !logsByEmail.has(normEmail)) {
+        logsByEmail.set(normEmail, log);
+      }
+    }
+
+    // 4. Map parents with campaign-specific status and compute summary counts
+    let acceptedCount = 0;
+    let deliveredCount = 0;
+    let failedCount = 0;
+    let pendingCount = 0;
+    let notSentCount = 0;
+
+    const parentRecords = eligibleParents.map((p) => {
+      const normEmail = (p.email || '').toLowerCase().trim();
+      const log = logsByParent.get(p.parentId) || (normEmail ? logsByEmail.get(normEmail) : null);
+
+      let status: 'sent' | 'delivered' | 'failed' | 'queued' | 'sending' | 'bounced' | 'delayed' | 'not_sent' = 'not_sent';
+      let providerMessageId: string | null = null;
+      let errorMessage: string | null = null;
+      let lastAttemptAt: string | null = null;
+      let sentAt: string | null = null;
+
+      if (log) {
+        status = log.status || 'not_sent';
+        providerMessageId = log.provider_message_id || null;
+        errorMessage = log.error_message || null;
+        lastAttemptAt = log.failed_at || log.sent_at || log.updated_at || log.created_at || null;
+        sentAt = log.sent_at || null;
+      }
+
+      if (status === 'delivered') deliveredCount++;
+      else if (status === 'sent') acceptedCount++;
+      else if (status === 'failed') failedCount++;
+      else if (status === 'queued' || status === 'sending') pendingCount++;
+      else notSentCount++;
+
+      return {
+        parentId: p.parentId,
+        userId: p.userId,
+        fullName: p.fullName,
+        firstName: p.firstName,
+        email: p.email,
+        phoneNumber: p.phoneNumber,
+        totalRegisteredChildren: p.totalRegisteredChildren,
+        selectedChildrenCount: p.selectedChildrenCount,
+        selectedRatioText: p.selectedRatioText,
+        selectedChildNames: p.selectedChildNames,
+        children: p.children,
+        campaignStatus: status,
+        providerMessageId,
+        errorMessage,
+        lastAttemptAt,
+        sentAt,
+        logId: log?.id || null
+      };
+    });
+
+    // 5. Apply filters
+    let filtered = parentRecords;
+
+    if (search) {
+      filtered = filtered.filter((p) => {
+        const nameMatch = p.fullName.toLowerCase().includes(search);
+        const emailMatch = (p.email || '').toLowerCase().includes(search);
+        const childMatch = (p.selectedChildNames || '').toLowerCase().includes(search);
+        return nameMatch || emailMatch || childMatch;
+      });
+    }
+
+    if (statusFilter !== 'all') {
+      if (statusFilter === 'failed') {
+        filtered = filtered.filter((p) => p.campaignStatus === 'failed');
+      } else if (statusFilter === 'sent') {
+        filtered = filtered.filter((p) => p.campaignStatus === 'sent');
+      } else if (statusFilter === 'delivered') {
+        filtered = filtered.filter((p) => p.campaignStatus === 'delivered');
+      } else if (statusFilter === 'accepted') {
+        filtered = filtered.filter((p) => p.campaignStatus === 'sent' || p.campaignStatus === 'delivered');
+      } else if (statusFilter === 'pending') {
+        filtered = filtered.filter((p) => p.campaignStatus === 'queued' || p.campaignStatus === 'sending');
+      } else if (statusFilter === 'not_sent') {
+        filtered = filtered.filter((p) => p.campaignStatus === 'not_sent');
+      }
+    }
+
+    // 6. Pagination
+    const totalRecords = filtered.length;
+    const totalPages = Math.ceil(totalRecords / pageSize) || 1;
+    const offset = (page - 1) * pageSize;
+    const paginatedParents = filtered.slice(offset, offset + pageSize);
+
+    return res.json({
+      success: true,
+      eventId,
+      activeCampaignId,
+      campaigns: availableCampaigns,
+      summary: {
+        totalEligibleParents: eligibleParents.length,
+        acceptedCount,
+        deliveredCount,
+        failedCount,
+        pendingCount,
+        notSentCount
+      },
+      parents: paginatedParents,
+      pagination: {
+        page,
+        pageSize,
+        totalRecords,
+        totalPages
+      }
+    });
+  } catch (err: any) {
+    console.error('[Admin Selected Parents Email Delivery Error]:', err);
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Failed to fetch email delivery status'
+    });
+  }
+});
+
+// GET /api/admin/messages/selected-parents/email-delivery/progress - Check active dispatch progress
+router.get('/messages/selected-parents/email-delivery/progress', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const campaignId = (req.query.campaignId as string) || 'cmp_event-ga-2026_general_anno_important-event-details-_c3c41590';
+    const progress = getCampaignProgress(campaignId);
+    const active = isCampaignActive(campaignId);
+
+    return res.json({
+      success: true,
+      campaignId,
+      isActive: active,
+      progress: progress || {
+        campaignId,
+        total: 0,
+        processed: 0,
+        sent: 0,
+        failed: 0,
+        skipped: 0,
+        status: 'idle'
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || 'Failed to get progress' });
+  }
+});
+
+// POST /api/admin/messages/selected-parents/send-email - Dispatch paced emails with duplicate prevention
+router.post('/messages/selected-parents/send-email', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    if (!req.user || !['admin', 'super_admin', 'team'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Admin credentials required' });
+    }
+
+    const {
+      eventId: rawEventId,
+      campaignId: rawCampaignId,
+      targetScope = 'selected', // 'selected' | 'failed_remaining' | 'all_eligible'
+      parentIds = [],
+      subject: customSubject,
+      body: customBody
+    } = req.body || {};
+
+    const eventId = await resolveAdminEventId(rawEventId) || rawEventId || 'event-ga-2026';
+    const campaignId = rawCampaignId?.trim() || 'cmp_event-ga-2026_general_anno_important-event-details-_c3c41590';
+
+    // 1. Fetch event metadata for personalization tokens and venue visibility
+    const evRow = await queryOne<any>(`
+      SELECT title, starts_at, ends_at, location, venue_visible_to_selected_parents
+      FROM events WHERE id = ?
+    `, [eventId]);
+
+    const eventTitle = evRow?.title || 'The General Assembly';
+    const eventDate = evRow?.starts_at ? formatEventDateString(evRow.starts_at) : '';
+    const isVenueVisible = Boolean(evRow && (evRow.venue_visible_to_selected_parents === 1 || evRow.venue_visible_to_selected_parents === true));
+    const rawLoc = (evRow?.location || '').trim();
+    const venueName = isVenueVisible
+      ? (rawLoc ? (rawLoc.split(',')[0]?.trim() || rawLoc) : (eventTitle || 'Auditorium'))
+      : '[Venue hidden]';
+    const venueAddress = isVenueVisible
+      ? (rawLoc || 'Koinonia Global Auditorium & Children Pavilion, Abuja')
+      : '[Venue address hidden]';
+
+    // 2. Fetch authoritative eligible parents
+    const audience = await getSelectedParentsAudience(eventId);
+    const eligibleParents = audience.parents || [];
+
+    // 3. Query existing accepted delivery logs for campaign duplicate prevention
+    const existingAccepted = await query<any>(`
+      SELECT parent_profile_id, recipient_email
+      FROM email_delivery_logs
+      WHERE campaign_id = ? AND status IN ('sent', 'delivered')
+    `, [campaignId]);
+
+    const alreadyAcceptedParentIds = new Set<string>();
+    const alreadyAcceptedEmails = new Set<string>();
+    for (const row of existingAccepted) {
+      if (row.parent_profile_id) alreadyAcceptedParentIds.add(row.parent_profile_id);
+      if (row.recipient_email) alreadyAcceptedEmails.add(row.recipient_email.toLowerCase().trim());
+    }
+
+    // 4. Resolve candidate targets based on targetScope
+    let candidateParents: typeof eligibleParents = [];
+    if (targetScope === 'failed_remaining') {
+      // All eligible parents who do NOT have an accepted delivery
+      candidateParents = eligibleParents.filter(
+        (p) => !alreadyAcceptedParentIds.has(p.parentId) && !alreadyAcceptedEmails.has((p.email || '').toLowerCase().trim())
+      );
+    } else if (targetScope === 'all_eligible') {
+      candidateParents = eligibleParents;
+    } else {
+      // 'selected'
+      const requestedIdSet = new Set(parentIds);
+      candidateParents = eligibleParents.filter((p) => requestedIdSet.has(p.parentId));
+    }
+
+    // 5. Strict duplicate safety filter: strip any recipient who has already been accepted!
+    const toSend: typeof eligibleParents = [];
+    let skippedAlreadyAcceptedCount = 0;
+    let invalidEmailCount = 0;
+
+    for (const p of candidateParents) {
+      const normEmail = (p.email || '').toLowerCase().trim();
+      if (!normEmail || !normEmail.includes('@')) {
+        invalidEmailCount++;
+        continue;
+      }
+      if (alreadyAcceptedParentIds.has(p.parentId) || alreadyAcceptedEmails.has(normEmail)) {
+        skippedAlreadyAcceptedCount++;
+        continue;
+      }
+      toSend.push(p);
+    }
+
+    if (toSend.length === 0) {
+      return res.json({
+        success: true,
+        message: 'All selected recipients have already been accepted or delivered for this campaign. Zero duplicate emails were sent.',
+        campaignId,
+        queuedCount: 0,
+        skippedCount: skippedAlreadyAcceptedCount,
+        invalidEmailCount
+      });
+    }
+
+    // 6. Resolve email template text
+    const defaultSubject = 'Important Event Details - The General Assembly';
+    const defaultBody = `Dear {Parent name},
+
+We look forward to welcoming {Child name} to {Event name}.
+
+Date: {Event date}
+Venue: {Venue address}
+
+Please ensure you have your child's access pass ready upon arrival:
+{Pass link}
+
+If you need to review your registration status:
+{Review link}
+
+Koinonia Children & Teens Ministry`;
+
+    const rawSubject = customSubject?.trim() || defaultSubject;
+    const rawBody = customBody?.trim() || defaultBody;
+
+    // Fetch custom sender settings
+    const settings = await queryOne<any>(`
+      SELECT sender_name, reply_to_email FROM admin_message_settings WHERE id = 'primary_settings'
+    `);
+    const customFromName = settings?.sender_name || undefined;
+    const customReplyTo = settings?.reply_to_email || undefined;
+
+    // 7. Build personalized recipient array
+    const broadcastRecipients = toSend.map((p) => {
+      const childNames = p.selectedChildNames || 'your children';
+      const renderedSubject = resolveMessageTokens(rawSubject, {
+        parentName: p.fullName || 'Parent',
+        selectedChildNames: childNames,
+        childName: childNames,
+        eventName: eventTitle,
+        eventDate: eventDate,
+        venueName,
+        venueAddress,
+        location: venueAddress
+      });
+
+      const renderedBody = resolveMessageTokens(rawBody, {
+        parentName: p.fullName || 'Parent',
+        selectedChildNames: childNames,
+        childName: childNames,
+        eventName: eventTitle,
+        eventDate: eventDate,
+        venueName,
+        venueAddress,
+        location: venueAddress,
+        passUrl: buildParentPassUrl(),
+        reviewUrl: buildParentStatusUrl(),
+        pickupTime: '4:00 PM',
+        supportContact: '+234 803 123 4567'
+      });
+
+      return {
+        parentId: p.parentId,
+        userId: p.userId,
+        email: p.email!.trim(),
+        parentName: p.fullName,
+        subject: renderedSubject,
+        body: renderedBody
+      };
+    });
+
+    // 8. Launch background paced broadcast (paced at 4.5 req/sec with automatic 429 backoff)
+    runPacedBroadcast({
+      campaignId,
+      eventId,
+      recipients: broadcastRecipients,
+      customFromName,
+      customReplyTo,
+      delayMs: 220
+    });
+
+    return res.json({
+      success: true,
+      message: `Initiated paced delivery for ${broadcastRecipients.length} recipient(s). Already-accepted recipients (${skippedAlreadyAcceptedCount}) safely skipped.`,
+      campaignId,
+      queuedCount: broadcastRecipients.length,
+      skippedCount: skippedAlreadyAcceptedCount,
+      invalidEmailCount,
+      summary: {
+        totalTargeted: candidateParents.length,
+        alreadyAcceptedSkipped: skippedAlreadyAcceptedCount,
+        queuedForDelivery: broadcastRecipients.length
+      }
+    });
+  } catch (err: any) {
+    console.error('[Admin Send Selected Parents Email Error]:', err);
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Failed to initiate email delivery'
+    });
+  }
+});
+
+// GET /api/admin/messages/selected-parents/email-delivery/export - Export delivery logs to CSV
+router.get('/messages/selected-parents/email-delivery/export', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const rawEventId = (req.query.eventId as string) || undefined;
+    const eventId = await resolveAdminEventId(rawEventId) || rawEventId || 'event-ga-2026';
+    const campaignId = (req.query.campaignId as string) || 'cmp_event-ga-2026_general_anno_important-event-details-_c3c41590';
+
+    const audience = await getSelectedParentsAudience(eventId);
+    const eligibleParents = audience.parents || [];
+
+    const deliveryLogs = await query<any>(`
+      SELECT parent_profile_id, recipient_email, provider_message_id, status, error_message, sent_at, failed_at, created_at, updated_at
+      FROM email_delivery_logs
+      WHERE campaign_id = ?
+    `, [campaignId]);
+
+    const logsByParent = new Map<string, any>();
+    const logsByEmail = new Map<string, any>();
+    for (const log of deliveryLogs) {
+      if (log.parent_profile_id) logsByParent.set(log.parent_profile_id, log);
+      const normEmail = (log.recipient_email || '').toLowerCase().trim();
+      if (normEmail) logsByEmail.set(normEmail, log);
+    }
+
+    const escapeCsv = (val: any) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+
+    const headers = [
+      'Parent Name',
+      'Email',
+      'Phone Number',
+      'Selected Children Count',
+      'Selected Children Names',
+      'Campaign Status',
+      'Provider Message ID',
+      'Sent At',
+      'Last Attempt At',
+      'Error Message'
+    ];
+
+    const rows = eligibleParents.map((p) => {
+      const normEmail = (p.email || '').toLowerCase().trim();
+      const log = logsByParent.get(p.parentId) || (normEmail ? logsByEmail.get(normEmail) : null);
+      const status = log ? log.status : 'not_sent';
+      const providerId = log?.provider_message_id || '';
+      const sentAt = log?.sent_at || '';
+      const lastAttempt = log?.failed_at || log?.sent_at || log?.updated_at || '';
+      const errorMsg = log?.error_message || '';
+
+      return [
+        escapeCsv(p.fullName),
+        escapeCsv(p.email || ''),
+        escapeCsv(p.phoneNumber || ''),
+        escapeCsv(p.selectedChildrenCount),
+        escapeCsv(p.selectedChildNames),
+        escapeCsv(status),
+        escapeCsv(providerId),
+        escapeCsv(sentAt),
+        escapeCsv(lastAttempt),
+        escapeCsv(errorMsg)
+      ].join(',');
+    });
+
+    const csvContent = [headers.join(','), ...rows].join('\r\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="selected-parents-email-delivery-${campaignId}.csv"`);
+    return res.status(200).send(csvContent);
+  } catch (err: any) {
+    console.error('[Admin Email Delivery Export Error]:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Export failed' });
   }
 });
 

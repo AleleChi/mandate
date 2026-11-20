@@ -451,7 +451,88 @@ const handleZohoWebhook = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Resend Email Webhook Handler
+ * Ingests delivery events: email.delivered, email.bounced, email.complained, email.delivery_delayed
+ * Correlates by provider_message_id (Resend email_id) and updates email_delivery_logs.
+ */
+export const handleResendWebhook = async (req: Request, res: Response) => {
+  try {
+    let payload = req.body;
+    if (typeof payload === 'string' || Buffer.isBuffer(payload)) {
+      try {
+        payload = JSON.parse(payload.toString('utf-8'));
+      } catch {
+        return res.status(400).json({ error: 'Invalid JSON payload' });
+      }
+    }
+
+    if (!payload) {
+      return res.status(400).json({ error: 'Missing webhook payload' });
+    }
+
+    const events = Array.isArray(payload) ? payload : [payload];
+    let processedCount = 0;
+
+    for (const evt of events) {
+      const eventType = (evt.type || '').toLowerCase().trim();
+      const emailId = evt.data?.email_id || evt.data?.id;
+
+      if (!emailId) {
+        continue;
+      }
+
+      processedCount++;
+      const nowStr = evt.created_at || new Date().toISOString();
+
+      if (eventType === 'email.delivered') {
+        await execute(
+          `UPDATE email_delivery_logs
+           SET status = 'delivered', updated_at = ?
+           WHERE provider_message_id = ?`,
+          [nowStr, emailId]
+        );
+        console.log(`[Resend Webhook] Email ${emailId} marked as DELIVERED`);
+      } else if (eventType === 'email.bounced') {
+        const bounceReason = evt.data?.bounce?.message || evt.data?.message || 'Bounced';
+        await execute(
+          `UPDATE email_delivery_logs
+           SET status = 'bounced', error_message = ?, updated_at = ?
+           WHERE provider_message_id = ?`,
+          [bounceReason, nowStr, emailId]
+        );
+        console.log(`[Resend Webhook] Email ${emailId} marked as BOUNCED: ${bounceReason}`);
+      } else if (eventType === 'email.complained') {
+        await execute(
+          `UPDATE email_delivery_logs
+           SET status = 'complained', error_message = 'Recipient marked as spam/complaint', updated_at = ?
+           WHERE provider_message_id = ?`,
+          [nowStr, emailId]
+        );
+      } else if (eventType === 'email.delivery_delayed') {
+        await execute(
+          `UPDATE email_delivery_logs
+           SET status = 'delayed', updated_at = ?
+           WHERE provider_message_id = ? AND status NOT IN ('delivered', 'bounced')`,
+          [nowStr, emailId]
+        );
+      }
+    }
+
+    return res.status(200).json({ success: true, processed: processedCount });
+  } catch (err: any) {
+    console.error('Error handling Resend webhook:', err);
+    return res.status(500).json({ error: err.message || 'Resend webhook processing failed' });
+  }
+};
+
 const rawMiddleware = express.raw({ type: '*/*', limit: '10mb' });
+
+// Mount Resend webhook routes
+router.post('/resend', handleResendWebhook);
+router.get('/resend', (_req: Request, res: Response) => {
+  res.status(200).json({ status: 'ok', service: 'resend-email-webhook' });
+});
 
 // Mount Zoho handler on canonical path, short path, and root webhook path
 router.post('/zoho/whatsapp', rawMiddleware, handleZohoWebhook);
