@@ -40,6 +40,32 @@ function formatEventDateString(dateStr: string | null | undefined): string {
     return String(dateStr);
   }
 }
+
+export function buildEmailCampaignKey(params: {
+  eventId: string;
+  recipientGroup: string;
+  messageType: string;
+  subject: string;
+  campaignId?: string | null;
+}): string {
+  if (params.campaignId && String(params.campaignId).trim()) {
+    return String(params.campaignId).trim().slice(0, 64);
+  }
+  const eventPart = (params.eventId || 'event').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 16);
+  const typePart = (params.messageType || 'msg').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 12);
+  const normSubject = (params.subject || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .slice(0, 24);
+
+  const hash = crypto.createHash('sha256')
+    .update(`${params.eventId}:${params.recipientGroup}:${params.messageType}:${(params.subject || '').trim().toLowerCase()}`)
+    .digest('hex')
+    .slice(0, 10);
+
+  return `cmp_${eventPart}_${typePart}_${normSubject || 'general'}_${hash}`.slice(0, 64);
+}
 import { extractFirstName, formatSelectedChildNames } from '../services/whatsapp/personalization';
 import { issuePassForChild, revokePassForChild, getPassForChild } from '../services/passService';
 import { uploadMedia, buildCloudinaryOptimizedVideoUrl, buildCloudinaryVideoPosterUrl } from '../services/media/cloudinary';
@@ -8203,13 +8229,26 @@ router.get('/messages', async (req: AuthenticatedRequest, res: Response) => {
     let alreadyEmailedCount = 0;
     if (eligibleParentIds.length > 0) {
       const pPlaceholders = eligibleParentIds.map(() => '?').join(',');
-      const emailedRes = await queryOne(`
-        SELECT COUNT(DISTINCT parent_profile_id) as count
-        FROM email_delivery_logs
-        WHERE event_id = ?
-          AND status = 'sent'
-          AND parent_profile_id IN (${pPlaceholders})
-      `, [eventId, ...eligibleParentIds]);
+      const campaignFilter = (req.query.campaignId as string) || (req.query.campaignKey as string) || null;
+      let emailedRes: any = null;
+      if (campaignFilter) {
+        emailedRes = await queryOne(`
+          SELECT COUNT(DISTINCT parent_profile_id) as count
+          FROM email_delivery_logs
+          WHERE event_id = ?
+            AND campaign_id = ?
+            AND status = 'sent'
+            AND parent_profile_id IN (${pPlaceholders})
+        `, [eventId, campaignFilter, ...eligibleParentIds]);
+      } else {
+        emailedRes = await queryOne(`
+          SELECT COUNT(DISTINCT parent_profile_id) as count
+          FROM email_delivery_logs
+          WHERE event_id = ?
+            AND status = 'sent'
+            AND parent_profile_id IN (${pPlaceholders})
+        `, [eventId, ...eligibleParentIds]);
+      }
       alreadyEmailedCount = Number(emailedRes?.count || 0);
     }
 
@@ -9792,9 +9831,9 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
       const qualifyingStatuses = [...QUALIFYING_CHILD_STATUSES];
       const qPlaceholders = qualifyingStatuses.map(() => '?').join(',');
 
-      const evRowFull = await queryOne('SELECT title, start_date, end_date, location, venue_visible_to_selected_parents FROM events WHERE id = ?', [eventId]);
+      const evRowFull = await queryOne('SELECT title, starts_at, ends_at, location, venue_visible_to_selected_parents FROM events WHERE id = ?', [eventId]);
       const eventTitle = evRowFull?.title || eventName || 'The General Assembly';
-      const eventDate = evRowFull?.start_date ? formatEventDateString(evRowFull.start_date) : '';
+      const eventDate = evRowFull?.starts_at ? formatEventDateString(evRowFull.starts_at) : '';
       const isVenueVisible = Boolean(evRowFull && (evRowFull.venue_visible_to_selected_parents === 1 || evRowFull.venue_visible_to_selected_parents === true));
       const rawLocation = (evRowFull?.location || '').trim();
       const venueName = isVenueVisible
@@ -9806,6 +9845,20 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
 
       const RESTRICTED_VENUE_TOKEN_REGEX = /\{(Venue address|Venue name|Address)\}/i;
       const containsRestrictedVenueToken = RESTRICTED_VENUE_TOKEN_REGEX.test(body) || RESTRICTED_VENUE_TOKEN_REGEX.test(subject || '');
+
+      const campaignKey = buildEmailCampaignKey({
+        eventId,
+        recipientGroup,
+        messageType,
+        subject: subject || '',
+        campaignId: req.body.campaignId || req.body.campaignKey
+      });
+      const campaignEmailedRes = await queryOne(`
+        SELECT COUNT(DISTINCT parent_profile_id) as count
+        FROM email_delivery_logs
+        WHERE campaign_id = ? AND status = 'sent'
+      `, [campaignKey]);
+      const campaignAlreadyEmailedCount = Number(campaignEmailedRes?.count || 0);
 
       const sampleParentRow = await queryOne(`
         SELECT p.id as parent_id, p.full_name as parent_name, u.email
@@ -9872,6 +9925,8 @@ router.post('/messages/preview', async (req: AuthenticatedRequest, res: Response
 
       return res.json({
         success: true,
+        campaignKey,
+        campaignAlreadyEmailedCount,
         venueVisibilityOff: !isVenueVisible,
         warning: (containsRestrictedVenueToken && !isVenueVisible)
           ? 'Venue Visibility is currently OFF for this event. Venue address details are hidden and messages containing venue tokens cannot be sent until enabled.'
@@ -10308,9 +10363,9 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     const isVolunteerAudience = recipientGroup === 'volunteers' || recipientGroup === 'specific_volunteers';
 
     if (recipientGroup === 'selected_parents') {
-      const evRowFull = await queryOne('SELECT title, start_date, end_date, location, venue_visible_to_selected_parents FROM events WHERE id = ?', [eventId]);
+      const evRowFull = await queryOne('SELECT title, starts_at, ends_at, location, venue_visible_to_selected_parents FROM events WHERE id = ?', [eventId]);
       const eventTitleFull = evRowFull?.title || eventTitle || 'The General Assembly';
-      const eventDateFull = evRowFull?.start_date ? formatEventDateString(evRowFull.start_date) : '';
+      const eventDateFull = evRowFull?.starts_at ? formatEventDateString(evRowFull.starts_at) : '';
       const isEvVenueVisible = Boolean(evRowFull && (evRowFull.venue_visible_to_selected_parents === 1 || evRowFull.venue_visible_to_selected_parents === true));
       const rawLocation = (evRowFull?.location || '').trim();
       const venueName = isEvVenueVisible
@@ -10549,6 +10604,13 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
 
     const notifNow = new Date().toISOString();
     const logId = crypto.randomUUID();
+    const emailCampaignKey = buildEmailCampaignKey({
+      eventId,
+      recipientGroup,
+      messageType,
+      subject: subject || '',
+      campaignId: req.body.campaignId || req.body.campaignKey || req.body.idempotencyKey
+    });
     const audienceRole = (recipientGroup === 'volunteers' || recipientGroup === 'specific_volunteers')
       ? 'volunteer' 
       : (recipientGroup === 'all_event_team' ? 'staff' : 'parent');
@@ -10670,17 +10732,34 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       const customFromName = settings?.senderName || undefined;
       const customReplyTo = settings?.replyToEmail || undefined;
 
+      const emailCampaignKey = buildEmailCampaignKey({
+        eventId,
+        recipientGroup,
+        messageType,
+        subject: subject || '',
+        campaignId: req.body.campaignId || req.body.campaignKey || req.body.idempotencyKey
+      });
+
       for (const msg of messagesToSend) {
         const recipientEmail = (msg.email || '').trim();
         if (recipientEmail && recipientEmail.includes('@')) {
-          // Duplicate prevention check:
-          // If this parent already received a successful email delivery for this event, skip sending
+          // Campaign-specific duplicate prevention check:
+          // A recipient must not receive the same campaign twice, but remains eligible for separate campaigns.
+          // Retrying a partially sent campaign skips already-delivered recipients.
           let alreadySent = false;
           if (msg.parentId) {
             const existingSuccess = await queryOne(`
               SELECT id FROM email_delivery_logs
-              WHERE event_id = ? AND parent_profile_id = ? AND status = 'sent'
-            `, [eventId, msg.parentId]);
+              WHERE campaign_id = ? AND parent_profile_id = ? AND status = 'sent'
+            `, [emailCampaignKey, msg.parentId]);
+            if (existingSuccess) {
+              alreadySent = true;
+            }
+          } else {
+            const existingSuccess = await queryOne(`
+              SELECT id FROM email_delivery_logs
+              WHERE campaign_id = ? AND recipient_email = ? AND status = 'sent'
+            `, [emailCampaignKey, recipientEmail]);
             if (existingSuccess) {
               alreadySent = true;
             }
@@ -10710,7 +10789,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
                   id, campaign_id, event_id, parent_profile_id, user_id, recipient_email,
                   subject, provider, provider_message_id, status, sent_at, created_at, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', ?, ?, ?)
-              `, [deliveryLogId, logId, eventId, msg.parentId || null, msg.userId || null, recipientEmail, msg.subject, res.provider || 'email', res.id || null, nowStr, nowStr, nowStr]);
+              `, [deliveryLogId, emailCampaignKey, eventId, msg.parentId || null, msg.userId || null, recipientEmail, msg.subject, res.provider || 'email', res.id || null, nowStr, nowStr, nowStr]);
             } else {
               externalFailCount++;
               await execute(`
@@ -10718,7 +10797,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
                   id, campaign_id, event_id, parent_profile_id, user_id, recipient_email,
                   subject, provider, error_message, status, failed_at, created_at, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'failed', ?, ?, ?)
-              `, [deliveryLogId, logId, eventId, msg.parentId || null, msg.userId || null, recipientEmail, msg.subject, res.provider || 'email', res.error || 'Email send failed', nowStr, nowStr, nowStr]);
+              `, [deliveryLogId, emailCampaignKey, eventId, msg.parentId || null, msg.userId || null, recipientEmail, msg.subject, res.provider || 'email', res.error || 'Email send failed', nowStr, nowStr, nowStr]);
             }
           } catch (err: any) {
             console.error('[Admin sendEmail failed]:', err);
@@ -10728,7 +10807,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
                 id, campaign_id, event_id, parent_profile_id, user_id, recipient_email,
                 subject, provider, error_message, status, failed_at, created_at, updated_at
               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'failed', ?, ?, ?)
-            `, [deliveryLogId, logId, eventId, msg.parentId || null, msg.userId || null, recipientEmail, msg.subject, 'email', err?.message || 'Send exception', nowStr, nowStr, nowStr]);
+            `, [deliveryLogId, emailCampaignKey, eventId, msg.parentId || null, msg.userId || null, recipientEmail, msg.subject, 'email', err?.message || 'Send exception', nowStr, nowStr, nowStr]);
           }
         }
       }
@@ -10801,6 +10880,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     // Save campaign master summary record in notifications table so GET /messages can read delivery metadata
     const campaignMasterMeta = JSON.stringify({
       campaignId: logId,
+      campaignKey: emailCampaignKey,
       push: {
         status: pushSentCount > 0 ? 'sent' : ((pushFailCount > 0 || pushNoSubCount > 0) ? 'failed' : 'none'),
         sentCount: pushSentCount,
@@ -11016,6 +11096,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
     res.json({
       success: true,
       campaignId: logId,
+      campaignKey: emailCampaignKey,
       message: humanMessage,
       recipientsCount: messagesToSend.length,
       channels: activeChannels,
@@ -11041,6 +11122,7 @@ router.post('/messages/send', async (req: AuthenticatedRequest, res: Response) =
       inAppSent: inAppCreated ? messagesToSend.length : 0,
       summary: {
         campaignId: logId,
+        campaignKey: emailCampaignKey,
         requested: messagesToSend.length,
         recipients: messagesToSend.length,
         inAppCreated,
