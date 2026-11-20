@@ -27,6 +27,10 @@ import {
   dispatchPickupWhatsAppNotification
 } from '../services/whatsapp/attendanceNotifications';
 import {
+  dispatchCheckInEmailNotification,
+  dispatchPickupEmailNotification
+} from '../services/automaticEmailNotificationService';
+import {
   parseAssignedAgeGroups,
   isChildInScope,
   buildAgeGroupSqlFilter,
@@ -3174,6 +3178,13 @@ router.post('/check-in', authMiddleware, async (req: AuthenticatedRequest, res: 
       checkInTime: now
     }).catch(waErr => console.error('[POST /check-in WhatsApp confirmation dispatch error]:', waErr));
 
+    // Dispatch automated Check-In confirmation email to parent (non-blocking, fail-safe)
+    dispatchCheckInEmailNotification({
+      childEventEntryId: entryId,
+      eventId: currentEventId,
+      checkInTime: now
+    }).catch(emailErr => console.error('[POST /check-in Email confirmation dispatch error]:', emailErr));
+
     const stats = await getEventStats(currentEventId, scope.isScoped ? scope.assignedAgeGroups : null);
 
     res.json({
@@ -3631,6 +3642,14 @@ router.post('/check-out', authMiddleware, async (req: AuthenticatedRequest, res:
       pickupPersonName: pickupPersonDetails?.fullName
     }).catch(waErr => console.error('[POST /check-out WhatsApp confirmation dispatch error]:', waErr));
 
+    // Dispatch automated Checkout confirmation email to parent (non-blocking, fail-safe)
+    dispatchPickupEmailNotification({
+      childEventEntryId: entryId,
+      eventId: currentEventId,
+      pickupTime: now,
+      pickupPersonName: pickupPersonDetails?.fullName
+    }).catch(emailErr => console.error('[POST /check-out Email confirmation dispatch error]:', emailErr));
+
     const stats = await getEventStats(currentEventId);
     const lastPickedUpVal = await getLastPickedUp(currentEventId);
 
@@ -4017,6 +4036,14 @@ router.post('/pickup/mark', authMiddleware, async (req: AuthenticatedRequest, re
       pickupTime: now,
       pickupPersonName: pickupPersonDetails?.fullName
     }).catch(waErr => console.error('[POST /pickup/mark WhatsApp confirmation dispatch error]:', waErr));
+
+    // Dispatch automated Checkout confirmation email to parent (non-blocking, fail-safe)
+    dispatchPickupEmailNotification({
+      childEventEntryId: entryId,
+      eventId: currentEventId,
+      pickupTime: now,
+      pickupPersonName: pickupPersonDetails?.fullName
+    }).catch(emailErr => console.error('[POST /pickup/mark Email confirmation dispatch error]:', emailErr));
 
     const stats = await getEventStats(currentEventId, scope.isScoped ? scope.assignedAgeGroups : null);
     const lastPickedUpVal = await getLastPickedUp(currentEventId);
@@ -6973,6 +7000,13 @@ router.post('/sync', authMiddleware, async (req: AuthenticatedRequest, res: Resp
             message: 'Successfully checked in offline'
           });
           processedCount++;
+
+          // Dispatch automated Check-In confirmation email to parent (non-blocking, fail-safe)
+          dispatchCheckInEmailNotification({
+            childEventEntryId,
+            eventId: currentEventId,
+            checkInTime: actionTime
+          }).catch(emailErr => console.error('[Sync CheckIn Email confirmation dispatch error]:', emailErr));
         }
       } else {
         results.push({

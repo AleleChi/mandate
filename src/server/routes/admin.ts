@@ -76,6 +76,7 @@ export function buildEmailCampaignKey(params: {
 }
 import { extractFirstName, formatSelectedChildNames } from '../services/whatsapp/personalization';
 import { issuePassForChild, revokePassForChild, getPassForChild } from '../services/passService';
+import { dispatchPassRevokedEmailNotification } from '../services/automaticEmailNotificationService';
 import { uploadMedia, buildCloudinaryOptimizedVideoUrl, buildCloudinaryVideoPosterUrl } from '../services/media/cloudinary';
 import { processImage } from '../services/media/imageProcessor';
 import { broadcastSSEEvent } from '../services/sse';
@@ -14889,7 +14890,17 @@ router.post('/applications/bulk-reset-progress', authMiddleware, async (req: Aut
         if (!entry) continue;
 
         if (mode === 'review') {
-          await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, entry.id]);
+          const pass = await queryOne<any>(`SELECT id FROM event_passes WHERE child_event_entry_id = ? AND status = 'active'`, [entry.id]);
+          if (pass) {
+            await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE id = ?`, [now, pass.id]);
+            dispatchPassRevokedEmailNotification({
+              childEventEntryId: entry.id,
+              eventId: entry.event_id,
+              revocationTime: now,
+              passId: pass.id,
+              reason: 'Event progress reset to review'
+            }).catch(err => console.error('[bulk-reset-progress] revoke email error:', err));
+          }
           await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [entry.id]);
           await execute(`
             UPDATE child_event_entries 
@@ -14978,7 +14989,17 @@ router.post('/applications/bulk-reset-and-remove', authMiddleware, async (req: A
         if (!entry) continue;
 
         // 1. Revoke any active pass for this entry
-        await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, entry.id]);
+        const pass = await queryOne<any>(`SELECT id FROM event_passes WHERE child_event_entry_id = ? AND status = 'active'`, [entry.id]);
+        if (pass) {
+          await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE id = ?`, [now, pass.id]);
+          dispatchPassRevokedEmailNotification({
+            childEventEntryId: entry.id,
+            eventId: entry.event_id,
+            revocationTime: now,
+            passId: pass.id,
+            reason: removalReason
+          }).catch(err => console.error('[bulk-reset-and-remove] revoke email error:', err));
+        }
 
         // 2. Clear current event attendance records
         await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [entry.id]);
@@ -15048,14 +15069,27 @@ router.post('/applications/bulk-revoke-pass', authMiddleware, async (req: Authen
         const entry = await queryOne(`SELECT id, child_id, status FROM child_event_entries WHERE id = ?`, [id]);
         if (!entry) continue;
 
-        await execute(`
-          UPDATE event_passes 
-          SET status = 'revoked', revoked_at = ? 
-          WHERE child_event_entry_id = ? AND status = 'active'
-        `, [now, id]);
+        const pass = await queryOne<any>(`SELECT id FROM event_passes WHERE child_event_entry_id = ? AND status = 'active'`, [id]);
+        if (pass) {
+          await execute(`
+            UPDATE event_passes 
+            SET status = 'revoked', revoked_at = ? 
+            WHERE id = ?
+          `, [now, pass.id]);
 
-        if (entry.status === 'pass_ready') {
-          await execute(`UPDATE child_event_entries SET status = 'selected', updated_at = ? WHERE id = ?`, [now, id]);
+          if (entry.status === 'pass_ready') {
+            await execute(`UPDATE child_event_entries SET status = 'selected', updated_at = ? WHERE id = ?`, [now, id]);
+          }
+
+          // Dispatch automated pass-revocation email to registered parent
+          dispatchPassRevokedEmailNotification({
+            childEventEntryId: id,
+            revocationTime: now,
+            passId: pass.id,
+            reason: reason || 'Bulk pass revocation'
+          }).catch(err => console.error('[bulk-revoke-pass] email error:', err));
+
+          revokedCount++;
         }
 
         try {
@@ -15073,8 +15107,6 @@ router.post('/applications/bulk-revoke-pass', authMiddleware, async (req: Authen
             now
           ]);
         } catch (aErr) {}
-
-        revokedCount++;
       }
     });
 
@@ -15241,7 +15273,17 @@ router.post('/applications/:id/reset-progress', authMiddleware, async (req: Auth
 
     await transaction(async () => {
       if (mode === 'review') {
-        await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, entry.id]);
+        const pass = await queryOne<any>(`SELECT id FROM event_passes WHERE child_event_entry_id = ? AND status = 'active'`, [entry.id]);
+        if (pass) {
+          await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE id = ?`, [now, pass.id]);
+          dispatchPassRevokedEmailNotification({
+            childEventEntryId: entry.id,
+            eventId: entry.event_id,
+            revocationTime: now,
+            passId: pass.id,
+            reason: 'Event progress reset to review'
+          }).catch(err => console.error('[reset-event-progress] revoke email error:', err));
+        }
         await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [entry.id]);
         await execute(`
           UPDATE child_event_entries 
@@ -15336,7 +15378,17 @@ router.post('/applications/:id/reset-event-state', authMiddleware, async (req: A
     await transaction(async () => {
       if (targetState === 'under_review') {
         // 1. Revoke active pass so scanner no longer permits check-in
-        await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ?, updated_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, now, entry.id]);
+        const pass = await queryOne<any>(`SELECT id FROM event_passes WHERE child_event_entry_id = ? AND status = 'active'`, [entry.id]);
+        if (pass) {
+          await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ?, updated_at = ? WHERE id = ?`, [now, now, pass.id]);
+          dispatchPassRevokedEmailNotification({
+            childEventEntryId: entry.id,
+            eventId: entry.event_id,
+            revocationTime: now,
+            passId: pass.id,
+            reason: reason || 'Event state reset to under review'
+          }).catch(err => console.error('[reset-event-state] revoke email error:', err));
+        }
         
         // 2. Deactivate any active wristband assignment
         try {
@@ -15469,7 +15521,17 @@ router.post('/applications/:id/reset-and-remove', authMiddleware, async (req: Au
     const removalReason = (reason && reason.trim()) ? reason.trim() : 'Reset and removed by Super Admin';
 
     await transaction(async () => {
-      await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, entry.id]);
+      const pass = await queryOne<any>(`SELECT id FROM event_passes WHERE child_event_entry_id = ? AND status = 'active'`, [entry.id]);
+      if (pass) {
+        await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE id = ?`, [now, pass.id]);
+        dispatchPassRevokedEmailNotification({
+          childEventEntryId: entry.id,
+          eventId: entry.event_id,
+          revocationTime: now,
+          passId: pass.id,
+          reason: removalReason
+        }).catch(err => console.error('[reset-and-remove] revoke email error:', err));
+      }
       await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [entry.id]);
       await execute(`
         UPDATE child_event_entries 
@@ -15549,7 +15611,16 @@ router.post('/applications/:id/prepare-delete', authMiddleware, async (req: Auth
     const adminId = req.user.id;
 
     await transaction(async () => {
-      await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE child_event_entry_id = ? AND status = 'active'`, [now, id]);
+      const pass = await queryOne<any>(`SELECT id FROM event_passes WHERE child_event_entry_id = ? AND status = 'active'`, [id]);
+      if (pass) {
+        await execute(`UPDATE event_passes SET status = 'revoked', revoked_at = ? WHERE id = ?`, [now, pass.id]);
+        dispatchPassRevokedEmailNotification({
+          childEventEntryId: id,
+          revocationTime: now,
+          passId: pass.id,
+          reason: 'Prepared for permanent deletion'
+        }).catch(err => console.error('[prepare-delete] revoke email error:', err));
+      }
       await execute(`DELETE FROM attendance_records WHERE child_event_entry_id = ?`, [id]);
       await execute(`
         UPDATE child_event_entries 

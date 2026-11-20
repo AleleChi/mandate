@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { query, queryOne, execute, transaction } from '../db';
 import { getCurrentEventId } from './eventService';
+import { dispatchPassRevokedEmailNotification } from './automaticEmailNotificationService';
 
 interface IssuePassParams {
   childId: string;
@@ -230,6 +231,15 @@ export async function revokePassForChild(childId: string, eventId?: string, reas
     SET status = 'review_reopened', updated_at = ?
     WHERE id = ?
   `, [now, entry.id]);
+
+  // Dispatch automated pass-revocation email to registered parent (non-blocking, fail-safe)
+  dispatchPassRevokedEmailNotification({
+    childEventEntryId: entry.id,
+    eventId: targetEventId,
+    revocationTime: now,
+    passId: pass.id,
+    reason
+  }).catch(err => console.error('[revokePassForChild] Pass revocation email error:', err));
 
   return { success: true };
 }

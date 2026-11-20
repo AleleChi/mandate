@@ -48,6 +48,23 @@ import { parentAnnouncementsRouter, volunteerAnnouncementsRouter, adminAnnouncem
 import { applicationRemindersRouter } from './src/server/routes/applicationReminders';
 import { isEmailConfigured, resolveEmailProvider } from './src/server/services/email';
 import { resumeInterruptedEmailBroadcasts } from './src/server/services/emailBroadcastService';
+import {
+  resumePendingAutomaticEmailNotifications,
+  dispatchCheckInEmailNotification,
+  dispatchPickupEmailNotification,
+  dispatchPassRevokedEmailNotification,
+  formatNigerianDate,
+  formatNigerianTime
+} from './src/server/services/automaticEmailNotificationService';
+
+export {
+  resumePendingAutomaticEmailNotifications,
+  dispatchCheckInEmailNotification,
+  dispatchPickupEmailNotification,
+  dispatchPassRevokedEmailNotification,
+  formatNigerianDate,
+  formatNigerianTime
+};
 
 async function startServer() {
   const app = express();
@@ -385,6 +402,11 @@ async function startServer() {
       console.error('[Startup] Interrupted email broadcast resume error:', err);
     });
 
+    // Automatically resume any pending/interrupted automatic parent emails on boot
+    resumePendingAutomaticEmailNotifications().catch((err) => {
+      console.error('[Startup] Interrupted automatic email notification resume error:', err);
+    });
+
     // Validate canonical public application URL configuration
     try {
       validatePublicAppUrlOnStartup();
@@ -465,6 +487,15 @@ async function startServer() {
       console.log(`[WhatsApp Worker] In-process polling is disabled (${displayMode}). Processing delegated to external worker.`);
     }
 
+    // Periodically resume any pending automatic parent emails (every 30 seconds)
+    setInterval(async () => {
+      try {
+        await resumePendingAutomaticEmailNotifications();
+      } catch (err) {
+        console.error('[Background Scheduler] Error resuming automatic email notifications:', err);
+      }
+    }, 30000);
+
     // Periodically process scheduled parent notification rules (emails, in-app notifications, and WhatsApp mockups)
     setInterval(async () => {
       try {
@@ -476,6 +507,8 @@ async function startServer() {
   });
 }
 
-startServer().catch((err) => {
-  console.error('Failed to start server:', err);
-});
+if (!process.env.SKIP_SERVER_LISTEN) {
+  startServer().catch((err) => {
+    console.error('Failed to start server:', err);
+  });
+}

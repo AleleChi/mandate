@@ -560,6 +560,10 @@ function initSqliteSchema(db: Database.Database) {
       recipient_email TEXT NOT NULL,
       subject TEXT,
       body TEXT,
+      notification_type TEXT,
+      child_event_entry_id TEXT REFERENCES child_event_entries(id) ON DELETE SET NULL,
+      child_id TEXT REFERENCES children(id) ON DELETE SET NULL,
+      idempotency_key TEXT,
       provider TEXT,
       provider_message_id TEXT,
       status TEXT NOT NULL DEFAULT 'queued',
@@ -578,6 +582,8 @@ function initSqliteSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_email_delivery_round ON email_delivery_logs(round_id);
     CREATE UNIQUE INDEX IF NOT EXISTS uq_email_delivery_round_parent ON email_delivery_logs(round_id, parent_profile_id) WHERE round_id IS NOT NULL AND parent_profile_id IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS uq_email_delivery_round_email ON email_delivery_logs(round_id, recipient_email) WHERE round_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_email_delivery_idempotency_key ON email_delivery_logs(idempotency_key) WHERE idempotency_key IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_email_delivery_entry_type ON email_delivery_logs(child_event_entry_id, notification_type);
 
     CREATE TABLE IF NOT EXISTS volunteer_profiles (
       id TEXT PRIMARY KEY,
@@ -1943,13 +1949,22 @@ function initSqliteSchema(db: Database.Database) {
     { table: 'alert_routing_rules', col: 'include_sub_locations INTEGER DEFAULT 0' },
     { table: 'email_delivery_logs', col: 'round_id TEXT' },
     { table: 'email_delivery_logs', col: 'send_round INTEGER DEFAULT 1' },
-    { table: 'email_delivery_logs', col: 'body TEXT' }
+    { table: 'email_delivery_logs', col: 'body TEXT' },
+    { table: 'email_delivery_logs', col: 'notification_type TEXT' },
+    { table: 'email_delivery_logs', col: 'child_event_entry_id TEXT' },
+    { table: 'email_delivery_logs', col: 'child_id TEXT' },
+    { table: 'email_delivery_logs', col: 'idempotency_key TEXT' }
   ];
   for (const item of sqlitePhase6Cols) {
     try {
       db.exec(`ALTER TABLE ${item.table} ADD COLUMN ${item.col};`);
     } catch (e) {}
   }
+
+  try {
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_email_delivery_idempotency_key ON email_delivery_logs(idempotency_key) WHERE idempotency_key IS NOT NULL;`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_email_delivery_entry_type ON email_delivery_logs(child_event_entry_id, notification_type);`);
+  } catch (e) {}
 
   try {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_event_locations_event_active ON event_locations(event_id, is_active);`);
@@ -2619,6 +2634,10 @@ async function initPostgresSchema(pool: any) {
         recipient_email VARCHAR(255) NOT NULL,
         subject TEXT,
         body TEXT,
+        notification_type VARCHAR(64),
+        child_event_entry_id VARCHAR(64) REFERENCES child_event_entries(id) ON DELETE SET NULL,
+        child_id VARCHAR(64) REFERENCES children(id) ON DELETE SET NULL,
+        idempotency_key VARCHAR(128),
         provider VARCHAR(64),
         provider_message_id VARCHAR(128),
         status VARCHAR(32) NOT NULL DEFAULT 'queued',
@@ -2637,6 +2656,8 @@ async function initPostgresSchema(pool: any) {
       CREATE INDEX IF NOT EXISTS idx_email_delivery_round ON email_delivery_logs(round_id);
     CREATE UNIQUE INDEX IF NOT EXISTS uq_email_delivery_round_parent ON email_delivery_logs(round_id, parent_profile_id) WHERE round_id IS NOT NULL AND parent_profile_id IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS uq_email_delivery_round_email ON email_delivery_logs(round_id, recipient_email) WHERE round_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_email_delivery_idempotency_key ON email_delivery_logs(idempotency_key) WHERE idempotency_key IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_email_delivery_entry_type ON email_delivery_logs(child_event_entry_id, notification_type);
 
       CREATE TABLE IF NOT EXISTS volunteer_profiles (
         id VARCHAR(64) PRIMARY KEY,
@@ -3942,13 +3963,22 @@ async function initPostgresSchema(pool: any) {
       { table: 'alert_routing_rules', colName: 'include_sub_locations', colDef: 'INTEGER DEFAULT 0' },
       { table: 'email_delivery_logs', colName: 'round_id', colDef: 'VARCHAR(64)' },
       { table: 'email_delivery_logs', colName: 'send_round', colDef: 'INTEGER DEFAULT 1' },
-      { table: 'email_delivery_logs', colName: 'body', colDef: 'TEXT' }
+      { table: 'email_delivery_logs', colName: 'body', colDef: 'TEXT' },
+      { table: 'email_delivery_logs', colName: 'notification_type', colDef: 'VARCHAR(64)' },
+      { table: 'email_delivery_logs', colName: 'child_event_entry_id', colDef: 'VARCHAR(64)' },
+      { table: 'email_delivery_logs', colName: 'child_id', colDef: 'VARCHAR(64)' },
+      { table: 'email_delivery_logs', colName: 'idempotency_key', colDef: 'VARCHAR(128)' }
     ];
     for (const item of pgPhase6Cols) {
       try {
         await pool.query(`ALTER TABLE ${item.table} ADD COLUMN IF NOT EXISTS ${item.colName} ${item.colDef};`);
       } catch (e) {}
     }
+
+    try {
+      await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_email_delivery_idempotency_key ON email_delivery_logs(idempotency_key) WHERE idempotency_key IS NOT NULL;`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_email_delivery_entry_type ON email_delivery_logs(child_event_entry_id, notification_type);`);
+    } catch (e) {}
 
     try {
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_event_locations_event_active ON event_locations(event_id, is_active);`);
