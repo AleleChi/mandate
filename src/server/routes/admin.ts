@@ -12072,8 +12072,8 @@ router.post('/messages/selected-parents/send-email', async (req: AuthenticatedRe
         await execute(
           `INSERT INTO email_delivery_logs (
              id, campaign_id, round_id, send_round, event_id, parent_profile_id, user_id, recipient_email,
-             subject, provider, status, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'resend', 'queued', ?, ?)`,
+             subject, body, provider, status, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'resend', 'queued', ?, ?)`,
           [
             deliveryLogId,
             campaignId,
@@ -12084,6 +12084,7 @@ router.post('/messages/selected-parents/send-email', async (req: AuthenticatedRe
             p.userId || null,
             normEmail,
             renderedSubject,
+            renderedBody,
             nowStr,
             nowStr
           ]

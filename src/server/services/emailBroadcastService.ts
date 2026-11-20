@@ -257,8 +257,8 @@ export async function sendPacedEmailWithBackoff(options: {
     await execute(
       `INSERT INTO email_delivery_logs (
          id, campaign_id, round_id, send_round, event_id, parent_profile_id, user_id, recipient_email,
-         subject, provider, status, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'resend', 'sending', ?, ?)`,
+         subject, body, provider, status, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'resend', 'sending', ?, ?)`,
       [
         deliveryLogId,
         campaignId,
@@ -269,6 +269,7 @@ export async function sendPacedEmailWithBackoff(options: {
         userId || null,
         cleanEmail,
         subject,
+        body,
         nowStr,
         nowStr
       ]
@@ -504,9 +505,9 @@ export async function resumeInterruptedEmailBroadcasts(): Promise<{
       continue;
     }
 
-    // Retrieve all queued logs for this campaign
+    // Retrieve all queued logs for this campaign, including the persisted body
     const queuedRows = await query<any>(`
-      SELECT id, campaign_id, round_id, send_round, event_id, parent_profile_id, user_id, recipient_email, subject
+      SELECT id, campaign_id, round_id, send_round, event_id, parent_profile_id, user_id, recipient_email, subject, body, created_at
       FROM email_delivery_logs
       WHERE campaign_id = ? AND status = 'queued'
       ORDER BY created_at ASC
@@ -514,62 +515,76 @@ export async function resumeInterruptedEmailBroadcasts(): Promise<{
 
     if (!queuedRows || queuedRows.length === 0) continue;
 
-    // Retrieve the original approved announcement body
-    let rawSubject = queuedRows[0]?.subject;
-    let rawBody: string | undefined;
+    const validRecipients: EmailBroadcastRecipient[] = [];
+    const nowIso = new Date().toISOString();
 
-    if (rawSubject) {
-      const origMsg = await queryOne<any>(`
-        SELECT subject, body
-        FROM admin_message_logs
-        WHERE recipient_group IN ('selected_parents', 'selected_children', 'specific_parents')
-          AND channel LIKE '%email%'
-          AND subject = ?
-        ORDER BY CASE WHEN id = 'ea654919-3da5-4a3a-9e80-213fb8beed90' THEN 0 ELSE 1 END, created_at DESC
-        LIMIT 1
-      `, [rawSubject]);
-      rawBody = origMsg?.body;
+    for (const row of queuedRows) {
+      let resolvedSubject = (row.subject || '').trim();
+      let resolvedBody = (row.body || '').trim();
+
+      // If body was not persisted on this record (e.g. legacy row), verify strictly from verified campaign log
+      if (!resolvedBody && resolvedSubject) {
+        const verifiedMsg = await queryOne<any>(`
+          SELECT subject, body, created_at
+          FROM admin_message_logs
+          WHERE recipient_group = 'selected_parents'
+            AND channel = 'email'
+            AND subject = ?
+            AND (
+              id = 'ea654919-3da5-4a3a-9e80-213fb8beed90'
+              OR created_at <= ?
+            )
+          ORDER BY CASE WHEN id = 'ea654919-3da5-4a3a-9e80-213fb8beed90' THEN 0 ELSE 1 END, created_at DESC
+          LIMIT 1
+        `, [resolvedSubject, new Date(new Date(row.created_at).getTime() + 10000).toISOString()]);
+
+        if (verifiedMsg?.body) {
+          resolvedBody = verifiedMsg.body.trim();
+        }
+      }
+
+      // If the original content cannot be verified, stop sending that message and record an error.
+      // NEVER substitute an unrelated announcement.
+      if (!resolvedSubject || !resolvedBody) {
+        console.warn(`[EmailBroadcast Recovery] Original approved content could not be verified for queued record ${row.id} (${row.recipient_email}). Stopping sending for this recipient.`);
+        await execute(`
+          UPDATE email_delivery_logs
+          SET status = 'failed',
+              error_message = 'Cannot resume email: Original approved announcement content could not be verified. Sending stopped to prevent delivering unverified content.',
+              failed_at = ?,
+              updated_at = ?
+          WHERE id = ?
+        `, [nowIso, nowIso, row.id]).catch(() => {});
+        continue;
+      }
+
+      validRecipients.push({
+        parentId: row.parent_profile_id || undefined,
+        userId: row.user_id || undefined,
+        email: row.recipient_email,
+        subject: resolvedSubject,
+        body: resolvedBody,
+        deliveryLogId: row.id,
+        roundId: row.round_id || undefined,
+        sendRound: row.send_round || 1,
+        allowResend: true
+      });
     }
 
-    if (!rawBody) {
-      // Fallback: look for any admin message log for this event
-      const fallbackMsg = await queryOne<any>(`
-        SELECT subject, body
-        FROM admin_message_logs
-        WHERE channel LIKE '%email%'
-        ORDER BY created_at DESC
-        LIMIT 1
-      `);
-      rawBody = fallbackMsg?.body;
-    }
-
-    if (!rawBody) {
-      console.warn(`[EmailBroadcast Recovery] Could not resolve announcement body for campaign ${campaignId}. Skipping auto-resume.`);
+    if (validRecipients.length === 0) {
+      console.warn(`[EmailBroadcast Recovery] No valid queued recipients with verified content for campaign ${campaignId}.`);
       continue;
     }
 
-    // Map queued rows into EmailBroadcastRecipient array
-    const recipients: EmailBroadcastRecipient[] = queuedRows.map((row) => ({
-      parentId: row.parent_profile_id || undefined,
-      userId: row.user_id || undefined,
-      email: row.recipient_email,
-      subject: row.subject || rawSubject,
-      body: rawBody!,
-      deliveryLogId: row.id,
-      roundId: row.round_id || undefined,
-      sendRound: row.send_round || 1,
-      allowResend: true
-    }));
-
-    console.log(`[EmailBroadcast Recovery] Resuming ${recipients.length} queued emails for campaign ${campaignId}...`);
-    totalRecovered += recipients.length;
+    console.log(`[EmailBroadcast Recovery] Resuming ${validRecipients.length} verified queued emails for campaign ${campaignId}...`);
+    totalRecovered += validRecipients.length;
     processedCampaigns.push(campaignId);
 
-    // Launch paced broadcast
+    // Launch paced broadcast with exact verified content
     runPacedBroadcast({
       campaignId,
       eventId,
-      recipients,
+      recipients: validRecipients,
       delayMs: 220
     });
   }

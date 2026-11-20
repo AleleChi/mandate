@@ -192,22 +192,18 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
       }
 
       const resend = new Resend(apiKey);
-      const reqHeaders: Record<string, string> = {
-        ...(options.headers || {})
-      };
-      if (options.idempotencyKey) {
-        reqHeaders['Idempotency-Key'] = options.idempotencyKey;
-      }
-
-      const { data, error } = await resend.emails.send({
-        from: fullFrom,
-        to: options.to,
-        subject: options.subject,
-        html: options.html || options.text || options.subject,
-        text: options.text || options.subject,
-        replyTo,
-        ...(Object.keys(reqHeaders).length > 0 ? { headers: reqHeaders } : {})
-      });
+      const { data, error } = await resend.emails.send(
+        {
+          from: fullFrom,
+          to: options.to,
+          subject: options.subject,
+          html: options.html || options.text || options.subject,
+          text: options.text || options.subject,
+          replyTo,
+          ...(options.headers ? { headers: options.headers } : {})
+        },
+        options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : undefined
+      );
 
       if (error) {
         console.error(`Resend send failed { error: "${error.message || 'Unknown Resend API error'}" }`);

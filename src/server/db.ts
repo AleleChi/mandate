@@ -559,6 +559,7 @@ function initSqliteSchema(db: Database.Database) {
       user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
       recipient_email TEXT NOT NULL,
       subject TEXT,
+      body TEXT,
       provider TEXT,
       provider_message_id TEXT,
       status TEXT NOT NULL DEFAULT 'queued',
@@ -1941,7 +1942,8 @@ function initSqliteSchema(db: Database.Database) {
     { table: 'alert_routing_rules', col: 'location_type_scope TEXT' },
     { table: 'alert_routing_rules', col: 'include_sub_locations INTEGER DEFAULT 0' },
     { table: 'email_delivery_logs', col: 'round_id TEXT' },
-    { table: 'email_delivery_logs', col: 'send_round INTEGER DEFAULT 1' }
+    { table: 'email_delivery_logs', col: 'send_round INTEGER DEFAULT 1' },
+    { table: 'email_delivery_logs', col: 'body TEXT' }
   ];
   for (const item of sqlitePhase6Cols) {
     try {
@@ -2616,6 +2618,7 @@ async function initPostgresSchema(pool: any) {
         user_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
         recipient_email VARCHAR(255) NOT NULL,
         subject TEXT,
+        body TEXT,
         provider VARCHAR(64),
         provider_message_id VARCHAR(128),
         status VARCHAR(32) NOT NULL DEFAULT 'queued',
@@ -3938,7 +3941,8 @@ async function initPostgresSchema(pool: any) {
       { table: 'alert_routing_rules', colName: 'location_type_scope', colDef: 'VARCHAR(64)' },
       { table: 'alert_routing_rules', colName: 'include_sub_locations', colDef: 'INTEGER DEFAULT 0' },
       { table: 'email_delivery_logs', colName: 'round_id', colDef: 'VARCHAR(64)' },
-      { table: 'email_delivery_logs', colName: 'send_round', colDef: 'INTEGER DEFAULT 1' }
+      { table: 'email_delivery_logs', colName: 'send_round', colDef: 'INTEGER DEFAULT 1' },
+      { table: 'email_delivery_logs', colName: 'body', colDef: 'TEXT' }
     ];
     for (const item of pgPhase6Cols) {
       try {
