@@ -11515,48 +11515,94 @@ router.get('/messages/selected-parents/email-delivery', async (req: Authenticate
 
     // 3. Fetch delivery logs for the active campaign
     const deliveryLogs = await query<any>(`
-      SELECT id, parent_profile_id, user_id, recipient_email, subject, provider, provider_message_id,
+      SELECT id, campaign_id, round_id, send_round, parent_profile_id, user_id, recipient_email, subject, provider, provider_message_id,
              status, error_message, sent_at, failed_at, created_at, updated_at
       FROM email_delivery_logs
       WHERE campaign_id = ?
       ORDER BY created_at DESC
     `, [activeCampaignId]);
 
-    const logsByParent = new Map<string, any>();
-    const logsByEmail = new Map<string, any>();
+    const logsByParent = new Map<string, any[]>();
+    const logsByEmail = new Map<string, any[]>();
+    let totalEmailsSent = 0;
+
     for (const log of deliveryLogs) {
-      if (log.parent_profile_id && !logsByParent.has(log.parent_profile_id)) {
-        logsByParent.set(log.parent_profile_id, log);
+      if (log.status === 'sent' || log.status === 'delivered') {
+        totalEmailsSent++;
+      }
+      if (log.parent_profile_id) {
+        if (!logsByParent.has(log.parent_profile_id)) logsByParent.set(log.parent_profile_id, []);
+        logsByParent.get(log.parent_profile_id)!.push(log);
       }
       const normEmail = (log.recipient_email || '').toLowerCase().trim();
-      if (normEmail && !logsByEmail.has(normEmail)) {
-        logsByEmail.set(normEmail, log);
+      if (normEmail) {
+        if (!logsByEmail.has(normEmail)) logsByEmail.set(normEmail, []);
+        logsByEmail.get(normEmail)!.push(log);
       }
     }
 
-    // 4. Map parents with campaign-specific status and compute summary counts
+    // 4. Map parents with campaign-specific status, full email history and compute summary counts
     let acceptedCount = 0;
     let deliveredCount = 0;
     let failedCount = 0;
     let pendingCount = 0;
     let notSentCount = 0;
+    let previouslyContactedCount = 0;
+    let notYetContactedCount = 0;
 
     const parentRecords = eligibleParents.map((p) => {
       const normEmail = (p.email || '').toLowerCase().trim();
-      const log = logsByParent.get(p.parentId) || (normEmail ? logsByEmail.get(normEmail) : null);
+      const parentLogList: any[] = [];
+      const seenLogIds = new Set<string>();
 
-      let status: 'sent' | 'delivered' | 'failed' | 'queued' | 'sending' | 'bounced' | 'delayed' | 'not_sent' = 'not_sent';
-      let providerMessageId: string | null = null;
-      let errorMessage: string | null = null;
-      let lastAttemptAt: string | null = null;
-      let sentAt: string | null = null;
+      const pLogs = logsByParent.get(p.parentId) || [];
+      for (const l of pLogs) {
+        if (!seenLogIds.has(l.id)) {
+          seenLogIds.add(l.id);
+          parentLogList.push(l);
+        }
+      }
+      if (normEmail && logsByEmail.has(normEmail)) {
+        for (const l of logsByEmail.get(normEmail)!) {
+          if (!seenLogIds.has(l.id)) {
+            seenLogIds.add(l.id);
+            parentLogList.push(l);
+          }
+        }
+      }
 
-      if (log) {
-        status = log.status || 'not_sent';
-        providerMessageId = log.provider_message_id || null;
-        errorMessage = log.error_message || null;
-        lastAttemptAt = log.failed_at || log.sent_at || log.updated_at || log.created_at || null;
-        sentAt = log.sent_at || null;
+      // Sort logs reverse-chronologically (newest first)
+      parentLogList.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      const history = parentLogList.map((l) => ({
+        id: l.id,
+        roundId: l.round_id || 'round-1',
+        sendRound: Number(l.send_round) || 1,
+        status: l.status,
+        providerMessageId: l.provider_message_id || null,
+        errorMessage: l.error_message || null,
+        sentAt: l.sent_at || null,
+        failedAt: l.failed_at || null,
+        createdAt: l.created_at
+      }));
+
+      const latestLog = parentLogList[0] || null;
+      const status: 'sent' | 'delivered' | 'failed' | 'queued' | 'sending' | 'bounced' | 'delayed' | 'not_sent' =
+        latestLog?.status || 'not_sent';
+      const providerMessageId = latestLog?.provider_message_id || null;
+      const errorMessage = latestLog?.error_message || null;
+      const lastAttemptAt = latestLog
+        ? (latestLog.failed_at || latestLog.sent_at || latestLog.updated_at || latestLog.created_at || null)
+        : null;
+
+      const sentLogs = parentLogList.filter((l) => l.status === 'sent' || l.status === 'delivered');
+      const sendCount = sentLogs.length;
+      const lastSentAt = sentLogs[0]?.sent_at || sentLogs[0]?.created_at || null;
+
+      if (sendCount > 0) {
+        previouslyContactedCount++;
+      } else {
+        notYetContactedCount++;
       }
 
       if (status === 'delivered') {
@@ -11588,8 +11634,12 @@ router.get('/messages/selected-parents/email-delivery', async (req: Authenticate
         providerMessageId,
         errorMessage,
         lastAttemptAt,
-        sentAt,
-        logId: log?.id || null
+        lastSentAt,
+        sendCount,
+        totalAttempts: history.length,
+        canSendAgain: true,
+        history,
+        logId: latestLog?.id || null
       };
     });
 
@@ -11652,6 +11702,8 @@ router.get('/messages/selected-parents/email-delivery', async (req: Authenticate
       }
     }
 
+    const filteredParentIds = filtered.map((p) => p.parentId);
+
     // 6. Pagination
     const totalRecords = filtered.length;
     const totalPages = Math.ceil(totalRecords / pageSize) || 1;
@@ -11667,6 +11719,7 @@ router.get('/messages/selected-parents/email-delivery', async (req: Authenticate
       campaignOriginalBody,
       isOriginalVerified,
       allEligibleParentIds,
+      filteredParentIds,
       allFailedParentIds,
       summary: {
         totalEligibleParents: eligibleParents.length,
@@ -11674,7 +11727,10 @@ router.get('/messages/selected-parents/email-delivery', async (req: Authenticate
         deliveredCount,
         failedCount,
         pendingCount,
-        notSentCount
+        notSentCount,
+        previouslyContactedCount,
+        notYetContactedCount,
+        totalEmailsSent
       },
       parents: paginatedParents,
       pagination: {
@@ -11690,6 +11746,61 @@ router.get('/messages/selected-parents/email-delivery', async (req: Authenticate
       success: false,
       error: err.message || 'Failed to fetch email delivery status'
     });
+  }
+});
+
+// GET /api/admin/messages/selected-parents/email-delivery/parent/:parentId/history - Get complete delivery history for single parent
+router.get('/messages/selected-parents/email-delivery/parent/:parentId/history', async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const { parentId } = req.params;
+    const { campaignId: reqCampaignId } = req.query;
+    const campaignId = (reqCampaignId && String(reqCampaignId).trim()) || 'cmp_event-ga-2026_general_anno_important-event-details-_c3c41590';
+
+    const parent = await queryOne<any>(`
+      SELECT p.id, p.full_name, p.phone_number, u.email
+      FROM parent_profiles p
+      JOIN users u ON u.id = p.user_id
+      WHERE p.id = ?
+    `, [parentId]);
+
+    if (!parent) {
+      return res.status(404).json({ success: false, error: 'Parent not found' });
+    }
+
+    const normEmail = (parent.email || '').toLowerCase().trim();
+    const logs = await query<any>(`
+      SELECT id, campaign_id, round_id, send_round, recipient_email, subject, provider,
+             provider_message_id, status, error_message, sent_at, failed_at, created_at, updated_at
+      FROM email_delivery_logs
+      WHERE campaign_id = ? AND (parent_profile_id = ? OR recipient_email = ?)
+      ORDER BY created_at DESC
+    `, [campaignId, parentId, normEmail]);
+
+    return res.json({
+      success: true,
+      parent: {
+        id: parent.id,
+        fullName: parent.full_name,
+        email: parent.email,
+        phoneNumber: parent.phone_number
+      },
+      campaignId,
+      history: logs.map((l) => ({
+        id: l.id,
+        roundId: l.round_id || 'round-1',
+        sendRound: Number(l.send_round) || 1,
+        status: l.status,
+        providerMessageId: l.provider_message_id || null,
+        errorMessage: l.error_message || null,
+        sentAt: l.sent_at || null,
+        failedAt: l.failed_at || null,
+        createdAt: l.created_at
+      }))
+    });
+  } catch (err: any) {
+    console.error('Error fetching parent email history:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve email history' });
   }
 });
 
@@ -11723,14 +11834,25 @@ router.post('/messages/selected-parents/send-email', async (req: AuthenticatedRe
     const {
       eventId: rawEventId,
       campaignId: rawCampaignId,
+      sendMode = 'retry_uncontacted', // 'retry_uncontacted' | 'send_again'
       targetScope = 'selected', // 'selected' | 'failed_remaining' | 'all_eligible'
       parentIds = [],
+      roundId: rawRoundId,
       subject: customSubject,
       body: customBody
     } = req.body || {};
 
     const eventId = await resolveAdminEventId(rawEventId) || rawEventId || 'event-ga-2026';
     const campaignId = rawCampaignId?.trim() || 'cmp_event-ga-2026_general_anno_important-event-details-_c3c41590';
+    const isSendAgain = sendMode === 'send_again';
+
+    // Concurrency lock: prevent double-clicks or multiple simultaneous broadcast loops
+    if (isCampaignActive(campaignId)) {
+      return res.status(409).json({
+        success: false,
+        error: 'A sending process is currently in progress for this announcement. Please wait for it to finish.'
+      });
+    }
 
     // 1. Fetch event metadata for personalization tokens and venue visibility
     const evRow = await queryOne<any>(`
@@ -11769,7 +11891,7 @@ router.post('/messages/selected-parents/send-email', async (req: AuthenticatedRe
     // 4. Resolve candidate targets based on targetScope
     let candidateParents: typeof eligibleParents = [];
     if (targetScope === 'failed_remaining') {
-      // All eligible parents who do NOT have an accepted delivery
+      // Option A: only parents who have not been accepted yet
       candidateParents = eligibleParents.filter(
         (p) => !alreadyAcceptedParentIds.has(p.parentId) && !alreadyAcceptedEmails.has((p.email || '').toLowerCase().trim())
       );
@@ -11781,9 +11903,41 @@ router.post('/messages/selected-parents/send-email', async (req: AuthenticatedRe
       candidateParents = eligibleParents.filter((p) => requestedIdSet.has(p.parentId));
     }
 
-    // 5. Strict duplicate safety filter: strip any recipient who has already been accepted!
+    // 5. Determine unique sending round ID and round number
+    let roundId = rawRoundId && String(rawRoundId).trim();
+    let sendRound = 1;
+
+    if (isSendAgain) {
+      if (!roundId) {
+        roundId = `rnd_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+      }
+      const maxRoundRow = await queryOne<{ max_round: number }>(
+        `SELECT COALESCE(MAX(send_round), 1) as max_round FROM email_delivery_logs WHERE campaign_id = ?`,
+        [campaignId]
+      );
+      sendRound = (Number(maxRoundRow?.max_round) || 1) + 1;
+    } else {
+      if (!roundId) {
+        roundId = 'round-1';
+      }
+    }
+
+    // Check for in-flight / duplicate records within this specific round to prevent accidental double-submits
+    const inRoundLogs = await query<any>(`
+      SELECT parent_profile_id, recipient_email FROM email_delivery_logs
+      WHERE campaign_id = ? AND round_id = ? AND status IN ('queued', 'sending', 'sent', 'delivered')
+    `, [campaignId, roundId]);
+    const alreadyInRoundParents = new Set<string>();
+    const alreadyInRoundEmails = new Set<string>();
+    for (const r of inRoundLogs) {
+      if (r.parent_profile_id) alreadyInRoundParents.add(r.parent_profile_id);
+      if (r.recipient_email) alreadyInRoundEmails.add(r.recipient_email.toLowerCase().trim());
+    }
+
+    // 6. Strict recipient filtering
     const toSend: typeof eligibleParents = [];
     let skippedAlreadyAcceptedCount = 0;
+    let skippedInRoundCount = 0;
     let invalidEmailCount = 0;
 
     for (const p of candidateParents) {
@@ -11792,25 +11946,41 @@ router.post('/messages/selected-parents/send-email', async (req: AuthenticatedRe
         invalidEmailCount++;
         continue;
       }
-      if (alreadyAcceptedParentIds.has(p.parentId) || alreadyAcceptedEmails.has(normEmail)) {
-        skippedAlreadyAcceptedCount++;
+
+      // If NOT send_again (Option A), exclude parents already accepted in this campaign
+      if (!isSendAgain) {
+        if (alreadyAcceptedParentIds.has(p.parentId) || alreadyAcceptedEmails.has(normEmail)) {
+          skippedAlreadyAcceptedCount++;
+          continue;
+        }
+      }
+
+      // Within this specific round, avoid duplicate dispatch
+      if (alreadyInRoundParents.has(p.parentId) || alreadyInRoundEmails.has(normEmail)) {
+        skippedInRoundCount++;
         continue;
       }
+
       toSend.push(p);
     }
 
     if (toSend.length === 0) {
+      const reasonMsg = isSendAgain
+        ? 'All selected recipients have already been queued or sent for this sending round.'
+        : 'All selected recipients have already received this announcement.';
       return res.json({
         success: true,
-        message: 'All selected recipients have already been accepted or delivered for this campaign. Zero duplicate emails were sent.',
+        message: reasonMsg,
         campaignId,
+        roundId,
+        sendRound,
         queuedCount: 0,
-        skippedCount: skippedAlreadyAcceptedCount,
+        skippedCount: skippedAlreadyAcceptedCount + skippedInRoundCount,
         invalidEmailCount
       });
     }
 
-    // 6. Resolve email template text - retrieve original approved announcement from verified campaign log
+    // 7. Resolve email template text - retrieve original approved announcement from verified campaign log
     let rawSubject = customSubject?.trim();
     let rawBody = customBody?.trim();
     if (!rawSubject || !rawBody) {
@@ -11846,7 +12016,7 @@ router.post('/messages/selected-parents/send-email', async (req: AuthenticatedRe
     if (!rawSubject || !rawBody) {
       return res.status(400).json({
         success: false,
-        error: 'Cannot send retry: The original approved announcement content could not be verified for this campaign. To prevent sending unapproved or fallback messages, retry has been blocked.'
+        error: 'Cannot send announcement: The original approved announcement content could not be verified for this campaign. Sending is blocked until content is verified.'
       });
     }
 
@@ -11857,8 +12027,11 @@ router.post('/messages/selected-parents/send-email', async (req: AuthenticatedRe
     const customFromName = settings?.sender_name || undefined;
     const customReplyTo = settings?.reply_to_email || undefined;
 
-    // 7. Build personalized recipient array
-    const broadcastRecipients = toSend.map((p) => {
+    // 8. Build personalized recipient array and pre-persist separate sending records in email_delivery_logs
+    const broadcastRecipients: any[] = [];
+    const nowStr = new Date().toISOString();
+
+    for (const p of toSend) {
       const childNames = p.selectedChildNames || 'your children';
       const renderedSubject = resolveMessageTokens(rawSubject, {
         parentName: p.fullName || 'Parent',
@@ -11884,52 +12057,45 @@ router.post('/messages/selected-parents/send-email', async (req: AuthenticatedRe
         reviewUrl: buildParentStatusUrl()
       });
 
-      return {
+      const deliveryLogId = `edl-${crypto.randomUUID()}`;
+      const normEmail = p.email!.trim();
+
+      // Always create a separate, discrete history record for this sending attempt
+      await execute(
+        `INSERT INTO email_delivery_logs (
+           id, campaign_id, round_id, send_round, event_id, parent_profile_id, user_id, recipient_email,
+           subject, provider, status, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'resend', 'queued', ?, ?)`,
+        [
+          deliveryLogId,
+          campaignId,
+          roundId,
+          sendRound,
+          eventId,
+          p.parentId,
+          p.userId || null,
+          normEmail,
+          renderedSubject,
+          nowStr,
+          nowStr
+        ]
+      );
+
+      broadcastRecipients.push({
         parentId: p.parentId,
         userId: p.userId,
-        email: p.email!.trim(),
+        email: normEmail,
         parentName: p.fullName,
         subject: renderedSubject,
-        body: renderedBody
-      };
-    });
-
-    // 8. Persist targeted recipients in email_delivery_logs with status 'queued' for restart durability
-    const nowStr = new Date().toISOString();
-    for (const item of broadcastRecipients) {
-      const existing = await queryOne<any>(
-        `SELECT id, status FROM email_delivery_logs WHERE campaign_id = ? AND (parent_profile_id = ? OR recipient_email = ?) LIMIT 1`,
-        [campaignId, item.parentId || null, item.email]
-      );
-      if (existing) {
-        if (existing.status !== 'sent' && existing.status !== 'delivered') {
-          await execute(
-            `UPDATE email_delivery_logs SET status = 'queued', updated_at = ? WHERE id = ?`,
-            [nowStr, existing.id]
-          );
-        }
-      } else {
-        await execute(
-          `INSERT INTO email_delivery_logs (
-             id, campaign_id, event_id, parent_profile_id, user_id, recipient_email,
-             subject, provider, status, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, 'resend', 'queued', ?, ?)`,
-          [
-            `edl-${crypto.randomUUID()}`,
-            campaignId,
-            eventId,
-            item.parentId || null,
-            item.userId || null,
-            item.email,
-            item.subject,
-            nowStr,
-            nowStr
-          ]
-        );
-      }
+        body: renderedBody,
+        deliveryLogId,
+        roundId,
+        sendRound,
+        allowResend: isSendAgain
+      });
     }
 
-    // 9. Launch background paced broadcast (paced at 4.5 req/sec with automatic 429 backoff)
+    // 9. Launch background paced broadcast (paced at ~4.5 req/sec with automatic 429 backoff)
     runPacedBroadcast({
       campaignId,
       eventId,
@@ -11937,6 +12103,24 @@ router.post('/messages/selected-parents/send-email', async (req: AuthenticatedRe
       customFromName,
       customReplyTo,
       delayMs: 220
+    });
+
+    return res.json({
+      success: true,
+      message: isSendAgain
+        ? `Sending announcement again to ${broadcastRecipients.length} parent(s).`
+        : `Sending announcement to ${broadcastRecipients.length} uncontacted parent(s).`,
+      campaignId,
+      roundId,
+      sendRound,
+      queuedCount: broadcastRecipients.length,
+      skippedCount: skippedAlreadyAcceptedCount + skippedInRoundCount,
+      invalidEmailCount,
+      summary: {
+        totalTargeted: candidateParents.length,
+        alreadyAcceptedSkipped: skippedAlreadyAcceptedCount,
+        queuedForDelivery: broadcastRecipients.length
+      }
     });
 
     return res.json({

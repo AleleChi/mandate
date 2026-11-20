@@ -552,6 +552,8 @@ function initSqliteSchema(db: Database.Database) {
     CREATE TABLE IF NOT EXISTS email_delivery_logs (
       id TEXT PRIMARY KEY,
       campaign_id TEXT,
+      round_id TEXT,
+      send_round INTEGER DEFAULT 1,
       event_id TEXT REFERENCES events(id) ON DELETE SET NULL,
       parent_profile_id TEXT REFERENCES parent_profiles(id) ON DELETE SET NULL,
       user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
@@ -572,6 +574,7 @@ function initSqliteSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_email_delivery_status ON email_delivery_logs(status);
     CREATE INDEX IF NOT EXISTS idx_email_delivery_campaign ON email_delivery_logs(campaign_id);
     CREATE INDEX IF NOT EXISTS idx_email_delivery_email ON email_delivery_logs(recipient_email);
+    CREATE INDEX IF NOT EXISTS idx_email_delivery_round ON email_delivery_logs(round_id);
 
     CREATE TABLE IF NOT EXISTS volunteer_profiles (
       id TEXT PRIMARY KEY,
@@ -1934,7 +1937,9 @@ function initSqliteSchema(db: Database.Database) {
     { table: 'event_safety_alerts', col: 'original_location_id TEXT' },
     { table: 'alert_routing_rules', col: 'location_id TEXT' },
     { table: 'alert_routing_rules', col: 'location_type_scope TEXT' },
-    { table: 'alert_routing_rules', col: 'include_sub_locations INTEGER DEFAULT 0' }
+    { table: 'alert_routing_rules', col: 'include_sub_locations INTEGER DEFAULT 0' },
+    { table: 'email_delivery_logs', col: 'round_id TEXT' },
+    { table: 'email_delivery_logs', col: 'send_round INTEGER DEFAULT 1' }
   ];
   for (const item of sqlitePhase6Cols) {
     try {
@@ -2602,6 +2607,8 @@ async function initPostgresSchema(pool: any) {
       CREATE TABLE IF NOT EXISTS email_delivery_logs (
         id VARCHAR(64) PRIMARY KEY,
         campaign_id VARCHAR(64),
+        round_id VARCHAR(64),
+        send_round INTEGER DEFAULT 1,
         event_id VARCHAR(64) REFERENCES events(id) ON DELETE SET NULL,
         parent_profile_id VARCHAR(64) REFERENCES parent_profiles(id) ON DELETE SET NULL,
         user_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
@@ -2622,6 +2629,7 @@ async function initPostgresSchema(pool: any) {
       CREATE INDEX IF NOT EXISTS idx_email_delivery_status ON email_delivery_logs(status);
       CREATE INDEX IF NOT EXISTS idx_email_delivery_campaign ON email_delivery_logs(campaign_id);
       CREATE INDEX IF NOT EXISTS idx_email_delivery_email ON email_delivery_logs(recipient_email);
+      CREATE INDEX IF NOT EXISTS idx_email_delivery_round ON email_delivery_logs(round_id);
 
       CREATE TABLE IF NOT EXISTS volunteer_profiles (
         id VARCHAR(64) PRIMARY KEY,
@@ -3924,7 +3932,9 @@ async function initPostgresSchema(pool: any) {
       { table: 'event_safety_alerts', colName: 'original_location_id', colDef: 'VARCHAR(255)' },
       { table: 'alert_routing_rules', colName: 'location_id', colDef: 'VARCHAR(255)' },
       { table: 'alert_routing_rules', colName: 'location_type_scope', colDef: 'VARCHAR(64)' },
-      { table: 'alert_routing_rules', colName: 'include_sub_locations', colDef: 'INTEGER DEFAULT 0' }
+      { table: 'alert_routing_rules', colName: 'include_sub_locations', colDef: 'INTEGER DEFAULT 0' },
+      { table: 'email_delivery_logs', colName: 'round_id', colDef: 'VARCHAR(64)' },
+      { table: 'email_delivery_logs', colName: 'send_round', colDef: 'INTEGER DEFAULT 1' }
     ];
     for (const item of pgPhase6Cols) {
       try {

@@ -9,6 +9,10 @@ export interface EmailBroadcastRecipient {
   parentName?: string;
   subject: string;
   body: string;
+  deliveryLogId?: string;
+  roundId?: string;
+  sendRound?: number;
+  allowResend?: boolean;
 }
 
 export interface BroadcastProgress {
@@ -136,6 +140,10 @@ export async function sendPacedEmailWithBackoff(options: {
   customFromName?: string;
   customReplyTo?: string;
   maxRetries?: number;
+  deliveryLogId?: string;
+  roundId?: string;
+  sendRound?: number;
+  allowResend?: boolean;
 }): Promise<{
   success: boolean;
   skipped?: boolean;
@@ -152,7 +160,11 @@ export async function sendPacedEmailWithBackoff(options: {
     body,
     customFromName,
     customReplyTo,
-    maxRetries = 2
+    maxRetries = 2,
+    deliveryLogId: explicitDeliveryLogId,
+    roundId,
+    sendRound = 1,
+    allowResend = false
   } = options;
 
   const cleanEmail = recipientEmail.trim();
@@ -160,58 +172,80 @@ export async function sendPacedEmailWithBackoff(options: {
     return { success: false, errorMessage: 'Invalid recipient email address' };
   }
 
-  // 1. Strict Idempotency Check:
-  // Never re-send if already marked 'sent' or 'delivered' for this campaign!
-  let existingAccepted: any = null;
-  if (parentId) {
-    existingAccepted = await queryOne(
-      `SELECT id, provider_message_id, status FROM email_delivery_logs
-       WHERE campaign_id = ? AND parent_profile_id = ? AND status IN ('sent', 'delivered')
-       LIMIT 1`,
-      [campaignId, parentId]
-    );
-  }
-  if (!existingAccepted) {
-    existingAccepted = await queryOne(
-      `SELECT id, provider_message_id, status FROM email_delivery_logs
-       WHERE campaign_id = ? AND recipient_email = ? AND status IN ('sent', 'delivered')
-       LIMIT 1`,
-      [campaignId, cleanEmail]
-    );
-  }
+  const nowStr = new Date().toISOString();
+  let deliveryLogId = explicitDeliveryLogId;
 
-  if (existingAccepted) {
-    return {
-      success: true,
-      skipped: true,
-      providerMessageId: existingAccepted.provider_message_id
-    };
+  // 1. Strict Idempotency Check:
+  if (deliveryLogId) {
+    // If an explicit deliveryLogId is provided, check that specific row
+    const existingTarget = await queryOne<any>(
+      `SELECT id, status, provider_message_id FROM email_delivery_logs WHERE id = ?`,
+      [deliveryLogId]
+    );
+    if (existingTarget && (existingTarget.status === 'sent' || existingTarget.status === 'delivered')) {
+      return {
+        success: true,
+        skipped: true,
+        providerMessageId: existingTarget.provider_message_id
+      };
+    }
+  } else if (allowResend && roundId) {
+    // Deliberate resend mode: check if already sent or delivered IN THIS SPECIFIC ROUND
+    let existingInRound: any = null;
+    if (parentId) {
+      existingInRound = await queryOne(
+        `SELECT id, provider_message_id, status FROM email_delivery_logs
+         WHERE campaign_id = ? AND round_id = ? AND parent_profile_id = ? AND status IN ('sent', 'delivered')
+         LIMIT 1`,
+        [campaignId, roundId, parentId]
+      );
+    }
+    if (!existingInRound) {
+      existingInRound = await queryOne(
+        `SELECT id, provider_message_id, status FROM email_delivery_logs
+         WHERE campaign_id = ? AND round_id = ? AND recipient_email = ? AND status IN ('sent', 'delivered')
+         LIMIT 1`,
+        [campaignId, roundId, cleanEmail]
+      );
+    }
+    if (existingInRound) {
+      return {
+        success: true,
+        skipped: true,
+        providerMessageId: existingInRound.provider_message_id
+      };
+    }
+  } else if (!allowResend) {
+    // Safe retry uncontacted mode: check if already accepted in this campaign
+    let existingAccepted: any = null;
+    if (parentId) {
+      existingAccepted = await queryOne(
+        `SELECT id, provider_message_id, status FROM email_delivery_logs
+         WHERE campaign_id = ? AND parent_profile_id = ? AND status IN ('sent', 'delivered')
+         LIMIT 1`,
+        [campaignId, parentId]
+      );
+    }
+    if (!existingAccepted) {
+      existingAccepted = await queryOne(
+        `SELECT id, provider_message_id, status FROM email_delivery_logs
+         WHERE campaign_id = ? AND recipient_email = ? AND status IN ('sent', 'delivered')
+         LIMIT 1`,
+        [campaignId, cleanEmail]
+      );
+    }
+
+    if (existingAccepted) {
+      return {
+        success: true,
+        skipped: true,
+        providerMessageId: existingAccepted.provider_message_id
+      };
+    }
   }
 
   // 2. Locate or prepare delivery log row
-  const nowStr = new Date().toISOString();
-  let existingRow: any = null;
-  if (parentId) {
-    existingRow = await queryOne(
-      `SELECT id, status FROM email_delivery_logs
-       WHERE campaign_id = ? AND parent_profile_id = ?
-       ORDER BY created_at DESC LIMIT 1`,
-      [campaignId, parentId]
-    );
-  }
-  if (!existingRow) {
-    existingRow = await queryOne(
-      `SELECT id, status FROM email_delivery_logs
-       WHERE campaign_id = ? AND recipient_email = ?
-       ORDER BY created_at DESC LIMIT 1`,
-      [campaignId, cleanEmail]
-    );
-  }
-
-  const deliveryLogId = existingRow?.id || `edl-${crypto.randomUUID()}`;
-
-  // Mark row as 'sending'
-  if (existingRow) {
+  if (deliveryLogId) {
     await execute(
       `UPDATE email_delivery_logs
        SET status = 'sending', updated_at = ?
@@ -219,14 +253,17 @@ export async function sendPacedEmailWithBackoff(options: {
       [nowStr, deliveryLogId]
     );
   } else {
+    deliveryLogId = `edl-${crypto.randomUUID()}`;
     await execute(
       `INSERT INTO email_delivery_logs (
-         id, campaign_id, event_id, parent_profile_id, user_id, recipient_email,
+         id, campaign_id, round_id, send_round, event_id, parent_profile_id, user_id, recipient_email,
          subject, provider, status, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, 'resend', 'sending', ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'resend', 'sending', ?, ?)`,
       [
         deliveryLogId,
         campaignId,
+        roundId || null,
+        sendRound,
         eventId || null,
         parentId || null,
         userId || null,
@@ -370,7 +407,11 @@ export async function runPacedBroadcast(options: {
             subject: r.subject,
             body: r.body,
             customFromName,
-            customReplyTo
+            customReplyTo,
+            deliveryLogId: r.deliveryLogId,
+            roundId: r.roundId,
+            sendRound: r.sendRound,
+            allowResend: r.allowResend
           });
 
           progress.processed++;
