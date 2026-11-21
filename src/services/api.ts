@@ -1881,6 +1881,200 @@ export const api = {
         };
       }>(`/api/admin/reports/selected-children${qs ? `?${qs}` : ''}`);
     },
+    async getMedicalCareRegister(params?: {
+      eventId?: string;
+      page?: number;
+      pageSize?: number;
+      search?: string;
+      careConcern?: string;
+      ageGroup?: string;
+      location?: string;
+      attendanceStatus?: string;
+      passStatus?: string;
+      sort?: string;
+    }) {
+      const queryParams = new URLSearchParams();
+      if (params?.eventId) queryParams.append('eventId', params.eventId);
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.pageSize) queryParams.append('pageSize', params.pageSize.toString());
+      if (params?.search) queryParams.append('search', params.search);
+      if (params?.careConcern && params.careConcern !== 'all') queryParams.append('careConcern', params.careConcern);
+      if (params?.ageGroup && params.ageGroup !== 'all') queryParams.append('ageGroup', params.ageGroup);
+      if (params?.location && params.location !== 'all') queryParams.append('location', params.location);
+      if (params?.attendanceStatus && params.attendanceStatus !== 'all') queryParams.append('attendanceStatus', params.attendanceStatus);
+      if (params?.passStatus && params.passStatus !== 'all') queryParams.append('passStatus', params.passStatus);
+      if (params?.sort) queryParams.append('sort', params.sort);
+
+      const qs = queryParams.toString();
+      return api.request<{
+        success: boolean;
+        event: {
+          id: string;
+          title: string;
+          starts_at: string;
+          generatedAtWAT: string;
+        };
+        summary: {
+          totalRegistered: number;
+          withCareConcerns: number;
+          allergyMentions: number;
+          otherMedicalNotes: number;
+          supportRequested: number;
+          bothMedicalAndSupport: number;
+          requiresClarification: number;
+          careNotesInsideOrCheckedIn: number;
+          careNotesNotArrived: number;
+          careNotesPickedUp: number;
+          noConcernReported: number;
+          ageGroupBreakdown: Array<{
+            ageGroup: string;
+            total: number;
+            withCareConcerns: number;
+            allergyMentions: number;
+            otherMedical: number;
+            supportRequested: number;
+            checkedIn: number;
+          }>;
+          locationBreakdown: Array<{
+            locationName: string;
+            total: number;
+            withCareConcerns: number;
+            allergyMentions: number;
+            otherMedical: number;
+            supportRequested: number;
+          }>;
+          statusBreakdown: Array<{
+            status: string;
+            count: number;
+          }>;
+          attendanceBreakdown: {
+            not_arrived: number;
+            checked_in: number;
+            inside: number;
+            picked_up: number;
+          };
+        };
+        children: Array<{
+          childId: string;
+          eventEntryId: string;
+          fullName: string;
+          photoUrl: string | null;
+          dateOfBirth: string;
+          age: number;
+          ageGroup: string;
+          gender: string;
+          schoolName: string | null;
+          schoolClass: string | null;
+          registeredAt: string;
+          registrationStatus: string;
+          passStatus: 'pass_ready' | 'missing_pass';
+          passReference: string | null;
+          assignedLocation: string;
+          locationId?: string | null;
+          attendanceStatus: 'not_arrived' | 'checked_in' | 'inside' | 'picked_up';
+          checkedInAtWAT: string | null;
+          checkedInAtRaw: string | null;
+          pickedUpAtWAT: string | null;
+          pickedUpAtRaw: string | null;
+          hasMedicalNotes: boolean;
+          rawMedicalNotes: string;
+          hasAllergyMention: boolean;
+          hasOtherMedicalNotes: boolean;
+          careCategory: 'allergy_and_medical' | 'allergy_only' | 'other_medical' | 'support_only' | 'none';
+          allergyClassificationLabel: string;
+          needsExtraSupport: boolean;
+          rawSupportNotes: string;
+          informationConfirmed: boolean;
+          detailsConfirmed: boolean;
+          requiresClarification: boolean;
+          parent: {
+            id: string;
+            fullName: string;
+            relationship: string;
+            phone: string | null;
+            whatsapp: string | null;
+            email: string | null;
+            preferredContact: string;
+            city: string | null;
+            state: string | null;
+            homeAddress: string | null;
+            isKoinoniaWorker: boolean;
+            department: string | null;
+          };
+          pickupPerson: {
+            id?: string | null;
+            fullName: string;
+            relationship: string;
+            phone: string | null;
+            whatsapp?: string | null;
+            photoUrl?: string | null;
+            isPrimaryParent: boolean;
+            approvalStatus: string;
+          };
+        }>;
+        pagination: {
+          page: number;
+          pageSize: number;
+          totalRecords: number;
+          totalPages: number;
+          paginatedChildren: any[];
+        };
+        filters: {
+          search: string;
+          careConcern: string;
+          ageGroup: string;
+          location: string;
+          attendanceStatus: string;
+          passStatus: string;
+          sort: string;
+        };
+      }>(`/api/admin/reports/medical-care${qs ? `?${qs}` : ''}`);
+    },
+    async downloadMedicalCareExport(
+      format: 'csv' | 'pdf',
+      params?: {
+        eventId?: string;
+        search?: string;
+        careConcern?: string;
+        ageGroup?: string;
+        location?: string;
+        attendanceStatus?: string;
+        passStatus?: string;
+        sort?: string;
+      }
+    ) {
+      const token = api.getToken();
+      const queryParams = new URLSearchParams();
+      if (params?.eventId) queryParams.append('eventId', params.eventId);
+      if (params?.search) queryParams.append('search', params.search);
+      if (params?.careConcern && params.careConcern !== 'all') queryParams.append('careConcern', params.careConcern);
+      if (params?.ageGroup && params.ageGroup !== 'all') queryParams.append('ageGroup', params.ageGroup);
+      if (params?.location && params.location !== 'all') queryParams.append('location', params.location);
+      if (params?.attendanceStatus && params.attendanceStatus !== 'all') queryParams.append('attendanceStatus', params.attendanceStatus);
+      if (params?.passStatus && params.passStatus !== 'all') queryParams.append('passStatus', params.passStatus);
+      if (params?.sort) queryParams.append('sort', params.sort);
+      const qs = queryParams.toString();
+      const path = format === 'pdf' ? '/api/admin/reports/medical-care/export-pdf' : '/api/admin/reports/medical-care/export-csv';
+      const url = buildApiUrl(`${path}${qs ? `?${qs}` : ''}`);
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        throw new Error(`Export failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get('content-disposition') || '';
+      const match = disposition.match(/filename="?([^"]+)"?/i);
+      const filename = match?.[1] || `Allergy_Medical_Care_Register.${format}`;
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+    },
     async bulkIssuePasses(applicationIds: string[], childIds?: string[]) {
       return api.request<any>('/api/admin/applications/bulk-issue-pass', {
         method: 'POST',

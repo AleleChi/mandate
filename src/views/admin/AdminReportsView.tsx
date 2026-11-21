@@ -25,6 +25,7 @@ import { GeneratedReportPreviewModal } from '../../components/admin/reports/Gene
 import { ReportActionsMenu } from '../../components/admin/reports/ReportActionsMenu';
 import { ReportChartRenderer } from '../../components/admin/reports/ReportChartRenderer';
 import { SelectedChildrenReportView } from '../../components/admin/reports/SelectedChildrenReportView';
+import { MedicalCareRegisterView } from '../../components/admin/reports/MedicalCareRegisterView';
 
 interface AdminReportsViewProps {
   onBackToOverview: () => void;
@@ -32,8 +33,8 @@ interface AdminReportsViewProps {
   currentRoute?: string;
 }
 
-// Canonical Tabs (Reports, Selected Children, Templates, Create report, Event overview)
-type MainTab = 'reports_centre' | 'selected_children' | 'template_library' | 'custom_builder' | 'live_metrics';
+// Canonical Tabs (Reports, Selected Children, Medical Care, Templates, Create report, Event overview)
+type MainTab = 'reports_centre' | 'selected_children' | 'medical_care' | 'template_library' | 'custom_builder' | 'live_metrics';
 
 function formatReportDate(value?: string | null): string {
   if (!value) return 'Date unavailable';
@@ -283,7 +284,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
 }) => {
   const { showError, showSuccess } = useNotification();
   
-  // Tabs State (Reports, Selected Children, Templates, Create report, Event overview)
+  // Tabs State (Reports, Selected Children, Medical Care, Templates, Create report, Event overview)
   const isSelectedChildrenRoute = (route?: string) => {
     if (
       route?.includes('view=selected-children') ||
@@ -307,12 +308,46 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
     return false;
   };
 
+  const isMedicalCareRoute = (route?: string) => {
+    if (
+      route?.includes('view=medical-care') ||
+      route?.includes('view=medical_care') ||
+      route?.includes('view=medical_register') ||
+      route?.includes('view=allergy-medical') ||
+      route?.endsWith('/reports/medical-care') ||
+      route?.endsWith('/reports/medical-register')
+    ) {
+      return true;
+    }
+    if (typeof window !== 'undefined') {
+      const search = window.location.search || '';
+      const hash = window.location.hash || '';
+      const pathname = window.location.pathname || '';
+      return (
+        search.includes('view=medical-care') ||
+        search.includes('view=medical_care') ||
+        search.includes('view=medical_register') ||
+        search.includes('view=allergy-medical') ||
+        hash.includes('view=medical-care') ||
+        hash.includes('view=medical_care') ||
+        hash.includes('view=medical_register') ||
+        hash.includes('view=allergy-medical') ||
+        pathname.endsWith('/reports/medical-care') ||
+        pathname.endsWith('/reports/medical-register')
+      );
+    }
+    return false;
+  };
+
   const [activeMainTab, setActiveMainTab] = useState<MainTab>(() => {
+    if (isMedicalCareRoute(currentRoute)) return 'medical_care';
     return isSelectedChildrenRoute(currentRoute) ? 'selected_children' : 'reports_centre';
   });
 
   useEffect(() => {
-    if (isSelectedChildrenRoute(currentRoute)) {
+    if (isMedicalCareRoute(currentRoute)) {
+      setActiveMainTab('medical_care');
+    } else if (isSelectedChildrenRoute(currentRoute)) {
       setActiveMainTab('selected_children');
     }
   }, [currentRoute]);
@@ -924,6 +959,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
         <div className="flex space-x-8 min-w-max pb-1">
           {[
             { id: 'reports_centre', label: 'Reports' },
+            { id: 'medical_care', label: 'Allergy & Medical Care Register' },
             { id: 'selected_children', label: 'Selected Children' },
             { id: 'template_library', label: 'Templates' },
             { id: 'custom_builder', label: 'Create report' },
@@ -974,6 +1010,19 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ----------------- TAB: ALLERGY & MEDICAL CARE REGISTER ----------------- */}
+      {activeMainTab === 'medical_care' && (
+        <MedicalCareRegisterView
+          eventId={selectedEventId}
+          onNavigate={onNavigate}
+          onViewChild={(_childId) => {
+            if (onNavigate) {
+              onNavigate(`/admin/applications?childId=${_childId}`);
+            }
+          }}
+        />
+      )}
 
       {/* ----------------- TAB: SELECTED CHILDREN OPERATIONAL REPORT ----------------- */}
       {activeMainTab === 'selected_children' && (
