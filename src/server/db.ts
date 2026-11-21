@@ -22,7 +22,7 @@ export function getDb() {
       pgPool = new Pool({
         connectionString: dbUrl,
         ssl: (dbUrl.includes('neon.tech') || dbUrl.includes('sslmode')) ? { rejectUnauthorized: false } : undefined,
-        max: 10,
+        max: parseInt(process.env.PG_MAX_POOL_SIZE || '25', 10),
         idleTimeoutMillis: 30000,
         connectionTimeoutMillis: 10000
       });
