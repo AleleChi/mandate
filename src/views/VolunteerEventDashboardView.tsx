@@ -494,6 +494,9 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
   const [wristbandInitialChild, setWristbandInitialChild] = useState<any | null>(null);
   const [unassignedWristbandInfo, setUnassignedWristbandInfo] = useState<{ rawInput: string; message: string } | null>(null);
   const scannerInputRef = useRef<HTMLInputElement>(null);
+  const [isManualInputActive, setIsManualInputActive] = useState<boolean>(false);
+  const wedgeBufferRef = useRef<string>('');
+  const wedgeTimerRef = useRef<any>(null);
 
   // Compact Check-In Wristband Assignment states
   const [isAssigningWristband, setIsAssigningWristband] = useState(false);
@@ -1589,15 +1592,48 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     }
   }, [cleanRoute]);
 
-  // High-throughput autofocus for volunteer check-in scanner input
+  // Hardware Keyboard-Wedge Barcode Scanner listener (Global listener, works without opening mobile software keyboard)
   useEffect(() => {
-    if (cleanRoute === '/volunteer/scan' && !lookedUpChild && !checkedInSuccessChild) {
-      const timer = setTimeout(() => {
-        scannerInputRef.current?.focus();
-      }, 50);
-      return () => clearTimeout(timer);
-    }
-  }, [cleanRoute, lookedUpChild, checkedInSuccessChild]);
+    const isScanRoute = cleanRoute === '/volunteer/scan' || cleanRoute === '/volunteer/pickup';
+    if (!isScanRoute) return;
+
+    const handleWedgeKeyDown = (e: KeyboardEvent) => {
+      // If user is actively typing in a standard input or textarea (other than the scanner wedge receiver), let it pass
+      const target = e.target as HTMLElement | null;
+      const isInputTarget = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      
+      if (isInputTarget && target !== scannerInputRef.current) {
+        return;
+      }
+
+      if (e.key === 'Enter') {
+        const buffered = wedgeBufferRef.current.trim();
+        if (buffered.length >= 3) {
+          e.preventDefault();
+          wedgeBufferRef.current = '';
+          if (wedgeTimerRef.current) clearTimeout(wedgeTimerRef.current);
+          handlePassScanned(buffered);
+          return;
+        }
+      }
+
+      // Buffer printable characters (length 1)
+      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        wedgeBufferRef.current += e.key;
+        if (wedgeTimerRef.current) clearTimeout(wedgeTimerRef.current);
+        // Clear buffer if typing pause > 70ms (human typing is much slower than barcode scanner)
+        wedgeTimerRef.current = setTimeout(() => {
+          wedgeBufferRef.current = '';
+        }, 70);
+      }
+    };
+
+    window.addEventListener('keydown', handleWedgeKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleWedgeKeyDown, true);
+      if (wedgeTimerRef.current) clearTimeout(wedgeTimerRef.current);
+    };
+  }, [cleanRoute]);
 
   // Poll safety alerts raised by this volunteer
   useEffect(() => {
@@ -1750,9 +1786,14 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     }
   };
 
+  // Check whether camera should actively stream based on current subview
+  const isCheckInCameraVisible = cleanRoute === '/volunteer/scan' && !lookedUpChild && !checkedInSuccessChild && cameraActive;
+  const isPickupCameraVisible = cleanRoute === '/volunteer/pickup' && !pickupChild && !pickupSuccessResult && cameraActive;
+  const shouldCameraBeRunning = isCheckInCameraVisible || isPickupCameraVisible;
+
   // Handle ZXing Camera Activation & Scanner Stream
   useEffect(() => {
-    if ((cleanRoute === '/volunteer/scan' || cleanRoute === '/volunteer/pickup') && cameraActive) {
+    if (shouldCameraBeRunning) {
       startScanning();
     } else {
       stopScanning();
@@ -1761,7 +1802,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     return () => {
       stopScanning();
     };
-  }, [cleanRoute, cameraActive, selectedCameraId]);
+  }, [shouldCameraBeRunning, selectedCameraId]);
 
   const handleFlipCamera = () => {
     if (cameras.length > 1) {
@@ -1859,7 +1900,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     }
   };
 
-  // Process QR Scans or Manual Input
+  // Process QR Scans or Manual Input - Clean Reset for Next Check-In
   const handleResetScannerState = () => {
     setLookedUpChild(null);
     setCheckedInSuccessChild(null);
@@ -1891,19 +1932,44 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
     isLookupInFlight.current = false;
     lastScannedCode.current = '';
     
-    // Reset inputs
+    // Reset inputs & keep mobile keyboard closed
     setManualCode('');
+    setIsManualInputActive(false);
     
-    // Restart camera
+    // Cleanly stop any existing stream and re-activate camera
+    stopScanning();
     setCameraActive(true);
 
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
+  };
 
-    setTimeout(() => {
-      scannerInputRef.current?.focus();
-    }, 50);
+  // Process Clean Reset for Next Child Pickup
+  const handleResetPickupState = () => {
+    setPickupSuccessResult(null);
+    setPickupChild(null);
+    setPickupVerified(false);
+    setPickupCode('');
+    setShowPickupManualInput(false);
+    setIsMarkingPickup(false);
+    setPickupLoading(false);
+
+    // Release all scan and lookup locks
+    isLookupInFlightRef.current = false;
+    hasSuccessfulScanRef.current = false;
+    lastScannedCodeRef.current = null;
+    lastScanAtRef.current = 0;
+    isLookupInFlight.current = false;
+    lastScannedCode.current = '';
+
+    // Cleanly stop any existing stream and re-activate camera
+    stopScanning();
+    setCameraActive(true);
+
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   const shouldPropagateIdentifierError = (err: any) => {
@@ -1983,6 +2049,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         if (offlineService.isOffline()) {
           showError('Offline Restriction', 'Secure parent pickup and face-to-photo verification requires a live network connection for security.');
           isLookupInFlightRef.current = false;
+          hasSuccessfulScanRef.current = false;
           lastScannedCodeRef.current = null;
           isLookupInFlight.current = false;
           lastScannedCode.current = '';
@@ -2027,6 +2094,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         } else {
           showError('Not Found', 'No active checked-in child found for this pass.');
           isLookupInFlightRef.current = false;
+          hasSuccessfulScanRef.current = false;
           lastScannedCodeRef.current = null;
           isLookupInFlight.current = false;
           lastScannedCode.current = '';
@@ -2099,11 +2167,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
           } else {
             showError('Not Found (Offline)', 'This pass reference was not found in the preloaded offline roster. Please reconnect to verify.');
             isLookupInFlightRef.current = false;
+            hasSuccessfulScanRef.current = false;
             lastScannedCodeRef.current = null;
             isLookupInFlight.current = false;
             lastScannedCode.current = '';
             setCameraActive(true);
-            setTimeout(() => scannerInputRef.current?.focus(), 50);
           }
           setScanLoading(false);
           return;
@@ -2181,6 +2249,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               const msg = timeStr ? `This child has already been picked up and released. Picked up at ${timeStr}.` : `${childData.fullName} has already been picked up and released.`;
               showWarning('Pickup completed', msg);
               isLookupInFlightRef.current = false;
+              hasSuccessfulScanRef.current = false;
               lastScannedCodeRef.current = null;
               isLookupInFlight.current = false;
               lastScannedCode.current = '';
@@ -2190,6 +2259,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
             } else {
               showWarning('Not Checked In', `${childData.fullName} has not checked in yet. Please check in the child before release.`);
               isLookupInFlightRef.current = false;
+              hasSuccessfulScanRef.current = false;
               lastScannedCodeRef.current = null;
               isLookupInFlight.current = false;
               lastScannedCode.current = '';
@@ -2213,11 +2283,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         } else {
           showError('Not Found', 'No child was found for this pass or wristband.');
           isLookupInFlightRef.current = false;
+          hasSuccessfulScanRef.current = false;
           lastScannedCodeRef.current = null;
           isLookupInFlight.current = false;
           lastScannedCode.current = '';
           setCameraActive(true);
-          setTimeout(() => scannerInputRef.current?.focus(), 50);
         }
       }
     } catch (err: any) {
@@ -2312,11 +2382,11 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
         showError(title, message);
       }
       isLookupInFlightRef.current = false;
+      hasSuccessfulScanRef.current = false;
       lastScannedCodeRef.current = null;
       isLookupInFlight.current = false;
       lastScannedCode.current = '';
       setCameraActive(true);
-      setTimeout(() => scannerInputRef.current?.focus(), 50);
     } finally {
       setScanLoading(false);
     }
@@ -3316,8 +3386,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 <button
                   onClick={() => {
                     if (pickupChild || pickupSuccessResult) {
-                      setPickupChild(null);
-                      setPickupSuccessResult(null);
+                      handleResetPickupState();
                     } else {
                       onNavigate('/volunteer/event');
                     }
@@ -3362,6 +3431,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                           if (childDetailOrigin === 'scan') {
                             setSelectedChildId(null);
                             setChildDetailOrigin(null);
+                            handleResetScannerState();
                             onNavigate('/volunteer/scan');
                           } else {
                             setSelectedChildId(null);
@@ -3885,6 +3955,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 disabled={isOrdinaryVolunteer && dutyWindow && !dutyWindow.allowed}
                 onClick={() => {
                   setCameraActive(true);
+                  handleResetScannerState();
                   setScanMode('check_in');
                   onNavigate('/volunteer/scan');
                 }}
@@ -3915,7 +3986,10 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 <button
                   type="button"
                   disabled={isOrdinaryVolunteer && dutyWindow && !dutyWindow.allowed}
-                  onClick={() => onNavigate('/volunteer/pickup')}
+                  onClick={() => {
+                  handleResetPickupState();
+                  onNavigate('/volunteer/pickup');
+                }}
                   className="py-2.5 px-3 bg-white dark:bg-[#21211E] border border-stone-200/90 dark:border-[#302E29] hover:bg-stone-50 dark:hover:bg-[#262520] text-stone-900 dark:text-[#F0EBE3] font-sans font-medium text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                   id="btn-volunteer-open-pickup"
                 >
@@ -4664,7 +4738,6 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                             value={wristbandScanInput}
                             onChange={(e) => setWristbandScanInput(e.target.value)}
                             placeholder="WB-000123..."
-                            autoFocus
                             disabled={isResolvingWristband}
                             className="flex-1 min-h-[40px] px-3 text-xs font-mono bg-stone-50/80 dark:bg-[#262520] border border-gray-200 dark:border-[#3A3835] rounded-md text-gray-900 dark:text-[#F0EBE3] focus:outline-none focus:border-[#C59B27]"
                           />
@@ -4833,13 +4906,26 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
               {/* Primary Unified Identification Input (Keyboard-wedge & Manual) */}
               <div className="bg-white dark:bg-[#21211E] border border-stone-200/80 dark:border-[#302E29] p-4 rounded-md shadow-xs space-y-3" data-component-version="volunteer-unified-scanner-input">
-                <form onSubmit={handleManualVerifySubmit} className="space-y-3">
+                <form
+                  onSubmit={(e) => {
+                    setIsManualInputActive(false);
+                    scannerInputRef.current?.blur();
+                    handleManualVerifySubmit(e);
+                  }}
+                  className="space-y-3"
+                >
                   <div className="relative">
                     <input
                       ref={scannerInputRef}
                       type="text"
-                      autoFocus
+                      inputMode={isManualInputActive ? "text" : "none"}
+                      {...({ virtualKeyboardPolicy: "manual" } as any)}
                       value={manualCode}
+                      onFocus={() => setIsManualInputActive(true)}
+                      onClick={() => setIsManualInputActive(true)}
+                      onBlur={() => {
+                        if (!manualCode) setIsManualInputActive(false);
+                      }}
                       onChange={(e) => {
                         setManualCode(e.target.value);
                         if (unassignedWristbandInfo) setUnassignedWristbandInfo(null);
@@ -4856,6 +4942,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         type="button"
                         onClick={() => {
                           setManualCode('');
+                          setIsManualInputActive(true);
                           scannerInputRef.current?.focus();
                         }}
                         className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-600 dark:hover:text-[#F0EBE3] rounded-full hover:bg-stone-100 dark:hover:bg-[#2A2926] transition-colors"
@@ -5309,10 +5396,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               {/* Action buttons */}
               <div className="space-y-2.5 pt-1" data-component-version="volunteer-pickup-success-actions-v2-parity">
                 <button
-                  onClick={() => {
-                    setPickupSuccessResult(null);
-                    setPickupChild(null);
-                  }}
+                  onClick={handleResetPickupState}
                   className="w-full bg-[#C59B27] hover:bg-[#A47E1F] text-white font-bold tracking-wider py-3.5 rounded-md text-xs uppercase flex items-center justify-center space-x-2 transition-all shadow-xs cursor-pointer"
                 >
                   <QrCode className="h-4 w-4" />
@@ -5322,7 +5406,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 <button
                   onClick={() => {
                     setSearchQuery(pickupSuccessResult.child?.fullName || '');
-                    setPickupSuccessResult(null);
+                    handleResetPickupState();
                     onNavigate('/volunteer/children');
                   }}
                   className="w-full bg-white dark:bg-[#21211E] border border-gray-300 dark:border-[#302E29] hover:bg-gray-50 dark:hover:bg-[#262520] text-gray-800 dark:text-[#F0EBE3] font-bold tracking-wider py-3 rounded-md text-xs uppercase text-center transition-all cursor-pointer shadow-xs"
@@ -5332,7 +5416,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
 
                 <button
                   onClick={() => {
-                    setPickupSuccessResult(null);
+                    handleResetPickupState();
                     onNavigate('/volunteer/event');
                   }}
                   className="w-full text-center text-xs font-serif font-bold text-[#C59B27] hover:underline cursor-pointer block py-1.5 transition-all"
@@ -5377,10 +5461,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                   </span>
                 </div>
                 <button
-                  onClick={() => {
-                    setPickupChild(null);
-                    setPickupVerified(false);
-                  }}
+                  onClick={handleResetPickupState}
                   className="p-1.5 text-gray-400 dark:text-[#B8B0A5] hover:text-gray-600 dark:hover:text-[#F0EBE3] rounded-sm hover:bg-gray-100 dark:hover:bg-[#262520] cursor-pointer transition-colors"
                   title="Cancel release lookup"
                 >
@@ -5616,10 +5697,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                 </button>
 
                 <button
-                  onClick={() => {
-                    setPickupChild(null);
-                    setPickupVerified(false);
-                  }}
+                  onClick={handleResetPickupState}
                   className="w-full border border-gray-300 dark:border-[#302E29] hover:bg-gray-50 dark:hover:bg-[#2A2926] text-gray-700 dark:text-[#F0EBE3] font-bold tracking-widest py-3 rounded-md text-xs transition-all uppercase text-center cursor-pointer block bg-white dark:bg-[#21211E] shadow-xs"
                 >
                   Cancel / Scan Another Pass
@@ -6079,6 +6157,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
                         onClick={() => {
                           setSelectedChildId(null);
                           setChildDetailOrigin(null);
+                          handleResetScannerState();
                           onNavigate('/volunteer/scan');
                         }}
                         className="w-full py-2.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-[#262520] dark:hover:bg-[#2F2E29] border border-zinc-200/80 dark:border-[#3A3835] text-zinc-800 dark:text-[#F0EBE3] text-xs font-semibold rounded-xl transition-colors flex items-center justify-center space-x-2 cursor-pointer"
@@ -8955,6 +9034,7 @@ export const VolunteerEventDashboardView: React.FC<VolunteerEventDashboardViewPr
               isActive: cleanRoute === '/volunteer/scan',
               onClick: () => {
                 setCameraActive(true);
+                handleResetScannerState();
                 onNavigate('/volunteer/scan');
               },
               id: 'tab-volunteer-scan'
