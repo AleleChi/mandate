@@ -144,9 +144,17 @@ export interface MedicalCareReportData {
   };
 }
 
-export const ALLERGY_KEYWORDS = /\b(allerg|allergic|peanut|groundnut|nut|nuts|dairy|milk|lactose|gluten|wheat|egg|eggs|soy|soya|fish|seafood|shellfish|prawn|shrimp|crab|sesame|latex|epipen|hives|rash|rashes|anaphylax|anaphylactic|diet|dietary)\b/i;
+export const ALLERGY_KEYWORDS = /\b(allerg|allergic|allergies|allergy|peanut|peanuts|groundnut|groundnuts|nut|nuts|dairy|milk|lactose|gluten|wheat|egg|eggs|soy|soya|fish|seafood|shellfish|prawn|prawns|shrimp|shrimps|crab|sesame|latex|epipen|hives|rash|rashes|anaphylax|anaphylactic|diet|dietary)\b/i;
 
-export const MEDICAL_KEYWORDS = /\b(asthma|inhaler|breathing|respiratory|diabetes|sugar|insulin|seizure|epilepsy|convulsion|fever|sickle|hbss|hbas|anemia|anaemia|heart|cardiac|autism|autistic|adhd|special needs|hearing|vision|eye|glasses|sight|mobility|wheelchair|walking|pain|headache|ulcer|gastritis|medication|medicine|drugs|daily drug|prescription|hospital|doctor|clinic|treatment)\b/i;
+export const MEDICAL_KEYWORDS = /\b(asthma|inhaler|inhalers|breathing|respiratory|diabetes|diabetic|sugar|insulin|seizure|seizures|epilepsy|epileptic|convulsion|convulsions|fever|sickle|sickle cell|hbss|hbas|anemia|anaemia|heart|cardiac|autism|autistic|adhd|special needs|hearing|vision|eye|glasses|sight|mobility|wheelchair|walking|pain|headache|ulcer|gastritis|medication|medications|medicine|medicines|drugs|daily drug|prescription|hospital|doctor|clinic|treatment)\b/i;
+
+export function matchKeywords(text: string, pattern: RegExp): boolean {
+  return new RegExp(pattern.source, 'i').test(text);
+}
+
+export function stripKeywords(text: string, pattern: RegExp): string {
+  return text.replace(new RegExp(pattern.source, 'gi'), '');
+}
 
 export function formatToWAT(isoDateStr?: string | null): string | null {
   if (!isoDateStr) return null;
@@ -184,6 +192,13 @@ export function formatDateToWAT(isoDateStr?: string | null): string | null {
 }
 
 export function getChildAge(c: any, referenceDate: string | Date = CANONICAL_GA_EVENT_DATE): number {
+  if (typeof c === 'number') {
+    return c;
+  }
+  if (!c) return 0;
+  if (typeof c === 'string' && !isNaN(Number(c))) {
+    return Number(c);
+  }
   if (c.date_of_birth) {
     const age = calculateAgeOnDate(c.date_of_birth, referenceDate);
     if (age !== null && age >= 0) return age;
@@ -237,9 +252,9 @@ function isTriviallyBlank(str?: string | null): boolean {
 export function classifyHealthCare(
   rawMedical: string,
   rawSupport: string,
-  hasMedFlag: boolean,
-  needsSupportFlag: boolean,
-  infoConfirmed: boolean
+  hasMedFlag: boolean = false,
+  needsSupportFlag: boolean = false,
+  infoConfirmed: boolean = true
 ) {
   const medText = (rawMedical || '').trim();
   const supportText = (rawSupport || '').trim();
@@ -265,31 +280,39 @@ export function classifyHealthCare(
   }
 
   if (!medIsBlank) {
-    const isAllergy = ALLERGY_KEYWORDS.test(medText);
-    const isMedical = MEDICAL_KEYWORDS.test(medText) || (!isAllergy && medText.length > 0);
+    const isAllergy = matchKeywords(medText, ALLERGY_KEYWORDS);
+    const hasMedicalSpecificWord = matchKeywords(medText, MEDICAL_KEYWORDS);
 
     hasAllergyMention = isAllergy;
-    hasOtherMedicalNotes = isMedical;
+    hasOtherMedicalNotes = hasMedicalSpecificWord;
 
-    if (isAllergy && !MEDICAL_KEYWORDS.test(medText)) {
-      const stripped = medText
-        .replace(ALLERGY_KEYWORDS, '')
+    if (isAllergy && !hasMedicalSpecificWord) {
+      // Strip allergy terms and connectors to check if substantial non-allergy medical text exists
+      const stripped = stripKeywords(medText, ALLERGY_KEYWORDS)
+        .replace(/\b(to|and|also|has|is|allergic|allergies|allergy|child|very|severe|mild|moderate|suffers|from|he|she|they|with|a|an)\b/gi, '')
         .replace(/[,;.\s\-]/g, '');
       if (stripped.length > 6) {
         hasOtherMedicalNotes = true;
       }
+    } else if (!isAllergy && medText.length > 0) {
+      hasOtherMedicalNotes = true;
     }
   }
 
   let careCategory: 'allergy_and_medical' | 'allergy_only' | 'other_medical' | 'support_only' | 'none' = 'none';
   let allergyClassificationLabel = 'No concern reported';
 
-  if (hasAllergyMention && hasOtherMedicalNotes) {
+  if (hasAllergyMention && (hasOtherMedicalNotes || hasRecordedSupportNotes)) {
     careCategory = 'allergy_and_medical';
-    allergyClassificationLabel = 'Allergy mentioned — requires verification & other medical note';
+    allergyClassificationLabel = hasOtherMedicalNotes
+      ? 'Allergy mentioned — requires verification & other medical note'
+      : 'Allergy mentioned — requires verification & additional support';
   } else if (hasAllergyMention) {
     careCategory = 'allergy_only';
     allergyClassificationLabel = 'Allergy mentioned — requires verification';
+  } else if (hasOtherMedicalNotes && hasRecordedSupportNotes) {
+    careCategory = 'allergy_and_medical';
+    allergyClassificationLabel = 'Other medical note & additional support';
   } else if (hasOtherMedicalNotes) {
     careCategory = 'other_medical';
     allergyClassificationLabel = 'Other medical information';
@@ -448,9 +471,6 @@ export async function fetchMedicalCareReportData(options: FetchMedicalCareOption
       c.age_group as child_stored_age_group,
       c.gender,
       c.photo_file_id,
-      c.medical_note as child_medical_note,
-      c.allergies as child_allergies,
-      c.extra_support as child_extra_support,
       c.relationship_to_child as child_parent_rel,
       c.created_at as child_created_at,
       m.secure_url as child_photo_url,
@@ -467,7 +487,6 @@ export async function fetchMedicalCareReportData(options: FetchMedicalCareOption
       p.preferred_contact as parent_preferred_contact,
       p.is_koinonia_worker as parent_is_worker,
       p.department as parent_department,
-      p.relationship_to_child as parent_profile_rel,
       ep.id as active_pass_id,
       ep.pass_reference,
       ep.status as pass_record_status,
@@ -504,14 +523,14 @@ export async function fetchMedicalCareReportData(options: FetchMedicalCareOption
     const numericAge = getChildAge(r, eventDate);
     const resolvedAgeGroup = resolveReportAgeGroup(r, eventDate);
 
-    // Consolidate medical & support notes from entry and child profile
-    const medParts = [r.medical_notes, r.child_medical_note, r.child_allergies]
+    // Consolidate medical & support notes from event entry
+    const medParts = [r.medical_notes]
       .filter(Boolean)
       .map((s) => String(s).trim())
       .filter((s, idx, arr) => s.length > 0 && arr.indexOf(s) === idx);
     const combinedMed = medParts.join('; ');
 
-    const supportParts = [r.support_notes, r.child_extra_support]
+    const supportParts = [r.support_notes]
       .filter(Boolean)
       .map((s) => String(s).trim())
       .filter((s, idx, arr) => s.length > 0 && arr.indexOf(s) === idx);
@@ -558,7 +577,7 @@ export async function fetchMedicalCareReportData(options: FetchMedicalCareOption
     // Authorized Pickup Person
     const hasDesignatedPickup = Boolean(r.pickup_name && String(r.pickup_name).trim());
     let pickupFullName = (r.parent_name || 'Primary Parent').trim();
-    let pickupRelationship = r.child_parent_rel || r.parent_profile_rel || 'Primary parent';
+    let pickupRelationship = r.child_parent_rel || 'Primary parent';
     let pickupPhone = r.parent_phone || null;
     let isPrimaryParent = true;
     let approvalStatus = 'Primary Guardian';
@@ -615,7 +634,7 @@ export async function fetchMedicalCareReportData(options: FetchMedicalCareOption
       parent: {
         id: r.parent_id || '',
         fullName: r.parent_name || 'Parent / Guardian',
-        relationship: r.child_parent_rel || r.parent_profile_rel || 'Parent',
+        relationship: r.child_parent_rel || 'Parent',
         phone: r.parent_phone || null,
         whatsapp: r.parent_whatsapp || r.parent_phone || null,
         email: r.parent_email || null,
