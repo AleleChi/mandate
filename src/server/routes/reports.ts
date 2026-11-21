@@ -21,6 +21,13 @@ import {
 import { calculateAnalytics } from '../services/reportAnalyticsService';
 import { createZipArchive } from '../utils/zipHelper';
 import { handleSelectedChildrenReport } from '../services/selectedChildrenReportService';
+import {
+  fetchMedicalCareReportData,
+  renderMedicalCarePdf,
+  renderMedicalCareCsv,
+  checkMedicalCareReportAccess,
+  logMedicalReportAudit
+} from '../services/medicalCareReportService';
 
 export { formatReportFilename };
 
@@ -637,6 +644,151 @@ router.get('/selected-children/export-csv', async (req: AuthenticatedRequest, re
 
 router.get('/selected-children/export-pdf', async (req: AuthenticatedRequest, res: Response) => {
   return handleSelectedChildrenReport(req, res, 'pdf');
+});
+
+// 3.6. Operational Allergy & Medical Care Register (registered BEFORE dynamic /:reportId routes)
+router.get('/medical-care', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const eventId = (req.query.eventId as string) || undefined;
+    const access = await checkMedicalCareReportAccess(req, eventId);
+    if (!access.allowed) {
+      return res.status(403).json({ error: access.reason || 'Unauthorized access to Allergy & Medical Care Register.' });
+    }
+
+    const options = {
+      eventId,
+      page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
+      pageSize: req.query.pageSize ? parseInt(req.query.pageSize as string, 10) : 25,
+      search: (req.query.search as string) || '',
+      careConcern: (req.query.careConcern as string) || 'with_concerns',
+      ageGroup: (req.query.ageGroup as string) || 'all',
+      location: (req.query.location as string) || 'all',
+      attendanceStatus: (req.query.attendanceStatus as string) || 'all',
+      passStatus: (req.query.passStatus as string) || 'all',
+      sort: (req.query.sort as string) || 'name_asc'
+    };
+
+    const data = await fetchMedicalCareReportData(options);
+
+    await logMedicalReportAudit(
+      req,
+      'view_medical_care_register',
+      `Viewed Allergy & Medical Care Register page ${data.pagination.page} with careConcern=${options.careConcern}, recordsCount=${data.pagination.totalRecords}`
+    );
+
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
+    return res.json({
+      success: true,
+      ...data
+    });
+  } catch (err: any) {
+    console.error('[Medical Care Report Route] Error fetching data:', err);
+    return res.status(500).json({ error: 'Failed to compile Allergy & Medical Care Register.' });
+  }
+});
+
+router.get('/medical-care/export-pdf', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const eventId = (req.query.eventId as string) || undefined;
+    const access = await checkMedicalCareReportAccess(req, eventId);
+    if (!access.allowed) {
+      return res.status(403).json({ error: access.reason || 'Unauthorized access to Allergy & Medical Care Register.' });
+    }
+
+    const options = {
+      eventId,
+      page: 1,
+      pageSize: 10000,
+      search: (req.query.search as string) || '',
+      careConcern: (req.query.careConcern as string) || 'with_concerns',
+      ageGroup: (req.query.ageGroup as string) || 'all',
+      location: (req.query.location as string) || 'all',
+      attendanceStatus: (req.query.attendanceStatus as string) || 'all',
+      passStatus: (req.query.passStatus as string) || 'all',
+      sort: (req.query.sort as string) || 'name_asc'
+    };
+
+    const data = await fetchMedicalCareReportData(options);
+    const pdfBuffer = await renderMedicalCarePdf(data);
+
+    await logMedicalReportAudit(
+      req,
+      'export_medical_care_pdf',
+      `Exported Landscape PDF for ${data.allFiltered.length} records with careConcern=${options.careConcern}`
+    );
+
+    const safeTitle = (data.event.title || 'The General Assembly').replace(/[^a-zA-Z0-9_\-]/g, '_');
+    const filename = `Allergy_Medical_Care_Register_${safeTitle}_${new Date().toISOString().slice(0, 10)}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Type');
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+
+    return res.send(pdfBuffer);
+  } catch (err: any) {
+    console.error('[Medical Care Report PDF] Error rendering PDF:', err);
+    return res.status(500).json({ error: 'Failed to generate Allergy & Medical Care PDF report.' });
+  }
+});
+
+router.get('/medical-care/export-csv', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const eventId = (req.query.eventId as string) || undefined;
+    const access = await checkMedicalCareReportAccess(req, eventId);
+    if (!access.allowed) {
+      return res.status(403).json({ error: access.reason || 'Unauthorized access to Allergy & Medical Care Register.' });
+    }
+
+    const options = {
+      eventId,
+      page: 1,
+      pageSize: 10000,
+      search: (req.query.search as string) || '',
+      careConcern: (req.query.careConcern as string) || 'with_concerns',
+      ageGroup: (req.query.ageGroup as string) || 'all',
+      location: (req.query.location as string) || 'all',
+      attendanceStatus: (req.query.attendanceStatus as string) || 'all',
+      passStatus: (req.query.passStatus as string) || 'all',
+      sort: (req.query.sort as string) || 'name_asc'
+    };
+
+    const data = await fetchMedicalCareReportData(options);
+    const csvContent = renderMedicalCareCsv(
+      data.allFiltered,
+      data.summary,
+      data.event.title,
+      data.event.generatedAtWAT
+    );
+
+    await logMedicalReportAudit(
+      req,
+      'export_medical_care_csv',
+      `Exported CSV spreadsheet for ${data.allFiltered.length} records with careConcern=${options.careConcern}`
+    );
+
+    const safeTitle = (data.event.title || 'The General Assembly').replace(/[^a-zA-Z0-9_\-]/g, '_');
+    const filename = `Allergy_Medical_Care_Register_${safeTitle}_${new Date().toISOString().slice(0, 10)}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Type');
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+
+    return res.send(csvContent);
+  } catch (err: any) {
+    console.error('[Medical Care Report CSV] Error rendering CSV:', err);
+    return res.status(500).json({ error: 'Failed to generate Allergy & Medical Care CSV report.' });
+  }
 });
 
 // 4. Get individual job status
