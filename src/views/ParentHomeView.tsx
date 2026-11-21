@@ -1488,14 +1488,25 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                           <ChevronRight className="w-4 h-4 text-[#C59B27] shrink-0" />
                         </button>
                       ) : isPickedUp || isCheckedIn ? (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenPickupDetails(child)}
-                          className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl flex items-center justify-between text-xs sm:text-sm font-semibold text-[#9A7326] dark:text-[#C59B27] hover:bg-[#FAF6EB] dark:hover:bg-[#262520] active:bg-[#F5F0E1] dark:active:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27]/40"
-                        >
-                          <span>View pickup details</span>
-                          <ChevronRight className="w-4 h-4 text-[#C59B27] shrink-0" />
-                        </button>
+                        <div className="space-y-1">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenPickupDetails(child)}
+                            className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl flex items-center justify-between text-xs sm:text-sm font-semibold text-[#9A7326] dark:text-[#C59B27] hover:bg-[#FAF6EB] dark:hover:bg-[#262520] active:bg-[#F5F0E1] dark:active:bg-[#2A2926] transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C59B27]/40"
+                          >
+                            <span>View pickup details</span>
+                            <ChevronRight className="w-4 h-4 text-[#C59B27] shrink-0" />
+                          </button>
+                          {!isPickedUp && isChildPickupManageable(child) && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenManagePickup(child)}
+                              className="w-full text-center py-1 text-xs font-semibold text-[#9A7326] dark:text-[#C59B27] hover:text-[#7D5E1F] dark:hover:text-[#DEB23F] transition-colors cursor-pointer focus:outline-none"
+                            >
+                              Manage pickup person
+                            </button>
+                          )}
+                        </div>
                       ) : (
                         <div className="space-y-1">
                           {normStatus === 'pass_ready' || Boolean(child.passReference || child.pass?.passCode) ? (
@@ -1532,7 +1543,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                               <ChevronRight className="w-4 h-4 text-[#C59B27] shrink-0" />
                             </button>
                           )}
-                          {isSelectedOrPassReady && isChildPickupManageable(child) && (
+                          {!isPickedUp && isChildPickupManageable(child) && (
                             <button
                               type="button"
                               onClick={() => handleOpenManagePickup(child)}
@@ -1940,12 +1951,13 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
             <div className="space-y-4">
               {passReadyChildren.map(c => {
-                const isChildPickedUp = c.status === 'Picked up' || c.status === 'Checked out';
-                const isChildCheckedIn = (c.status === 'Checked in' || c.status === 'Inside') && !isChildPickedUp;
+                const isPickedUp = isChildPickedUp(c);
+                const normStatus = normalizeChildStatus(c.status);
+                const isChildCheckedIn = (normStatus === 'checked_in' || normStatus === 'inside') && !isPickedUp;
                 return (
                   <div
                     key={c.id}
-                    data-component-version={isChildPickedUp ? "parent-pass-card-picked-up-v4-wallet" : isChildCheckedIn ? "parent-pass-card-checked-in-v4-wallet" : "parent-pass-ready-card-v4-wallet"}
+                    data-component-version={isPickedUp ? "parent-pass-card-picked-up-v4-wallet" : isChildCheckedIn ? "parent-pass-card-checked-in-v4-wallet" : "parent-pass-ready-card-v4-wallet"}
                     className="w-full bg-[#FDFCF8] dark:bg-[#21211E] border border-[#E8DFC9] dark:border-[#302E29] rounded-2xl overflow-hidden text-left"
                   >
                     {/* A. Identity Header */}
@@ -1966,13 +1978,13 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                         </div>
                       </div>
                       <span className={`shrink-0 self-start mt-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] px-2.5 py-1 rounded border ${
-                        isChildPickedUp
+                        isPickedUp
                           ? 'bg-[#F4F4F5] border-[#E4E4E7] text-[#52525B] dark:bg-transparent dark:border-[#3A3835] dark:text-[#A1A1AA]'
                           : isChildCheckedIn
                           ? 'bg-[#F0FAF1] border-[#BDE0C0] text-[#2E6B32] dark:bg-transparent dark:border-[#3A4E3B] dark:text-[#7DBF80]'
                           : 'bg-[#FAF6EB] border-[#E5D5AE] text-[#8C6D23] dark:bg-transparent dark:border-[#3A3835] dark:text-[#C59B27]'
                       }`}>
-                        {isChildPickedUp ? 'Picked up' : isChildCheckedIn ? 'Checked in' : 'Pass ready'}
+                        {isPickedUp ? 'Picked up' : isChildCheckedIn ? 'Checked in' : 'Pass ready'}
                       </span>
                     </div>
 
@@ -1989,18 +2001,18 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                           {activeEvent ? (activeEvent.title || 'The General Assembly') : 'The General Assembly'}
                         </span>
                         <span className={`text-[10px] font-medium tracking-wide block mt-2 ${
-                          isChildPickedUp
+                          isPickedUp
                             ? 'text-zinc-500 dark:text-[#A1A1AA]'
                             : isChildCheckedIn
                             ? 'text-[#2E6B32] dark:text-[#7DBF80]'
                             : 'text-[#9A7326] dark:text-[#C59B27]'
                         }`}>
-                          {isChildPickedUp ? 'Attendance completed · Picked up' : isChildCheckedIn ? 'Currently attending event' : 'Present at entry'}
+                          {isPickedUp ? 'Attendance completed · Picked up' : isChildCheckedIn ? 'Currently attending event' : 'Present at entry'}
                         </span>
                       </div>
                       {/* QR credential plate */}
                       <div className={`shrink-0 bg-white dark:bg-[#262520] border border-[#E5D5AE] dark:border-[#3A3835] rounded-[12px] p-2 w-[88px] h-[88px] flex items-center justify-center relative overflow-hidden ${
-                        isChildPickedUp ? 'opacity-50 grayscale' : ''
+                        isPickedUp ? 'opacity-50 grayscale' : ''
                       }`}>
                         <img
                           src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(c.passReference || '')}`}
@@ -2008,7 +2020,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                           className="w-full h-full object-cover bg-white rounded-md"
                           referrerPolicy="no-referrer"
                         />
-                        {isChildPickedUp && (
+                        {isPickedUp && (
                           <div className="absolute inset-0 bg-white/80 dark:bg-black/70 flex flex-col items-center justify-center text-center p-1">
                             <Check className="w-5 h-5 text-zinc-700 dark:text-zinc-200" />
                             <span className="text-[7.5px] font-bold uppercase tracking-wider text-zinc-800 dark:text-zinc-200 mt-0.5 leading-none">Released</span>
@@ -2042,7 +2054,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                         <span className="text-[13px] font-semibold tracking-wide">View pass</span>
                         <ChevronRight className="w-4 h-4 opacity-80" />
                       </button>
-                      {isChildPickupManageable(c) && !isChildPickedUp && (
+                      {isChildPickupManageable(c) && !isPickedUp && (
                         <button
                           type="button"
                           onClick={() => handleOpenManagePickup(c)}
@@ -2123,7 +2135,7 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
 
                   <div className="mx-5 h-px bg-[#EDE6D4] dark:bg-[#2E2C27]" />
 
-                  <div className="px-5 py-3.5">
+                  <div className="px-5 py-3.5 space-y-1">
                     <button
                       type="button"
                       onClick={() => onNavigate(`/parent/children/${c.id}/status` as AppRoute)}
@@ -2132,6 +2144,15 @@ export const ParentHomeView: React.FC<ParentHomeViewProps> = ({
                       <span className="text-[13px] font-semibold">View status</span>
                       <ChevronRight className="w-4 h-4 opacity-50" />
                     </button>
+                    {isChildPickupManageable(c) && !isChildPickedUp(c) && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenManagePickup(c)}
+                        className="w-full text-center py-1 text-xs font-semibold text-[#9A7326] dark:text-[#C59B27] hover:text-[#7D5E1F] dark:hover:text-[#DEB23F] transition-colors cursor-pointer focus:outline-none"
+                      >
+                        Manage pickup person
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
