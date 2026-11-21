@@ -485,19 +485,27 @@ export const SelectedChildrenReportView: React.FC<SelectedChildrenReportViewProp
       }
 
       if (!filename) {
-        const suffix = variant === 'name_list'
-          ? '-Name-List'
-          : variant === 'printer_compact'
-            ? '-Printer-Compact-6.7x1.6'
-            : '';
-        if (effectiveExactAge && effectiveExactAge !== 'all') {
-          filename = `Koinonia-GA-2026-Selected-Children-Age-${effectiveExactAge}${suffix}.pdf`;
-        } else if (effectiveRange) {
-          filename = `Koinonia-GA-2026-Selected-Children-Ages-${effectiveRange.minAge}-${effectiveRange.maxAge}${suffix}.pdf`;
-        } else if (effectiveAgeGroup && effectiveAgeGroup !== 'all') {
-          filename = `Koinonia-GA-2026-Selected-Children-Ages-${effectiveAgeGroup.replace(/[\s–—]+/g, '-')}${suffix}.pdf`;
+        if (variant === 'printer_compact') {
+          if (effectiveExactAge && effectiveExactAge !== 'all') {
+            filename = `TGA-2026-QR-Register-Age-${effectiveExactAge}-Printer-Compact-6.7x1.6.pdf`;
+          } else if (effectiveRange) {
+            filename = `TGA-2026-QR-Register-Ages-${effectiveRange.minAge}-${effectiveRange.maxAge}-Printer-Compact-6.7x1.6.pdf`;
+          } else if (effectiveAgeGroup && effectiveAgeGroup !== 'all') {
+            filename = `TGA-2026-QR-Register-Ages-${effectiveAgeGroup.replace(/[\s–—]+/g, '-')}-Printer-Compact-6.7x1.6.pdf`;
+          } else {
+            filename = `TGA-2026-QR-Register-Printer-Compact-6.7x1.6.pdf`;
+          }
         } else {
-          filename = `Koinonia-GA-2026-All-Selected-Children${suffix}.pdf`;
+          const suffix = variant === 'name_list' ? '-Name-List' : '';
+          if (effectiveExactAge && effectiveExactAge !== 'all') {
+            filename = `Koinonia-GA-2026-Selected-Children-Age-${effectiveExactAge}${suffix}.pdf`;
+          } else if (effectiveRange) {
+            filename = `Koinonia-GA-2026-Selected-Children-Ages-${effectiveRange.minAge}-${effectiveRange.maxAge}${suffix}.pdf`;
+          } else if (effectiveAgeGroup && effectiveAgeGroup !== 'all') {
+            filename = `Koinonia-GA-2026-Selected-Children-Ages-${effectiveAgeGroup.replace(/[\s–—]+/g, '-')}${suffix}.pdf`;
+          } else {
+            filename = `Koinonia-GA-2026-All-Selected-Children${suffix}.pdf`;
+          }
         }
       }
 
