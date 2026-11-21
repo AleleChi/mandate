@@ -1660,9 +1660,13 @@ export async function renderSelectedChildrenPrinterCompactPdf(data: SelectedChil
         doc.text(truncateText(relDisplay, maxTextWidth - 34), contentX + 34, cardY + 70.5);
 
         // Attendance Status (Section 13)
-        doc.setFont('helvetica', 'normal');
+        doc.setFont('helvetica', 'bold');
         doc.setFontSize(7.5);
-        doc.setTextColor(113, 113, 122);
+        doc.setTextColor(63, 63, 70);
+        doc.text('Status:', contentX, cardY + 84.5);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(24, 24, 27);
         const attText = c.attendanceStatus === 'picked_up'
           ? 'Picked up'
           : c.attendanceStatus === 'inside'
@@ -1670,7 +1674,7 @@ export async function renderSelectedChildrenPrinterCompactPdf(data: SelectedChil
             : c.attendanceStatus === 'checked_in'
               ? 'Checked in'
               : 'Not arrived';
-        doc.text(`Status: ${attText}`, contentX, cardY + 97.5);
+        doc.text(attText, contentX + 34, cardY + 84.5);
 
         // --- RIGHT QR AREA (Section 7 & 8) ---
         const qrSize = 77; // ~1.07 inches square (target: 1.05in – 1.15in)
