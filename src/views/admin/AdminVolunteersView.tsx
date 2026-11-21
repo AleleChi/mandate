@@ -20,7 +20,10 @@ import {
   ChevronDown,
   MoreHorizontal,
   Mail,
-  Trash2
+  Trash2,
+  MapPin,
+  Clock,
+  Edit3
 } from 'lucide-react';
 import { api, extractApiError } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -28,6 +31,7 @@ import { Button } from '../../components/common/Button';
 import { KoinoniaInlineLoader } from '../../components/common/KoinoniaInlineLoader';
 import { AddVolunteerModal } from '../../components/admin/modals/AddVolunteerModal';
 import { AdminSelectionCheckbox } from '../../components/common/AdminSelectionCheckbox';
+import VolunteerDutyAssignmentModal from '../../components/admin/duty/VolunteerDutyAssignmentModal';
 
 interface AdminVolunteersViewProps {
   onBackToOverview: () => void;
@@ -81,6 +85,11 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
   const [resendingVolId, setResendingVolId] = useState<string | null>(null);
   const [resendingEmail, setResendingEmail] = useState(false);
   const [showMoreActions, setShowMoreActions] = useState(false);
+
+  // Duty location assignment modal state
+  const [activeEventId, setActiveEventId] = useState<string>('event-ga-2026');
+  const [showDutyModal, setShowDutyModal] = useState(false);
+  const [dutyModalEditingAssignment, setDutyModalEditingAssignment] = useState<any | null>(null);
 
   // Row-level overflow menus
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
@@ -391,7 +400,37 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Load active event for location assignments
+  useEffect(() => {
+    api.admin.getEvents().then(res => {
+      if (res?.success && Array.isArray(res.events) && res.events.length > 0) {
+        const current = res.events.find((e: any) => e.status === 'current' || e.status === 'active' || e.status === 'published') || res.events[0];
+        if (current?.id) setActiveEventId(current.id);
+      }
+    }).catch(() => {});
+  }, []);
+
   // ---- HANDLERS ----
+
+  const formatShiftTime = (isoString?: string) => {
+    if (!isoString) return '--:--';
+    try {
+      const d = new Date(isoString);
+      if (isNaN(d.getTime())) return '--:--';
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return '--:--';
+    }
+  };
+
+  const handleDutyAssignmentSaved = () => {
+    setShowDutyModal(false);
+    setDutyModalEditingAssignment(null);
+    if (selectedVolId) {
+      fetchVolunteerDetails(selectedVolId);
+    }
+    fetchVolunteers(currentPage);
+  };
 
   const fetchVolunteerDetails = async (id: string, fallbackVol?: any) => {
     setLoadingProfile(true);
@@ -1043,6 +1082,107 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                       />
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* Event Location & Duty Assignment (Live Operational Assignment) */}
+              {!norm.isDeleted && (
+                <div className="space-y-3 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29]">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-semibold text-zinc-500 dark:text-[#7A7570] uppercase tracking-wider flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-[#C59B27]" />
+                        Event Location & Duty Assignment
+                      </h4>
+                      <p className="text-[11px] text-zinc-400 dark:text-[#5A5550] mt-0.5">
+                        Operational post for today's live event check-in and pickup verification.
+                      </p>
+                    </div>
+                    {selectedVol?.dutyAssignment ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDutyModalEditingAssignment(selectedVol.dutyAssignment);
+                          setShowDutyModal(true);
+                        }}
+                        className="px-2.5 py-1 text-xs font-medium text-[#C59B27] hover:text-[#9A7B1C] bg-[#C59B27]/10 hover:bg-[#C59B27]/20 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                        Edit assignment
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDutyModalEditingAssignment(null);
+                          setShowDutyModal(true);
+                        }}
+                        className="px-2.5 py-1 text-xs font-medium text-white bg-[#C59B27] hover:bg-[#9A7B1C] rounded-lg flex items-center gap-1 transition-colors shadow-xs cursor-pointer"
+                      >
+                        <MapPin className="w-3 h-3" />
+                        Assign to event location
+                      </button>
+                    )}
+                  </div>
+
+                  {selectedVol?.dutyAssignment ? (
+                    <div className="bg-[#FAF9F6] dark:bg-[#262520] border border-[#EAE8E1] dark:border-[#3A3835] rounded-2xl p-3.5 space-y-2.5">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="text-xs font-bold text-[#18181B] dark:text-[#F0EBE3] flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                            {selectedVol.dutyAssignment.locationName}
+                            {selectedVol.dutyAssignment.locationShortName && (
+                              <span className="text-[10px] font-normal px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300">
+                                {selectedVol.dutyAssignment.locationShortName}
+                              </span>
+                            )}
+                          </div>
+                          {selectedVol.dutyAssignment.dutyRole && (
+                            <p className="text-[11px] text-zinc-500 dark:text-[#A0988A] mt-0.5 capitalize">
+                              Role: {selectedVol.dutyAssignment.dutyRole.replace(/_/g, ' ')}
+                            </p>
+                          )}
+                        </div>
+                        <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300">
+                          Assigned
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#EAE8E1] dark:border-[#302E29] text-[11px]">
+                        <div className="flex items-center gap-1.5 text-zinc-600 dark:text-[#B8B0A5]">
+                          <Clock className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                          <span>
+                            Shift: {formatShiftTime(selectedVol.dutyAssignment.startsAt)} – {formatShiftTime(selectedVol.dutyAssignment.endsAt)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-zinc-400 dark:text-[#7A7570]">Ages: </span>
+                          <span className="font-medium text-zinc-700 dark:text-[#F0EBE3]">
+                            {Array.isArray(selectedVol.dutyAssignment.assignedAgeGroups) && selectedVol.dutyAssignment.assignedAgeGroups.length > 0
+                              ? selectedVol.dutyAssignment.assignedAgeGroups.join(', ')
+                              : 'All age groups'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-[#FAF9F6]/50 dark:bg-[#262520]/50 border border-dashed border-[#EAE8E1] dark:border-[#3A3835] rounded-2xl p-4 text-center space-y-1.5">
+                      <p className="text-xs text-zinc-500 dark:text-[#7A7570]">
+                        No event location assigned for today's session.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDutyModalEditingAssignment(null);
+                          setShowDutyModal(true);
+                        }}
+                        className="text-xs text-[#C59B27] font-semibold hover:underline inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        + Assign to event location now
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2170,13 +2310,26 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
                                       className="fixed inset-0 z-[100]"
                                       onClick={() => setOpenActionMenuId(null)}
                                     />
-                                    <div className="absolute right-0 top-8 z-[200] bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl shadow-xl p-1.5 min-w-[160px] flex flex-col gap-0.5">
+                                    <div className="absolute right-0 top-8 z-[200] bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl shadow-xl p-1.5 min-w-[170px] flex flex-col gap-0.5">
+                                      <button
+                                        onClick={() => {
+                                          setOpenActionMenuId(null);
+                                          setSelectedVol(vol);
+                                          setSelectedVolId(vol.id);
+                                          setDutyModalEditingAssignment(vol.dutyAssignment || null);
+                                          setShowDutyModal(true);
+                                        }}
+                                        className="w-full text-left px-3 py-2 text-xs text-zinc-700 dark:text-[#B8B0A5] hover:bg-zinc-50 dark:hover:bg-[#262520] rounded-xl flex items-center gap-2 font-medium cursor-pointer"
+                                      >
+                                        <MapPin className="w-3.5 h-3.5 text-[#C59B27] shrink-0" />
+                                        <span>{vol.dutyAssignment ? 'Edit location assignment' : 'Assign to location'}</span>
+                                      </button>
                                       <button
                                         onClick={() => { setOpenActionMenuId(null); setVolToRemove(vol); }}
-                                        className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-2 font-medium"
+                                        className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-2 font-medium cursor-pointer"
                                       >
                                         <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                                        Remove volunteer
+                                        <span>Remove volunteer</span>
                                       </button>
                                     </div>
                                   </>
@@ -2243,6 +2396,26 @@ export const AdminVolunteersView: React.FC<AdminVolunteersViewProps> = ({ onBack
         isOpen={showAddVolunteerModal}
         onClose={() => setShowAddVolunteerModal(false)}
         onSuccess={() => fetchVolunteers()}
+      />
+
+      {/* Volunteer Duty & Location Assignment Modal */}
+      <VolunteerDutyAssignmentModal
+        isOpen={showDutyModal}
+        onClose={() => {
+          setShowDutyModal(false);
+          setDutyModalEditingAssignment(null);
+        }}
+        onSaved={handleDutyAssignmentSaved}
+        eventId={activeEventId}
+        editingAssignment={dutyModalEditingAssignment}
+        preselectedVolunteer={selectedVol ? {
+          userId: selectedVol.id,
+          id: selectedVol.id,
+          fullName: selectedVol.fullName || selectedVol.name || `${selectedVol.firstName || ''} ${selectedVol.lastName || ''}`.trim() || 'Volunteer',
+          email: selectedVol.email,
+          phone: selectedVol.phone,
+          assignedAgeGroups: assignedAgeGroups.length > 0 ? assignedAgeGroups : (Array.isArray(selectedVol.assignedAgeGroups) ? selectedVol.assignedAgeGroups : []),
+        } : null}
       />
     </div>
   );

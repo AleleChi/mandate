@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import QRCode from 'qrcode';
 import {
   MapPin,
@@ -270,14 +270,6 @@ export default function AdminEventLocationsTab({
               locationsNeedingAttention: data.summary.locationsNeedingAttention || 0
             });
           }
-
-          // Preserve selection or select first
-          if (!selectedLocation && normItems.length > 0) {
-            setSelectedLocation(normItems[0]);
-          } else if (selectedLocation) {
-            const found = normItems.find(l => l.id === selectedLocation.id);
-            if (found) setSelectedLocation(found);
-          }
         } else {
           setError(data.message || data.error || 'Could not load event locations.');
         }
@@ -295,6 +287,8 @@ export default function AdminEventLocationsTab({
   // Fetch Coverage for selected location
   const fetchLocationCoverage = async (locId: string) => {
     setCoverageLoading(true);
+    // Clear stale coverage from previous location immediately
+    setSelectedCoverage(prev => (prev?.locationId === locId ? prev : null));
     try {
       const token = safeStorage.getItem('koinonia_token');
       const headers: Record<string, string> = {};
@@ -654,20 +648,51 @@ export default function AdminEventLocationsTab({
     }
   };
 
-  // Filtered locations
-  const filteredLocations = locations.filter(loc => {
-    if (filterType === 'rooms' && loc.type !== 'room') return false;
-    if (filterType === 'entry' && !['gate', 'check_in_point'].includes(loc.type)) return false;
-    if (filterType === 'pickup' && loc.type !== 'pickup_point') return false;
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      const matchName = loc.name.toLowerCase().includes(term);
-      const matchAge = (loc.ageGroupKey || '').toLowerCase().includes(term);
-      const matchTeam = (loc.teamKey || '').toLowerCase().includes(term);
-      return matchName || matchAge || matchTeam;
+  // Filtered locations with comprehensive field searching
+  const filteredLocations = useMemo(() => {
+    return locations.filter(loc => {
+      if (filterType === 'rooms' && loc.type !== 'room') return false;
+      if (filterType === 'entry' && !['gate', 'check_in_point'].includes(loc.type)) return false;
+      if (filterType === 'pickup' && loc.type !== 'pickup_point') return false;
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase().trim();
+        const matchName = (loc.name || '').toLowerCase().includes(term);
+        const matchShortName = (loc.shortName || '').toLowerCase().includes(term);
+        const matchAge = (loc.ageGroupKey || '').toLowerCase().includes(term);
+        const matchTeam = (loc.teamKey || '').toLowerCase().includes(term);
+        const matchDesc = (loc.description || '').toLowerCase().includes(term);
+        const matchType = (loc.type || '').toLowerCase().includes(term);
+        const matchPath = (loc.pathLabel || '').toLowerCase().includes(term);
+        return matchName || matchShortName || matchAge || matchTeam || matchDesc || matchType || matchPath;
+      }
+      return true;
+    });
+  }, [locations, filterType, searchTerm]);
+
+  // Keep selectedLocation strictly synchronized with filtered locations
+  useEffect(() => {
+    if (loading) return;
+
+    if (selectedLocation) {
+      const found = filteredLocations.find(l => l.id === selectedLocation.id);
+      if (found) {
+        // Update to fresh reference if data changed
+        if (found !== selectedLocation) {
+          setSelectedLocation(found);
+        }
+      } else {
+        // Location no longer matches search or filter
+        if (filteredLocations.length > 0) {
+          setSelectedLocation(filteredLocations[0]);
+        } else {
+          setSelectedLocation(null);
+          setSelectedCoverage(null);
+        }
+      }
+    } else if (filteredLocations.length > 0) {
+      setSelectedLocation(filteredLocations[0]);
     }
-    return true;
-  });
+  }, [filteredLocations, loading, selectedLocation]);
 
   // Derived Coverage lists for selected location
   const onDutyResponders = selectedCoverage?.activeResponders || [];
@@ -819,18 +844,32 @@ export default function AdminEventLocationsTab({
             <div className="p-8 text-center space-y-3">
               <MapPin className="w-6 h-6 text-zinc-300 dark:text-[#7A7570] mx-auto" />
               <div className="space-y-1">
-                <p className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">No duty locations yet</p>
+                <p className="text-xs font-medium text-zinc-800 dark:text-[#F0EBE3]">
+                  {searchTerm.trim() ? `No locations match "${searchTerm}"` : 'No duty locations yet'}
+                </p>
                 <p className="text-[11px] text-zinc-500 dark:text-[#B8B0A5] max-w-xs mx-auto">
-                  Add rooms, entry points or pickup areas volunteers will use during this event.
+                  {searchTerm.trim()
+                    ? 'Try searching by location name, room scope, or assigned team, or clear the search.'
+                    : 'Add rooms, entry points or pickup areas volunteers will use during this event.'}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={openCreateModal}
-                className="mt-2 px-3.5 py-1.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white text-xs font-semibold rounded-xl transition-all cursor-pointer shadow-2xs"
-              >
-                Add first location
-              </button>
+              {searchTerm.trim() ? (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="mt-2 px-3.5 py-1.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-[#262520] dark:hover:bg-[#302E29] text-zinc-700 dark:text-[#F0EBE3] text-xs font-semibold rounded-xl transition-all cursor-pointer shadow-2xs"
+                >
+                  Clear search
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={openCreateModal}
+                  className="mt-2 px-3.5 py-1.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white text-xs font-semibold rounded-xl transition-all cursor-pointer shadow-2xs"
+                >
+                  Add first location
+                </button>
+              )}
             </div>
           ) : (
             filteredLocations.map((loc) => {
@@ -1286,9 +1325,24 @@ export default function AdminEventLocationsTab({
             <div className="bg-white dark:bg-[#21211E] border border-[#EAE8E1] dark:border-[#302E29] rounded-2xl p-12 text-center space-y-3">
               <MapPin className="w-8 h-8 text-zinc-300 dark:text-[#7A7570] mx-auto" />
               <div className="space-y-1">
-                <h3 className="text-sm font-semibold text-zinc-800 dark:text-[#F0EBE3]">Select a location</h3>
-                <p className="text-xs text-zinc-500 dark:text-[#B8B0A5]">Choose a location to view duty details and manage QR codes.</p>
+                <h3 className="text-sm font-semibold text-zinc-800 dark:text-[#F0EBE3]">
+                  {searchTerm.trim() ? 'No matching location found' : 'Select a location'}
+                </h3>
+                <p className="text-xs text-zinc-500 dark:text-[#B8B0A5]">
+                  {searchTerm.trim()
+                    ? `No event location matches "${searchTerm}". Clear search or choose a location from the list.`
+                    : 'Choose a location to view duty details and manage QR codes.'}
+                </p>
               </div>
+              {searchTerm.trim() && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="mt-2 px-3.5 py-1.5 bg-[#C59B27] hover:bg-[#A47E1F] text-white text-xs font-semibold rounded-xl transition-all cursor-pointer shadow-2xs"
+                >
+                  Clear search
+                </button>
+              )}
             </div>
           )}
         </div>
