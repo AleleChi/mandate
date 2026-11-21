@@ -288,14 +288,18 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
         email: parent.email
       });
       if (res.success) {
-        showSuccess('Invitation sent', res.message || 'An invitation link has been resent.');
+        const isReminder = res.action === 'reminder_sent' || parent.accountStatus === 'active';
+        showSuccess(
+          isReminder ? 'Sign-in reminder sent' : 'Invitation sent',
+          isReminder ? `Sign-in reminder sent to ${parent.email}.` : (res.message || `Invitation sent to ${parent.email}.`)
+        );
         await fetchParentDetails();
       } else {
         showError('Email not delivered', res.error || res.message || 'Email could not be delivered. Try again.');
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
-      showError('Failed to send invitation', parsed.message || 'Could not resend invitation email.');
+      showError('Failed to send invitation', parsed.message || 'Could not send invitation email.');
     } finally {
       setResendingInvite(false);
     }
@@ -312,7 +316,7 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
           : res.action === 'invitation_resent'
             ? 'Registration invitation resent'
             : 'Registration reminder sent';
-        showSuccess(title, `Email delivered to ${parent.email}.`);
+        showSuccess(title, `Email sent to ${parent.email}.`);
       } else {
         showError('Email not delivered', res.error || res.message || 'Email could not be delivered. Try again.');
       }
@@ -776,9 +780,17 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
                     <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-900/40">
                       Removed
                     </span>
-                  ) : parent.emailVerified ? (
+                  ) : parent.accountStatus === 'no_account' ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
+                      No account setup
+                    </span>
+                  ) : (parent.accountStatus === 'email_delivery_failed' || parent.lastRegistrationEmailStatus === 'failed') ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900/40">
+                      Delivery failed
+                    </span>
+                  ) : (parent.emailVerified || parent.accountStatus === 'active') ? (
                     <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/40">
-                      Verified
+                      Account verified / Active
                     </span>
                   ) : (
                     <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40">
@@ -820,56 +832,66 @@ export const AdminParentDetailView: React.FC<AdminParentDetailViewProps> = ({
                   </div>
                 )}
 
-                {/* Registration Access Email (for 0-child parents) or Resend Invite fallback */}
-                {!parent.isDeleted && parent.email && Number(parent.childrenCount ?? linkedChildren.length) === 0 ? (
+                {/* Account & Invitation Access Management (Unified for all parents) */}
+                {!parent.isDeleted && parent.email && (
                   <div className="w-full mt-3 pt-3 border-t border-[#EAE8E1] dark:border-[#302E29] text-left space-y-2">
                     <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-400 dark:text-[#7A7570] block">
-                      Registration access
+                      Account & Invitation Access
                     </span>
-                    <button
-                      type="button"
-                      onClick={handleSendRegistrationAccess}
-                      disabled={sendingRegAccess}
-                      className="w-full py-1.5 px-3 text-xs font-medium text-amber-800 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 bg-amber-50/50 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/40 rounded-xl transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                      id="parent-detail-reg-access-btn"
-                    >
-                      <Send className="w-3 h-3 text-[#C59B27]" />
-                      <span>
-                        {sendingRegAccess
-                          ? 'Sending...'
-                          : parent.accountStatus === 'no_account'
-                            ? 'Send registration invitation'
-                            : (parent.accountStatus === 'invitation_pending' || parent.accountStatus === 'email_delivery_failed')
-                              ? 'Resend registration invitation'
-                              : 'Send registration reminder'}
-                      </span>
-                    </button>
-                    {parent.lastRegistrationEmailStatus === 'failed' ? (
-                      <p className="text-[11px] text-rose-600 dark:text-rose-400">
+                    {parent.accountStatus === 'no_account' ? (
+                      <button
+                        type="button"
+                        onClick={handleSendRegistrationAccess}
+                        disabled={sendingRegAccess}
+                        className="w-full py-1.5 px-3 text-xs font-medium text-amber-800 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 bg-amber-50/50 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/40 rounded-xl transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        id="parent-detail-reg-access-btn"
+                      >
+                        <Send className="w-3 h-3 text-[#C59B27]" />
+                        <span>{sendingRegAccess ? 'Sending...' : 'Send registration invitation'}</span>
+                      </button>
+                    ) : (parent.accountStatus === 'invitation_pending' || parent.accountStatus === 'email_delivery_failed') ? (
+                      <button
+                        type="button"
+                        onClick={handleResendInvite}
+                        disabled={resendingInvite}
+                        className="w-full py-1.5 px-3 text-xs font-medium text-amber-800 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 bg-amber-50/50 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/40 rounded-xl transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        id="parent-detail-resend-invite-btn"
+                      >
+                        <Send className="w-3 h-3 text-[#C59B27]" />
+                        <span>{resendingInvite ? 'Sending invitation...' : 'Resend invitation'}</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleResendInvite}
+                        disabled={resendingInvite}
+                        className="w-full py-1.5 px-3 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 bg-zinc-50 dark:bg-[#262520] hover:bg-zinc-100 dark:hover:bg-[#2A2926] border border-[#EAE8E1] dark:border-[#3A3835] rounded-xl transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        id="parent-detail-send-reminder-btn"
+                      >
+                        <Send className="w-3 h-3 text-[#C59B27]" />
+                        <span>{resendingInvite ? 'Sending reminder...' : 'Send sign-in reminder'}</span>
+                      </button>
+                    )}
+
+                    {parent.lastRegistrationEmailStatus === 'failed' || parent.accountStatus === 'email_delivery_failed' ? (
+                      <p className="text-[11px] text-rose-600 dark:text-rose-400 font-medium">
                         Email could not be delivered. Try again.
                       </p>
                     ) : Number(parent.registrationEmailCount || 0) > 1 && parent.registrationEmailLastSentAt ? (
                       <p className="text-[11px] text-zinc-500 dark:text-[#8A847A]">
-                        Sent {parent.registrationEmailCount} times · Last sent {new Date(parent.registrationEmailLastSentAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        Sent {parent.registrationEmailCount} times · Last sent {new Date(parent.registrationEmailLastSentAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </p>
                     ) : Number(parent.registrationEmailCount || 0) === 1 && parent.registrationEmailLastSentAt ? (
                       <p className="text-[11px] text-zinc-500 dark:text-[#8A847A]">
-                        Registration email sent · {new Date(parent.registrationEmailLastSentAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        Last email sent · {new Date(parent.registrationEmailLastSentAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    ) : parent.invitationSentAt ? (
+                      <p className="text-[11px] text-zinc-500 dark:text-[#8A847A]">
+                        Invitation sent · {new Date(parent.invitationSentAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </p>
                     ) : null}
                   </div>
-                ) : (!parent.emailVerified && !parent.isDeleted && parent.email && parent.accountStatus !== 'no_account') ? (
-                  <div className="w-full mt-3">
-                    <button
-                      onClick={handleResendInvite}
-                      disabled={resendingInvite}
-                      className="w-full py-1.5 text-xs text-amber-800 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 bg-amber-50/50 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/40 rounded-xl transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                    >
-                      <Send className="w-3 h-3 text-[#C59B27]" />
-                      <span>{resendingInvite ? 'Sending invitation...' : 'Resend invitation'}</span>
-                    </button>
-                  </div>
-                ) : null}
+                )}
               </div>
             </div>
 

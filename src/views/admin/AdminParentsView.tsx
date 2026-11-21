@@ -847,22 +847,28 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
         email: parentToResendInvite.email
       });
       if (res.success) {
-        showSuccess('Invitation resent', `Invitation successfully resent to ${parentToResendInvite.email}.`);
+        const isReminder = res.action === 'reminder_sent' || parentToResendInvite.accountStatus === 'active';
+        showSuccess(
+          isReminder ? 'Sign-in reminder sent' : 'Invitation resent',
+          isReminder
+            ? `Sign-in reminder sent to ${parentToResendInvite.email}.`
+            : `Invitation sent to ${parentToResendInvite.email}.`
+        );
         setParentToResendInvite(null);
         if (quickViewParent && (quickViewParent.id === parentToResendInvite.id || quickViewParent.userId === parentToResendInvite.userId)) {
           setQuickViewParent({
             ...quickViewParent,
-            accountStatus: 'invitation_pending',
+            accountStatus: isReminder ? 'active' : 'invitation_pending',
             invitationSentAt: new Date().toISOString()
           });
         }
         await fetchParents();
       } else {
-        showError('Resend failed', res.message || res.error || 'Failed to resend invitation.');
+        showError('Action failed', res.message || res.error || 'Failed to send email.');
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
-      showError('Resend failed', parsed.message || 'Failed to resend invitation.');
+      showError('Action failed', parsed.message || 'Failed to send email.');
     } finally {
       setResendingInvite(false);
     }
@@ -1598,6 +1604,15 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                 <Mail className="w-3.5 h-3.5" />
                 <span>Resend invitation</span>
               </button>
+            ) : quickViewParent.accountStatus === 'active' && !quickViewParent.isDeleted && quickViewParent.email ? (
+              <button
+                type="button"
+                onClick={() => setParentToResendInvite(quickViewParent)}
+                className="text-xs font-medium text-[#C59B27] hover:text-[#B08921] transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                <span>Send sign-in reminder</span>
+              </button>
             ) : null}
           </div>
           <button
@@ -2036,10 +2051,14 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
       <div className="relative bg-white dark:bg-[#1D1D1A] border border-[#EAE8E1] dark:border-[#2A2926] rounded-lg w-full max-w-md shadow-xl p-6 text-neutral-900 dark:text-neutral-100 text-left space-y-4">
         <div>
           <h3 className="font-semibold text-base text-neutral-900 dark:text-neutral-100">
-            Resend invitation to {parentToResendInvite.email}?
+            {parentToResendInvite.accountStatus === 'active' || parentToResendInvite.emailVerified
+              ? `Send sign-in reminder to ${parentToResendInvite.email}?`
+              : `Resend invitation to ${parentToResendInvite.email}?`}
           </h3>
           <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-2 leading-relaxed">
-            A new invitation link will be created and the previous unused link will stop working.
+            {parentToResendInvite.accountStatus === 'active' || parentToResendInvite.emailVerified
+              ? 'This parent has already activated their account. A sign-in reminder prompting them to log in to the Parent Portal will be sent. Their password will not be changed.'
+              : 'A new secure invitation link will be created and the previous unused link will stop working.'}
           </p>
         </div>
 
@@ -2061,10 +2080,14 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
             {resendingInvite ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Resending...</span>
+                <span>Sending...</span>
               </>
             ) : (
-              <span>Resend invitation</span>
+              <span>
+                {parentToResendInvite.accountStatus === 'active' || parentToResendInvite.emailVerified
+                  ? 'Send sign-in reminder'
+                  : 'Resend invitation'}
+              </span>
             )}
           </button>
         </div>
@@ -3151,6 +3174,17 @@ export const AdminParentsView: React.FC<AdminParentsViewProps> = ({ onNavigate, 
                                   >
                                     <Mail className="w-3.5 h-3.5 text-[#C59B27]" />
                                     <span>Resend invitation</span>
+                                  </button>
+                                ) : (p.accountStatus === 'active' || p.emailVerified) && !isRemoved && p.email ? (
+                                  <button
+                                    onClick={() => {
+                                      setOpenActionMenuId(null);
+                                      setParentToResendInvite(p);
+                                    }}
+                                    className="w-full text-left px-3 py-1.5 text-xs text-[#C59B27] hover:bg-[#C59B27]/10 flex items-center gap-2 transition-colors cursor-pointer"
+                                  >
+                                    <Mail className="w-3.5 h-3.5 text-[#C59B27]" />
+                                    <span>Send sign-in reminder</span>
                                   </button>
                                 ) : null}
 

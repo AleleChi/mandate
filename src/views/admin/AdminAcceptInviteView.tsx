@@ -57,6 +57,11 @@ export const AdminAcceptInviteView: React.FC<AdminAcceptInviteViewProps> = ({ on
     try {
       const res = await api.admin.verifyInvite(tokenToVerify);
       if (res.valid) {
+        if (res.role === 'parent') {
+          // If a parent opens an old admin invite link, redirect cleanly to the Parent setup flow
+          onNavigate(`/parent/accept-invite?token=${encodeURIComponent(tokenToVerify)}` as AppRoute);
+          return;
+        }
         setInviteStatus('valid');
         setRecipientEmail(res.email || '');
         setRecipientName(res.recipientName || '');
@@ -115,7 +120,11 @@ export const AdminAcceptInviteView: React.FC<AdminAcceptInviteViewProps> = ({ on
       const res = await api.admin.acceptInvite({ token, password });
       if (res.success) {
         setSuccess(true);
-        showSuccess('Account Activated', 'Your administrator profile is now active.');
+        if (assignedRole === 'parent' || res.user?.role === 'parent') {
+          showSuccess('Account Activated', 'Your parent profile is now active. Please sign in to the Parent Portal.');
+        } else {
+          showSuccess('Account Activated', 'Your administrator profile is now active.');
+        }
       }
     } catch (err: any) {
       const parsed = extractApiError(err);
@@ -269,15 +278,19 @@ export const AdminAcceptInviteView: React.FC<AdminAcceptInviteViewProps> = ({ on
                   <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                   <div className="space-y-1">
                     <span className="font-semibold block">Activation Successful!</span>
-                    <span className="block text-xs text-emerald-800">Your account credentials have been set. You can now log into your access dashboard.</span>
+                    <span className="block text-xs text-emerald-800">
+                      {assignedRole === 'parent'
+                        ? 'Your parent account credentials have been set. You can now log into your parent portal.'
+                        : 'Your account credentials have been set. You can now log into your access dashboard.'}
+                    </span>
                   </div>
                 </div>
                 <Button
-                  onClick={() => onNavigate('/admin/sign-in')}
+                  onClick={() => onNavigate(assignedRole === 'parent' ? '/parent/sign-in' : '/admin/sign-in')}
                   variant="primary"
                   fullWidth
                 >
-                  Sign In to Admin Area
+                  {assignedRole === 'parent' ? 'Sign In to Parent Portal' : 'Sign In to Admin Area'}
                 </Button>
               </div>
             ) : (

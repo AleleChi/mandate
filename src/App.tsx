@@ -49,6 +49,7 @@ const AdminForgotPasswordView = React.lazy(() => import('./views/admin/AdminForg
 const AdminResetPasswordView = React.lazy(() => import('./views/admin/AdminResetPasswordView').then(m => ({ default: m.AdminResetPasswordView })));
 const AdminOverviewView = React.lazy(() => import('./views/admin/AdminOverviewView').then(m => ({ default: m.AdminOverviewView })));
 const AdminAcceptInviteView = React.lazy(() => import('./views/admin/AdminAcceptInviteView').then(m => ({ default: m.AdminAcceptInviteView })));
+const ParentAcceptInviteView = React.lazy(() => import('./views/parent/ParentAcceptInviteView').then(m => ({ default: m.ParentAcceptInviteView })));
 const VolunteerAcceptInviteView = React.lazy(() => import('./views/volunteer/VolunteerAcceptInviteView').then(m => ({ default: m.VolunteerAcceptInviteView })));
 const TeamAlertsView = React.lazy(() => import('./views/admin/TeamAlertsView').then(m => ({ default: m.TeamAlertsView })));
 import { Seo } from './components/common/Seo';
@@ -124,6 +125,12 @@ const getSeoPropsForRoute = (route: string) => {
   }
 
   // Auth & Private Route Titles
+  if (cleanRoute === '/parent/accept-invite' || cleanRoute === '/parent/setup-account' || cleanRoute === '/setup-account') {
+    return {
+      title: 'Complete Parent Account Setup | Koinonia Children and Teens',
+      ...defaults,
+    };
+  }
   if (cleanRoute === '/parent/sign-in') {
     return {
       title: 'Parent Sign In | Koinonia Children and Teens',
@@ -1619,6 +1626,10 @@ export default function App() {
         return <VolunteerAcceptInviteView onNavigate={navigate} />;
       case '/admin/accept-invite':
         return <AdminAcceptInviteView onNavigate={navigate} />;
+      case '/parent/accept-invite':
+      case '/parent/setup-account':
+      case '/setup-account':
+        return <ParentAcceptInviteView onNavigate={navigate} />;
       case '/admin/sign-in':
         if (user && (user.role === 'admin' || user.role === 'super_admin' || user.role === 'team')) {
           return <RedirectToRoute route="/admin/overview" />;
