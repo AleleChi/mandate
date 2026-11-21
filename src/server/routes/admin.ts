@@ -12399,7 +12399,7 @@ router.get('/volunteers', async (req: AuthenticatedRequest, res: Response) => {
     const paginatedParams = [...queryParams, limit, offset];
 
     const rows = await query(queryStr, paginatedParams);
-    const currentEventId = await getCurrentEventId();
+    const currentEventId = (req.query.eventId as string) || (await getCurrentEventId());
     const userIds = rows.map((v: any) => v.user_id).filter(Boolean);
     const assignmentMap = new Map<string, { assignedTeam?: string; assignedAgeGroups: string[] }>();
     if (currentEventId && userIds.length > 0) {
@@ -12637,26 +12637,53 @@ router.get('/volunteers/:id', async (req: AuthenticatedRequest, res: Response) =
       FROM volunteer_profiles v
       JOIN users u ON u.id = v.user_id
       LEFT JOIN media_files m ON m.id = v.photo_file_id
-      WHERE v.id = ?
-    `, [id]);
+      WHERE v.id = ? OR v.user_id = ?
+    `, [id, id]);
 
     if (!v) {
       return res.status(404).json({ success: false, error: 'Volunteer not found' });
     }
 
-    const currentEventId = await getCurrentEventId();
+    const currentEventId = (req.query.eventId as string) || (await getCurrentEventId());
     let assignedAgeGroups: string[] = [];
     let assignedTeam = v.preferred_team;
+    let dutyAssignment: any = null;
     if (currentEventId && v.user_id) {
       const duty = await queryOne(
-        `SELECT team_key, assigned_age_groups 
-         FROM event_duty_assignments 
-         WHERE event_id = ? AND user_id = ? AND status != 'cancelled'`,
+        `SELECT a.id, a.event_id, a.responsibility_key, a.team_key, a.assignment_level,
+                a.status, a.starts_at, a.ends_at, a.assigned_location_id, a.assigned_age_groups,
+                a.note, el.name as assigned_location_name, el.short_name, el.location_type as assigned_location_type,
+                el.age_group_key as location_age_group_key
+         FROM event_duty_assignments a
+         LEFT JOIN event_locations el ON el.id = a.assigned_location_id
+         WHERE a.event_id = ? AND a.user_id = ? AND a.status NOT IN ('cancelled', 'ended')
+         ORDER BY a.created_at DESC LIMIT 1`,
         [currentEventId, v.user_id]
       );
       if (duty) {
         if (duty.team_key) assignedTeam = duty.team_key;
         assignedAgeGroups = parseAssignedAgeGroups(duty.assigned_age_groups);
+        dutyAssignment = {
+          id: duty.id,
+          eventId: duty.event_id,
+          assignedLocationId: duty.assigned_location_id,
+          locationId: duty.assigned_location_id,
+          assignedLocationName: duty.assigned_location_name || 'Central Command',
+          locationName: duty.assigned_location_name || 'Central Command',
+          assignedLocationType: duty.assigned_location_type || 'room',
+          locationType: duty.assigned_location_type || 'room',
+          locationShortName: duty.short_name || null,
+          locationAgeGroupKey: duty.location_age_group_key,
+          responsibilityKey: duty.responsibility_key,
+          dutyRole: duty.responsibility_key,
+          teamKey: duty.team_key,
+          assignmentLevel: duty.assignment_level,
+          status: duty.status,
+          startsAt: duty.starts_at,
+          endsAt: duty.ends_at,
+          assignedAgeGroups,
+          note: duty.note
+        };
       }
     }
 
@@ -12671,6 +12698,7 @@ router.get('/volunteers/:id', async (req: AuthenticatedRequest, res: Response) =
       preferredTeam: v.preferred_team,
       assignedTeam,
       assignedAgeGroups,
+      dutyAssignment,
       servingExperience: v.serving_experience,
       note: v.note,
       status: v.status,
@@ -12717,7 +12745,7 @@ router.patch('/volunteers/:id/assignment', async (req: AuthenticatedRequest, res
       `, [assignedTeam, nowStr, id]);
     }
 
-    const currentEventId = await getCurrentEventId();
+    const currentEventId = (req.query.eventId as string) || (await getCurrentEventId());
     if (currentEventId && v.user_id) {
       const existingDuty = await queryOne(
         `SELECT id, assigned_age_groups FROM event_duty_assignments WHERE event_id = ? AND user_id = ? AND status != 'cancelled'`,
@@ -12778,8 +12806,8 @@ router.post('/volunteers/:id/resend-approval-email', async (req: AuthenticatedRe
       SELECT v.*, u.email 
       FROM volunteer_profiles v 
       JOIN users u ON u.id = v.user_id 
-      WHERE v.id = ?
-    `, [id]);
+      WHERE v.id = ? OR v.user_id = ?
+    `, [id, id]);
 
     if (!v) {
       return res.status(404).json({ success: false, error: 'Volunteer profile not found' });
@@ -14094,7 +14122,7 @@ router.get('/children/:childId/pass', authMiddleware, async (req: AuthenticatedR
       );
     }
     if (!entry) {
-      const currentEventId = await getCurrentEventId();
+      const currentEventId = (req.query.eventId as string) || (await getCurrentEventId());
       if (currentEventId) {
         entry = await queryOne(
           'SELECT * FROM child_event_entries WHERE (child_id = ? OR id = ?) AND event_id = ?',
@@ -14292,7 +14320,7 @@ router.post('/children/:childId/pass/generate', authMiddleware, async (req: Auth
       entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, targetEventId]);
     }
     if (!entry) {
-      const currentEventId = await getCurrentEventId();
+      const currentEventId = (req.query.eventId as string) || (await getCurrentEventId());
       if (currentEventId) {
         entry = await queryOne('SELECT * FROM child_event_entries WHERE child_id = ? AND event_id = ?', [childId, currentEventId]);
       }
@@ -15225,7 +15253,7 @@ router.post('/applications/bulk-issue-pass', authMiddleware, async (req: Authent
       return res.status(400).json({ success: false, error: 'At least one child or application is required.' });
     }
 
-    const currentEventId = await getCurrentEventId();
+    const currentEventId = (req.query.eventId as string) || (await getCurrentEventId());
     if (!currentEventId) {
       return res.status(400).json({ success: false, error: 'No active event is available.' });
     }
@@ -17345,12 +17373,24 @@ router.get('/events/:eventId/locations', authMiddleware, async (req: Authenticat
     });
 
     if (search) {
-      items = items.filter(item => 
-        item.name.toLowerCase().includes(search) ||
-        (item.shortName && item.shortName.toLowerCase().includes(search)) ||
-        item.pathLabel.toLowerCase().includes(search) ||
-        item.type.toLowerCase().includes(search)
-      );
+      const normSearch = search.replace(/[\u2010-\u2015]/g, '-').trim();
+      items = items.filter(item => {
+        const normName = item.name.toLowerCase().replace(/[\u2010-\u2015]/g, '-');
+        const normShort = (item.shortName || '').toLowerCase().replace(/[\u2010-\u2015]/g, '-');
+        const normAge = (item.ageGroupKey || '').toLowerCase().replace(/[\u2010-\u2015]/g, '-');
+        const normTeam = (item.teamKey || '').toLowerCase().replace(/[\u2010-\u2015]/g, '-');
+        const normDesc = (item.description || '').toLowerCase().replace(/[\u2010-\u2015]/g, '-');
+        const normPath = item.pathLabel.toLowerCase().replace(/[\u2010-\u2015]/g, '-');
+        const normType = item.type.toLowerCase().replace(/[\u2010-\u2015]/g, '-');
+
+        return normName.includes(normSearch) ||
+               normShort.includes(normSearch) ||
+               normAge.includes(normSearch) ||
+               normTeam.includes(normSearch) ||
+               normDesc.includes(normSearch) ||
+               normPath.includes(normSearch) ||
+               normType.includes(normSearch);
+      });
     }
 
     items.sort((a, b) => {

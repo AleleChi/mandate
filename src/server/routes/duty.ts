@@ -1776,10 +1776,10 @@ adminDutyRouter.get('/events/:eventId/eligible-team-members', async (req: Authen
 
     const { eventId } = req.params;
     const page = parseInt(req.query.page as string) || 1;
-    const rawLimit = req.query.limit !== undefined ? parseInt(req.query.limit as string) : 500;
+    const queryStr = ((req.query.query as string) || (req.query.search as string) || '').trim();
+    const rawLimit = req.query.limit !== undefined ? parseInt(req.query.limit as string) : (queryStr ? 1000 : 500);
     const limit = Math.max(1, Math.min(isNaN(rawLimit) ? 500 : rawLimit, 1000));
     const offset = (page - 1) * limit;
-    const queryStr = ((req.query.query as string) || '').trim();
     const includeAssigned = req.query.includeAssigned === 'true';
 
     // Canonical active volunteer eligibility:
@@ -1858,10 +1858,123 @@ adminDutyRouter.get('/events/:eventId/eligible-team-members', async (req: Authen
     const queryParams = [eventId, eventId, ...params, limit, offset];
     const items = await query(itemsQuery, queryParams);
 
+    let excludedList: any[] = [];
+    if (queryStr) {
+      const pattern = `%${queryStr}%`;
+      const excludedQuery = `
+        SELECT u.id,
+               u.id as user_id,
+               u.email,
+               u.role as user_role,
+               u.status as user_status,
+               u.password_hash,
+               vp.id as profile_id,
+               vp.full_name,
+               vp.phone,
+               vp.whatsapp,
+               vp.status as volunteer_status,
+               vp.is_deleted,
+               vp.preferred_team,
+               vp.is_koinonia_worker,
+               eda.id as assigned_duty_id,
+               eda.assigned_location_id,
+               eda.responsibility_key,
+               eda.status as duty_status,
+               eda.starts_at,
+               eda.ends_at,
+               eda.assigned_age_groups,
+               el.name as assigned_location_name
+        FROM users u
+        LEFT JOIN volunteer_profiles vp ON u.id = vp.user_id
+        LEFT JOIN event_duty_assignments eda ON eda.user_id = u.id AND eda.event_id = ? AND eda.status NOT IN ('cancelled', 'ended')
+        LEFT JOIN event_locations el ON el.id = eda.assigned_location_id
+        WHERE (
+          LOWER(COALESCE(vp.full_name, '')) LIKE LOWER(?)
+          OR LOWER(COALESCE(u.email, '')) LIKE LOWER(?)
+          OR COALESCE(vp.phone, '') LIKE ?
+          OR COALESCE(vp.whatsapp, '') LIKE ?
+        )
+        LIMIT 50
+      `;
+      const allMatching = await query(excludedQuery, [eventId, pattern, pattern, pattern, pattern]);
+
+      const eligibleIds = new Set((items || []).map((m: any) => m.id || m.user_id));
+      for (const m of allMatching) {
+        if (eligibleIds.has(m.id)) continue;
+
+        let reason = 'ineligible';
+        let message = 'Not eligible for duty assignment';
+        let existingAssignment: any = null;
+
+        if (m.assigned_duty_id) {
+          reason = 'already_assigned';
+          message = `Already assigned to ${m.assigned_location_name || 'Central Command'} (${m.responsibility_key || 'Duty'})`;
+          existingAssignment = {
+            id: m.assigned_duty_id,
+            assignmentId: m.assigned_duty_id,
+            eventId,
+            userId: m.id,
+            fullName: m.full_name || 'Volunteer',
+            userName: m.full_name || 'Volunteer',
+            email: m.email,
+            phone: m.phone,
+            assignedLocationId: m.assigned_location_id,
+            locationId: m.assigned_location_id,
+            assignedLocationName: m.assigned_location_name || 'Central Command',
+            locationName: m.assigned_location_name || 'Central Command',
+            responsibilityKey: m.responsibility_key,
+            status: m.duty_status || 'scheduled',
+            startsAt: m.starts_at,
+            endsAt: m.ends_at,
+            assignedAgeGroups: parseAssignedAgeGroups(m.assigned_age_groups)
+          };
+        } else if (m.password_hash === 'invited_pending' || m.user_status === 'invited_pending') {
+          reason = 'invitation_pending';
+          message = 'Account invitation pending setup (Volunteer has not completed registration)';
+        } else if (!m.profile_id) {
+          reason = 'no_profile';
+          message = 'No volunteer profile created';
+        } else if (['pending', 'pending_review', 'submitted'].includes(m.volunteer_status)) {
+          reason = 'pending_approval';
+          message = 'Volunteer profile pending review / approval (Approved profile required before assignment)';
+        } else if (['rejected', 'not_approved'].includes(m.volunteer_status)) {
+          reason = 'not_approved';
+          message = 'Volunteer profile marked not approved';
+        } else if (m.user_status === 'inactive' || m.user_status === 'suspended' || m.is_deleted === 1 || m.volunteer_status === 'removed') {
+          reason = 'inactive';
+          message = 'Volunteer account is inactive, suspended, or archived';
+        }
+
+        excludedList.push({
+          id: m.id,
+          userId: m.id,
+          user_id: m.id,
+          fullName: m.full_name || 'Volunteer',
+          full_name: m.full_name || 'Volunteer',
+          name: m.full_name || 'Volunteer',
+          email: m.email,
+          phone: m.phone,
+          volunteer_status: m.volunteer_status,
+          user_status: m.user_status,
+          reason,
+          message,
+          existingAssignment
+        });
+      }
+    }
+
+    const mappedItems = (items || []).map((m: any) => ({
+      ...m,
+      userId: m.id || m.user_id,
+      fullName: m.full_name || m.name || 'Volunteer',
+      name: m.full_name || m.name || 'Volunteer'
+    }));
+
     return res.json({
       success: true,
-      items: items || [],
-      members: items || [],
+      items: mappedItems,
+      members: mappedItems,
+      excluded: excludedList,
       pagination: {
         page,
         limit,
