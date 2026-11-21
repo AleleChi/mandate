@@ -1130,25 +1130,26 @@ export async function sendParentRegistrationInviteEmail(params: {
     fullName: params.recipientName
   });
 
-  const greeting = nameToUse === 'there' ? 'Hello there,' : `Hello ${nameToUse},`;
+  const greeting = nameToUse === 'there' ? 'Hello,' : `Hello ${nameToUse},`;
   const formattedExpiry = formatInvitationExpiry(params.expiresAt);
-  const subject = 'Complete your Koinonia Children & Teens Parent Account';
+  const subject = 'Complete Your Koinonia Children & Teens Parent Account';
 
   const bodyHtml = `
     <p style="margin-top: 0;">${greeting}</p>
-    <p>You have been invited to complete your Koinonia Children &amp; Teens Parent account.</p>
-    <p>Please use the secure link below to set up your account and register your child or children for The General Assembly.</p>
+    <p>Your Koinonia Children &amp; Teens Parent account has been created.</p>
+    <p>Please use the secure link below to complete your account setup and create your password.</p>
     <div style="margin: 28px 0;">
       <a href="${params.inviteLink}" style="background-color: #C59B27; color: #FFFFFF; font-weight: 600; text-decoration: none; padding: 12px 24px; border-radius: 6px; display: inline-block; font-size: 15px;">
-        Complete account setup
+        Complete Account Setup
       </a>
     </div>
+    <p style="font-size: 14px; color: #3F3F46; line-height: 1.5;">Once your account is set up, you can sign in to the Children &amp; Teens Portal to view and manage your children's information.</p>
     <p style="font-size: 13px; color: #71717A;">This invitation link expires on <strong>${formattedExpiry}</strong>.</p>
-    <p style="margin-top: 20px; font-size: 13px; color: #A1A1AA;">If you did not expect this invitation, you may ignore this email.</p>
+    <p style="margin-top: 20px; font-size: 13px; color: #A1A1AA;">If you did not expect this invitation, you can ignore this email.</p>
     <p style="margin-top: 24px; margin-bottom: 0;"><strong>Koinonia Children &amp; Teens Team</strong></p>
   `;
 
-  const text = `${greeting}\n\nYou have been invited to complete your Koinonia Children & Teens Parent account.\n\nPlease use the secure link below to set up your account and register your child or children for The General Assembly.\n\nComplete account setup:\n${params.inviteLink}\n\nThis invitation link expires on ${formattedExpiry}.\n\nIf you did not expect this invitation, you may ignore this email.\n\nKoinonia Children & Teens Team`;
+  const text = `${greeting}\n\nYour Koinonia Children & Teens Parent account has been created.\n\nPlease use the secure link below to complete your account setup and create your password.\n\nComplete Account Setup:\n${params.inviteLink}\n\nOnce your account is set up, you can sign in to the Children & Teens Portal to view and manage your children's information.\n\nThis invitation link expires on ${formattedExpiry}.\n\nIf you did not expect this invitation, you can ignore this email.\n\nKoinonia Children & Teens Team`;
 
   return sendEmail({
     to: params.recipientEmail,

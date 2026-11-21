@@ -252,13 +252,14 @@ export async function sendRegistrationAccessEmailForParent(params: {
       const tokenRes = await issueOrReplaceInviteToken({
         userId: row.user_id,
         revokedByUserId: params.adminUserId,
-        nowStr
+        nowStr,
+        tokenType: 'parent_invite'
       });
       rawToken = tokenRes.rawToken;
       expiresAt = tokenRes.expiresAt;
     });
 
-    const inviteLink = buildPublicAppUrl(`/admin/accept-invite?token=${rawToken}`);
+    const inviteLink = buildPublicAppUrl(`/parent/accept-invite?token=${encodeURIComponent(rawToken)}`);
     let emailResult: SendEmailResult | null = null;
     let deliveryErr: string | null = null;
     try {
@@ -328,13 +329,14 @@ export async function sendRegistrationAccessEmailForParent(params: {
       const tokenRes = await issueOrReplaceInviteToken({
         userId: row.user_id,
         revokedByUserId: params.adminUserId,
-        nowStr
+        nowStr,
+        tokenType: 'parent_invite'
       });
       rawToken = tokenRes.rawToken;
       expiresAt = tokenRes.expiresAt;
     });
 
-    const inviteLink = buildPublicAppUrl(`/admin/accept-invite?token=${rawToken}`);
+    const inviteLink = buildPublicAppUrl(`/parent/accept-invite?token=${encodeURIComponent(rawToken)}`);
     let emailResult: SendEmailResult | null = null;
     let deliveryErr: string | null = null;
     try {

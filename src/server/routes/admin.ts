@@ -6,7 +6,7 @@ import { query, queryOne, execute, transaction } from '../db';
 import { authMiddleware, optionalAuthMiddleware, AuthenticatedRequest, verifyPassword, hashPassword, generateToken } from '../auth';
 import { syncJobsForEvent, executeTestNotification, sendWhatsApp } from '../services/notifications';
 import { sendWebPush } from '../services/push';
-import { sendEmail, sendVolunteerApprovedEmail, sendInvitationEmail, sendParentRegistrationInviteEmail, formatInvitationExpiry, isEmailConfigured, resolveEmailProvider, sendChildReturnToDraftEmail, buildParentsChannelEmailSection } from '../services/email';
+import { sendEmail, sendVolunteerApprovedEmail, sendInvitationEmail, sendParentRegistrationInviteEmail, sendParentRegistrationReminderEmail, formatInvitationExpiry, isEmailConfigured, resolveEmailProvider, sendChildReturnToDraftEmail, buildParentsChannelEmailSection } from '../services/email';
 import {
   issueOrReplaceInviteToken,
   buildRegistrationEmailStatsMap,
@@ -628,8 +628,8 @@ router.get('/verify-invite', async (req, res) => {
       });
     }
 
-    // Check token type (backward compatible with admin_invite, volunteer_invite, account_invite)
-    const validInviteTypes = ['admin_invite', 'volunteer_invite', 'account_invite'];
+    // Check token type (backward compatible with admin_invite, volunteer_invite, account_invite, parent_invite)
+    const validInviteTypes = ['admin_invite', 'volunteer_invite', 'account_invite', 'parent_invite'];
     if (dbToken.token_type && !validInviteTypes.includes(dbToken.token_type)) {
       return res.status(400).json({
         valid: false,
@@ -729,7 +729,7 @@ router.post('/accept-invite', async (req, res) => {
       return res.status(400).json({ success: false, code: 'INVITATION_INVALID', error: 'This invitation link is invalid.' });
     }
 
-    const validInviteTypes = ['admin_invite', 'volunteer_invite', 'account_invite'];
+    const validInviteTypes = ['admin_invite', 'volunteer_invite', 'account_invite', 'parent_invite'];
     if (dbToken.token_type && !validInviteTypes.includes(dbToken.token_type)) {
       return res.status(400).json({ success: false, code: 'INVITATION_INVALID', error: 'This invitation link is invalid.' });
     }
@@ -771,11 +771,22 @@ router.post('/accept-invite', async (req, res) => {
         [nowStr, dbToken.user_id, dbToken.id]
       );
 
-      // Activate user account
-      await execute(
-        'UPDATE users SET password_hash = ?, email_verified = 1, updated_at = ? WHERE id = ?',
-        [hashedPwd, nowStr, dbToken.user_id]
-      );
+      // Security check: ensure parent accounts retain 'parent' role strictly
+      const userBefore = await queryOne('SELECT role FROM users WHERE id = ?', [dbToken.user_id]);
+      const isParentInvite = dbToken.token_type === 'parent_invite' || userBefore?.role === 'parent';
+
+      // Activate user account (preserve parent role strictly)
+      if (isParentInvite) {
+        await execute(
+          "UPDATE users SET password_hash = ?, email_verified = 1, role = 'parent', updated_at = ? WHERE id = ?",
+          [hashedPwd, nowStr, dbToken.user_id]
+        );
+      } else {
+        await execute(
+          'UPDATE users SET password_hash = ?, email_verified = 1, updated_at = ? WHERE id = ?',
+          [hashedPwd, nowStr, dbToken.user_id]
+        );
+      }
 
       // Audit log
       try {
@@ -783,7 +794,7 @@ router.post('/accept-invite', async (req, res) => {
         await execute(
           `INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [crypto.randomUUID(), dbToken.user_id, userRec?.role || 'admin', 'ACCEPT_INVITATION', 'user', dbToken.user_id, JSON.stringify({ emailVerified: true }), nowStr]
+          [crypto.randomUUID(), dbToken.user_id, userRec?.role || (isParentInvite ? 'parent' : 'admin'), 'ACCEPT_INVITATION', 'user', dbToken.user_id, JSON.stringify({ emailVerified: true, role: userRec?.role }), nowStr]
         );
       } catch (e) {}
     });
@@ -793,7 +804,7 @@ router.post('/accept-invite', async (req, res) => {
     return res.json({
       success: true,
       message: 'Your account credentials have been activated successfully.',
-      role: user?.role || 'admin'
+      role: user?.role || (dbToken.token_type === 'parent_invite' ? 'parent' : 'admin')
     });
   } catch (err: any) {
     console.error('Admin Accept Invite Error:', err);
@@ -1250,8 +1261,71 @@ router.post('/invites/resend', authMiddleware, async (req: AuthenticatedRequest,
       });
     }
 
+    // For active parent accounts: do not replace password or generate a new activation token. Send sign-in reminder instead.
+    if (targetUser.role === 'parent' && targetUser.password_hash !== 'invited_pending' && targetUser.password_hash !== 'profile_no_account') {
+      const cleanEmail = targetUser.email;
+      const nowStr = new Date().toISOString();
+      let recipientName = '';
+      const pProfile = await queryOne('SELECT full_name FROM parent_profiles WHERE user_id = ?', [targetUser.id]);
+      if (pProfile && pProfile.full_name) {
+        recipientName = pProfile.full_name;
+      }
+
+      const signInUrl = buildPublicAppUrl('/parent/sign-in');
+      let emailResult: any = null;
+      let emailDeliveryError: string | null = null;
+      try {
+        emailResult = await sendParentRegistrationReminderEmail({
+          recipientEmail: cleanEmail,
+          recipientName: recipientName || undefined,
+          signInUrl
+        });
+      } catch (err: any) {
+        console.error('Error sending parent sign-in reminder email:', err);
+        emailDeliveryError = err?.message || 'Email delivery failed';
+      }
+
+      const emailDelivered = Boolean(emailResult && emailResult.success);
+      const finalError = emailDelivered ? null : (emailResult?.error || emailDeliveryError || 'Email delivery failed');
+
+      try {
+        await execute(
+          `INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
+           VALUES (?, ?, ?, 'SEND_PARENT_REGISTRATION_REMINDER', 'user', ?, ?, ?)`,
+          [
+            crypto.randomUUID(), req.user!.id, req.user!.role || 'admin', targetUser.id,
+            JSON.stringify({
+              email: cleanEmail,
+              action: 'registration_reminder_sent',
+              status: emailDelivered ? 'sent' : 'failed',
+              providerMessageId: emailResult?.id || null,
+              error: finalError,
+              attemptedAt: nowStr
+            }),
+            nowStr
+          ]
+        );
+      } catch (e) {}
+
+      if (!emailDelivered) {
+        return res.status(200).json({
+          success: false,
+          code: 'EMAIL_DELIVERY_FAILED',
+          action: 'reminder_sent',
+          error: 'Sign-in reminder could not be delivered. Try again.',
+          message: 'Sign-in reminder could not be delivered. Try again.'
+        });
+      }
+
+      return res.json({
+        success: true,
+        action: 'reminder_sent',
+        message: `Sign-in reminder sent to ${cleanEmail}.`
+      });
+    }
+
     // Verify user is actually pending
-    if (targetUser.password_hash !== 'invited_pending') {
+    if (targetUser.password_hash !== 'invited_pending' && targetUser.password_hash !== 'profile_no_account') {
       return res.status(400).json({
         success: false,
         code: 'NOT_PENDING_INVITATION',
@@ -1278,10 +1352,20 @@ router.post('/invites/resend', authMiddleware, async (req: AuthenticatedRequest,
     let rawToken = '';
     let expiresAt = '';
     let issuedTokenId = '';
-    const tokenType = targetUser.role === 'volunteer' ? 'volunteer_invite' : 'admin_invite';
+    const isParent = targetUser.role === 'parent';
+    const isVolunteer = targetUser.role === 'volunteer';
+    const tokenType = isParent ? 'parent_invite' : (isVolunteer ? 'volunteer_invite' : 'admin_invite');
 
     // Atomic DB operations for resend
     await transaction(async () => {
+      // If parent had profile_no_account, promote to invited_pending
+      if (targetUser.password_hash === 'profile_no_account') {
+        await execute(
+          "UPDATE users SET password_hash = 'invited_pending', updated_at = ? WHERE id = ?",
+          [nowStr, targetUser.id]
+        );
+      }
+
       const issued = await issueOrReplaceInviteToken({
         userId: targetUser.id,
         revokedByUserId: req.user!.id,
@@ -1304,16 +1388,18 @@ router.post('/invites/resend', authMiddleware, async (req: AuthenticatedRequest,
       }
     }
 
-    const inviteRoute = targetUser.role === 'volunteer'
-      ? `/volunteer/accept-invite?token=${encodeURIComponent(rawToken)}`
-      : `/admin/accept-invite?token=${encodeURIComponent(rawToken)}`;
+    const inviteRoute = isParent
+      ? `/parent/accept-invite?token=${encodeURIComponent(rawToken)}`
+      : isVolunteer
+        ? `/volunteer/accept-invite?token=${encodeURIComponent(rawToken)}`
+        : `/admin/accept-invite?token=${encodeURIComponent(rawToken)}`;
 
     const inviteLink = buildPublicAppUrl(inviteRoute);
 
     let emailResult: any = null;
     let emailDeliveryError: string | null = null;
     try {
-      emailResult = targetUser.role === 'parent'
+      emailResult = isParent
         ? await sendParentRegistrationInviteEmail({
             recipientEmail: cleanEmail,
             recipientName: recipientName || undefined,
@@ -1337,11 +1423,12 @@ router.post('/invites/resend', authMiddleware, async (req: AuthenticatedRequest,
 
     // Audit log with delivery result
     try {
+      const auditAction = isParent ? 'RESEND_PARENT_REGISTRATION_INVITE' : 'RESEND_INVITATION';
       await execute(`
         INSERT INTO audit_logs (id, user_id, user_role, action, target_type, target_id, details, timestamp)
-        VALUES (?, ?, ?, 'RESEND_INVITATION', 'user', ?, ?, ?)
+        VALUES (?, ?, ?, ?, 'user', ?, ?, ?)
       `, [
-        crypto.randomUUID(), req.user.id, req.user.role || 'admin', targetUser.id,
+        crypto.randomUUID(), req.user.id, req.user.role || 'admin', auditAction, targetUser.id,
         JSON.stringify({
           email: cleanEmail,
           role: targetUser.role,
@@ -1366,7 +1453,8 @@ router.post('/invites/resend', authMiddleware, async (req: AuthenticatedRequest,
 
     return res.json({
       success: true,
-      message: `Invitation successfully resent to ${cleanEmail}.`
+      action: isParent ? 'invitation_resent' : 'invitation_sent',
+      message: `Invitation successfully sent to ${cleanEmail}.`
     });
   } catch (err: any) {
     console.error('Resend invitation error:', err);
@@ -1632,7 +1720,7 @@ router.post('/parents', authMiddleware, async (req: AuthenticatedRequest, res: R
 
         await execute(`
           INSERT INTO auth_tokens (id, user_id, token_hash, token_type, expires_at, created_at)
-          VALUES (?, ?, ?, 'admin_invite', ?, ?)
+          VALUES (?, ?, ?, 'parent_invite', ?, ?)
         `, [tokenId, parentUserId, tokenHash, inviteExpiresAt, nowStr]);
       }
 
@@ -1649,8 +1737,9 @@ router.post('/parents', authMiddleware, async (req: AuthenticatedRequest, res: R
     });
 
     // 6. Send Invitation Email if requested
+    let inviteLink: string | undefined;
     if (sendInvitation && inviteTokenRaw) {
-      const inviteLink = buildPublicAppUrl(`/admin/accept-invite?token=${inviteTokenRaw}`);
+      inviteLink = buildPublicAppUrl(`/parent/accept-invite?token=${encodeURIComponent(inviteTokenRaw)}`);
       let emailResult: any = null;
       let emailError: string | null = null;
       try {
@@ -1709,7 +1798,8 @@ router.post('/parents', authMiddleware, async (req: AuthenticatedRequest, res: R
         ? `Parent record created and invitation sent to ${cleanEmail}.`
         : `Parent record created successfully without active login account.`,
       parentId: parentProfileId,
-      userId: parentUserId
+      userId: parentUserId,
+      inviteLink: (sendInvitation && inviteTokenRaw) ? inviteLink : undefined
     });
   } catch (err: any) {
     console.error('Admin Add Parent Error:', err);
