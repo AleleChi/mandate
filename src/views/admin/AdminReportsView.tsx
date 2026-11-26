@@ -85,8 +85,60 @@ interface ReportTemplate {
   reportDomain?: string;
 }
 
-// 6 Canonical Templates (Prompt Section 9)
+// Canonical Templates (Prompt Section 9 + Full Event Report)
 const CANONICAL_TEMPLATES: ReportTemplate[] = [
+  {
+    key: 'children-teens-full-event-report',
+    name: 'Children & Teens — Full Event Report',
+    description: 'Comprehensive operational event report covering registration, selection, attendance, age cohorts, gender, WAT arrival/pickup patterns, venues, volunteer coverage, aggregated care & safeguarding, and a restricted attendance appendix.',
+    privacyClassification: 'Internal operational',
+    recommendedSections: [
+      'Executive Summary',
+      'Registration & Attendance Statistics',
+      'Age-Group Breakdown',
+      'Gender Analysis',
+      'Arrival & Checkout Patterns',
+      'Attendance by Event Location',
+      'Volunteer Operations',
+      'Care & Safeguarding',
+      'Findings & Data Notes',
+      'Detailed Attendance Appendix'
+    ],
+    supportedSections: [
+      'Executive Summary',
+      'Registration & Attendance Statistics',
+      'Age-Group Breakdown',
+      'Gender Analysis',
+      'Arrival & Checkout Patterns',
+      'Attendance by Event Location',
+      'Volunteer Operations',
+      'Care & Safeguarding',
+      'Findings & Data Notes',
+      'Detailed Attendance Appendix'
+    ],
+    defaultSections: [
+      'Executive Summary',
+      'Registration & Attendance Statistics',
+      'Age-Group Breakdown',
+      'Gender Analysis',
+      'Arrival & Checkout Patterns',
+      'Attendance by Event Location',
+      'Volunteer Operations',
+      'Care & Safeguarding',
+      'Findings & Data Notes',
+      'Detailed Attendance Appendix'
+    ],
+    reportDomain: 'Comprehensive Event',
+    audience: 'Senior Leadership, Pastors, Event Directors, Administrators',
+    includes: [
+      'Executive summary & headline attendance KPIs',
+      'Registration, selection, attendance & release pipeline',
+      '5-cohort age-group & gender reconciliation',
+      'Hourly WAT arrival/checkout charts & tables',
+      'Location check-ins, volunteer coverage & care summary',
+      'Restricted paginated attendance appendix'
+    ]
+  },
   {
     key: 'management-summary',
     name: 'Event Executive',
@@ -524,6 +576,8 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
     const templateName = tm?.name || 'Management summary';
     if (builderTemplate === 'children-registration-report') {
       setCustomReportTitle(`${eventName} — Children & Registration Report`);
+    } else if (builderTemplate === 'children-teens-full-event-report') {
+      setCustomReportTitle(`${eventName} — Children & Teens — Full Event Report`);
     } else {
       setCustomReportTitle(`${eventName} — ${templateName}`);
     }
@@ -1361,7 +1415,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                   </div>
                 </div>
 
-                <div className="border-t border-stone-100 dark:border-[#302E29] pt-4">
+                <div className="border-t border-stone-100 dark:border-[#302E29] pt-4 flex flex-col gap-2">
                   <button
                     onClick={() => handleSelectTemplate(temp.key)}
                     className="w-full bg-white dark:bg-[#21211E] hover:bg-stone-50 dark:hover:bg-[#262520] border border-stone-200 dark:border-[#3A3835] text-stone-800 dark:text-[#F0EBE3] text-xs font-semibold py-2.5 px-4 rounded-lg flex items-center justify-between transition-all cursor-pointer"
@@ -1370,6 +1424,15 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                     <span>Use template</span>
                     <span className="text-[#C59B27] dark:text-amber-400 font-bold text-sm">→</span>
                   </button>
+                  {onNavigate && (
+                    <button
+                      onClick={() => onNavigate(`/admin/reports/templates/${temp.key}/configure`)}
+                      className="w-full text-[11px] text-stone-500 dark:text-[#7A7570] hover:text-[#C59B27] dark:hover:text-amber-400 font-medium py-1 transition-colors cursor-pointer text-center"
+                      id={`btn-configure-template-${temp.key}`}
+                    >
+                      Configure &amp; live preview
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -1555,7 +1618,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {[
+                {(selectedTemplateObj?.supportedSections || selectedTemplateObj?.recommendedSections || [
                   'Executive summary',
                   'Registration & selection',
                   'Participation profile',
@@ -1565,7 +1628,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                   'Safety & incidents',
                   'Key observations',
                   'Appendix'
-                ].map((sec) => {
+                ]).map((sec) => {
                   const checked = builderSections.includes(sec);
                   return (
                     <label 

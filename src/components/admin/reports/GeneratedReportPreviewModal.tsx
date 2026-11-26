@@ -119,6 +119,10 @@ export const GeneratedReportPreviewModal: React.FC<GeneratedReportPreviewModalPr
       rawItems.push({ id: 'section-quality-methodology', title: 'Data notes and limitations' });
     }
 
+    if (model.appendix && model.appendix.length > 0) {
+      rawItems.push({ id: 'section-appendix', title: 'Detailed attendance appendix' });
+    }
+
     rawItems.push({ id: 'section-back-cover', title: 'Back cover' });
 
     // Deduplicate outline items by normalised title

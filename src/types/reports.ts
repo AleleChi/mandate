@@ -45,6 +45,7 @@ export interface ReportTableContent {
   rows: Array<Array<string | number>>;
   caption?: string;
   maxPreviewRows?: number;
+  colWidths?: number[];
 }
 
 export interface ReportFlowStep {

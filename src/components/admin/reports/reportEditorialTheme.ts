@@ -35,24 +35,30 @@ export const REPORT_THEME = {
 
 export function formatEditorialDate(value?: string | null, includeTime: boolean = false): string {
   if (!value) return 'Date unavailable';
-  const d = new Date(value);
+  const raw = String(value).trim();
+  const normalized = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(raw)
+    ? raw.replace(' ', 'T') + 'Z'
+    : raw;
+  const d = new Date(normalized);
   if (Number.isNaN(d.getTime())) return 'Date unavailable';
-  
+
   const dateStr = d.toLocaleDateString('en-GB', {
     day: 'numeric',
     month: 'short',
-    year: 'numeric'
+    year: 'numeric',
+    timeZone: 'Africa/Lagos'
   });
 
   if (!includeTime) return dateStr;
 
-  const timeStr = d.toLocaleTimeString('en-US', {
-    hour: 'numeric',
+  const timeStr = d.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
     minute: '2-digit',
-    hour12: true
+    hour12: false,
+    timeZone: 'Africa/Lagos'
   });
 
-  return `${dateStr} at ${timeStr}`;
+  return `${dateStr} at ${timeStr} WAT`;
 }
 
 export function formatEditorialNumber(value: number | string): string {

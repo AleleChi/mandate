@@ -178,7 +178,8 @@ export const TemplateConfigureView: React.FC<TemplateConfigureViewProps> = ({
   const getExecutiveSummary = () => {
     switch (template?.key) {
       case 'event-executive-report-v1':
-        return 'Provides Event Directors with a high-level operational scorecard of child registrations, on-duty volunteers, safety alerts, and recommendations. This report is designed to outline event highlights, potential safeguarding risks, and coordinate rapid response times during high-capacity fellowship events.';
+      case 'children-teens-full-event-report':
+        return 'Comprehensive operational record covering child registrations, selections, check-ins, pickups, 5 canonical age cohorts, gender turnout, WAT arrival and checkout patterns, venue scanning, volunteer duty coverage, aggregated care/safety counts and a restricted attendance appendix.';
       case 'attendance-demographics-report-v1':
         return 'This official operational review provides critical summaries based on records captured in the general attendance databases up to the compiler cutoff timestamp. Real-time active check-in tracking allows coordinator supervisors to ensure optimal safeguarding ratios, secure release handoffs, and instant incident coordination responsiveness across Grace Hall and related venues.';
       case 'child-safety-incident-report-v1':
@@ -257,6 +258,7 @@ export const TemplateConfigureView: React.FC<TemplateConfigureViewProps> = ({
 
     switch (template?.key) {
       case 'event-executive-report-v1':
+      case 'children-teens-full-event-report':
         return (
           <div className="space-y-4">
             <span className="text-[8px] font-bold text-stone-400 uppercase tracking-widest block font-mono">Operations Scorecard</span>
@@ -272,12 +274,12 @@ export const TemplateConfigureView: React.FC<TemplateConfigureViewProps> = ({
                 </span>
               </div>
               <div className="bg-stone-50 border border-stone-200/60 p-2.5 rounded-lg">
-                <span className="text-[7px] text-stone-400 font-mono uppercase block">On-Duty Volunteers</span>
-                <span className="text-sm font-serif font-bold text-stone-800">{volunteers.activeOnDuty ?? '—'}</span>
+                <span className="text-[7px] text-stone-400 font-mono uppercase block">Picked Up / Released</span>
+                <span className="text-sm font-serif font-bold text-stone-800">{attendance.releasedTotal ?? '—'}</span>
               </div>
-              <div className="bg-red-50/20 border border-red-100 p-2.5 rounded-lg">
-                <span className="text-[7px] text-red-500 font-mono uppercase block">Active Alerts raised</span>
-                <span className="text-sm font-serif font-bold text-red-700">{alerts.totalAlerts ?? '0'}</span>
+              <div className="bg-stone-50 border border-stone-200/60 p-2.5 rounded-lg">
+                <span className="text-[7px] text-stone-400 font-mono uppercase block">On-Duty Volunteers</span>
+                <span className="text-sm font-serif font-bold text-stone-800">{volunteers.activeOnDuty ?? volunteers.reportedVolunteers ?? '—'}</span>
               </div>
             </div>
 
