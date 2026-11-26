@@ -888,14 +888,27 @@ router.get('/:reportId/preview', async (req: AuthenticatedRequest, res: Response
       VALUES (?, ?, ?, 'preview_opened', 'Report preview opened by user.', ?)
     `, ['hist-' + crypto.randomUUID(), job.id, userId, new Date().toISOString()]);
 
+    const isAuthorizedForAppendix = ['super_admin', 'admin', 'safeguarding_lead', 'pickup_lead'].includes(role);
+    let responseModel = docModel;
+    if (!isAuthorizedForAppendix && Array.isArray(docModel?.appendix) && docModel.appendix.length > 0) {
+      responseModel = {
+        ...docModel,
+        appendix: undefined,
+        limitations: [
+          ...(docModel.limitations || []),
+          'Restricted individual attendance appendix withheld for current access level.'
+        ]
+      };
+    }
+
     const formattedReport = await formatReportJob(job);
 
     res.setHeader('Cache-Control', 'no-store');
     return res.json({
       success: true,
       report: formattedReport,
-      documentModel: docModel,
-      sectionPageMap: docModel.sectionPageMap
+      documentModel: responseModel,
+      sectionPageMap: responseModel.sectionPageMap
     });
 
   } catch (err: any) {
@@ -1338,7 +1351,23 @@ router.get('/:reportId/download', async (req: AuthenticatedRequest, res: Respons
       return res.status(500).json({ error: "We couldn't prepare this download. Please create the report again." });
     }
 
-    console.log(`[Reports Download] artifact ready - fromCache: ${artifact.fromCache}, bytes: ${artifact.pdfBytes.length}, filename: ${artifact.filename}`);
+    // Do not leak restricted individual attendance appendix in low-privilege exports
+    let downloadBytes = artifact.pdfBytes;
+    const isAuthorizedForAppendix = ['super_admin', 'admin', 'safeguarding_lead', 'pickup_lead'].includes(role);
+    if (!isAuthorizedForAppendix && Array.isArray(artifact.docModel?.appendix) && artifact.docModel.appendix.length > 0) {
+      const redactedModel = {
+        ...artifact.docModel,
+        appendix: undefined,
+        limitations: [
+          ...(artifact.docModel.limitations || []),
+          'Restricted individual attendance appendix omitted for current access level.'
+        ]
+      };
+      const renderedRedacted = await renderDocumentToPDF(redactedModel);
+      downloadBytes = Buffer.from(renderedRedacted.pdfBytes);
+    }
+
+    console.log(`[Reports Download] artifact ready - fromCache: ${artifact.fromCache}, bytes: ${downloadBytes.length}, filename: ${artifact.filename}`);
 
     await execute(`
       INSERT INTO report_history (id, report_job_id, actor_user_id, action_type, safe_summary, created_at)
@@ -1351,7 +1380,7 @@ router.get('/:reportId/download', async (req: AuthenticatedRequest, res: Respons
     res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Type');
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    return res.send(artifact.pdfBytes);
+    return res.send(downloadBytes);
 
   } catch (err: any) {
     console.error(`[Reports Download] failed - Internal error serving report ${reportId}:`, err);

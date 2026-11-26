@@ -26,14 +26,37 @@ const colors = {
   sapphire: [37, 99, 235]     // #2563EB
 };
 
+function normalizeUtcTimestamp(dateVal: any): Date | null {
+  if (!dateVal) return null;
+  if (dateVal instanceof Date) return isNaN(dateVal.getTime()) ? null : dateVal;
+  const s = String(dateVal).trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(s)) {
+    const d = new Date(s.replace(' ', 'T') + 'Z');
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 function formatEditorialDate(dateVal: any, includeTime: boolean = false): string {
   if (!dateVal) return 'Date unavailable';
-  const d = new Date(dateVal);
-  if (isNaN(d.getTime())) return String(dateVal);
-  const dateStr = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const d = normalizeUtcTimestamp(dateVal);
+  if (!d) return String(dateVal);
+  const dateStr = d.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Africa/Lagos'
+  });
   if (!includeTime) return dateStr;
-  const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-  return `${dateStr} at ${timeStr}`;
+  const timeStr = d.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Africa/Lagos'
+  });
+  return `${dateStr} at ${timeStr} WAT`;
 }
 
 function getEditorialColor(label: string, index: number): [number, number, number] {
@@ -54,13 +77,16 @@ function getEditorialColor(label: string, index: number): [number, number, numbe
 }
 
 function getCohortColor(cellText: string): [number, number, number] | null {
-  const l = (cellText || '').toLowerCase();
+  const l = (cellText || '').trim().toLowerCase();
+  if (l.includes('upper chapel') || l.includes('pavilion') || l.includes('hall') || l.includes('suite') || l.includes('location')) {
+    return null;
+  }
   if (l.includes('under 4')) return [16, 185, 129];
   if (l.includes('2–3') || l.includes('2-3') || l.includes('1 to 3') || l.includes('1-3')) return [132, 204, 22];
   if (l.includes('4 to 6') || l.includes('4-6') || l.includes('4–6')) return [197, 155, 39];
   if (l.includes('7 to 9') || l.includes('7-9') || l.includes('7–9')) return [166, 124, 46];
   if (l.includes('10 to 12') || l.includes('10-12') || l.includes('10–12')) return [217, 119, 6];
-  if (l.includes('13–14') || l.includes('13-14') || l.includes('teen') || l.includes('13+')) return [139, 92, 246];
+  if (l.includes('13–14') || l.includes('13-14') || l === 'teens' || l.startsWith('teens ') || l.includes('13+')) return [139, 92, 246];
   return null;
 }
 
@@ -266,14 +292,14 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   doc.setFontSize(8.5);
   doc.setTextColor(colors.gold[0], colors.gold[1], colors.gold[2]);
   doc.text((event.eventTitle || 'THE GENERAL ASSEMBLY').toUpperCase(), marginX, cursorY);
-  cursorY += 9;
+  cursorY += 13;
 
   // Report Title (dominant editorial serif)
   doc.setFont('times', 'bold');
   doc.setFontSize(titleFontSize);
   doc.setTextColor(coverTextColor[0], coverTextColor[1], coverTextColor[2]);
   doc.text(titleLines, marginX, cursorY);
-  cursorY += titleLines.length * titleLineH + 6;
+  cursorY += titleLines.length * titleLineH + 7;
 
   // Report Description
   if (descLines.length > 0) {
@@ -325,16 +351,17 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   doc.setTextColor(coverTextColor[0], coverTextColor[1], coverTextColor[2]);
   doc.text(dateRangeStr, marginX, bottomMetaY + 11);
 
-  // Col 2: Venue
+  // Col 2: Venue (wrapped cleanly inside column width)
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
   doc.setTextColor(coverSubtextColor[0], coverSubtextColor[1], coverSubtextColor[2]);
   doc.text('VENUE', marginX + colWidth, bottomMetaY + 6);
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
+  doc.setFontSize(8);
   doc.setTextColor(coverTextColor[0], coverTextColor[1], coverTextColor[2]);
-  doc.text(event.venue || 'Event location', marginX + colWidth, bottomMetaY + 11);
+  const coverVenueLines = doc.splitTextToSize(event.venue || 'Event location', colWidth - 5);
+  doc.text(coverVenueLines.slice(0, 2), marginX + colWidth, bottomMetaY + 11);
 
   // Col 3: Prepared
   doc.setFont('helvetica', 'normal');
@@ -372,22 +399,27 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
   doc.text('Operational Overview & Executive Summary', marginX, currentY);
   currentY += 8;
 
-  // Event Profile Box (Left: 52mm) vs Narrative (Right: 112mm)
+  // Event Profile Box (Left: 54mm) vs Narrative (Right: 110mm)
   const profileBoxW = 54;
   const narrativeBoxW = 110;
   const profileBoxX = marginX;
   const narrativeBoxX = marginX + profileBoxW + 6;
   const profileBoxY = currentY;
 
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7);
+  const profileVenueLines = event.venue ? doc.splitTextToSize(String(event.venue), profileBoxW - 8) : [];
+  const profileBoxH = Math.max(46, 36 + Math.max(0, profileVenueLines.length - 1) * 3.8 + 4);
+
   // Draw Event Profile Box
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(228, 228, 231);
   doc.setLineWidth(0.2);
-  doc.roundedRect(profileBoxX, profileBoxY, profileBoxW, 46, 1, 1, 'FD');
+  doc.roundedRect(profileBoxX, profileBoxY, profileBoxW, profileBoxH, 1, 1, 'FD');
 
   // Left gold bar
   doc.setFillColor(colors.gold[0], colors.gold[1], colors.gold[2]);
-  doc.rect(profileBoxX, profileBoxY, 1.2, 46, 'F');
+  doc.rect(profileBoxX, profileBoxY, 1.2, profileBoxH, 'F');
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7);
@@ -413,8 +445,8 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7);
     doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
-    doc.text(event.venue, profileBoxX + 4, profY + 3.8);
-    profY += 9;
+    doc.text(profileVenueLines, profileBoxX + 4, profY + 3.8);
+    profY += 5 + profileVenueLines.length * 3.6;
   }
 
   if (event.theme) {
@@ -426,7 +458,6 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
     doc.setFontSize(7.5);
     doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
     doc.text(`"${event.theme}"`, profileBoxX + 4, profY + 3.8);
-    profY += 9;
   }
 
   // Draw Executive Summary Narrative on the right
@@ -440,15 +471,16 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
     `Factual operational record of event registration, participant attendance, volunteer duty coverage, pass readiness, and child safety for ${event.eventTitle || 'the event'}.`;
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.4);
+  doc.setFontSize(8.2);
   doc.setTextColor(39, 39, 42);
   const narrativeLines = doc.splitTextToSize(narrativeText, narrativeBoxW);
   doc.text(narrativeLines, narrativeBoxX, profileBoxY + 11);
 
-  currentY = profileBoxY + 52;
+  currentY = profileBoxY + Math.max(profileBoxH + 8, narrativeLines.length * 4.0 + 18);
 
   // Large Data Moments (Section 6: Major Figures without Card Boxes)
   if (model.kpis && model.kpis.length > 0) {
+    ensureHeight(34);
     doc.setDrawColor(228, 228, 231);
     doc.setLineWidth(0.2);
     doc.line(marginX, currentY, marginX + contentWidth, currentY);
@@ -479,16 +511,17 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
 
       // Big Cormorant Number
       doc.setFont('times', 'bold');
-      doc.setFontSize(16);
+      doc.setFontSize(15);
       doc.setTextColor(colors.charcoal[0], colors.charcoal[1], colors.charcoal[2]);
       doc.text(String(kpi.value), kX + 2.5, currentY + 10.5);
 
       // Sublabel
       if (kpi.sublabel) {
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(5.8);
+        doc.setFontSize(5.5);
         doc.setTextColor(colors.warmGrey[0], colors.warmGrey[1], colors.warmGrey[2]);
-        doc.text(kpi.sublabel, kX + 2.5, currentY + 14.5);
+        const subLines = doc.splitTextToSize(String(kpi.sublabel), kpiW - 4);
+        doc.text(subLines.slice(0, 2), kX + 2.5, currentY + 14.5);
       }
     });
 
@@ -507,16 +540,33 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
     sectionPageMap[secId] = secPage;
 
     if (sec.type === 'narrative') {
-      ensureHeight(25);
+      ensureHeight(28);
       currentY = drawEditorialSectionHeading(doc, sec.title, sec.description, marginX, currentY, contentWidth);
 
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8.4);
-      doc.setTextColor(39, 39, 42);
-      const paragraphs = doc.splitTextToSize(sec.content.text || '', contentWidth);
-      ensureHeight(paragraphs.length * 4.2);
-      doc.text(paragraphs, marginX, currentY);
-      currentY += paragraphs.length * 4.2 + 6;
+      if (sec.content?.text) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.2);
+        doc.setTextColor(39, 39, 42);
+        const paragraphs = doc.splitTextToSize(sec.content.text, contentWidth);
+        ensureHeight(paragraphs.length * 4.2 + 4);
+        doc.text(paragraphs, marginX, currentY);
+        currentY += paragraphs.length * 4.2 + 4;
+      }
+
+      if (Array.isArray(sec.content?.bulletPoints) && sec.content.bulletPoints.length > 0) {
+        sec.content.bulletPoints.forEach((bp: string) => {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.8);
+          const bpLines = doc.splitTextToSize(String(bp), contentWidth - 7);
+          ensureHeight(bpLines.length * 3.8 + 3);
+          doc.setFillColor(colors.gold[0], colors.gold[1], colors.gold[2]);
+          doc.circle(marginX + 2, currentY - 1.2, 0.7, 'F');
+          doc.setTextColor(63, 63, 70);
+          doc.text(bpLines, marginX + 5.5, currentY);
+          currentY += bpLines.length * 3.8 + 2.5;
+        });
+      }
+      currentY += 4;
 
     } else if (sec.type === 'table') {
       ensureHeight(40);
@@ -531,10 +581,12 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
         doc.setFont('helvetica', 'italic');
         doc.setFontSize(7);
         doc.setTextColor(colors.grey[0], colors.grey[1], colors.grey[2]);
-        doc.text(caption, marginX, currentY + 3);
-        currentY += 6;
+        const capLines = doc.splitTextToSize(String(caption), contentWidth);
+        ensureHeight(capLines.length * 3.4 + 4);
+        doc.text(capLines, marginX, currentY + 3);
+        currentY += capLines.length * 3.4 + 4;
       }
-      currentY += 6;
+      currentY += 5;
 
     } else if (sec.type === 'chart') {
       const chartSpecs: ReportChartSpec[] = sec.content.charts || [];
@@ -570,10 +622,10 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
 
         for (const chartSpec of chartSpecs) {
           const chartW = contentWidth;
-          const chartH = chartSpec.kind === 'donut' ? 44 : 46;
-          ensureHeight(chartH + 12);
+          const chartH = chartSpec.kind === 'donut' ? 44 : 48;
+          ensureHeight(chartH + 18);
           drawChartSpec(doc, marginX, currentY, chartW, chartH, chartSpec);
-          currentY += chartH + 14;
+          currentY += chartH + 18;
         }
       }
 
@@ -646,10 +698,10 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
 
     model.managementAttention.forEach((item) => {
       ensureHeight(12);
-      doc.setFont('helvetica', 'normal');
+      doc.setFont('helvetica', 'bold');
       doc.setFontSize(8);
       doc.setTextColor(colors.amber[0], colors.amber[1], colors.amber[2]);
-      doc.text('→', marginX + 2, currentY + 2.5);
+      doc.text('>', marginX + 2, currentY + 2.5);
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8.2);
@@ -724,14 +776,81 @@ export async function renderDocumentToPDF(model: ReportDocumentModel): Promise<{
       }
     }
 
+    if (model.methodology && model.methodology.length > 0) {
+      model.methodology.forEach(meth => {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.8);
+        doc.setTextColor(colors.grey[0], colors.grey[1], colors.grey[2]);
+        const methLines = doc.splitTextToSize(`• ${meth}`, contentWidth - 2);
+        ensureHeight(methLines.length * 3.4 + 2);
+        doc.text(methLines, marginX, currentY);
+        currentY += methLines.length * 3.4 + 1.5;
+      });
+      currentY += 2;
+    }
+
     if (model.limitations && model.limitations.length > 0) {
       model.limitations.forEach(lim => {
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(6.8);
         doc.setTextColor(colors.grey[0], colors.grey[1], colors.grey[2]);
-        doc.text(`• ${lim}`, marginX, currentY);
-        currentY += 3.5;
+        const limLines = doc.splitTextToSize(`• ${lim}`, contentWidth - 2);
+        ensureHeight(limLines.length * 3.4 + 2);
+        doc.text(limLines, marginX, currentY);
+        currentY += limLines.length * 3.4 + 1.5;
       });
+    }
+  }
+
+  // =========================================================================
+  // SECTION E2: RESTRICTED DETAILED ATTENDANCE APPENDIX
+  // =========================================================================
+  if (Array.isArray(model.appendix) && model.appendix.length > 0) {
+    addNewPage();
+    const appPage = doc.getNumberOfPages();
+    sectionPageMap['section-appendix'] = appPage;
+    sectionPageMap['appendix'] = appPage;
+
+    // Subtle restricted header notice
+    doc.setFillColor(254, 243, 199);
+    doc.setDrawColor(217, 119, 6);
+    doc.setLineWidth(0.2);
+    doc.roundedRect(marginX, currentY, contentWidth, 6.5, 0.8, 0.8, 'FD');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(146, 64, 14);
+    doc.text('RESTRICTED APPENDIX — AUTHORISED ADMINISTRATORS ONLY (OMITTED IN LOW-PRIVILEGE EXPORTS)', marginX + 3, currentY + 4.3);
+    currentY += 10;
+
+    for (const app of model.appendix) {
+      ensureHeight(36);
+      currentY = drawEditorialSectionHeading(
+        doc,
+        app.title || 'Restricted Detailed Attendance Register',
+        'Deduplicated child attendance register ordered by check-in presence and alphabetical child name. All times displayed in Africa/Lagos (WAT).',
+        marginX,
+        currentY,
+        contentWidth
+      );
+
+      const appHeaders = app.headers || [];
+      const appRows = app.rows || [];
+      const defaultAppWidths =
+        appHeaders.length === 10 ? [8, 31, 12, 17, 25, 19, 14, 14, 15, 15] : undefined;
+
+      currentY = drawEditorialTable(
+        doc,
+        marginX,
+        currentY,
+        contentWidth,
+        appHeaders,
+        appRows,
+        () => {
+          addNewPage();
+        },
+        defaultAppWidths
+      );
+      currentY += 6;
     }
   }
 
@@ -847,8 +966,9 @@ function drawEditorialSectionHeading(
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.2);
     doc.setTextColor(colors.grey[0], colors.grey[1], colors.grey[2]);
-    doc.text(description, x, headY + 2);
-    headY += 4.5;
+    const descWrapped = doc.splitTextToSize(String(description), w);
+    doc.text(descWrapped, x, headY + 2);
+    headY += 1.5 + descWrapped.length * 3.3;
   }
 
   // Thin separator rule
@@ -872,8 +992,9 @@ function drawEditorialTable(
   let tableY = y;
   const isWide = headers.length >= 8;
   const isSuperWide = headers.length >= 10;
-  const baseFontSize = isSuperWide ? 5.8 : (isWide ? 6.5 : 7.5);
-  const headerFontSize = isSuperWide ? 5.8 : (isWide ? 6.6 : 7.5);
+  const baseFontSize = isSuperWide ? 5.7 : (isWide ? 6.4 : 7.5);
+  const headerFontSize = isSuperWide ? 5.3 : (isWide ? 5.8 : 7.2);
+  const headerLineH = isSuperWide ? 2.6 : (isWide ? 2.9 : 3.4);
   const lineHeight = isSuperWide ? 3.1 : (isWide ? 3.5 : 4.2);
 
   // Compute column widths and X offsets
@@ -892,26 +1013,36 @@ function drawEditorialTable(
   }
 
   const drawHeader = (currY: number) => {
-    doc.setDrawColor(39, 39, 42);
-    doc.setLineWidth(0.35);
-    doc.line(x, currY + 5.5, x + w, currY + 5.5);
-
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(headerFontSize);
     doc.setTextColor(24, 24, 27);
 
-    headers.forEach((h, i) => {
+    const headerLines = headers.map((h, i) => {
+      const colW = colWidths[i] || (w / Math.max(headers.length, 1));
+      return doc.splitTextToSize(String(h || '').toUpperCase(), Math.max(colW - 2.6, 5));
+    });
+    const maxHdrLines = Math.max(...headerLines.map(l => l.length), 1);
+    const hdrRuleOffset = Math.max(5.5, maxHdrLines * headerLineH + 2.5);
+
+    doc.setDrawColor(39, 39, 42);
+    doc.setLineWidth(0.35);
+    doc.line(x, currY + hdrRuleOffset, x + w, currY + hdrRuleOffset);
+
+    headerLines.forEach((lines, i) => {
       const isRight = i === headers.length - 1;
       const colX = x + colOffsets[i];
       const colW = colWidths[i];
-      if (isRight) {
-        doc.text(h.toUpperCase(), colX + colW - 2, currY + 4, { align: 'right' });
-      } else {
-        doc.text(h.toUpperCase(), colX + 2, currY + 4);
-      }
+      const startTextY = currY + 3.4 + (maxHdrLines - lines.length) * (headerLineH * 0.5);
+      lines.forEach((ln: string, lIdx: number) => {
+        if (isRight) {
+          doc.text(ln, colX + colW - 1.5, startTextY + lIdx * headerLineH, { align: 'right' });
+        } else {
+          doc.text(ln, colX + 1.5, startTextY + lIdx * headerLineH);
+        }
+      });
     });
 
-    return currY + 7;
+    return currY + hdrRuleOffset + 1.8;
   };
 
   tableY = drawHeader(tableY);
@@ -1014,7 +1145,8 @@ function drawChartSpec(
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(6.5);
       doc.setTextColor(113, 113, 122);
-      doc.text(chart.caption, x, y + height + 5);
+      const capLines = doc.splitTextToSize(chart.caption, width);
+      doc.text(capLines.slice(0, 2), x, y + height + 6.5);
     }
   } catch (chartErr) {
     console.error(`[PDF Renderer] Failed to draw chart "${chart.id || chart.title}":`, chartErr);
@@ -1133,21 +1265,32 @@ function drawBarChartSpec(
   let chartAvailableH = height;
 
   if (isMultiSeries) {
-    chartTopY = y + 6;
-    chartAvailableH = height - 6;
+    chartTopY = y + 7;
+    chartAvailableH = height - 9;
 
     let legX = x + 2;
+    let legY = y;
     series.forEach((s, sIdx) => {
-      const col = seriesColors[sIdx % seriesColors.length];
-      doc.setFillColor(col[0], col[1], col[2]);
-      doc.rect(legX, y, 2.5, 2.5, 'F');
-
+      const sLabel = s.label || `Series ${sIdx + 1}`;
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(5.8);
+      const itemW = doc.getTextWidth(sLabel) + 9;
+      if (legX + itemW > x + width && legX > x + 2) {
+        legX = x + 2;
+        legY += 4.5;
+        chartTopY += 4.5;
+        chartAvailableH -= 4.5;
+      }
+      const col = seriesColors[sIdx % seriesColors.length];
+      doc.setFillColor(col[0], col[1], col[2]);
+      doc.rect(legX, legY, 2.5, 2.5, 'F');
+
       doc.setTextColor(82, 82, 91);
-      doc.text(s.label || `Series ${sIdx + 1}`, legX + 3.5, y + 2.2);
-      legX += 34;
+      doc.text(sLabel, legX + 3.5, legY + 2.2);
+      legX += itemW;
     });
+  } else {
+    chartAvailableH = height - 4;
   }
 
   // Base axis & grid lines
@@ -1164,10 +1307,21 @@ function drawBarChartSpec(
 
   const groupSlotW = width / labels.length;
 
+  const drawXAxisLabel = (rawLabel: string, centerX: number, baseY: number) => {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(labels.length > 7 ? 4.8 : 5.3);
+    doc.setTextColor(113, 113, 122);
+    const wrapped = doc.splitTextToSize(String(rawLabel || ''), Math.max(groupSlotW * 0.9, 10));
+    wrapped.slice(0, 2).forEach((ln: string, i: number) => {
+      doc.text(ln, centerX, baseY + i * 2.7, { align: 'center' });
+    });
+  };
+
   if (isMultiSeries) {
     const numSeries = series.length;
     const groupBarW = (groupSlotW * 0.72) / numSeries;
     const groupPad = (groupSlotW * 0.28) / 2;
+    const valFontSize = numSeries >= 3 && labels.length >= 4 ? 4.4 : 4.8;
 
     labels.forEach((label, labelIdx) => {
       const groupStartX = x + (labelIdx * groupSlotW) + groupPad;
@@ -1184,21 +1338,17 @@ function drawBarChartSpec(
           doc.rect(bX, bY, Math.max(groupBarW - 0.4, 0.8), bH, 'F');
 
           doc.setFont('helvetica', 'bold');
-          doc.setFontSize(5);
+          doc.setFontSize(valFontSize);
           doc.setTextColor(24, 24, 27);
-          doc.text(String(val), bX + (groupBarW / 2), bY - 1, { align: 'center' });
+          doc.text(String(val), bX + (groupBarW / 2), bY - 0.9, { align: 'center' });
         }
       });
 
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(5.5);
-      doc.setTextColor(113, 113, 122);
-      doc.text(label, groupStartX + (groupSlotW * 0.36), chartTopY + chartAvailableH + 3.2, { align: 'center' });
+      drawXAxisLabel(label, groupStartX + (groupSlotW * 0.36), chartTopY + chartAvailableH + 3.2);
     });
   } else {
     const barW = groupSlotW * 0.55;
     const barGap = groupSlotW * 0.45;
-    const barColors = [colors.gold, colors.deepGold, colors.emerald, colors.amber, colors.charcoal];
 
     labels.forEach((label, index) => {
       const val = primarySeries[index] || 0;
@@ -1217,10 +1367,7 @@ function drawBarChartSpec(
         doc.text(String(val), barX + (barW / 2), barY - 1.5, { align: 'center' });
       }
 
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(5.5);
-      doc.setTextColor(113, 113, 122);
-      doc.text(label, barX + (barW / 2), chartTopY + chartAvailableH + 3.2, { align: 'center' });
+      drawXAxisLabel(label, barX + (barW / 2), chartTopY + chartAvailableH + 3.2);
     });
   }
 }
@@ -1249,8 +1396,8 @@ function drawHorizontalBarChartSpec(
   const maxValue = Math.max(...allVals, 1);
   const rowCount = labels.length;
   const rowH = height / rowCount;
-  const labelColW = 45;
-  const barAreaW = width - labelColW - 14;
+  const labelColW = 50;
+  const barAreaW = width - labelColW - 16;
 
   const seriesColors = [
     [colors.gold[0], colors.gold[1], colors.gold[2]],
@@ -1270,20 +1417,25 @@ function drawHorizontalBarChartSpec(
 
     // Bar background track
     doc.setFillColor(244, 244, 245);
-    doc.rect(x + labelColW, rowY + 1.5, barAreaW, Math.max(rowH - 3, 2), 'F');
+    doc.rect(x + labelColW, rowY + 1.2, barAreaW, Math.max(rowH - 2.4, 2), 'F');
+
+    const numSeries = Math.max(series.length, 1);
+    const trackH = Math.max(rowH - 2.4, 2);
+    const subBarH = Math.max(trackH / numSeries - (numSeries > 1 ? 0.3 : 0), 1);
 
     series.forEach((s, sIdx) => {
       const val = s.values[idx] || 0;
+      const subY = rowY + 1.2 + (sIdx * (trackH / numSeries));
       if (val > 0) {
         const bW = Math.max((val / maxValue) * barAreaW, 1);
-        const col = seriesColors[sIdx % seriesColors.length];
+        const col = numSeries === 1 ? getEditorialColor(label, idx) : seriesColors[sIdx % seriesColors.length];
         doc.setFillColor(col[0], col[1], col[2]);
-        doc.rect(x + labelColW, rowY + 1.5, bW, Math.max(rowH - 3, 2), 'F');
+        doc.rect(x + labelColW, subY, bW, subBarH, 'F');
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(6);
+        doc.setFontSize(numSeries > 1 ? 5.2 : 6);
         doc.setTextColor(24, 24, 27);
-        doc.text(String(val), x + labelColW + bW + 2, rowY + (rowH / 2) + 1.5);
+        doc.text(val.toLocaleString('en-US'), x + labelColW + bW + 2, subY + (subBarH / 2) + 0.8);
       }
     });
   });

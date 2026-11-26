@@ -1,10 +1,73 @@
 import { parse } from 'path';
 
-// Helper to parse dates safely
+export const EVENT_TIMEZONE = 'Africa/Lagos';
+
+/**
+ * Normalize database timestamp values (including Postgres TIMESTAMP WITHOUT TIME ZONE
+ * strings stored as UTC wall clock without 'Z', ISO strings, or Date instances)
+ * into a true UTC Date instance independent of the Node process OS timezone.
+ */
+export function normalizeDbTimestampToUtcIso(val: any): string | null {
+  if (val === null || val === undefined || val === '') return null;
+  if (val instanceof Date) {
+    return isNaN(val.getTime()) ? null : val.toISOString();
+  }
+  const str = String(val).trim();
+  if (!str) return null;
+  // Naive 'YYYY-MM-DD HH:MM:SS(.sss)' or 'YYYY-MM-DDTHH:MM:SS(.sss)' without TZ offset -> UTC wall clock
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(str)) {
+    const normalized = str.replace(' ', 'T') + 'Z';
+    const d = new Date(normalized);
+    return isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  const d = new Date(str);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+// Helper to parse dates safely (always respecting UTC DB wall clock)
 export function parseDate(val: any): Date | null {
-  if (!val) return null;
-  const d = new Date(val);
+  const iso = normalizeDbTimestampToUtcIso(val);
+  if (!iso) return null;
+  const d = new Date(iso);
   return isNaN(d.getTime()) ? null : d;
+}
+
+export function getWATHourLabel(val: any): string | null {
+  const d = val instanceof Date ? val : parseDate(val);
+  if (!d || isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: EVENT_TIMEZONE,
+    hour: '2-digit',
+    hour12: false
+  }).formatToParts(d);
+  const hourPart = parts.find(p => p.type === 'hour')?.value;
+  if (!hourPart) return null;
+  const normalizedHour = hourPart === '24' ? '00' : hourPart.padStart(2, '0');
+  return `${normalizedHour}:00`;
+}
+
+export function formatWATTime(val: any): string {
+  const d = val instanceof Date ? val : parseDate(val);
+  if (!d || isNaN(d.getTime())) return '—';
+  const timeStr = new Intl.DateTimeFormat('en-GB', {
+    timeZone: EVENT_TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).format(d);
+  return `${timeStr} WAT`;
+}
+
+export function formatWATDateTime(val: any): string {
+  const d = val instanceof Date ? val : parseDate(val);
+  if (!d || isNaN(d.getTime())) return '—';
+  const dateStr = new Intl.DateTimeFormat('en-GB', {
+    timeZone: EVENT_TIMEZONE,
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  }).format(d);
+  return `${dateStr}, ${formatWATTime(d)}`;
 }
 
 // Age Cohort Normalisation helper to eliminate duplicate group labels
@@ -402,22 +465,20 @@ export function calculateAnalytics(snapshot: any): ComprehensiveAnalytics {
   const releaseRate = checkedInTotal > 0 ? (releasedTotal / checkedInTotal) * 100 : 0;
   const pendingRelease = insideTotal;
 
-  // Time Series
+  // Time Series (strictly Africa/Lagos WAT)
   const checkInHourMap: { [key: string]: number } = {};
   const pickupHourMap: { [key: string]: number } = {};
 
   checkedInEntries.forEach((c: any) => {
-    const d = parseDate(c.checked_in_at);
-    if (d) {
-      const hourStr = d.getUTCHours().toString().padStart(2, '0') + ':00';
+    const hourStr = getWATHourLabel(c.checked_in_at);
+    if (hourStr) {
       checkInHourMap[hourStr] = (checkInHourMap[hourStr] || 0) + 1;
     }
   });
 
   releasedEntries.forEach((c: any) => {
-    const d = parseDate(c.picked_up_at);
-    if (d) {
-      const hourStr = d.getUTCHours().toString().padStart(2, '0') + ':00';
+    const hourStr = getWATHourLabel(c.picked_up_at);
+    if (hourStr) {
       pickupHourMap[hourStr] = (pickupHourMap[hourStr] || 0) + 1;
     }
   });
@@ -430,7 +491,8 @@ export function calculateAnalytics(snapshot: any): ComprehensiveAnalytics {
   checkInTimeSeries.forEach(t => {
     if (t.count > maxCheckInVal) {
       maxCheckInVal = t.count;
-      peakCheckInHour = `${t.hour}–${(parseInt(t.hour) + 1).toString().padStart(2, '0')}:00`;
+      const nextHr = ((parseInt(t.hour, 10) + 1) % 24).toString().padStart(2, '0');
+      peakCheckInHour = `${t.hour}–${nextHr}:00 WAT`;
     }
   });
 
@@ -439,7 +501,8 @@ export function calculateAnalytics(snapshot: any): ComprehensiveAnalytics {
   pickupTimeSeries.forEach(t => {
     if (t.count > maxPickupVal) {
       maxPickupVal = t.count;
-      peakPickupHour = `${t.hour}–${(parseInt(t.hour) + 1).toString().padStart(2, '0')}:00`;
+      const nextHr = ((parseInt(t.hour, 10) + 1) % 24).toString().padStart(2, '0');
+      peakPickupHour = `${t.hour}–${nextHr}:00 WAT`;
     }
   });
 
@@ -763,24 +826,29 @@ export function calculateAnalytics(snapshot: any): ComprehensiveAnalytics {
     liveConnectionRate
   };
 
-  // 4. Locations & Capacity Loading
+  // 4. Locations & Capacity Loading (strictly using recorded check-in desk / location IDs without false attribution)
   const totalLocations = locationsList.length;
   let totalAssignedKidsAcrossRooms = 0;
 
+  const checkInLocByEntryId = new Map<string, string>();
+  (snapshot.attendanceRecords || []).forEach((ar: any) => {
+    if (ar.action_type === 'check_in' && ar.child_event_entry_id && ar.gate_location) {
+      checkInLocByEntryId.set(ar.child_event_entry_id, String(ar.gate_location).trim());
+    }
+  });
+
   const locationLoads = locationsList.map((loc: any) => {
     const volCount = volunteersByLocation[loc.id] || 0;
-    
-    // Age groups associated with this location
-    const ageGroupsInLoc = snapshot.ageGroups?.filter((ag: any) => ag.location_id === loc.id) || [];
-    const normalizedLocAgLabels = ageGroupsInLoc.map((ag: any) => normalizeAgeGroupLabel(ag.label || ag.age_group || ag.name));
+    const locNames = [loc.name, loc.short_name, loc.label]
+      .filter(Boolean)
+      .map((s: any) => String(s).trim().toLowerCase());
 
-    // Match checked in kids directly by location_id/room_id OR by normalized age group
     const checkedInKidsInLoc = checkedInEntries.filter((c: any) => {
       if (c.location_id === loc.id || c.check_in_location_id === loc.id || c.room_id === loc.id || c.assigned_room_id === loc.id) {
         return true;
       }
-      const childNormAg = normalizeAgeGroupLabel(c.age_group);
-      return normalizedLocAgLabels.includes(childNormAg);
+      const gateLoc = (c.check_in_location || checkInLocByEntryId.get(c.id) || '').trim().toLowerCase();
+      return gateLoc ? locNames.includes(gateLoc) : false;
     }).length;
 
     totalAssignedKidsAcrossRooms += checkedInKidsInLoc;
@@ -796,17 +864,15 @@ export function calculateAnalytics(snapshot: any): ComprehensiveAnalytics {
     };
   });
 
-  // Reconcile: If checkedInTotal > 0 and locationLoads has entries with 0 children due to age group missing location_id,
-  // distribute checkedInTotal across available locations or add Main Assembly room if needed
+  // Record any checked-in children without a recorded location honestly rather than assigning to Grace Hall
   const unassignedKids = Math.max(0, checkedInTotal - totalAssignedKidsAcrossRooms);
-  if (unassignedKids > 0 && locationLoads.length > 0) {
-    // If locationLoads has rooms, assign unassigned kids to the main room or first room
-    const mainRoom = locationLoads.find(l => l.locationLabel.toLowerCase().includes('grace') || l.locationLabel.toLowerCase().includes('main') || l.locationLabel.toLowerCase().includes('hall')) || locationLoads[0];
-    if (mainRoom) {
-      mainRoom.childrenCount += unassignedKids;
-      const plannedCap = 40;
-      mainRoom.loadPercentage = (mainRoom.childrenCount / plannedCap) * 100;
-    }
+  if (unassignedKids > 0) {
+    locationLoads.push({
+      locationLabel: 'Location not recorded',
+      childrenCount: unassignedKids,
+      volunteerCount: 0,
+      loadPercentage: 0
+    });
   }
 
   const fullyCoveredLocations = locationLoads.filter(l => l.volunteerCount >= 2).length;

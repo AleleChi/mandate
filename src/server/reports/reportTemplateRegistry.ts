@@ -14,6 +14,7 @@ import { buildTrainingDrillReport } from './templates/trainingDrillReport';
 import { buildCustomEventReport } from './templates/customEventReport';
 import { buildRegistrationSelectionReport } from './templates/registrationSelectionReport';
 import { buildChildrenRegistrationReport } from './templates/childrenRegistrationReport';
+import { buildChildrenTeensFullEventReport } from './templates/childrenTeensFullEventReport';
 
 export type ReportTemplateBuilder = (
   reportId: string,
@@ -24,6 +25,11 @@ export type ReportTemplateBuilder = (
 ) => ReportDocumentModel;
 
 export const TEMPLATE_BUILDER_REGISTRY: Record<string, ReportTemplateBuilder> = {
+  // Primary Children & Teens Comprehensive Event Report
+  'children-teens-full-event-report': buildChildrenTeensFullEventReport,
+  'children-teens-full-event-report-v1': buildChildrenTeensFullEventReport,
+  'children_teens_full_event_report': buildChildrenTeensFullEventReport,
+
   // Six Canonical Templates (Section 9)
   'management-summary': buildEventExecutiveReport,
   'full-event-report': buildCustomEventReport,
@@ -92,9 +98,10 @@ export function compileReportDocument(
 
   // Fallback to all recommended sections if none specified
   const templateConfig = snapshot.template_config || {};
-  const activeSections = sections && sections.length > 0 
-    ? sections 
-    : templateConfig.recommendedSections || ['Executive Summary', 'Operational Metrics', 'Recommended actions'];
+  const activeSections = sections && sections.length > 0
+    ? sections
+    : templateConfig.recommendedSections ||
+      (templateKey.includes('children-teens-full-event-report') ? [] : ['Executive Summary', 'Operational Metrics', 'Recommended actions']);
 
   // Development logging requested by pipeline hardening specs:
   console.log(`REPORT TEMPLATE SELECTED: ${templateKey}`);

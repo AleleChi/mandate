@@ -3,15 +3,77 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { jsPDF } from 'jspdf';
-import { calculateAnalytics, formatDuration } from './reportAnalyticsService';
+import { calculateAnalytics, formatDuration, normalizeDbTimestampToUtcIso } from './reportAnalyticsService';
 import { compileReportDocument } from '../reports/reportTemplateRegistry';
 import { renderDocumentToPDF } from '../reports/reportRenderer';
 import { getCurrentEventId, getEventById } from './eventService';
+import { fetchMedicalCareReportData } from './medicalCareReportService';
 
 const dbUrl = process.env.DATABASE_URL;
 const isPostgres = !!(dbUrl && (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://')));
 
 export const REPORT_TEMPLATES = [
+  {
+    key: 'children-teens-full-event-report',
+    name: 'Children & Teens — Full Event Report',
+    description: 'Comprehensive operational report covering registration, selection, attendance, age cohorts, gender, hourly WAT flow, venue scanning, volunteer duty, aggregated care & safeguarding, and a restricted attendance appendix.',
+    privacy_classification: 'Internal operational',
+    privacyClassification: 'Internal operational',
+    category: 'Event Report',
+    categoryBadge: 'Publication Report',
+    reportDomain: 'Comprehensive Event',
+    audience: 'Senior Leadership, Pastors, Event Directors, Administrators',
+    includes: [
+      'Executive summary and headline operational KPIs',
+      'Registration, selection, attendance and pickup funnel statistics',
+      'Age-group breakdown across all 5 canonical cohorts (2–3 to 13–14)',
+      'Gender distribution and turnout analysis',
+      'Hourly arrival and checkout patterns in Africa/Lagos (WAT)',
+      'Attendance by event location and volunteer operations coverage',
+      'Aggregated care, allergy summary and safety alert review',
+      'Findings, methodology notes and restricted attendance appendix'
+    ],
+    bestUsedFor: 'Official post-event executive review and pastoral archive documentation',
+    recommendedSections: [
+      'Executive Summary',
+      'Registration & Attendance Statistics',
+      'Age-Group Breakdown',
+      'Gender Analysis',
+      'Arrival & Checkout Patterns',
+      'Attendance by Event Location',
+      'Volunteer Operations',
+      'Care & Safeguarding',
+      'Findings & Data Notes',
+      'Detailed Attendance Appendix'
+    ],
+    supportedSections: [
+      'Executive Summary',
+      'Registration & Attendance Statistics',
+      'Age-Group Breakdown',
+      'Gender Analysis',
+      'Arrival & Checkout Patterns',
+      'Attendance by Event Location',
+      'Volunteer Operations',
+      'Care & Safeguarding',
+      'Findings & Data Notes',
+      'Detailed Attendance Appendix'
+    ],
+    defaultSections: [
+      'Executive Summary',
+      'Registration & Attendance Statistics',
+      'Age-Group Breakdown',
+      'Gender Analysis',
+      'Arrival & Checkout Patterns',
+      'Attendance by Event Location',
+      'Volunteer Operations',
+      'Care & Safeguarding',
+      'Findings & Data Notes',
+      'Detailed Attendance Appendix'
+    ],
+    availableFilters: { ageGroup: 'All', location: 'All' },
+    permittedEventTypes: ['production-event'],
+    allowedActions: ['preview', 'generate']
+  },
   {
     key: 'management-summary',
     name: 'Management summary',
@@ -695,7 +757,31 @@ export async function compileReportSnapshot(
       throw new Error(`The requested event "${targetEventId}" does not exist in the database.`);
     }
 
-    const attendanceRecords = await query('SELECT * FROM attendance_records WHERE child_event_entry_id IN (SELECT id FROM child_event_entries WHERE event_id = ?)', [targetEventId]);
+    const rawAttendanceRecords = await query(`
+      SELECT ar.*, CAST(ar.action_time AS TEXT) as action_time_txt
+      FROM attendance_records ar
+      WHERE ar.child_event_entry_id IN (SELECT id FROM child_event_entries WHERE event_id = ?)
+    `, [targetEventId]);
+    const attendanceRecords = rawAttendanceRecords.map((r: any) => ({
+      ...r,
+      action_time: normalizeDbTimestampToUtcIso(r.action_time_txt ?? r.action_time) || r.action_time
+    }));
+
+    const checkInLocByEntry = new Map<string, { gate_location: string | null; sync_source: string | null; staff_user_id: string | null; action_time: string | null }>();
+    attendanceRecords.forEach((ar: any) => {
+      if (ar.action_type === 'check_in' && ar.child_event_entry_id) {
+        const prev = checkInLocByEntry.get(ar.child_event_entry_id);
+        if (!prev || (ar.action_time && (!prev.action_time || ar.action_time > prev.action_time))) {
+          checkInLocByEntry.set(ar.child_event_entry_id, {
+            gate_location: ar.gate_location ? String(ar.gate_location).trim() : null,
+            sync_source: ar.sync_source ? String(ar.sync_source).trim() : null,
+            staff_user_id: ar.staff_user_id || null,
+            action_time: ar.action_time || null
+          });
+        }
+      }
+    });
+
     const syncRecords = await query('SELECT * FROM offline_sync_records WHERE event_id = ?', [targetEventId]);
     
     // Only active, non-archived locations belonging strictly to this event
@@ -712,7 +798,7 @@ export async function compileReportSnapshot(
 
     // Volunteer duty assignments: strictly join users and volunteer_profiles.
     // Exclude deleted/removed/suspended volunteers and cancelled assignments.
-    const dutyAssignments = await query(`
+    const rawDutyAssignments = await query(`
       SELECT 
         eda.id as assignment_id,
         eda.id,
@@ -723,12 +809,15 @@ export async function compileReportSnapshot(
         eda.assignment_level,
         eda.status as assignment_status,
         eda.status,
+        CAST(eda.starts_at AS TEXT) as starts_at_txt,
         eda.starts_at,
+        CAST(eda.ends_at AS TEXT) as ends_at_txt,
         eda.ends_at,
         eda.temporarily_unavailable_at,
         eda.expected_return_at,
         eda.note,
         eda.assigned_location_id as location_id,
+        eda.assigned_age_groups,
         vp.id as volunteer_profile_id,
         vp.full_name as volunteer_name,
         vp.status as volunteer_status,
@@ -746,6 +835,11 @@ export async function compileReportSnapshot(
         AND vp.status IN ('approved', 'active')
         AND eda.status NOT IN ('cancelled', 'removed', 'inactive')
     `, [targetEventId]);
+    const dutyAssignments = rawDutyAssignments.map((d: any) => ({
+      ...d,
+      starts_at: normalizeDbTimestampToUtcIso(d.starts_at_txt ?? d.starts_at) || d.starts_at,
+      ends_at: normalizeDbTimestampToUtcIso(d.ends_at_txt ?? d.ends_at) || d.ends_at
+    }));
 
     // Active approved volunteers from the volunteer directory for workforce context
     const rosterVolunteers = await query(`
@@ -765,20 +859,31 @@ export async function compileReportSnapshot(
     `);
 
     // Canonical event duty presence records
-    const dutyPresence = await query(`
+    const rawDutyPresence = await query(`
       SELECT
         edlp.id,
         edlp.event_id,
         edlp.user_id,
         edlp.event_location_id,
         edlp.source,
+        CAST(edlp.started_at AS TEXT) as started_at_txt,
         edlp.started_at,
+        CAST(edlp.ended_at AS TEXT) as ended_at_txt,
         edlp.ended_at
       FROM event_duty_location_presence edlp
       WHERE edlp.event_id = ?
     `, [targetEventId]);
+    const dutyPresence = rawDutyPresence.map((p: any) => ({
+      ...p,
+      started_at: normalizeDbTimestampToUtcIso(p.started_at_txt ?? p.started_at) || p.started_at,
+      ended_at: normalizeDbTimestampToUtcIso(p.ended_at_txt ?? p.ended_at) || p.ended_at
+    }));
 
-    const incidentRecords = await query('SELECT * FROM incident_records WHERE event_id = ?', [targetEventId]);
+    const incidentRecords = await query(`
+      SELECT *, CAST(created_at AS TEXT) as created_at_txt
+      FROM incident_records
+      WHERE event_id = ?
+    `, [targetEventId]);
     const ageGroups = await query('SELECT * FROM event_age_groups WHERE event_id = ?', [targetEventId]);
 
     // Apply location filter if specified
@@ -819,9 +924,35 @@ export async function compileReportSnapshot(
 
     const isConfidential = privacyLevel === 'Confidential' || privacyLevel === 'Safeguarding restricted';
     const hasSensitiveAccess = ['super_admin', 'admin', 'safeguarding_lead', 'pickup_lead'].includes(role);
+    const isFullEventTemplate = [
+      'children-teens-full-event-report',
+      'children-teens-full-event-report-v1',
+      'children_teens_full_event_report'
+    ].includes(templateKey);
+    const authorizedForAppendix =
+      hasSensitiveAccess &&
+      !['Public / low-privilege', 'Anonymized', 'Aggregated Safe', 'Restricted / Anonymized'].includes(privacyLevel);
 
-    let rawEntries = await query(`
-      SELECT cee.*, c.full_name as child_name, c.date_of_birth, c.gender, c.age_group
+    const lifecycleRow = await queryOne(`
+      SELECT
+        COUNT(*) as total_active,
+        SUM(CASE WHEN cee.status = 'incomplete' THEN 1 ELSE 0 END) as incomplete_drafts,
+        SUM(CASE WHEN cee.status IN ('draft', 'removed') THEN 1 ELSE 0 END) as other_drafts
+      FROM child_event_entries cee
+      JOIN children c ON cee.child_id = c.id
+      WHERE cee.event_id = ?
+        AND (cee.is_deleted = 0 OR cee.is_deleted IS NULL)
+        AND (c.is_deleted = 0 OR c.is_deleted IS NULL)
+    `, [targetEventId]);
+
+    const rawEntriesDb = await query(`
+      SELECT cee.*,
+             CAST(cee.checked_in_at AS TEXT) as checked_in_at_txt,
+             CAST(cee.picked_up_at AS TEXT) as picked_up_at_txt,
+             CAST(cee.submitted_at AS TEXT) as submitted_at_txt,
+             CAST(cee.decision_at AS TEXT) as decision_at_txt,
+             CAST(cee.created_at AS TEXT) as created_at_txt,
+             c.full_name as child_name, c.date_of_birth, c.gender, c.age_group, c.calculated_age
       FROM child_event_entries cee
       JOIN children c ON cee.child_id = c.id
       WHERE cee.event_id = ?
@@ -831,12 +962,51 @@ export async function compileReportSnapshot(
         AND cee.status IS NOT NULL
     `, [targetEventId]);
 
+    const activeCheckedInEntryIds = new Set<string>();
+    let rawEntries = rawEntriesDb.map((r: any) => {
+      const checkedInAtIso = normalizeDbTimestampToUtcIso(r.checked_in_at_txt ?? r.checked_in_at);
+      const pickedUpAtIso = normalizeDbTimestampToUtcIso(r.picked_up_at_txt ?? r.picked_up_at);
+      const isCheckedInRecord = ['checked_in', 'inside', 'picked_up'].includes(r.status) || Boolean(checkedInAtIso);
+      if (isCheckedInRecord) {
+        activeCheckedInEntryIds.add(r.id);
+      }
+      const arLoc = isCheckedInRecord ? checkInLocByEntry.get(r.id) : undefined;
+      return {
+        ...r,
+        checked_in_at: checkedInAtIso,
+        picked_up_at: pickedUpAtIso,
+        submitted_at: normalizeDbTimestampToUtcIso(r.submitted_at_txt ?? r.submitted_at) || r.submitted_at,
+        decision_at: normalizeDbTimestampToUtcIso(r.decision_at_txt ?? r.decision_at) || r.decision_at,
+        created_at: normalizeDbTimestampToUtcIso(r.created_at_txt ?? r.created_at) || r.created_at,
+        check_in_location: arLoc?.gate_location || null,
+        check_in_sync_source: arLoc?.sync_source || null,
+        check_in_staff_user_id: r.checked_in_by || arLoc?.staff_user_id || null
+      };
+    });
+
+    const staleAttendanceRecordsCount = attendanceRecords.filter(
+      (ar: any) => ar.action_type === 'check_in' && ar.child_event_entry_id && !activeCheckedInEntryIds.has(ar.child_event_entry_id)
+    ).length;
+
     // Apply ageGroup filter if specified
     if (filters?.ageGroup && filters.ageGroup !== 'All') {
       rawEntries = rawEntries.filter((c: any) => c.age_group === filters.ageGroup || (c.age_group && c.age_group.toLowerCase().includes(filters.ageGroup.toLowerCase())));
     }
 
-    let rawAlerts = await query('SELECT * FROM event_safety_alerts WHERE event_id = ?', [targetEventId]);
+    const rawAlertsDb = await query(`
+      SELECT *,
+             CAST(created_at AS TEXT) as created_at_txt,
+             CAST(acknowledged_at AS TEXT) as acknowledged_at_txt,
+             CAST(resolved_at AS TEXT) as resolved_at_txt
+      FROM event_safety_alerts
+      WHERE event_id = ?
+    `, [targetEventId]);
+    let rawAlerts = rawAlertsDb.map((a: any) => ({
+      ...a,
+      created_at: normalizeDbTimestampToUtcIso(a.created_at_txt ?? a.created_at) || a.created_at,
+      acknowledged_at: normalizeDbTimestampToUtcIso(a.acknowledged_at_txt ?? a.acknowledged_at) || a.acknowledged_at,
+      resolved_at: normalizeDbTimestampToUtcIso(a.resolved_at_txt ?? a.resolved_at) || a.resolved_at
+    }));
     if (filters?.location && filters.location !== 'All') {
       rawAlerts = rawAlerts.filter((a: any) => a.location_label === filters.location);
     }
@@ -845,20 +1015,63 @@ export async function compileReportSnapshot(
     let safetyAlerts: any[] = [];
     let pickupRecords: any[] = [];
 
-    if (isConfidential && hasSensitiveAccess) {
+    if (isConfidential && hasSensitiveAccess && !isFullEventTemplate) {
       childEntries = rawEntries;
       safetyAlerts = rawAlerts;
       pickupRecords = await query('SELECT * FROM pickup_people WHERE child_event_entry_id IN (SELECT id FROM child_event_entries WHERE event_id = ?)', [targetEventId]);
+    } else if (isFullEventTemplate && authorizedForAppendix) {
+      // Standard leadership/event report with Restricted Detailed Attendance Appendix:
+      // Expose verified attendance fields (child name, DOB, check-in/pickup timestamps and desk location)
+      // while strictly keeping sensitive medical/support text and parent phones out of the report payload.
+      childEntries = rawEntries.map((c: any) => ({
+        id: c.id,
+        child_id: c.child_id,
+        status: c.status,
+        age_group: c.age_group,
+        calculated_age: c.calculated_age,
+        gender: c.gender,
+        date_of_birth: c.date_of_birth,
+        child_name: c.child_name,
+        has_medical_notes: c.has_medical_notes ? 1 : 0,
+        needs_extra_support: c.needs_extra_support ? 1 : 0,
+        checked_in_at: c.checked_in_at,
+        picked_up_at: c.picked_up_at,
+        check_in_location: c.check_in_location || null,
+        check_in_sync_source: c.check_in_sync_source || null,
+        check_in_staff_user_id: c.check_in_staff_user_id || null,
+        medical_notes: '',
+        support_notes: ''
+      }));
+
+      safetyAlerts = rawAlerts.map((a: any) => ({
+        id: a.id,
+        severity: a.severity,
+        category: a.category,
+        title: a.title,
+        status: a.status,
+        location_label: a.location_label,
+        created_at: a.created_at,
+        acknowledged_at: a.acknowledged_at,
+        resolved_at: a.resolved_at,
+        message: 'SAFEGUARDING NARRATIVE OMITTED',
+        child_id: null
+      }));
+
+      pickupRecords = [];
     } else {
       childEntries = rawEntries.map((c: any) => ({
         id: c.id,
         status: c.status,
         age_group: c.age_group,
+        calculated_age: c.calculated_age,
         gender: c.gender,
+        date_of_birth_year: c.date_of_birth ? String(c.date_of_birth).slice(0, 10) : null,
         has_medical_notes: c.has_medical_notes ? 1 : 0,
         needs_extra_support: c.needs_extra_support ? 1 : 0,
         checked_in_at: c.checked_in_at,
         picked_up_at: c.picked_up_at,
+        check_in_location: c.check_in_location || null,
+        check_in_sync_source: c.check_in_sync_source || null,
         child_name: `Child Ref-${c.id.slice(0, 6).toUpperCase()}`,
         date_of_birth: 'REDACTED',
         medical_notes: c.has_medical_notes ? 'CONFIDENTIAL MEDICAL NOTES STAGED' : '',
@@ -880,6 +1093,59 @@ export async function compileReportSnapshot(
       }));
 
       pickupRecords = [];
+    }
+
+    let fullEventData: any = null;
+    if (isFullEventTemplate) {
+      let careSummary: any = null;
+      try {
+        const medReport = await fetchMedicalCareReportData({
+          eventId: targetEventId,
+          careConcern: 'all',
+          page: 1,
+          pageSize: 200
+        });
+        const activeNonDraftRecords = (medReport?.allFiltered || []).filter(
+          (rec: any) => rec.registrationStatus && !['incomplete', 'draft', 'removed'].includes(String(rec.registrationStatus).toLowerCase())
+        );
+        const concernRecords = activeNonDraftRecords.filter(
+          (c: any) => c.hasMedicalNotes || c.hasAllergyMention || c.hasOtherMedicalNotes || c.needsExtraSupport
+        );
+        careSummary = {
+          totalRegistered: activeNonDraftRecords.length,
+          withCareConcerns: concernRecords.length,
+          allergyMentions: activeNonDraftRecords.filter((c: any) => c.hasAllergyMention).length,
+          otherMedicalNotes: activeNonDraftRecords.filter((c: any) => c.hasOtherMedicalNotes).length,
+          supportRequested: activeNonDraftRecords.filter((c: any) => c.needsExtraSupport).length,
+          bothMedicalAndSupport: activeNonDraftRecords.filter(
+            (c: any) => (c.hasMedicalNotes || c.hasAllergyMention || c.hasOtherMedicalNotes) && c.needsExtraSupport
+          ).length,
+          requiresClarification: activeNonDraftRecords.filter((c: any) => c.requiresClarification).length,
+          careNotesInsideOrCheckedIn: concernRecords.filter(
+            (c: any) => c.attendanceStatus === 'checked_in' || c.attendanceStatus === 'inside'
+          ).length,
+          careNotesPickedUp: concernRecords.filter((c: any) => c.attendanceStatus === 'picked_up').length,
+          careNotesNotArrived: concernRecords.filter((c: any) => c.attendanceStatus === 'not_arrived').length,
+          noConcernReported: activeNonDraftRecords.length - concernRecords.length
+        };
+      } catch (medErr) {
+        console.warn('[Reports] Could not compile aggregated medical care summary:', medErr);
+      }
+      fullEventData = {
+        authorizedForAppendix,
+        actorRole: role,
+        careSummary,
+        entryLifecycleCounts: {
+          totalActiveEntries: Number(lifecycleRow?.total_active || 0),
+          incompleteDrafts: Number(lifecycleRow?.incomplete_drafts || 0),
+          otherDrafts: Number(lifecycleRow?.other_drafts || 0),
+          registeredNonDraft: rawEntries.length
+        },
+        attendanceAnomalies: {
+          staleAttendanceRecordsCount,
+          checkedInWithLocationCount: Array.from(activeCheckedInEntryIds).filter(id => Boolean(checkInLocByEntry.get(id)?.gate_location)).length
+        }
+      };
     }
 
     let childrenRegistrationData: any = null;
@@ -990,7 +1256,8 @@ export async function compileReportSnapshot(
       cutoffTime,
       timezone: targetTimezone,
       filters,
-      childrenRegistrationData
+      childrenRegistrationData,
+      fullEventData
     };
   }
 }
@@ -1600,7 +1867,9 @@ export function formatReportFilename(eventTitle?: string, reportTitle?: string, 
 
   let typePart = 'Management-Report';
   const cleanTitle = (reportTitle || '').trim();
-  if (cleanTitle.toLowerCase().includes('management')) {
+  if (cleanTitle.toLowerCase().includes('children & teens') || cleanTitle.toLowerCase().includes('children-teens')) {
+    typePart = 'Children-Teens-Full-Event-Report';
+  } else if (cleanTitle.toLowerCase().includes('management')) {
     typePart = 'Management-Report';
   } else if (cleanTitle.toLowerCase().includes('full event')) {
     typePart = 'Full-Event-Report';
